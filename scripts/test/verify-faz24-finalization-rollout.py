@@ -229,9 +229,10 @@ def reject_prod_leakage(
         ),
         "meeting rollout marker": "platform.acik.com/faz24-meeting-ai-base-url-rev",
         "transcript rollout marker": "transcript-service.acik.com/direct-stt-result-consumer-rev",
-        "meeting test digest": "sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682",
-        "transcript test digest": "sha256:22f4df7c042a2c8b19dd0e8f55111ca48057a6258e76d2bdd99c00597ec92be7",
-        "auth test digest": "sha256:a48e73bb6d89e56ae427103a54ed5358f29b04fd171771781655dae486397f03",
+        "meeting test digest": "sha256:03378764b00ba1a08fd73fd18ddb3ed3bd7c2ecfaeb8903a9050c0830d6fd4a2",
+        "transcript test digest": "sha256:1c36a94701d203b1191ff8f43179db0a5378175b2b205799c09e2ad04053d238",
+        "auth test digest": "sha256:dfd6dc43085f7ee362de2f34b038129ebe931e5c7708082e70d6b10346a66abd",
+        "audio test digest": "sha256:9c859cbbc3114ab8df5a3bde3305f86fa4de2b76305566333c21edf7617a4fac",
     }
     for label, fragment in forbidden_fragments.items():
         if fragment in serialized:
@@ -308,6 +309,7 @@ def main() -> None:
     meeting_deploy = resource(workload_docs, "Deployment", "meeting-service")
     auth_deploy = resource(workload_docs, "Deployment", "auth-service")
     transcript_deploy = resource(workload_docs, "Deployment", "transcript-service")
+    audio_deploy = resource(workload_docs, "Deployment", "audio-gateway")
     redis_service = resource(workload_docs, "Service", "redis-streams")
     redis_endpoints = resource(workload_docs, "Endpoints", "redis-streams")
     service_ports = redis_service.get("spec", {}).get("ports", [])
@@ -401,13 +403,13 @@ def main() -> None:
         auth_deploy,
         "auth-service",
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:a48e73bb6d89e56ae427103a54ed5358f29b04fd171771781655dae486397f03",
+        "sha256:dfd6dc43085f7ee362de2f34b038129ebe931e5c7708082e70d6b10346a66abd",
     )
     container_image(
         meeting_deploy,
         "meeting-service",
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682",
+        "sha256:03378764b00ba1a08fd73fd18ddb3ed3bd7c2ecfaeb8903a9050c0830d6fd4a2",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
@@ -421,7 +423,13 @@ def main() -> None:
         transcript_deploy,
         "transcript-service",
         "ghcr.io/halildeu/platform-backend-transcript-service@"
-        "sha256:22f4df7c042a2c8b19dd0e8f55111ca48057a6258e76d2bdd99c00597ec92be7",
+        "sha256:1c36a94701d203b1191ff8f43179db0a5378175b2b205799c09e2ad04053d238",
+    )
+    container_image(
+        audio_deploy,
+        "audio-gateway",
+        "ghcr.io/halildeu/platform-backend-audio-gateway-service@"
+        "sha256:9c859cbbc3114ab8df5a3bde3305f86fa4de2b76305566333c21edf7617a4fac",
     )
     pod_annotation(
         meeting_deploy,

@@ -232,8 +232,13 @@ images:
     # untrimmed consent grant/revoke audit events. platform-backend#861 fixes
     # the audit-consumer image build; canonical main image run 29603219415
     # produced the immutable digest below. Runtime proof: gitops#2594.
+    # 2026-07-19 durable live-final + replay ACK rollout: platform-backend#888
+    # makes final transcript delivery durable before desktop publication;
+    # platform-backend#890 adds bounded audio_ack replay semantics. Canonical
+    # backend main merge 74f6b9c; image run 29672315566 produced this digest.
+    # Runtime and packaged-desktop acceptance remain tracked by gitops#2610.
     # D30 immutable digest pin.
-    digest: sha256:f8148d31955336a585a8cfbf4dc12c8c40c14f8106f0aadb332006e69612b432
+    digest: sha256:9c859cbbc3114ab8df5a3bde3305f86fa4de2b76305566333c21edf7617a4fac
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -302,8 +307,11 @@ images:
     # Reviewed source df812c57341f; squash merge 315f351a8ebf; immutable image
     # build run 29633149322. Source/CI evidence remains separate from runtime
     # acceptance in docs/faz-24-evidence/2026-07-18-finalization-source-ci.json.
+    # 2026-07-19 family re-pin: full backend main image run 29672315566 at
+    # merge 74f6b9c preserves the #872 finalization state machine while aligning
+    # meeting-service with the exact audio/transcript/auth rollout family.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682
+    digest: sha256:03378764b00ba1a08fd73fd18ddb3ed3bd7c2ecfaeb8903a9050c0830d6fd4a2
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -328,8 +336,12 @@ images:
     # transcript.ready outbox row per finalization version. Downstream analysis
     # acceptance remains tracked separately by platform-ai#263. Reviewed source
     # df812c57341f; squash merge 315f351a8ebf; build run 29633149322.
+    # 2026-07-19 durable final-result rollout: platform-backend#888 binds
+    # canonical reads to analysis run/spec identity and persists live finals
+    # before user-visible publication. Full main image run 29672315566 at
+    # merge 74f6b9c produced the immutable digest below.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:22f4df7c042a2c8b19dd0e8f55111ca48057a6258e76d2bdd99c00597ec92be7
+    digest: sha256:1c36a94701d203b1191ff8f43179db0a5378175b2b205799c09e2ad04053d238
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -417,7 +429,10 @@ images:
     # meeting:session:resolve permission, including blank-secret fail-closed
     # coverage. Reviewed source df812c57341f; squash merge 315f351a8ebf;
     # immutable image build run 29633149322.
-    digest: sha256:a48e73bb6d89e56ae427103a54ed5358f29b04fd171771781655dae486397f03
+    # 2026-07-19 family re-pin: full backend main image run 29672315566 at
+    # merge 74f6b9c preserves the #872 isolated resolver client and aligns it
+    # with the exact audio/meeting/transcript rollout family.
+    digest: sha256:dfd6dc43085f7ee362de2f34b038129ebe931e5c7708082e70d6b10346a66abd
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.

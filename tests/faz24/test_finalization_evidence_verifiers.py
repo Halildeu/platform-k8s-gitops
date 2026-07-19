@@ -45,8 +45,8 @@ def provider_history(
         "status": "verified" if verified else "tracked-pending",
         "acceptanceEffect": "excluded-from-source-and-runtime-claims",
         "attestationBoundary": "operator-captured-provider-unsigned",
-        "requiredReceiptSchema": "cross-ai-provider-evidence/v1",
-        "requiredProviderOrder": ["anthropic", "minimax", "openai"],
+        "requiredReceiptSchema": "cross-ai-provider-evidence/v3",
+        "requiredProviderOrder": ["openai"],
         "receipts": [] if receipts is None else receipts,
     }
 
@@ -86,7 +86,7 @@ def remote_receipts(response_override: dict[str, str] | None = None):
         )
         response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
         body_value = {
-            "schema": "cross-ai-provider-evidence/v1",
+            "schema": "cross-ai-provider-evidence/v3",
             "provider": provider,
             "requested_model": model,
             "actual_model": model,
@@ -163,28 +163,28 @@ class SourceEvidenceVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "unknown/self-attested"):
             self.run_source(evidence)
 
-    def test_partial_provider_receipt_set_is_rejected(self) -> None:
-        with self.assertRaisesRegex(SystemExit, "exactly three"):
+    def test_duplicate_primary_provider_receipt_is_rejected(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "exactly one"):
             SOURCE.require_provider_evidence(
-                provider_history(three_ledgers()[:2]), True
+                provider_history(three_ledgers() * 2), True
             )
 
-    def test_three_distinct_strictly_ordered_receipts_are_accepted(self) -> None:
+    def test_exact_primary_codex_receipt_is_accepted(self) -> None:
         SOURCE.require_provider_evidence(
             provider_history(three_ledgers(), verified=True), True
         )
 
-    def test_duplicate_provider_refs_are_rejected(self) -> None:
+    def test_extra_provider_receipt_is_rejected(self) -> None:
         receipts = three_ledgers()
-        receipts[1]["apiUrl"] = receipts[0]["apiUrl"]
-        with self.assertRaisesRegex(SystemExit, "refs must be unique"):
+        receipts.append(copy.deepcopy(receipts[0]))
+        with self.assertRaisesRegex(SystemExit, "exactly one"):
             SOURCE.require_provider_evidence(
                 provider_history(receipts, verified=True), True
             )
 
-    def test_wrong_provider_order_is_rejected(self) -> None:
+    def test_wrong_primary_provider_is_rejected(self) -> None:
         receipts = three_ledgers()
-        receipts[0], receipts[1] = receipts[1], receipts[0]
+        receipts[0]["provider"] = "anthropic"
         with self.assertRaisesRegex(SystemExit, "model/scope/verdict"):
             SOURCE.require_provider_evidence(
                 provider_history(receipts, verified=True), True
@@ -192,7 +192,7 @@ class SourceEvidenceVerifierTests(unittest.TestCase):
 
     def test_requested_and_actual_models_must_both_be_exact(self) -> None:
         receipts = three_ledgers()
-        receipts[1]["actualModel"] = "minimax/MiniMax-M2"
+        receipts[0]["actualModel"] = "gpt-5.6-sol"
         with self.assertRaisesRegex(SystemExit, "model/scope/verdict"):
             SOURCE.require_provider_evidence(
                 provider_history(receipts, verified=True), True
@@ -274,7 +274,7 @@ class RemoteEvidenceVerifierTests(unittest.TestCase):
 
     def test_response_digest_mismatch_is_rejected(self) -> None:
         ledgers, comments = remote_receipts()
-        ledgers[1]["responseSha256"] = "0" * 64
+        ledgers[0]["responseSha256"] = "0" * 64
         with (
             mock.patch.object(REMOTE, "github_json", side_effect=comments.__getitem__),
             self.assertRaisesRegex(
@@ -302,18 +302,10 @@ class RemoteEvidenceVerifierTests(unittest.TestCase):
                 provider_history(ledgers, verified=True), True
             )
 
-    def test_equal_provider_timestamps_are_rejected(self) -> None:
+    def test_duplicate_remote_primary_receipt_is_rejected(self) -> None:
         ledgers, comments = remote_receipts()
-        second_old = ledgers[1]["createdAt"]
-        second_new = ledgers[0]["createdAt"]
-        ledgers[1]["createdAt"] = second_new
-        comments[ledgers[1]["apiUrl"]]["created_at"] = second_new
-        comments[ledgers[1]["apiUrl"]]["updated_at"] = second_new
-        self.assertNotEqual(second_old, second_new)
-        with (
-            mock.patch.object(REMOTE, "github_json", side_effect=comments.__getitem__),
-            self.assertRaisesRegex(SystemExit, "strict Claude < MiniMax < Codex"),
-        ):
+        ledgers.append(copy.deepcopy(ledgers[0]))
+        with self.assertRaisesRegex(SystemExit, "exactly one"):
             REMOTE.require_provider_evidence(
                 provider_history(ledgers, verified=True), True
             )

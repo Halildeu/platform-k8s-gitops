@@ -16,11 +16,11 @@ from typing import Any
 
 REPOSITORY = "Halildeu/platform-backend"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
-EXPECTED_PR = 872
-REVIEWED_SOURCE_COMMIT = "df812c57341fb9ea55a7662f3fd308fefd2a45dd"
-ARTIFACT_COMMIT = "315f351a8ebf57d83f535617ccf8219749a2afc7"
-REVIEW_BASE_COMMIT = "45451bb2562bb6814eb23ab084a9fd3ee0921d5f"
-REVIEW_SCOPE_SHA256 = "9ab88f7e03558238915f713c66e2c37e01f00399353652e399f63c0ddc076775"
+EXPECTED_PR = 890
+REVIEWED_SOURCE_COMMIT = "36fc0ea4b0890e0e8b86809e2107523c7d09ba92"
+ARTIFACT_COMMIT = "74f6b9c779e07c38eb970404fdea99502e2b9a69"
+REVIEW_BASE_COMMIT = "7f0ed98f4593a5bc73ebda58bfc87a3910764874"
+REVIEW_SCOPE_SHA256 = "68d4a4a3284b38c613c967891f97d8c6e13136c7a2e96959afeda2f4d8cb678d"
 EXPECTED_ACCEPTED_CLAIMS = {
     "reviewedSourceTree": True,
     "workflowRunOutcomes": True,
@@ -45,7 +45,7 @@ EXPECTED_EVIDENCE_KEYS = {
 }
 EXPECTED_RUNS = {
     "testRun": {
-        "id": 29632738608,
+        "id": 29671930063,
         "name": "CI - Maven Build Check",
         "path": ".github/workflows/ci-mvn-check.yml",
         "event": "pull_request",
@@ -53,23 +53,35 @@ EXPECTED_RUNS = {
         "workflowId": 265979888,
         "headSha": REVIEWED_SOURCE_COMMIT,
         "conclusion": "success",
-        "url": "https://github.com/Halildeu/platform-backend/actions/runs/29632738608",
+        "url": "https://github.com/Halildeu/platform-backend/actions/runs/29671930063",
         "workflowBlobSha": "a8605e603dbb93a3eeab6e53186c142f336920f9",
         "jobs": [
             {
-                "id": 88049635369,
+                "id": 88152457058,
+                "name": "Maven full reactor build (all 12 modules)",
+                "requiredStep": "Verify full reactor (12 modules, no tests)",
+                "conclusion": "success",
+            },
+            {
+                "id": 88152581595,
                 "name": "meeting-service unit + Testcontainers PG test (Faz 24",
                 "requiredStep": "Run meeting-service tests",
                 "conclusion": "success",
             },
             {
-                "id": 88049635387,
+                "id": 88152581599,
                 "name": "transcript-service unit + Testcontainers PG test (Faz 24",
                 "requiredStep": "Run transcript-service tests",
                 "conclusion": "success",
             },
             {
-                "id": 88049635354,
+                "id": 88152581600,
+                "name": "audio-gateway-service test (Faz 24",
+                "requiredStep": "Run audio-gateway-service tests",
+                "conclusion": "success",
+            },
+            {
+                "id": 88152581610,
                 "name": "common-meeting-events contract test (Faz 24",
                 "requiredStep": "Run common-meeting-events tests",
                 "conclusion": "success",
@@ -77,7 +89,7 @@ EXPECTED_RUNS = {
         ],
     },
     "authContractRun": {
-        "id": 29632738600,
+        "id": 29671930046,
         "name": "CI - Auth Token Evidence",
         "path": ".github/workflows/ci.yml",
         "event": "pull_request",
@@ -85,11 +97,11 @@ EXPECTED_RUNS = {
         "workflowId": 315554443,
         "headSha": REVIEWED_SOURCE_COMMIT,
         "conclusion": "success",
-        "url": "https://github.com/Halildeu/platform-backend/actions/runs/29632738600",
+        "url": "https://github.com/Halildeu/platform-backend/actions/runs/29671930046",
         "workflowBlobSha": "0bbc1de5292bc61811a08f52d6b0701245cf860b",
         "jobs": [
             {
-                "id": 88049496472,
+                "id": 88152457031,
                 "name": "auth-service transcript token mint evidence",
                 "requiredStep": "Run exact auth-service token mint tests",
                 "conclusion": "success",
@@ -97,7 +109,7 @@ EXPECTED_RUNS = {
         ],
     },
     "buildRun": {
-        "id": 29633149322,
+        "id": 29672315566,
         "name": "CI - Image Build + GHCR Push",
         "path": ".github/workflows/ci-image-push.yml",
         "event": "push",
@@ -105,24 +117,30 @@ EXPECTED_RUNS = {
         "workflowId": 265996858,
         "headSha": ARTIFACT_COMMIT,
         "conclusion": "success",
-        "url": "https://github.com/Halildeu/platform-backend/actions/runs/29633149322",
+        "url": "https://github.com/Halildeu/platform-backend/actions/runs/29672315566",
         "workflowBlobSha": "68b4c84e51d32169714e1d64b2db481326aaedb4",
         "jobs": [
             {
-                "id": 88050625953,
+                "id": 88153460034,
                 "name": "Build + Push auth-service",
                 "requiredStep": "Build + Push image",
                 "conclusion": "success",
             },
             {
-                "id": 88050626007,
+                "id": 88153460058,
                 "name": "Build + Push meeting-service",
                 "requiredStep": "Build + Push image",
                 "conclusion": "success",
             },
             {
-                "id": 88050625972,
+                "id": 88153460045,
                 "name": "Build + Push transcript-service",
+                "requiredStep": "Build + Push image",
+                "conclusion": "success",
+            },
+            {
+                "id": 88153460060,
+                "name": "Build + Push audio-gateway-service",
                 "requiredStep": "Build + Push image",
                 "conclusion": "success",
             },
@@ -132,18 +150,18 @@ EXPECTED_RUNS = {
 EXPECTED_IMPLEMENTATIONS = {
     (
         "transcript-service/src/main/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessor.java",
-        "4d1a4169daae145057f46c6831e8f6dffbbc0a75",
+        "6adea1091e5c19edd4978ccea57a453fc023ca3f",
     ),
     (
         "transcript-service/src/main/java/com/example/transcript/service/TranscriptFinalizationService.java",
-        "e32ff2631ebd8ad7ddc9135e6a143572753fbd3b",
+        "266c2051e96acad9e1571356cacb47e7d61f2139",
     ),
 }
 EXPECTED_INVARIANTS = {
     "auth-transcript-service-token-contract": {
         (
             "auth-service/src/test/java/com/example/auth/controller/MeetingAiServiceTokenMintTest.java",
-            "12881b068025d2ceced8a12fa51e86eeaf94db32",
+            "45e23dd91eb5bb2159357bec4e064e41cc92b025",
             "class-contract",
         ),
         (
@@ -155,31 +173,31 @@ EXPECTED_INVARIANTS = {
     "source-window-canonical-identity": {
         (
             "transcript-service/src/test/java/com/example/transcript/repository/TranscriptAssociationMigrationIntegrationTest.java",
-            "937003493495bf69176615d3f8d65ad0bc9537b3",
+            "26f3687e46bed0c65ae65bd100fb3edd80ae83ef",
             "latestMigrationBackfillsWindowIdentityAndAddsRestartSafeFinalizationState",
         ),
         (
             "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java",
-            "fd01287fb0502d2654b09f9458c2b752fdab1535",
+            "b9ada32fd2d7f58674814d89209abf47cd5c21a0",
             "createsDraftWithSourceWindowAndCanonicalSessionUuid",
         ),
         (
             "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java",
-            "fd01287fb0502d2654b09f9458c2b752fdab1535",
+            "b9ada32fd2d7f58674814d89209abf47cd5c21a0",
             "postFinalizationNewWindowIsPersistedAndStartsAnotherCycle",
         ),
     },
     "meeting-finish-and-outbox-are-atomic": {
         (
             "meeting-service/src/test/java/com/example/meeting/repository/MeetingRecordingFinishedOutboxPostgresIntegrationTest.java",
-            "802ae62cbc01635b0c5400702ca2a0f003b00120",
+            "6edc0617d3e7b1e1980299189b2f66b260a36c83",
             "class-contract",
         )
     },
     "one-thin-ready-outbox-row-per-finalization-version": {
         (
             "transcript-service/src/test/java/com/example/transcript/service/TranscriptFinalizationServiceTest.java",
-            "2b2f6dcc109f6d864ca5fc35f291735f95556417",
+            "1631ceb36c4477765d47fe4d87bb7642aa3ce217",
             "duplicateOccurrenceCreatesOneThinOutboxEffect",
         )
     },
@@ -193,7 +211,7 @@ EXPECTED_INVARIANTS = {
     "finalization-and-ready-outbox-are-one-transactional-operation": {
         (
             "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessorTest.java",
-            "6ad44937387405f5aa955047698e5b34d2bdd6a2",
+            "dd5ebf8dbc58a6d5ac42d0d8fcb6eab6ae65c915",
             "validSnapshotPersistsIntegrityRowAndReadyEventAtomically",
         )
     },
@@ -214,42 +232,49 @@ EXPECTED_IMAGES = {
     "auth-service": {
         "service": "auth-service",
         "image": "ghcr.io/halildeu/platform-backend-auth-service",
-        "digest": "sha256:a48e73bb6d89e56ae427103a54ed5358f29b04fd171771781655dae486397f03",
-        "buildJobId": 88050625953,
-        "artifactId": 8426177299,
-        "artifactName": "Halildeu~platform-backend~TSPWGN.dockerbuild",
-        "artifactUploadSha256": "9b27e5ded54520195c716a110c7320f259a87580fbd21593e61374f867922aa8",
+        "digest": "sha256:dfd6dc43085f7ee362de2f34b038129ebe931e5c7708082e70d6b10346a66abd",
+        "buildJobId": 88153460034,
+        "artifactId": 8437706174,
+        "artifactName": "Halildeu~platform-backend~G8TWF8.dockerbuild",
+        "artifactUploadSha256": "a0785df09cf67a88f1d3ea48a598ad9ef7f53994473315fc91e27f013fc6d7de",
         "provenanceStatus": "pending-post-push-operator-preflight",
         "acceptanceEffect": "excluded",
     },
     "meeting-service": {
         "service": "meeting-service",
         "image": "ghcr.io/halildeu/platform-backend-meeting-service",
-        "digest": "sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682",
-        "buildJobId": 88050626007,
-        "artifactId": 8426172575,
-        "artifactName": "Halildeu~platform-backend~U1O1WU.dockerbuild",
-        "artifactUploadSha256": "f2d066754394f4b753e79a1c34fd5e331441ecd575c6dab556f9d4179d0cec6d",
+        "digest": "sha256:03378764b00ba1a08fd73fd18ddb3ed3bd7c2ecfaeb8903a9050c0830d6fd4a2",
+        "buildJobId": 88153460058,
+        "artifactId": 8437707554,
+        "artifactName": "Halildeu~platform-backend~8BTZIT.dockerbuild",
+        "artifactUploadSha256": "b85f5aafd665fc7da878c939b4b10d637b465fcdd75ecafda090b9f48f0df16f",
         "provenanceStatus": "pending-post-push-operator-preflight",
         "acceptanceEffect": "excluded",
     },
     "transcript-service": {
         "service": "transcript-service",
         "image": "ghcr.io/halildeu/platform-backend-transcript-service",
-        "digest": "sha256:22f4df7c042a2c8b19dd0e8f55111ca48057a6258e76d2bdd99c00597ec92be7",
-        "buildJobId": 88050625972,
-        "artifactId": 8426182932,
-        "artifactName": "Halildeu~platform-backend~VV4NZC.dockerbuild",
-        "artifactUploadSha256": "92d5c0b045230f79c79d1ec8ab5c87507e7f4b0bbb84c31cf26c7ed01dc9ab70",
+        "digest": "sha256:1c36a94701d203b1191ff8f43179db0a5378175b2b205799c09e2ad04053d238",
+        "buildJobId": 88153460045,
+        "artifactId": 8437707147,
+        "artifactName": "Halildeu~platform-backend~UO37G8.dockerbuild",
+        "artifactUploadSha256": "d124d4d50cd0e7543116a7c44adf1d8cf8486d46fb71c2406400b304e6ba3ab7",
+        "provenanceStatus": "pending-post-push-operator-preflight",
+        "acceptanceEffect": "excluded",
+    },
+    "audio-gateway-service": {
+        "service": "audio-gateway-service",
+        "image": "ghcr.io/halildeu/platform-backend-audio-gateway-service",
+        "digest": "sha256:9c859cbbc3114ab8df5a3bde3305f86fa4de2b76305566333c21edf7617a4fac",
+        "buildJobId": 88153460060,
+        "artifactId": 8437709729,
+        "artifactName": "Halildeu~platform-backend~OHV5SD.dockerbuild",
+        "artifactUploadSha256": "c0d60c229b1f22e0487373e49ebb787bd90ddb96f3d22e8a3339db38c220bb36",
         "provenanceStatus": "pending-post-push-operator-preflight",
         "acceptanceEffect": "excluded",
     },
 }
-PROVIDER_ORDER = (
-    ("anthropic", "claude-opus-4-8"),
-    ("minimax", "minimax/MiniMax-M3"),
-    ("openai", "gpt-5.6-sol"),
-)
+PROVIDER_ORDER = (("openai", "gpt-5.3-codex-spark"),)
 PROVIDER_HISTORY_KEYS = {
     "status",
     "acceptanceEffect",
@@ -695,7 +720,7 @@ def require_receipt_body(
         fail("provider receipt must use the exact structured schema")
 
     expected_body = {
-        "schema": "cross-ai-provider-evidence/v1",
+        "schema": "cross-ai-provider-evidence/v3",
         "provider": expected_provider,
         "requested_model": expected_model,
         "actual_model": expected_model,
@@ -754,7 +779,7 @@ def require_provider_evidence(history: dict[str, Any], consensus: bool) -> None:
         fail("provider evidence escaped its bounded acceptance effect")
     if history.get("attestationBoundary") != "operator-captured-provider-unsigned":
         fail("provider evidence attestation boundary changed")
-    if history.get("requiredReceiptSchema") != "cross-ai-provider-evidence/v1":
+    if history.get("requiredReceiptSchema") != "cross-ai-provider-evidence/v3":
         fail("provider receipt schema changed")
     expected_order = [provider for provider, _model in PROVIDER_ORDER]
     if history.get("requiredProviderOrder") != expected_order:
@@ -766,22 +791,20 @@ def require_provider_evidence(history: dict[str, Any], consensus: bool) -> None:
         if consensus or history.get("status") != "tracked-pending":
             fail("missing provider receipts must remain tracked-pending")
         return
-    if len(receipts) != 3 or history.get("status") != "verified" or not consensus:
-        fail("provider consensus requires exactly three structured receipts")
+    if len(receipts) != 1 or history.get("status") != "verified" or not consensus:
+        fail("provider consensus requires exactly one primary Codex receipt")
     if any(
         not isinstance(item, dict) or set(item) != RECEIPT_LEDGER_KEYS
         for item in receipts
     ):
         fail("provider receipt ledger contains unbound/self-attested fields")
     refs = [item.get("apiUrl") for item in receipts]
-    if len(set(refs)) != 3:
+    if len(set(refs)) != 1:
         fail("provider receipt refs must be unique")
-    created_at = [
+    [
         require_receipt_body(receipt, provider, model)
         for receipt, (provider, model) in zip(receipts, PROVIDER_ORDER, strict=True)
     ]
-    if not created_at[0] < created_at[1] < created_at[2]:
-        fail("provider receipts must have strict Claude < MiniMax < Codex order")
 
 
 def main() -> None:
@@ -791,7 +814,7 @@ def main() -> None:
     if set(evidence) != EXPECTED_EVIDENCE_KEYS:
         fail("evidence root contains unknown/self-attested fields")
     if (
-        evidence.get("schemaVersion") != "faz24-finalization-source-ci.v5"
+        evidence.get("schemaVersion") != "faz24-finalization-source-ci.v6"
         or evidence.get("accepted") is not True
         or evidence.get("acceptanceLevel") != "immutable-source-and-workflow-outcomes"
         or evidence.get("runtimeAcceptance") is not False
@@ -823,13 +846,13 @@ def main() -> None:
 
     pull = github_json(f"{API_ROOT}/pulls/{EXPECTED_PR}")
     if pull.get("merged") is not True:
-        fail("backend PR #872 is not merged")
+        fail("backend PR #890 is not merged")
     if pull.get("head", {}).get("sha") != REVIEWED_SOURCE_COMMIT:
-        fail("backend PR #872 reviewed head changed")
+        fail("backend PR #890 reviewed head changed")
     if pull.get("base", {}).get("sha") != REVIEW_BASE_COMMIT:
-        fail("backend PR #872 base commit changed")
+        fail("backend PR #890 base commit changed")
     if pull.get("merge_commit_sha") != ARTIFACT_COMMIT:
-        fail("backend PR #872 artifact commit changed")
+        fail("backend PR #890 artifact commit changed")
 
     reviewed_commit = github_json(f"{API_ROOT}/git/commits/{REVIEWED_SOURCE_COMMIT}")
     artifact_commit = github_json(f"{API_ROOT}/git/commits/{ARTIFACT_COMMIT}")
