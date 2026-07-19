@@ -1364,6 +1364,11 @@ async function appendPriorRevisionFinding(
         invalidCandidates.push(`${comment?.ref || 'missing-ref'} (missing immutable status ledger)`);
         continue;
       }
+      // Before the exact trusted-source activation, v4-shaped owner comments
+      // were not backed by the immutable status authority. Keep them as
+      // non-authoritative audit history; they cannot introduce either AGREE or
+      // REVISE into the post-activation resolution chain.
+      continue;
     }
     // Strict immutable v1 evidence predating each provider's exact schema or
     // authority retirement remains read-only history. Historical OpenAI AGREE

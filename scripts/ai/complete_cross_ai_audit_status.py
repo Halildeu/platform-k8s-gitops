@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -17,6 +18,23 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 MARKER_RE = re.compile(
     r"<!-- cross-ai-audit-recheck:(\d+):(\d+):([0-9a-f]{64}) -->"
 )
+CONSULTATION_COMMIT_RE = re.compile(
+    r"(?mi)^Consultation commit:\s*([0-9a-f]{40})\s*$"
+)
+CODEX_RECEIPT_RE = re.compile(r"(?mi)^Codex receipt:\s*(.+?)\s*$")
+RECEIPT_KEYS = frozenset({
+    "provider",
+    "requested",
+    "actual",
+    "base_tip",
+    "base",
+    "head",
+    "scope",
+    "execution",
+    "verdict",
+    "ref",
+    "sha256",
+})
 AUDIT_CONTEXT = "cross-ai-audit"
 PENDING_DESCRIPTION = "Cross-AI evidence changed; trusted audit required"
 TRUSTED_WORKFLOW_STATUS_CREATOR = "github-actions[bot]"
@@ -63,6 +81,101 @@ def flatten_status_pages(payload: object) -> list[dict]:
             fail("github_audit_status_history_invalid")
         statuses.extend(page)
     return statuses
+
+
+def status_history(repo: str, head: str) -> list[dict]:
+    pages = gh_json([
+        "--paginate",
+        "--slurp",
+        f"repos/{repo}/commits/{head}/statuses?per_page=100",
+        "--method",
+        "GET",
+    ])
+    return flatten_status_pages(pages)
+
+
+def consultation_commit(body: str) -> str:
+    matches = CONSULTATION_COMMIT_RE.findall(body)
+    if len(matches) != 1:
+        fail("audit_consultation_commit_invalid")
+    return matches[0].lower()
+
+
+def selected_evidence_binding(body: str, digest: str, repo: str) -> tuple[int, str]:
+    matches = CODEX_RECEIPT_RE.findall(body)
+    if len(matches) != 1:
+        fail("audit_selected_evidence_binding_invalid")
+    fields: dict[str, str] = {}
+    for token in matches[0].split(";"):
+        key, separator, value = token.strip().partition("=")
+        normalized = key.strip().lower()
+        if (
+            not separator
+            or normalized not in RECEIPT_KEYS
+            or normalized in fields
+            or not value.strip()
+        ):
+            fail("audit_selected_evidence_binding_invalid")
+        fields[normalized] = value.strip()
+    if fields.keys() != RECEIPT_KEYS:
+        fail("audit_selected_evidence_binding_invalid")
+    ref = fields.get("ref", "")
+    ref_match = re.fullmatch(
+        rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
+        ref,
+    )
+    if (
+        fields.get("provider", "").lower() != "openai"
+        or fields.get("verdict") != "AGREE"
+        or fields.get("sha256", "").lower() != digest
+        or ref_match is None
+    ):
+        fail("audit_selected_evidence_binding_invalid")
+    return int(ref_match.group(1)), ref
+
+
+def selected_evidence_snapshot(
+    repo: str,
+    issue: int,
+    comment_id: int,
+    ref: str,
+    digest: str,
+) -> dict:
+    payload = gh_json([
+        f"repos/{repo}/issues/comments/{comment_id}",
+        "--method",
+        "GET",
+    ])
+    expected_issue_url = f"https://api.github.com/repos/{repo}/issues/{issue}"
+    try:
+        body = payload["body"]
+        author = payload["user"]["login"].lower()
+    except (KeyError, TypeError, AttributeError):
+        fail("audit_selected_evidence_invalid")
+    owner = repo.split("/", 1)[0].lower()
+    if (
+        payload.get("id") != comment_id
+        or payload.get("url") != ref
+        or payload.get("issue_url") != expected_issue_url
+        or not isinstance(body, str)
+        or hashlib.sha256(body.encode("utf-8")).hexdigest() != digest
+        or author != owner
+        or payload.get("author_association") != "OWNER"
+        or not isinstance(payload.get("created_at"), str)
+        or not payload["created_at"]
+        or payload.get("updated_at") != payload["created_at"]
+    ):
+        fail("audit_selected_evidence_invalid")
+    return {
+        "id": payload["id"],
+        "url": payload["url"],
+        "issue_url": payload["issue_url"],
+        "body_sha256": digest,
+        "author": author,
+        "author_association": payload["author_association"],
+        "created_at": payload["created_at"],
+        "updated_at": payload["updated_at"],
+    }
 
 
 def creator_login(status: dict | None) -> str:
@@ -175,22 +288,17 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         protect_live_pr_generation(repo, current, expected_url)
         fail("github_pr_generation_mismatch")
 
-    pages = gh_json([
-        "--paginate",
-        "--slurp",
-        f"repos/{repo}/commits/{event_head}/statuses?per_page=100",
-        "--method",
-        "GET",
-    ])
-    statuses = flatten_status_pages(pages)
-    audit_statuses = [
-        status for status in statuses
-        if status.get("context") == AUDIT_CONTEXT
-        and isinstance(status.get("id"), int)
-    ]
-    latest_audit = max(audit_statuses, key=lambda status: status["id"], default=None)
     markers = MARKER_RE.findall(event_body)
     if not markers:
+        statuses = status_history(repo, event_head)
+        audit_statuses = [
+            status for status in statuses
+            if status.get("context") == AUDIT_CONTEXT
+            and isinstance(status.get("id"), int)
+        ]
+        latest_audit = max(
+            audit_statuses, key=lambda status: status["id"], default=None
+        )
         if latest_audit is not None and latest_audit.get("state") == "pending":
             fail("audit_generation_marker_missing")
         return {"ok": True, "action": "no-pending-generation"}
@@ -202,15 +310,43 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     if pending_status_id < 1 or ledger_status_id < 1:
         fail("audit_generation_marker_incomplete")
 
+    review_head = consultation_commit(event_body)
+    comment_id, evidence_ref = selected_evidence_binding(
+        event_body, digest, repo
+    )
+    evidence_before = selected_evidence_snapshot(
+        repo, issue, comment_id, evidence_ref, digest
+    )
+    source_statuses = status_history(repo, review_head)
+    current_statuses = (
+        source_statuses if review_head == event_head else status_history(repo, event_head)
+    )
+    source_audit_statuses = [
+        status for status in source_statuses
+        if status.get("context") == AUDIT_CONTEXT
+        and isinstance(status.get("id"), int)
+    ]
+    current_audit_statuses = [
+        status for status in current_statuses
+        if status.get("context") == AUDIT_CONTEXT
+        and isinstance(status.get("id"), int)
+    ]
+    latest_audit = max(
+        current_audit_statuses, key=lambda status: status["id"], default=None
+    )
+
     owner = repo.split("/", 1)[0].lower()
     owner_pending = next(
-        (status for status in audit_statuses if status.get("id") == pending_status_id),
+        (
+            status for status in source_audit_statuses
+            if status.get("id") == pending_status_id
+        ),
         None,
     )
     if not valid_owner_pending(owner_pending, pending_status_id, owner, expected_url):
         fail("audit_generation_owner_pending_invalid")
     ledger = next(
-        (status for status in statuses if status.get("id") == ledger_status_id),
+        (status for status in source_statuses if status.get("id") == ledger_status_id),
         None,
     )
     try:
@@ -225,20 +361,21 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     ):
         fail("audit_generation_ledger_invalid")
 
+    newer_source_owner_pending = [
+        status for status in source_audit_statuses
+        if status.get("id", 0) > pending_status_id
+        and creator_login(status) == owner
+        and status.get("state") == "pending"
+        and status.get("description") == PENDING_DESCRIPTION
+    ]
+    if newer_source_owner_pending:
+        next_generation = max(status["id"] for status in newer_source_owner_pending)
+        post_retry_pending(repo, event_head, expected_url, next_generation)
+        fail("audit_generation_superseded_before_success")
+
     success_description = f"Trusted Cross-AI audit passed generation={pending_status_id}"
     if latest_audit is not None and latest_audit.get("state") == "success":
         success_creator = creator_login(latest_audit)
-        newer_owner_pending = [
-            status for status in audit_statuses
-            if status.get("id", 0) > pending_status_id
-            and creator_login(status) == owner
-            and status.get("state") == "pending"
-            and status.get("description") == PENDING_DESCRIPTION
-        ]
-        if newer_owner_pending:
-            next_generation = max(status["id"] for status in newer_owner_pending)
-            post_retry_pending(repo, event_head, expected_url, next_generation)
-            fail("audit_generation_superseded_after_success")
         if (
             latest_audit.get("description") != success_description
             or latest_audit.get("target_url") != expected_url
@@ -252,10 +389,12 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
             "generation": pending_status_id,
             "status_id": latest_audit["id"],
         }
-    if not (
+    current_pending_valid = (
         valid_owner_pending(latest_audit, pending_status_id, owner, expected_url)
-        or valid_retry_pending(latest_audit, pending_status_id, expected_url)
-    ):
+        if review_head == event_head
+        else latest_audit is None
+    ) or valid_retry_pending(latest_audit, pending_status_id, expected_url)
+    if not current_pending_valid:
         fail("audit_generation_not_latest_pending")
 
     payload = json.dumps(
@@ -287,27 +426,33 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         fail("audit_success_status_invalid")
 
     current_after = gh_json([f"repos/{repo}/pulls/{issue}", "--method", "GET"])
-    pages_after = gh_json([
-        "--paginate",
-        "--slurp",
-        f"repos/{repo}/commits/{event_head}/statuses?per_page=100",
-        "--method",
-        "GET",
-    ])
-    statuses_after = flatten_status_pages(pages_after)
-    audit_after = [
-        status for status in statuses_after
+    source_statuses_after = status_history(repo, review_head)
+    current_statuses_after = (
+        source_statuses_after
+        if review_head == event_head
+        else status_history(repo, event_head)
+    )
+    source_audit_after = [
+        status for status in source_statuses_after
+        if status.get("context") == AUDIT_CONTEXT
+        and isinstance(status.get("id"), int)
+    ]
+    current_audit_after = [
+        status for status in current_statuses_after
         if status.get("context") == AUDIT_CONTEXT
         and isinstance(status.get("id"), int)
     ]
     newer_owner_pending = [
-        status for status in audit_after
+        status for status in source_audit_after
         if status["id"] > pending_status_id
         and status.get("state") == "pending"
         and status.get("description") == PENDING_DESCRIPTION
         and status.get("target_url") == expected_url
         and creator_login(status) == owner
     ]
+    latest_current_after = max(
+        current_audit_after, key=lambda status: status["id"], default=None
+    )
     try:
         current_after_head = current_after["head"]["sha"].lower()
         current_after_base = current_after["base"]["sha"].lower()
@@ -323,10 +468,22 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or current_after_base != event_base
         or current_after_body != event_body
         or newer_owner_pending
+        or latest_current_after is None
+        or latest_current_after.get("id") != created.get("id")
     )
     if superseded:
         protect_live_pr_generation(repo, current_after, expected_url)
         fail("audit_generation_superseded_after_success")
+    try:
+        evidence_after = selected_evidence_snapshot(
+            repo, issue, comment_id, evidence_ref, digest
+        )
+    except SystemExit:
+        protect_live_pr_generation(repo, current_after, expected_url)
+        fail("audit_selected_evidence_superseded_after_success")
+    if evidence_after != evidence_before:
+        protect_live_pr_generation(repo, current_after, expected_url)
+        fail("audit_selected_evidence_superseded_after_success")
     return {
         "ok": True,
         "action": "marked-current",

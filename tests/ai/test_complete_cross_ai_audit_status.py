@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -25,8 +26,13 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
     issue = 2638
     head = "a" * 40
     base = "d" * 40
-    digest = "b" * 64
+    evidence_body = '{"schema":"cross-ai-provider-evidence/v4"}'
+    digest = hashlib.sha256(evidence_body.encode("utf-8")).hexdigest()
+    comment_id = 99
     url = f"https://github.com/{repo}/pull/{issue}"
+    evidence_ref = (
+        f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}"
+    )
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -36,9 +42,21 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def body(self, pending_id: int = 10, ledger_id: int = 11) -> str:
+    def body(
+        self,
+        pending_id: int = 10,
+        ledger_id: int = 11,
+        review_head: str | None = None,
+    ) -> str:
         return (
-            "Consultation mode: single\n\n"
+            "Consultation mode: single\n"
+            f"Consultation commit: {review_head or self.head}\n"
+            "Codex receipt: provider=openai; requested=gpt-5.6-sol; "
+            "actual=not-provider-attested; "
+            f"base_tip={self.base}; base={'e' * 40}; "
+            f"head={review_head or self.head}; scope={'f' * 64}; "
+            "execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; "
+            f"verdict=AGREE; ref={self.evidence_ref}; sha256={self.digest}\n\n"
             f"<!-- cross-ai-audit-recheck:{pending_id}:{ledger_id}:{self.digest} -->\n"
         )
 
@@ -92,6 +110,19 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             "creator": {"login": "Halildeu"},
         }
 
+    def comment(self, body: str | None = None, updated_at: str | None = None) -> dict:
+        created_at = "2026-07-19T18:00:00Z"
+        return {
+            "id": self.comment_id,
+            "url": self.evidence_ref,
+            "issue_url": f"https://api.github.com/repos/{self.repo}/issues/{self.issue}",
+            "body": self.evidence_body if body is None else body,
+            "user": {"login": "Halildeu"},
+            "author_association": "OWNER",
+            "created_at": created_at,
+            "updated_at": created_at if updated_at is None else updated_at,
+        }
+
     def execute(self, responses: list[object]) -> tuple[dict, list[list[str]]]:
         calls: list[list[str]] = []
 
@@ -121,15 +152,17 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         }
         result, calls = self.execute([
             self.current_pr(body),
+            self.comment(),
             [[self.pending(), self.ledger()]],
             success,
             self.current_pr(body),
             [[self.pending(), self.ledger(), success]],
+            self.comment(),
         ])
         self.assertEqual(result["action"], "marked-current")
         self.assertEqual(result["generation"], 10)
-        self.assertEqual(len(calls), 5)
-        self.assertIn(f"statuses/{self.head}", calls[2][2])
+        self.assertEqual(len(calls), 7)
+        self.assertIn(f"statuses/{self.head}", calls[3][2])
 
     def test_stale_event_body_or_force_push_cannot_clear_pending(self) -> None:
         event_body = self.write_event()
@@ -240,6 +273,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                             subprocess.CompletedProcess(
                                 ["gh"],
                                 0,
+                                stdout=json.dumps(self.comment()),
+                                stderr="",
+                            ),
+                            subprocess.CompletedProcess(
+                                ["gh"],
+                                0,
                                 stdout=json.dumps([[
                                     self.pending(),
                                     self.ledger(identifier=ledger_id),
@@ -264,10 +303,136 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         }
         result, calls = self.execute([
             self.current_pr(body),
+            self.comment(),
             [[self.pending(), self.ledger(), current_success]],
         ])
         self.assertEqual(result["action"], "already-current")
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
+
+    def test_selected_evidence_edit_before_completion_cannot_clear_pending(self) -> None:
+        body = self.write_event()
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[
+                    subprocess.CompletedProcess(
+                        ["gh"], 0, stdout=json.dumps(self.current_pr(body)), stderr=""
+                    ),
+                    subprocess.CompletedProcess(
+                        ["gh"],
+                        0,
+                        stdout=json.dumps(
+                            self.comment(
+                                body=self.evidence_body + "edited",
+                                updated_at="2026-07-19T18:01:00Z",
+                            )
+                        ),
+                        stderr="",
+                    ),
+                ],
+            ),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_noncanonical_selected_receipt_cannot_clear_pending(self) -> None:
+        body = self.write_event(
+            self.body().replace(
+                f"; sha256={self.digest}",
+                f"; sha256={self.digest}; extra=forbidden",
+            )
+        )
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    ["gh"], 0, stdout=json.dumps(self.current_pr(body)), stderr=""
+                ),
+            ),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_selected_evidence_deleted_after_success_restores_pending(self) -> None:
+        body = self.write_event()
+        success = {
+            "id": 12,
+            "state": "success",
+            "context": "cross-ai-audit",
+            "description": "Trusted Cross-AI audit passed generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        retry = {
+            "id": 13,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        responses: list[tuple[int, object]] = [
+            (0, self.current_pr(body)),
+            (0, self.comment()),
+            (0, [[self.pending(), self.ledger()]]),
+            (0, success),
+            (0, self.current_pr(body)),
+            (0, [[self.pending(), self.ledger(), success]]),
+            (1, {}),
+            (0, retry),
+        ]
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            returncode, response = responses.pop(0)
+            return subprocess.CompletedProcess(
+                command, returncode, stdout=json.dumps(response), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+        self.assertEqual(len(calls), 8)
+        self.assertIn(f"statuses/{self.head}", calls[-1][2])
+
+    def test_scope_equivalent_new_head_uses_review_head_generation(self) -> None:
+        review_head = "c" * 40
+        body = self.write_event(self.body(review_head=review_head))
+        success = {
+            "id": 12,
+            "state": "success",
+            "context": "cross-ai-audit",
+            "description": "Trusted Cross-AI audit passed generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        result, calls = self.execute([
+            self.current_pr(body),
+            self.comment(),
+            [[self.pending(), self.ledger()]],
+            [[]],
+            success,
+            self.current_pr(body),
+            [[self.pending(), self.ledger()]],
+            [[success]],
+            self.comment(),
+        ])
+        self.assertEqual(result["action"], "marked-current")
+        self.assertTrue(
+            any(f"commits/{review_head}/statuses" in token for token in calls[2])
+        )
+        self.assertTrue(
+            any(f"commits/{self.head}/statuses" in token for token in calls[3])
+        )
+        self.assertIn(f"statuses/{self.head}", calls[4][2])
 
     def test_new_owner_generation_after_validation_restores_pending(self) -> None:
         old_body = self.write_event()
@@ -290,6 +455,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         }
         responses = [
             self.current_pr(old_body),
+            self.comment(),
             [[self.pending(), self.ledger()]],
             success,
             self.current_pr(new_body),
@@ -316,7 +482,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
-        self.assertEqual(len(calls), 6)
+        self.assertEqual(len(calls), 7)
         self.assertIn(f"statuses/{self.head}", calls[-1][2])
 
     def test_force_push_after_success_marks_live_head_pending(self) -> None:
@@ -340,6 +506,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         }
         responses = [
             self.current_pr(body),
+            self.comment(),
             [[self.pending(), self.ledger()]],
             success,
             self.current_pr(body, head=live_head),
@@ -360,7 +527,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
-        self.assertEqual(len(calls), 6)
+        self.assertEqual(len(calls), 7)
         self.assertIn(f"statuses/{live_head}", calls[-1][2])
 
     def test_trusted_retry_pending_can_resume_exact_owner_generation(self) -> None:
@@ -383,10 +550,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         }
         result, _calls = self.execute([
             self.current_pr(body),
+            self.comment(),
             [[self.pending(), self.ledger(), retry]],
             success,
             self.current_pr(body),
             [[self.pending(), self.ledger(), retry, success]],
+            self.comment(),
         ])
         self.assertEqual(result["action"], "marked-current")
 
@@ -410,6 +579,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         }
         responses = [
             self.current_pr(body),
+            self.comment(),
             [[
                 self.pending(),
                 self.ledger(),
@@ -453,6 +623,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                             subprocess.CompletedProcess(
                                 ["gh"],
                                 0,
+                                stdout=json.dumps(self.comment()),
+                                stderr="",
+                            ),
+                            subprocess.CompletedProcess(
+                                ["gh"],
+                                0,
                                 stdout=json.dumps([[pending, self.ledger()]]),
                                 stderr="",
                             ),
@@ -482,6 +658,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                         ["gh"],
                         0,
                         stdout=json.dumps(self.current_pr(body)),
+                        stderr="",
+                    ),
+                    subprocess.CompletedProcess(
+                        ["gh"],
+                        0,
+                        stdout=json.dumps(self.comment()),
                         stderr="",
                     ),
                     subprocess.CompletedProcess(

@@ -424,6 +424,13 @@ const unresolvedCodexReviseEvidence = {
   ...EVIDENCE,
   [UNREFERENCED_CODEX_REVISE_REF]: evidenceComment(codexReviseBody, 3_000),
 };
+const PRE_ACTIVATION_V4_REVISE_REF = evidenceRef(1020);
+const preActivationV4ReviseEvidence = {
+  [PRE_ACTIVATION_V4_REVISE_REF]: evidenceCommentAt(
+    codexReviseBody,
+    Date.parse('2026-07-19T17:20:00Z'),
+  ),
+};
 const ERASED_OWNER_HISTORY_REF = evidenceRef(1007);
 const erasedOwnerHistoryComment = evidenceComment(
   'Routine status note with no remaining evidence fields.',
@@ -1263,6 +1270,10 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: PRE_ACTIVATION_CODEX_V3_EVIDENCE }, 0],
+  ['none mode keeps ledgerless OpenAI v4 before verified source activation as read-only history',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: preActivationV4ReviseEvidence, evidenceLedger: [] }, 0],
   ['none mode rejects OpenAI v3 created after verified source activation',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -1301,11 +1312,10 @@ const cases = [
           ref: `https://api.github.com/repos/${REPO}/statuses/7000`,
         },
       ] }, 0],
-  ['none mode cannot hide a REVISE older than the selected receipt freshness window',
+  ['none mode keeps an aged ledgerless REVISE predating source activation as read-only history',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
-      evidence: agedUnresolvedReviseEvidence,
-      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+      evidence: agedUnresolvedReviseEvidence }, 0],
   ['a REVISE on another PR does not contaminate this PR history',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],

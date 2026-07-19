@@ -567,7 +567,12 @@ marker'la trusted-base `pull_request_target: edited` audit'ini yeniden tetikler.
 Trusted completion helper event body/head ile canlı açık PR body/head'ini,
 marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
 exact digest/PR/owner ledger'ını yeniden doğrulamadan ve ledger ID pending
-ID'den kesin büyük olmadan success yazamaz. Success
+ID'den kesin büyük olmadan success yazamaz. Seçili Codex receipt ref'indeki
+owner comment'i success öncesi ve sonrasında yeniden okuyup exact body digest,
+OWNER association ve `created_at == updated_at` immutability koşulunu korur.
+Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
+`Consultation commit` SHA'sında doğrular, ancak success'i güncel PR head SHA'sına
+yazar; böylece metadata-only yeni head de required status kazanır. Success
 sonrasında daha yeni owner generation/body/head görülürse trusted workflow retry
 pending'ini yeniden okunan canlı PR head SHA'sına kurar; yeni generation bu
 fail-closed kaydı tüketebilir. Audit
