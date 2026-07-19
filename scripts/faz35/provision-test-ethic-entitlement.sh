@@ -9,6 +9,8 @@ umask 077
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/faz35/lib-vault-accessor-inventory.sh
 source "$SCRIPT_DIR/lib-vault-accessor-inventory.sh"
+# shellcheck source=scripts/faz35/lib-authz-projection.sh
+source "$SCRIPT_DIR/lib-authz-projection.sh"
 
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
@@ -149,22 +151,26 @@ write_bearer_config "$TMP_DIR/denied-auth.curl" "$denied_token"
 unset target_token wrong_org_token denied_token
 
 # These reads materialize the local-Keycloak identities through the existing
-# test-only user-service bridge. Before the canonical permission writer runs,
-# every persona must be least-privilege and lack ETHIC.
+# test-only user-service bridge. Negative personas must always lack ETHIC. The
+# target may either lack ETHIC on the first run or carry the exact MANAGE
+# projection from a previously completed run; its dedicated role linkage is
+# verified below before any mutation.
 for label in target wrong-org denied; do
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-before.json" \
     --config "$TMP_DIR/$label-auth.curl")
   [ "$code" = 200 ] || { echo "FATAL: $label authz identity bootstrap failed" >&2; exit 1; }
-  jq -e '
-    (.userId | tostring | test("^[0-9]+$")) and
-    (((.modules // {}) | has("ETHIC")) | not) and
-    (((.allowedModules // []) | index("ETHIC")) == null)
-  ' "$TMP_DIR/$label-authz-before.json" >/dev/null || {
-    echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
+  projection_state=$(faz35_authz_projection_state "$TMP_DIR/$label-authz-before.json") || {
+    echo "FATAL: $label has a non-canonical ETHIC authorization projection" >&2
     exit 1
   }
+  if [ "$label" != target ] && [ "$projection_state" != ABSENT ]; then
+    echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
+    exit 1
+  fi
+  [ "$label" != target ] || target_projection_before=$projection_state
 done
 target_user_id=$(jq -r '.userId' "$TMP_DIR/target-authz-before.json")
+unset projection_state
 
 writer_code=$(http_status POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
   "$TMP_DIR/writer-token.json" \
@@ -191,6 +197,7 @@ role_count=$(jq --arg name "$PERMISSION_ROLE_NAME" '[.items[]? | select(.name ==
   exit 1
 }
 role_id=$(jq -r --arg name "$PERMISSION_ROLE_NAME" '[.items[]? | select(.name == $name)][0].id // empty' "$TMP_DIR/roles.json")
+member_present=false
 
 if [ -n "$role_id" ]; then
   code=$(http_status GET "$BASE_URL/api/v1/roles/$role_id/granules" "$TMP_DIR/granules-before.json" \
@@ -207,11 +214,26 @@ if [ -n "$role_id" ]; then
     --config "$TMP_DIR/writer-auth.curl")
   [ "$code" = 200 ] || { echo "FATAL: dedicated permission membership preflight failed" >&2; exit 1; }
   jq -e --argjson target "$target_user_id" \
-    'all(.[]?; .userId == $target)' "$TMP_DIR/members-before.json" >/dev/null || {
+    'length <= 1 and all(.[]?; .userId == $target)' "$TMP_DIR/members-before.json" >/dev/null || {
     echo "FATAL: dedicated permission role contains an unrelated member" >&2
     exit 1
   }
+  [ "$(jq 'length' "$TMP_DIR/members-before.json")" = 0 ] || member_present=true
+
+  if [ "$target_projection_before" = EXACT_MANAGE ]; then
+    if ! jq -e '.granules == [{type:"MODULE",key:"ETHIC",grant:"MANAGE"}]' \
+        "$TMP_DIR/granules-before.json" >/dev/null ||
+        ! jq -e --argjson target "$target_user_id" \
+          'length == 1 and .[0].userId == $target' "$TMP_DIR/members-before.json" >/dev/null; then
+      echo "FATAL: existing target ETHIC projection is not linked to the exact dedicated role" >&2
+      exit 1
+    fi
+  fi
 else
+  [ "$target_projection_before" = ABSENT ] || {
+    echo "FATAL: target has ETHIC but the dedicated permission role is missing" >&2
+    exit 1
+  }
   jq -n --arg name "$PERMISSION_ROLE_NAME" \
     '{name:$name,description:"Etik Speak dedicated synthetic test manager"}' >"$TMP_DIR/create-role.json"
   code=$(http_status POST "$BASE_URL/api/v1/roles" "$TMP_DIR/create-role-response.json" \
@@ -228,11 +250,13 @@ code=$(http_status PUT "$BASE_URL/api/v1/roles/$role_id/granules" "$TMP_DIR/muta
   --data-binary "@$TMP_DIR/granules.json")
 [ "$code" = 200 ] || { echo "FATAL: ETHIC granule writer failed" >&2; exit 1; }
 
-jq -n --argjson target "$target_user_id" '{userIds:[$target]}' >"$TMP_DIR/member.json"
-code=$(http_status POST "$BASE_URL/api/v1/roles/$role_id/members" "$TMP_DIR/mutation.json" \
-  --config "$TMP_DIR/writer-auth.curl" -H 'Content-Type: application/json' \
-  --data-binary "@$TMP_DIR/member.json")
-[ "$code" = 200 ] || { echo "FATAL: ETHIC membership writer failed" >&2; exit 1; }
+if [ "$member_present" = false ]; then
+  jq -n --argjson target "$target_user_id" '{userIds:[$target]}' >"$TMP_DIR/member.json"
+  code=$(http_status POST "$BASE_URL/api/v1/roles/$role_id/members" "$TMP_DIR/mutation.json" \
+    --config "$TMP_DIR/writer-auth.curl" -H 'Content-Type: application/json' \
+    --data-binary "@$TMP_DIR/member.json")
+  [ "$code" = 200 ] || { echo "FATAL: ETHIC membership writer failed" >&2; exit 1; }
+fi
 
 code=$(http_status GET "$BASE_URL/api/v1/roles/$role_id/granules" "$TMP_DIR/granules-after.json" \
   --config "$TMP_DIR/writer-auth.curl")
@@ -256,10 +280,8 @@ entitlement_ready=false
 for _ in $(seq 1 30); do
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/target-authz-after.json" \
     --config "$TMP_DIR/target-auth.curl")
-  if [ "$code" = 200 ] && jq -e '
-      ((.modules.ETHIC // "") == "MANAGE") or
-      ((.allowedModules // []) | index("ETHIC") != null)
-    ' "$TMP_DIR/target-authz-after.json" >/dev/null; then
+  if [ "$code" = 200 ] &&
+      [ "$(faz35_authz_projection_state "$TMP_DIR/target-authz-after.json" 2>/dev/null || true)" = EXACT_MANAGE ]; then
     entitlement_ready=true
     break
   fi
@@ -281,7 +303,7 @@ for label in wrong-org denied; do
   fi
 done
 
-unset target_user_id
+unset target_user_id target_projection_before member_present
 echo "Permission: canonical role/granule/member writer granted only the synthetic manager ETHIC=MANAGE"
 echo "Permission: target positive and wrong-org/denied negative /authz/me postconditions OK"
 echo "ETHICS_PERMISSION_ROLE_ID=$role_id"

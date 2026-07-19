@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import tempfile
@@ -29,6 +30,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.entitlement = (
             ROOT / "scripts/faz35/provision-test-ethic-entitlement.sh"
         ).read_text()
+        cls.authz_projection_lib_path = (
+            ROOT / "scripts/faz35/lib-authz-projection.sh"
+        )
+        cls.authz_projection_lib = cls.authz_projection_lib_path.read_text()
         cls.preflight = (
             ROOT / "scripts/faz35/preflight-test-activation.sh"
         ).read_text()
@@ -135,6 +140,58 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("dedicated permission role contains an unrelated member", self.entitlement)
         self.assertIn("permission-writer Vault response is not one exact JSON document", self.entitlement)
         self.assertNotIn("kubectl exec", self.entitlement)
+
+    def test_ethic_entitlement_rerun_accepts_only_its_exact_prior_state(self):
+        states = {
+            "first-run.json": ({"userId": 41, "modules": {}, "allowedModules": []}, "ABSENT"),
+            "rerun.json": (
+                {"userId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": ["ETHIC"]},
+                "EXACT_MANAGE",
+            ),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for filename, (payload, expected) in states.items():
+                path = Path(tmp) / filename
+                path.write_text(json.dumps(payload))
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; faz35_authz_projection_state "$2"',
+                        "bash",
+                        str(self.authz_projection_lib_path),
+                        str(path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.stdout.strip(), expected)
+
+            for filename, payload in {
+                "partial.json": {"userId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": []},
+                "broader.json": {"userId": 41, "modules": {"ETHIC": "ADMIN"}, "allowedModules": ["ETHIC"]},
+            }.items():
+                path = Path(tmp) / filename
+                path.write_text(json.dumps(payload))
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; faz35_authz_projection_state "$2"',
+                        "bash",
+                        str(self.authz_projection_lib_path),
+                        str(path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+
+        self.assertIn('target_projection_before=$projection_state', self.entitlement)
+        self.assertIn('[ "$target_projection_before" = EXACT_MANAGE ]', self.entitlement)
+        self.assertIn("existing target ETHIC projection is not linked to the exact dedicated role", self.entitlement)
+        self.assertIn('if [ "$member_present" = false ]; then', self.entitlement)
 
     def test_persona_secret_file_and_subject_are_bounded(self):
         self.assertIn("umask 077", self.keycloak)
