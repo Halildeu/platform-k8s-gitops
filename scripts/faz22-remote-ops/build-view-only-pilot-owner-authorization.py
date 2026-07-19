@@ -16,6 +16,7 @@ from view_only_pilot_authorization_common import (
     canonical_bytes,
     canonical_receipt_bytes,
     digest_bytes,
+    validate_codex_advisory_comment_timing,
     validate_codex_advisory_evidence,
 )
 
@@ -32,6 +33,9 @@ LEGAL_ISSUE_REF = "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
 EXPECTED_ADVISORY_PROVIDERS = [
     "OpenAI/gpt-5.6-sol",
 ]
+ADVISORY_BINDING_POLICY_KEYS = {
+    "baseTipSha", "baseSha", "headSha", "scopeSha256",
+}
 
 
 class AuthorizationError(Exception):
@@ -154,7 +158,7 @@ def build_authorization(
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "active":
         raise AuthorizationError("owner policy is not active Codex-only v2")
-    require_keys(policy["aiAdvisory"], {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation", "advisoryOnly", "consensusVerdict", "providers", "provenanceClass", "providerCryptographicAttestation"}, "policy.aiAdvisory")
+    require_keys(policy["aiAdvisory"], {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation", "advisoryOnly", "consensusVerdict", "providers", "provenanceClass", "providerCryptographicAttestation", "evidenceBinding", "maxAgeHours"}, "policy.aiAdvisory")
     if policy["aiAdvisory"]["advisoryOnly"] is not True or policy["aiAdvisory"]["consensusVerdict"] != "AGREE":
         raise AuthorizationError("Codex-only AI advisory is not AGREE/advisory-only")
     providers = policy["aiAdvisory"]["providers"]
@@ -165,10 +169,25 @@ def build_authorization(
         or policy["aiAdvisory"]["providerCryptographicAttestation"] is not False
     ):
         raise AuthorizationError("AI advisory provenance boundary is not explicit")
+    advisory_binding = policy["aiAdvisory"]["evidenceBinding"]
+    if not isinstance(advisory_binding, dict):
+        raise AuthorizationError("Codex advisory expected binding is missing")
+    require_keys(
+        advisory_binding, ADVISORY_BINDING_POLICY_KEYS,
+        "policy.aiAdvisory.evidenceBinding",
+    )
+    expected_advisory_bindings = {
+        "base_tip_sha": advisory_binding["baseTipSha"],
+        "base_sha": advisory_binding["baseSha"],
+        "head_sha": advisory_binding["headSha"],
+        "scope_sha256": advisory_binding["scopeSha256"],
+    }
     verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective")
     advisory_body = verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory")
     try:
-        validate_codex_advisory_evidence(advisory_body)
+        validate_codex_advisory_evidence(
+            advisory_body, expected_advisory_bindings,
+        )
     except CodexEvidenceError as exc:
         raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
 
@@ -211,6 +230,12 @@ def build_authorization(
         raise AuthorizationError("authorization is outside owner-policy lifecycle")
     if (expires - issued).total_seconds() > auth_policy["maxTtlMinutes"] * 60:
         raise AuthorizationError("authorization exceeds the absolute TTL limit")
+    try:
+        validate_codex_advisory_comment_timing(
+            advisory_comment, issued, policy["aiAdvisory"]["maxAgeHours"],
+        )
+    except CodexEvidenceError as exc:
+        raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
     if run_id < 1 or not GIT_SHA.fullmatch(head_sha):
         raise AuthorizationError("authorization run identity is invalid")
     require_sha256(operator_sha256, "operatorSha256")

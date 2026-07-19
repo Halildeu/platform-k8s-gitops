@@ -33,6 +33,7 @@ if str(REMOTE_OPS_DIR) not in sys.path:
 
 from view_only_pilot_authorization_common import (
     CodexEvidenceError,
+    validate_codex_advisory_comment_timing,
     validate_codex_advisory_evidence,
 )
 
@@ -40,13 +41,18 @@ from view_only_pilot_authorization_common import (
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 CHILD_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
-OWNER_POLICY = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
+OWNER_POLICY_V2 = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
+OWNER_POLICY_V1 = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
 REVOCATION_LEDGER = ROOT / "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
 EVIDENCE_SCHEMA = "faz22.6.viewOnlyViewerProductEvidence.v2"
 VERIFIER_SCHEMA = "faz22.6.viewOnlyViewerProductEvidenceVerifier.v2"
 MARKER = "F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2"
 AUTHORIZATION_SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
+OWNER_POLICY_SCHEMA_V2 = "faz22.6-view-only-pilot-owner-policy-v2"
+OWNER_POLICY_SCHEMA_V1 = "faz22.6-view-only-pilot-owner-policy-v1"
+LEGACY_POLICY_CANONICAL_SHA256 = "sha256:6da9283282902ba9bd35df2b730e05eeff5254734b83fb994f7e7c3908fef265"
+LEGACY_V1_ISSUANCE_CUTOFF = datetime(2026, 7, 19, 0, 0, tzinfo=timezone.utc)
 EXPECTED_REPOSITORY = "Halildeu/platform-k8s-gitops"
 EXPECTED_WORKFLOW_PATH = ".github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 EXPECTED_WORKFLOW_NAME = "Faz 22.6 VIEW_ONLY viewer product evidence"
@@ -1026,9 +1032,30 @@ def verify_sha256sums(files: dict[str, bytes], expected_names: set[str]) -> None
             raise EvidenceError(f"activation receipt digest mismatch: {name}")
 
 
+def load_bound_owner_policy(
+    expected_digest: str, *, allow_legacy_v1: bool = False,
+) -> tuple[dict[str, Any], bool]:
+    """Select exactly one content-addressed v2 or immutable legacy-v1 policy."""
+
+    matches: list[tuple[dict[str, Any], bool]] = []
+    for path, legacy_v1 in ((OWNER_POLICY_V2, False), (OWNER_POLICY_V1, True)):
+        policy = load_json_bytes(path.read_bytes(), f"canonical owner policy {path.name}")
+        if digest_json(policy) == expected_digest:
+            matches.append((policy, legacy_v1))
+    if len(matches) != 1:
+        raise EvidenceError("authorization owner policy digest is not a unique canonical contract")
+    policy, legacy_v1 = matches[0]
+    if legacy_v1 and not allow_legacy_v1:
+        raise EvidenceError("legacy v1 policy is forbidden for current product activation")
+    if legacy_v1 and digest_json(policy) != LEGACY_POLICY_CANONICAL_SHA256:
+        raise EvidenceError("legacy v1 owner policy is not the immutable forensic contract")
+    return policy, legacy_v1
+
+
 def verify_activation_authorization(
     client: ApiClient, operator: dict[str, Any], expected_head_sha: str,
     binding: dict[str, str], pilot_started: datetime, pilot_ended: datetime,
+    *, allow_legacy_v1: bool = False,
 ) -> datetime:
     run_id = operator["activationRunId"]
     run = fetch_run(
@@ -1113,6 +1140,13 @@ def verify_activation_authorization(
         "minimum accepted authorization schema",
     )
     require_equal(authorization["environment"], "faz22-view-only-pilot", "protected environment")
+    policy, legacy_v1 = load_bound_owner_policy(
+        authorization["ownerPolicySha256"], allow_legacy_v1=allow_legacy_v1,
+    )
+    expected_advisory_provenance = (
+        "owner-attested-provider-session"
+        if legacy_v1 else "owner-attested-direct-codex-evidence-v2"
+    )
     if not (
         authorization["onePersonRoster"] is True
         and authorization["consentingPilotDevice"] is True
@@ -1121,7 +1155,7 @@ def verify_activation_authorization(
         and isinstance(authorization["protectedEnvironmentReviewerCount"], int)
         and authorization["protectedEnvironmentReviewerCount"] >= 1
         and authorization["aiAdvisoryOnly"] is True
-        and authorization["aiAdvisoryProvenanceClass"] == "owner-attested-direct-codex-evidence-v2"
+        and authorization["aiAdvisoryProvenanceClass"] == expected_advisory_provenance
         and authorization["aiProviderCryptographicAttestation"] is False
         and authorization["legalTrackStatus"] == "tracked_pending"
         and authorization["legalClearanceClaimed"] is False
@@ -1145,7 +1179,6 @@ def verify_activation_authorization(
     ):
         require_equal(authorization[field], operator[field], f"authorization operator {field}")
 
-    policy = load_json_bytes(OWNER_POLICY.read_bytes(), "canonical owner policy")
     revocations = load_json_bytes(REVOCATION_LEDGER.read_bytes(), "authorization revocation ledger")
     if set(policy) != {
         "schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking",
@@ -1153,7 +1186,8 @@ def verify_activation_authorization(
     }:
         raise EvidenceError("canonical owner policy field set mismatch")
     require_equal(
-        policy["schemaVersion"], "faz22.6-view-only-pilot-owner-policy-v2",
+        policy["schemaVersion"],
+        OWNER_POLICY_SCHEMA_V1 if legacy_v1 else OWNER_POLICY_SCHEMA_V2,
         "canonical owner policy schema",
     )
     require_equal(policy["status"], "active", "canonical owner policy status")
@@ -1189,8 +1223,11 @@ def verify_activation_authorization(
     require_equal(advisory_contract.get("consensusVerdict"), "AGREE", "AI advisory policy consensus")
     require_equal(
         advisory_contract.get("providers"),
-        ["OpenAI/gpt-5.6-sol"],
-        "AI advisory Codex-only provider",
+        (
+            ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"]
+            if legacy_v1 else ["OpenAI/gpt-5.6-sol"]
+        ),
+        "AI advisory provider contract",
     )
 
     legal_contract = policy.get("legalTracking")
@@ -1210,24 +1247,66 @@ def verify_activation_authorization(
         "revocation ledger ref",
     )
 
-    for label, contract in (("owner directive", owner_contract), ("AI advisory", advisory_contract)):
-        comment_id = contract.get("commentId")
-        if not isinstance(comment_id, int) or comment_id < 1:
-            raise EvidenceError(f"{label} comment ID is invalid")
-        comment = client.get_json(f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}")
-        require_equal(comment.get("html_url"), contract.get("ref"), f"{label} URL")
-        require_equal(comment.get("author_association"), "OWNER", f"{label} author association")
-        user = comment.get("user")
-        require_equal(user.get("login") if isinstance(user, dict) else None, "Halildeu", f"{label} author")
-        body = comment.get("body")
-        if not isinstance(body, str):
-            raise EvidenceError(f"{label} body is missing")
-        require_equal(digest_bytes(body.encode()), contract.get("bodySha256"), f"{label} body digest")
-        if label == "AI advisory":
-            try:
-                validate_codex_advisory_evidence(body)
-            except CodexEvidenceError as exc:
-                raise EvidenceError(f"AI advisory is not strict Codex-only evidence: {exc}") from exc
+    if not legacy_v1:
+        expected_advisory_fields = {
+            "commentId", "ref", "bodySha256", "authorLogin", "authorAssociation",
+            "advisoryOnly", "consensusVerdict", "providers", "provenanceClass",
+            "providerCryptographicAttestation", "evidenceBinding", "maxAgeHours",
+        }
+        if set(advisory_contract) != expected_advisory_fields:
+            raise EvidenceError("Codex advisory policy field set mismatch")
+        evidence_binding = advisory_contract.get("evidenceBinding")
+        if not isinstance(evidence_binding, dict) or set(evidence_binding) != {
+            "baseTipSha", "baseSha", "headSha", "scopeSha256",
+        }:
+            raise EvidenceError("Codex advisory expected binding field set mismatch")
+        expected_bindings = {
+            "base_tip_sha": evidence_binding["baseTipSha"],
+            "base_sha": evidence_binding["baseSha"],
+            "head_sha": evidence_binding["headSha"],
+            "scope_sha256": evidence_binding["scopeSha256"],
+        }
+        for label, contract in (
+            ("owner directive", owner_contract), ("AI advisory", advisory_contract),
+        ):
+            comment_id = contract.get("commentId")
+            if not isinstance(comment_id, int) or comment_id < 1:
+                raise EvidenceError(f"{label} comment ID is invalid")
+            comment = client.get_json(
+                f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
+            )
+            require_equal(comment.get("html_url"), contract.get("ref"), f"{label} URL")
+            require_equal(
+                comment.get("issue_url"),
+                f"https://api.github.com/repos/{EXPECTED_REPOSITORY}/issues/2373",
+                f"{label} issue binding",
+            )
+            require_equal(
+                comment.get("author_association"), contract.get("authorAssociation"),
+                f"{label} author association",
+            )
+            user = comment.get("user")
+            require_equal(
+                user.get("login") if isinstance(user, dict) else None,
+                contract.get("authorLogin"), f"{label} author",
+            )
+            body = comment.get("body")
+            if not isinstance(body, str):
+                raise EvidenceError(f"{label} body is missing")
+            require_equal(
+                digest_bytes(body.encode()), contract.get("bodySha256"),
+                f"{label} body digest",
+            )
+            if label == "AI advisory":
+                try:
+                    validate_codex_advisory_comment_timing(
+                        comment, pilot_started, advisory_contract.get("maxAgeHours"),
+                    )
+                    validate_codex_advisory_evidence(body, expected_bindings)
+                except CodexEvidenceError as exc:
+                    raise EvidenceError(
+                        f"AI advisory is not strict Codex-only evidence: {exc}",
+                    ) from exc
 
     require_equal(
         authorization["legalTrackingIssueRef"],
@@ -1254,6 +1333,10 @@ def verify_activation_authorization(
     )
 
     issued_at = parse_utc(authorization["issuedAt"], "protected authorization issuedAt")
+    if legacy_v1 and issued_at >= LEGACY_V1_ISSUANCE_CUTOFF:
+        raise EvidenceError(
+            "legacy v1 authorization was issued at or after the migration cutoff",
+        )
     run_created = parse_utc(run["created_at"], "activation created_at")
     if issued_at < run_created - RUN_CLOCK_SKEW or issued_at > activation_updated + RUN_CLOCK_SKEW:
         raise EvidenceError("protected authorization issuance is outside the activation run window")

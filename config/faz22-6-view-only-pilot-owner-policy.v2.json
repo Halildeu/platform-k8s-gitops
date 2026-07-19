@@ -6,6 +6,13 @@
     "bodySha256": null,
     "commentId": null,
     "consensusVerdict": "PENDING",
+    "evidenceBinding": {
+      "baseSha": null,
+      "baseTipSha": null,
+      "headSha": null,
+      "scopeSha256": null
+    },
+    "maxAgeHours": 168,
     "provenanceClass": "owner-attested-direct-codex-evidence-v2",
     "providerCryptographicAttestation": false,
     "providers": [

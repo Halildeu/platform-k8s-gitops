@@ -15,7 +15,10 @@ from view_only_pilot_authorization_common import canonical_bytes, digest_bytes
 
 
 SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
-POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v2"
+POLICY_SCHEMA_V2 = "faz22.6-view-only-pilot-owner-policy-v2"
+LEGACY_POLICY_SCHEMA_V1 = "faz22.6-view-only-pilot-owner-policy-v1"
+LEGACY_POLICY_CANONICAL_SHA256 = "sha256:6da9283282902ba9bd35df2b730e05eeff5254734b83fb994f7e7c3908fef265"
+LEGACY_V1_ISSUANCE_CUTOFF = datetime(2026, 7, 19, 0, 0, tzinfo=timezone.utc)
 REVOCATION_SCHEMA = "faz22.6-view-only-pilot-authorization-revocations-v1"
 SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
 GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
@@ -63,7 +66,7 @@ def parse_utc(value: Any, label: str) -> datetime:
 def verify(
     receipt: dict[str, Any], receipt_raw: bytes, policy: dict[str, Any],
     revocations: dict[str, Any], expected_run_id: int, expected_head_sha: str,
-    now: datetime,
+    now: datetime, allow_legacy_v1: bool = False,
 ) -> None:
     if set(receipt) != EXPECTED_FIELDS:
         raise ReceiptError("authorization receipt field set mismatch")
@@ -81,6 +84,14 @@ def verify(
             raise ReceiptError(f"authorization {field} is invalid")
     if receipt["operatorSha256"] == receipt["deviceSha256"]:
         raise ReceiptError("authorization operator/device bindings are not distinct")
+    policy_schema = policy.get("schemaVersion")
+    legacy_v1 = policy_schema == LEGACY_POLICY_SCHEMA_V1
+    if legacy_v1 and not allow_legacy_v1:
+        raise ReceiptError("legacy v1 policy is forbidden for this verification mode")
+    expected_provenance = (
+        "owner-attested-provider-session"
+        if legacy_v1 else "owner-attested-direct-codex-evidence-v2"
+    )
     if not (
         receipt["environment"] == "faz22-view-only-pilot"
         and receipt["onePersonRoster"] is True
@@ -90,7 +101,7 @@ def verify(
         and isinstance(receipt["protectedEnvironmentReviewerCount"], int)
         and receipt["protectedEnvironmentReviewerCount"] >= 1
         and receipt["aiAdvisoryOnly"] is True
-        and receipt["aiAdvisoryProvenanceClass"] == "owner-attested-direct-codex-evidence-v2"
+        and receipt["aiAdvisoryProvenanceClass"] == expected_provenance
         and receipt["aiProviderCryptographicAttestation"] is False
         and receipt["aiConsensusVerdict"] == "AGREE"
         and receipt["legalTrackingIssueRef"] == "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
@@ -107,17 +118,39 @@ def verify(
     ):
         raise ReceiptError("authorization bounded privacy controls are invalid")
     advisory = policy.get("aiAdvisory")
-    if (
-        policy.get("schemaVersion") != POLICY_SCHEMA
-        or policy.get("status") != "active"
-        or not isinstance(advisory, dict)
+    if not isinstance(advisory, dict) or policy.get("status") != "active":
+        raise ReceiptError("canonical owner policy is not active")
+    if legacy_v1:
+        if (
+            digest_bytes(canonical_bytes(policy)) != LEGACY_POLICY_CANONICAL_SHA256
+            or advisory.get("providers")
+            != ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"]
+            or advisory.get("consensusVerdict") != "AGREE"
+            or advisory.get("provenanceClass") != "owner-attested-provider-session"
+        ):
+            raise ReceiptError("legacy v1 policy is not the immutable forensic contract")
+    elif (
+        policy_schema != POLICY_SCHEMA_V2
         or advisory.get("providers") != ["OpenAI/gpt-5.6-sol"]
         or advisory.get("consensusVerdict") != "AGREE"
         or advisory.get("provenanceClass") != "owner-attested-direct-codex-evidence-v2"
     ):
         raise ReceiptError("canonical owner policy is not active Codex-only v2")
-    if receipt["ownerPolicySha256"] != digest_bytes(canonical_bytes(policy)):
+    policy_digest = digest_bytes(canonical_bytes(policy))
+    if receipt["ownerPolicySha256"] != policy_digest:
         raise ReceiptError("canonical owner policy digest mismatch")
+    for receipt_field, policy_field in (
+        ("aiAdvisoryRef", "ref"),
+        ("aiAdvisorySha256", "bodySha256"),
+    ):
+        if receipt[receipt_field] != advisory.get(policy_field):
+            raise ReceiptError(f"authorization {receipt_field} policy binding mismatch")
+    owner = policy.get("ownerDirective")
+    if not isinstance(owner, dict) or (
+        receipt["ownerDirectiveRef"] != owner.get("ref")
+        or receipt["ownerDirectiveSha256"] != owner.get("bodySha256")
+    ):
+        raise ReceiptError("authorization owner directive policy binding mismatch")
     if revocations.get("schemaVersion") != REVOCATION_SCHEMA:
         raise ReceiptError("authorization revocation ledger schema mismatch")
     revoked = revocations.get("revokedAuthorizationSha256")
@@ -129,6 +162,8 @@ def verify(
         raise ReceiptError("authorization receipt has been revoked")
     issued = parse_utc(receipt["issuedAt"], "authorization issuedAt")
     expires = parse_utc(receipt["expiresAt"], "authorization expiresAt")
+    if legacy_v1 and issued >= LEGACY_V1_ISSUANCE_CUTOFF:
+        raise ReceiptError("legacy v1 authorization was issued at or after the migration cutoff")
     if not issued < expires or (expires - issued).total_seconds() > 120 * 60:
         raise ReceiptError("authorization absolute TTL is invalid")
     if expires <= now:
@@ -142,6 +177,10 @@ def main() -> int:
     parser.add_argument("--revocations", required=True, type=Path)
     parser.add_argument("--expected-run-id", required=True, type=int)
     parser.add_argument("--expected-head-sha", required=True)
+    parser.add_argument(
+        "--allow-legacy-v1", action="store_true",
+        help="termination/forensic replay only; never authorizes new v1 issuance",
+    )
     args = parser.parse_args()
     try:
         receipt_raw = args.receipt.read_bytes()
@@ -150,7 +189,7 @@ def main() -> int:
         revocations = load_object(args.revocations, "revocation ledger")
         verify(
             receipt, receipt_raw, policy, revocations, args.expected_run_id,
-            args.expected_head_sha, datetime.now(timezone.utc),
+            args.expected_head_sha, datetime.now(timezone.utc), args.allow_legacy_v1,
         )
         print(f"authorization-receipt=pass schema={SCHEMA}")
         return 0

@@ -43,6 +43,7 @@ VIEWER_AUTH_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-pilot-auth
 VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization_common.py"
 VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
 VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v2.json"
+VIEWER_LEGACY_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
@@ -118,7 +119,8 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_EXACT_ZIP" \
-  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH"; do
+  "$VIEWER_OWNER_POLICY" "$VIEWER_LEGACY_OWNER_POLICY" "$VIEWER_REVOCATIONS" \
+  "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH"; do
   require_file "$path"
 done
 
@@ -385,6 +387,19 @@ if grep -Eqi 'Anthropic|Claude|MiniMax|Cursor' "$VIEWER_OWNER_POLICY"; then
   exit 1
 fi
 require_grep 'action=rollback' "$VIEWER_OWNER_POLICY"
+[ "$(sha256sum "$VIEWER_LEGACY_OWNER_POLICY" | awk '{print $1}')" \
+  = "7b26a283d0af68451aaba6d9f4c39fba55bff201c4e697567f5db29206f0ae81" ] || {
+  echo "legacy v1 owner policy bytes changed; historical receipts would become unverifiable" >&2
+  exit 1
+}
+require_grep '"status": "active"' "$VIEWER_LEGACY_OWNER_POLICY"
+require_grep 'policy_mode=' "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep '--allow-legacy-v1' "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep 'current v2 authorization must match the collector revision' \
+  "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep 'MATRIX_ACTIVATION_HEAD_SHA' "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep 'legacy v1 authorization was issued at or after the migration cutoff' \
+  "$VIEWER_AUTH_VERIFIER"
 require_grep '"revokedAuthorizationSha256": []' "$VIEWER_REVOCATIONS"
 require_grep "pilot_ttl_minutes must be between 5 and 120" "$VIEWER_APPLY_WORKFLOW"
 require_grep "requested watchdog expiry exceeds the signed protected authorization" \

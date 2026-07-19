@@ -85,13 +85,14 @@ jobs:
           out="$RUNNER_TEMP/faz22-viewer-termination-authorization"
           mkdir -p "$out"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
-          jq -e --arg sha "$GITHUB_SHA" '
+          jq -e '
             .status == "completed" and .conclusion == "success"
             and .event == "workflow_dispatch" and .head_branch == "main"
-            and .head_sha == $sha
+            and (.head_sha | test("^[a-f0-9]{40}$"))
             and .name == "Apply #2373 VIEW_ONLY viewer product pilot surface"
             and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
           ' "$out/run.json" >/dev/null
+          activation_head_sha="$(jq -er '.head_sha' "$out/run.json")"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
             > "$out/artifacts.json"
           expected="faz22-view-only-pilot-protected-authorization-$ACTIVATION_RUN_ID"
@@ -109,13 +110,57 @@ jobs:
             --expected-file protected-authorization.json
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
           authorization_sha256="sha256:$(sha256sum "$out/receipt/protected-authorization.json" | awk '{print $1}')"
+          policy_mode="$(python3 - "$out/receipt/protected-authorization.json" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          receipt = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
+          expected = receipt.get("ownerPolicySha256")
+          matches = []
+          for mode, path in (
+              ("v2", pathlib.Path("config/faz22-6-view-only-pilot-owner-policy.v2.json")),
+              ("v1", pathlib.Path("config/faz22-6-view-only-pilot-owner-policy.v1.json")),
+          ):
+              value = json.loads(path.read_bytes())
+              canonical = json.dumps(
+                  value, ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+              ).encode()
+              if f"sha256:{hashlib.sha256(canonical).hexdigest()}" == expected:
+                  matches.append(mode)
+          if len(matches) != 1:
+              raise SystemExit("authorization owner policy digest is not uniquely canonical")
+          print(matches[0])
+          PY
+          )"
+          case "$policy_mode" in
+            v2)
+              policy=config/faz22-6-view-only-pilot-owner-policy.v2.json
+              legacy_args=()
+              [ "$activation_head_sha" = "$GITHUB_SHA" ] || {
+                echo "::error::current v2 authorization must match the collector revision"
+                exit 1
+              }
+              ;;
+            v1)
+              policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
+              legacy_args=(--allow-legacy-v1)
+              ;;
+            *)
+              echo "::error::unsupported owner policy selection"
+              exit 1
+              ;;
+          esac
           python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
             --receipt "$out/receipt/protected-authorization.json" \
-            --policy config/faz22-6-view-only-pilot-owner-policy.v2.json \
+            --policy "$policy" \
             --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
             --expected-run-id "$ACTIVATION_RUN_ID" \
-            --expected-head-sha "$GITHUB_SHA"
+            --expected-head-sha "$activation_head_sha" \
+            "${legacy_args[@]}"
           echo "MATRIX_AUTHORIZATION_SHA256=$authorization_sha256" >> "$GITHUB_ENV"
+          echo "MATRIX_ACTIVATION_HEAD_SHA=$activation_head_sha" >> "$GITHUB_ENV"
 
       - name: Fetch and bind canonical browser root
         env:
@@ -128,7 +173,7 @@ jobs:
           out="$RUNNER_TEMP/faz22-viewer-termination-browser-root"
           mkdir -p "$out"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$BROWSER_RUN_ID" > "$out/run.json"
-          jq -e --arg sha "$GITHUB_SHA" '
+          jq -e --arg sha "$MATRIX_ACTIVATION_HEAD_SHA" '
             .status == "completed" and .conclusion == "success"
             and .event == "workflow_dispatch" and .head_branch == "main"
             and .head_sha == $sha
