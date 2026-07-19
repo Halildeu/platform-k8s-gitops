@@ -15,6 +15,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/ai/attest_cross_ai_scope_pii.py"
+FAKE_GH = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+path = sys.argv[sys.argv.index("api") + 1]
+login = os.environ.get("FAKE_GH_LOGIN", "Halildeu")
+if path == "user":
+    print(json.dumps({"login": login}))
+elif path == "repos/Halildeu/platform-k8s-gitops":
+    print(json.dumps({
+        "full_name": "Halildeu/platform-k8s-gitops",
+        "owner": {"login": "Halildeu"},
+        "permissions": {"admin": os.environ.get("FAKE_GH_ADMIN", "1") == "1"},
+    }))
+else:
+    raise SystemExit(2)
+'''
 
 
 class ScopePiiAttestationTests(unittest.TestCase):
@@ -26,11 +44,16 @@ class ScopePiiAttestationTests(unittest.TestCase):
         self.scope.chmod(0o600)
         self.digest = hashlib.sha256(self.scope.read_bytes()).hexdigest()
         self.output = self.root / "pii-attestation.json"
+        self.bin_dir = self.root / "bin"
+        self.bin_dir.mkdir()
+        gh = self.bin_dir / "gh"
+        gh.write_text(FAKE_GH, encoding="utf-8")
+        gh.chmod(0o700)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def run_helper(self) -> subprocess.CompletedProcess[str]:
+    def run_helper(self, **environment: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 sys.executable,
@@ -41,12 +64,19 @@ class ScopePiiAttestationTests(unittest.TestCase):
                 self.digest,
                 "--decision",
                 "no-sensitive-pii",
+                "--repo",
+                "Halildeu/platform-k8s-gitops",
                 "--output",
                 str(self.output),
             ],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={
+                **os.environ,
+                "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                **environment,
+            },
             check=False,
         )
 
@@ -58,6 +88,11 @@ class ScopePiiAttestationTests(unittest.TestCase):
         self.assertTrue(receipt["ok"])
         self.assertEqual(attestation["scope_sha256"], self.digest)
         self.assertEqual(attestation["decision"], "no-sensitive-pii")
+        self.assertEqual(attestation["repository"], "Halildeu/platform-k8s-gitops")
+        self.assertEqual(attestation["reviewer_login"], "Halildeu")
+        self.assertEqual(
+            attestation["reviewer_role"], "authenticated-repository-owner"
+        )
         self.assertEqual(os.stat(self.output).st_mode & 0o777, 0o600)
         self.assertEqual(
             receipt["attestation_sha256"],
@@ -73,6 +108,17 @@ class ScopePiiAttestationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("scope_identity_unverifiable", result.stdout)
         self.assertFalse(self.output.exists())
+
+    def test_rejects_authenticated_non_owner_or_non_admin(self) -> None:
+        for environment in (
+            {"FAKE_GH_LOGIN": "contributor"},
+            {"FAKE_GH_ADMIN": "0"},
+        ):
+            with self.subTest(environment=environment):
+                result = self.run_helper(**environment)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("pii_reviewer_not_repository_owner", result.stdout)
+                self.assertFalse(self.output.exists())
 
     def test_rejects_scope_readable_by_group_or_other(self) -> None:
         self.scope.chmod(0o644)

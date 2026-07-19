@@ -22,9 +22,9 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #   * The audit script now runs from the BASE ref (e.g. `main`) instead of the
 #     PR head. A malicious PR that ships a tampered `pr-cross-ai-audit.mjs` in
 #     its head no longer weakens its own audit — the trusted main copy runs.
-#   * `pull_request_target` is the more privileged event variant; permissions
-#     stay `contents: read` + `pull-requests: read` (no write, no secrets) per
-#     Codex Q5 hardening — minimal grant.
+#   * `pull_request_target` is the more privileged event variant. Read grants
+#     remain minimal; `statuses: write` is narrowly required so the trusted
+#     exact-head audit can clear the poster's fail-closed pending status.
 #   * Job name `cross-ai-audit` is preserved so the branch-protection ruleset
 #     context (PMD §2.10 must-pass list) matches without rename.
 #   * `concurrency` block cancels superseded runs on the same PR — guards
@@ -72,7 +72,7 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
-  statuses: read
+  statuses: write
 
 # #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
 # Per-PR concurrency group; superseded runs are cancelled on `synchronize`
@@ -207,3 +207,22 @@ jobs:
             )
           fi
           node scripts/ci/pr-cross-ai-audit.mjs "${args[@]}"
+
+      - name: Mark exact-head Cross-AI audit status current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          payload="$(jq -nc --arg url "$PR_URL" '{
+            state: "success",
+            context: "cross-ai-audit",
+            description: "Trusted exact-head Cross-AI audit passed",
+            target_url: $url
+          }')"
+          result="$(printf '%s' "$payload" | gh api \
+            "repos/${GH_REPO}/statuses/${PR_HEAD_SHA}" \
+            --method POST --input -)"
+          test "$(printf '%s' "$result" | jq -r .state)" = "success"
+          test "$(printf '%s' "$result" | jq -r .context)" = "cross-ai-audit"

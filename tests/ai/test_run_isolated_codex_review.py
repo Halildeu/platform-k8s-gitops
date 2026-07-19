@@ -361,6 +361,14 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             cwd=self.worktree,
             check=True,
         )
+        subprocess.run(
+            [
+                "git", "remote", "add", "origin",
+                "https://github.com/Halildeu/platform-k8s-gitops.git",
+            ],
+            cwd=self.worktree,
+            check=True,
+        )
         source = self.worktree / "scope-source.txt"
         source.write_text("base\n", encoding="utf-8")
         # The review producer must come from the target's trusted base, not from
@@ -417,26 +425,21 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             raise RuntimeError(prepare.stdout + prepare.stderr)
         self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
         self.pii_attestation = self.root / "pii-attestation.json"
-        attestation = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts/ai/attest_cross_ai_scope_pii.py"),
-                "--scope-file",
-                str(self.scope),
-                "--scope-sha256",
-                self.scope_sha,
-                "--decision",
-                "no-sensitive-pii",
-                "--output",
-                str(self.pii_attestation),
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        self.pii_attestation.write_text(
+            json.dumps(
+                {
+                    "schema": "cross-ai-pii-review-attestation/v2",
+                    "scope_sha256": self.scope_sha,
+                    "decision": "no-sensitive-pii",
+                    "reviewer_role": "authenticated-repository-owner",
+                    "repository": "Halildeu/platform-k8s-gitops",
+                    "reviewer_login": "Halildeu",
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
         )
-        if attestation.returncode != 0:
-            raise RuntimeError(attestation.stdout + attestation.stderr)
+        self.pii_attestation.chmod(0o600)
         self.output = self.root / "evidence.json"
         self.expected_stdin = self.root / "expected-stdin.txt"
         self.expected_stdin.write_text(
@@ -688,10 +691,12 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         wrong.write_text(
             json.dumps(
                 {
-                    "schema": "cross-ai-pii-review-attestation/v1",
+                    "schema": "cross-ai-pii-review-attestation/v2",
                     "scope_sha256": "f" * 64,
                     "decision": "no-sensitive-pii",
-                    "reviewer_role": "local-scope-reviewer",
+                    "reviewer_role": "authenticated-repository-owner",
+                    "repository": "Halildeu/platform-k8s-gitops",
+                    "reviewer_login": "Halildeu",
                 },
                 separators=(",", ":"),
             ),
@@ -813,10 +818,12 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.pii_attestation.write_text(
             json.dumps(
                 {
-                    "schema": "cross-ai-pii-review-attestation/v1",
+                    "schema": "cross-ai-pii-review-attestation/v2",
                     "scope_sha256": self.scope_sha,
                     "decision": "no-sensitive-pii",
-                    "reviewer_role": "local-scope-reviewer",
+                    "reviewer_role": "authenticated-repository-owner",
+                    "repository": "Halildeu/platform-k8s-gitops",
+                    "reviewer_login": "Halildeu",
                 },
                 separators=(",", ":"),
             ),

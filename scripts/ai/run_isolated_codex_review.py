@@ -33,7 +33,7 @@ MODELS = {
 EXECUTION_PROFILE = "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2"
 CODEX_NATIVE_TRUST_ROOT = "repo-pinned-codex-native-sha256-v1"
 SOURCE_TRUST_ROOT = "trusted-base-cross-ai-sources-sha256-v1"
-PII_ATTESTATION_SCHEMA = "cross-ai-pii-review-attestation/v1"
+PII_ATTESTATION_SCHEMA = "cross-ai-pii-review-attestation/v2"
 PII_REVIEW_STATUS = "no-sensitive-pii"
 TRUSTED_SOURCE_PATHS = {
     "review_harness_sha256": "scripts/ai/run_isolated_codex_review.py",
@@ -145,7 +145,33 @@ def read_scope(path: Path, expected_sha256: str) -> str:
         fail("scope_not_utf8")
 
 
-def read_pii_attestation(path: Path, expected_scope_sha256: str) -> str:
+def repository_slug_from_origin(worktree: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(worktree), "remote", "get-url", "origin"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        fail("worktree_repository_identity_unverifiable")
+    remote = result.stdout.strip()
+    match = re.fullmatch(
+        r"(?:https://github\.com/|git@github\.com:)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?",
+        remote,
+    )
+    if result.returncode != 0 or match is None:
+        fail("worktree_repository_identity_unverifiable")
+    return match.group(1)
+
+
+def read_pii_attestation(
+    path: Path,
+    expected_scope_sha256: str,
+    expected_repository: str,
+) -> str:
     """Validate the deliberate exact-scope PII gate and return its digest."""
     try:
         attestation_stat = path.stat()
@@ -160,12 +186,16 @@ def read_pii_attestation(path: Path, expected_scope_sha256: str) -> str:
         or attestation_stat.st_mode & 0o077
         or not isinstance(attestation, dict)
         or set(attestation) != {
-            "schema", "scope_sha256", "decision", "reviewer_role"
+            "schema", "scope_sha256", "decision", "reviewer_role",
+            "repository", "reviewer_login",
         }
         or attestation.get("schema") != PII_ATTESTATION_SCHEMA
         or attestation.get("scope_sha256") != expected_scope_sha256.lower()
         or attestation.get("decision") != PII_REVIEW_STATUS
-        or attestation.get("reviewer_role") != "local-scope-reviewer"
+        or attestation.get("reviewer_role") != "authenticated-repository-owner"
+        or attestation.get("repository", "").lower() != expected_repository.lower()
+        or attestation.get("reviewer_login", "").lower()
+        != expected_repository.split("/", 1)[0].lower()
     ):
         fail("scope_pii_review_tracked_pending")
     return hashlib.sha256(encoded).hexdigest()
@@ -979,9 +1009,11 @@ def main() -> None:
     ) = resolve_codex_native()
     gitleaks_bytes, gitleaks_executable_name, _ = resolve_gitleaks_native()
     scope = read_scope(args.scope_file, args.scope_sha256)
+    repository = repository_slug_from_origin(args.worktree.resolve())
     pii_attestation_sha256 = read_pii_attestation(
         args.pii_attestation_file,
         args.scope_sha256,
+        repository,
     )
     verify_scope_binding(
         worktree=args.worktree.resolve(),

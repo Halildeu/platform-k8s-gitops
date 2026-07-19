@@ -20,6 +20,9 @@ from typing import NoReturn
 
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+RECHECK_MARKER_RE = re.compile(
+    r"(?:\n\n)?<!-- cross-ai-audit-recheck:\d+:[0-9a-f]{64} -->\n?"
+)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 THREAD_ID_RE = re.compile(
@@ -294,6 +297,15 @@ def status_ledger_payload(
     }
 
 
+def audit_invalidation_payload(pr_url: str) -> dict:
+    return {
+        "state": "pending",
+        "context": "cross-ai-audit",
+        "description": "Cross-AI evidence changed; trusted audit required",
+        "target_url": pr_url,
+    }
+
+
 def publish_evidence(
     *,
     repo: str,
@@ -302,14 +314,54 @@ def publish_evidence(
     evidence_text: str,
     body_sha256: str,
     pr_url: str,
+    pr_body: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict:
-    """Publish the immutable ledger before its mutable comment payload.
+    """Invalidate the audit, then publish ledger and mutable comment payload.
 
-    A failed comment write leaves a fail-closed ledger tombstone. Retrying may
-    create an identical status, which the verifier coalesces by evidence digest.
-    This ordering prevents an unledgered owner comment from poisoning the PR.
+    The exact-head required status becomes pending before any new binding
+    evidence is visible. A failed ledger or comment write therefore remains
+    fail-closed. Retrying may create an identical status, which the verifier
+    coalesces by evidence digest. This ordering prevents both a stale-green
+    merge race and an unledgered owner comment from poisoning the PR.
     """
+    if not isinstance(pr_body, str):
+        fail("gh_pr_body_invalid")
+    clean_body = RECHECK_MARKER_RE.sub("", pr_body).rstrip()
+
+    invalidation = audit_invalidation_payload(pr_url)
+    try:
+        invalidation_result = runner(
+            [
+                "gh", "api",
+                f"repos/{repo}/statuses/{evidence['head_sha']}",
+                "--method", "POST", "--input", "-",
+            ],
+            input=json.dumps(invalidation, separators=(",", ":")),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_audit_invalidation_failed")
+    if invalidation_result.returncode != 0:
+        fail("gh_audit_invalidation_failed")
+    try:
+        invalidation_record = json.loads(invalidation_result.stdout)
+        invalidation_ref = invalidation_record["url"]
+        invalidation_creator = invalidation_record["creator"]["login"].lower()
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("gh_audit_invalidation_invalid")
+    if (
+        invalidation_record.get("context") != invalidation["context"]
+        or invalidation_record.get("state") != invalidation["state"]
+        or invalidation_record.get("description") != invalidation["description"]
+        or invalidation_record.get("target_url") != invalidation["target_url"]
+        or invalidation_creator != repo.split("/", 1)[0].lower()
+    ):
+        fail("gh_audit_invalidation_invalid")
+
     expected_status = status_ledger_payload(
         evidence, body_sha256, issue_number, pr_url
     )
@@ -342,10 +394,13 @@ def publish_evidence(
         ledger_ref = status_record["url"]
         ledger_context = status_record["context"]
         ledger_creator = status_record["creator"]["login"].lower()
+        ledger_id = status_record["id"]
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_status_ledger_invalid")
     if (
         ledger_context != f"cross-ai/evidence/{body_sha256}"
+        or not isinstance(ledger_id, int)
+        or ledger_id < 1
         or ledger_creator != repo.split("/", 1)[0].lower()
         or status_record.get("state") != expected_status["state"]
         or status_record.get("description") != expected_status["description"]
@@ -384,12 +439,43 @@ def publish_evidence(
         updated_at = comment["updated_at"]
     except (json.JSONDecodeError, KeyError, TypeError):
         fail("gh_response_invalid")
+
+    recheck_marker = (
+        f"<!-- cross-ai-audit-recheck:{ledger_id}:{body_sha256} -->"
+    )
+    updated_body = f"{clean_body}\n\n{recheck_marker}\n"
+    if len(updated_body.encode("utf-8")) > 65_536:
+        fail("gh_pr_body_invalid")
+    try:
+        update_result = runner(
+            [
+                "gh", "api", f"repos/{repo}/pulls/{issue_number}",
+                "--method", "PATCH", "--input", "-",
+            ],
+            input=json.dumps({"body": updated_body}, separators=(",", ":")),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_audit_recheck_trigger_failed")
+    if update_result.returncode != 0:
+        fail("gh_audit_recheck_trigger_failed")
+    try:
+        updated_pr = json.loads(update_result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        fail("gh_audit_recheck_trigger_invalid")
+    if updated_pr.get("body") != updated_body:
+        fail("gh_audit_recheck_trigger_invalid")
     return {
         "ref": api_ref,
         "created_at": created_at,
         "updated_at": updated_at,
         "ledger_ref": ledger_ref,
         "ledger_context": ledger_context,
+        "audit_invalidation_ref": invalidation_ref,
+        "audit_recheck_marker": recheck_marker,
     }
 
 
@@ -429,6 +515,7 @@ def main() -> None:
         pr_head_sha = pr["head"]["sha"].lower()
         pr_state = pr["state"]
         pr_url = pr["html_url"]
+        pr_body = pr["body"]
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_pr_binding_invalid")
     evidence, body_sha256 = validate_evidence_text(
@@ -450,6 +537,7 @@ def main() -> None:
         evidence_text=text,
         body_sha256=body_sha256,
         pr_url=pr_url,
+        pr_body=pr_body,
     )
     print(
         json.dumps(
@@ -465,6 +553,8 @@ def main() -> None:
                 "updated_at": publication["updated_at"],
                 "ledger_ref": publication["ledger_ref"],
                 "ledger_context": publication["ledger_context"],
+                "audit_invalidation_ref": publication["audit_invalidation_ref"],
+                "audit_recheck_marker": publication["audit_recheck_marker"],
             },
             ensure_ascii=False,
         )
