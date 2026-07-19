@@ -561,6 +561,32 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             f'EXPECTED_MODEL_JSON_SHA256="{canonical_digest}"',
             self.preflight,
         )
+        self.assertIn(
+            "jq -j -cS '.authorization_model | del(.id)'",
+            self.preflight,
+        )
+
+        # Exercise the exact OpenFGA GET response envelope. The server's JSON
+        # whitespace and jq's normal output newline are transport details; only
+        # the sorted compact authorization_model without its runtime id is
+        # content-addressed.
+        live_response = {
+            "authorization_model": {
+                "id": "01KW0EJTM60YGZTEKNGS7PDPNP",
+                **compiled_model,
+            }
+        }
+        canonicalized_live = subprocess.run(
+            ["jq", "-j", "-cS", ".authorization_model | del(.id)"],
+            input=json.dumps(live_response, indent=2).encode(),
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertFalse(canonicalized_live.endswith(b"\n"))
+        self.assertEqual(
+            hashlib.sha256(canonicalized_live).hexdigest(),
+            canonical_digest,
+        )
 
         fga_source = (
             ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
