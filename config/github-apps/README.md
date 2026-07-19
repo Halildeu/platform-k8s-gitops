@@ -27,8 +27,12 @@ rotate within 168 hours with at least 24 hours overlap. Signed revocations must
 refresh within 60 minutes and individual review leaves remain bounded to 120
 minutes. `codexExecutablePolicy` is the independently reviewed, release-managed
 official executable allowlist: the runner must resolve the OpenAI npm wrapper,
-match the bundled native binary byte digest and CLI version, and verify its
-Apple Developer ID identity, team and full CDHash before launch. These values
+match the bundled native binary byte digest and CLI version. Darwin launchers
+also verify the Apple Developer ID identity, team and full CDHash before launch;
+the Kubernetes Linux issuer is admitted only by a pinned npm tarball SHA-512,
+registry-signature identity and signature digest, and canonical npm publish plus
+SLSA provenance bundle digests bound to the official OpenAI release workflow.
+These values
 are never accepted from the runner, caller or review response. Updating Codex
 therefore requires an explicit authority-manifest policy change, but does not
 rotate the provider-review signing root. The signed launch capability snapshot

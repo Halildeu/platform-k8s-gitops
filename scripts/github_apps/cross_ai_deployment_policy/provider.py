@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import pwd
 import re
 import shutil
@@ -88,7 +89,7 @@ CODEX_MODEL = CODEX_HIGH_IMPACT_MODEL
 ROOT = Path(__file__).resolve().parents[3]
 CODEX_EXECUTABLE_POLICY_SCHEMA = "acik.codex-executable-policy.v1"
 CODEX_EXECUTABLE_POLICY_KEYS = {"schemaVersion", "allowedExecutables"}
-CODEX_EXECUTABLE_ENTRY_KEYS = {
+CODEX_EXECUTABLE_COMMON_KEYS = {
     "platform",
     "sourceClass",
     "packageName",
@@ -97,9 +98,22 @@ CODEX_EXECUTABLE_ENTRY_KEYS = {
     "cliVersion",
     "cliVersionSha256",
     "signatureType",
+}
+CODEX_EXECUTABLE_DARWIN_KEYS = CODEX_EXECUTABLE_COMMON_KEYS | {
     "signatureIdentity",
     "signatureTeamId",
     "signatureCdHashSha256",
+}
+CODEX_EXECUTABLE_LINUX_KEYS = CODEX_EXECUTABLE_COMMON_KEYS | {
+    "packageTarballSha512",
+    "registrySignatureKeyId",
+    "registrySignatureSha256",
+    "publishAttestationBundleSha256",
+    "provenanceBundleSha256",
+    "provenanceBuilderId",
+    "provenanceRepository",
+    "provenanceWorkflowPath",
+    "provenanceRef",
 }
 
 
@@ -284,10 +298,23 @@ def validate_codex_executable_policy(value: Any) -> dict[str, Any]:
         )
     identities: set[tuple[str, str, str]] = set()
     for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != CODEX_EXECUTABLE_ENTRY_KEYS:
+        if not isinstance(entry, dict):
             reject(
                 "PROVIDER_EXECUTABLE_POLICY_INVALID",
                 "Codex executable allowlist entry fields are invalid",
+            )
+        entry_keys = set(entry)
+        platform_id = entry.get("platform")
+        if (
+            platform_id in {"darwin-arm64", "darwin-x64"}
+            and entry_keys != CODEX_EXECUTABLE_DARWIN_KEYS
+        ) or (
+            platform_id == "linux-x64"
+            and entry_keys != CODEX_EXECUTABLE_LINUX_KEYS
+        ) or platform_id not in {"darwin-arm64", "darwin-x64", "linux-x64"}:
+            reject(
+                "PROVIDER_EXECUTABLE_POLICY_INVALID",
+                "Codex executable allowlist platform fields are invalid",
             )
         identity = (
             entry.get("platform"),
@@ -300,11 +327,21 @@ def validate_codex_executable_policy(value: Any) -> dict[str, Any]:
                 "Codex executable allowlist contains a duplicate release",
             )
         identities.add(identity)
-        digests = (
+        digests = [
             entry.get("cliSha256"),
             entry.get("cliVersionSha256"),
-            entry.get("signatureCdHashSha256"),
-        )
+        ]
+        if platform_id.startswith("darwin-"):
+            digests.append(entry.get("signatureCdHashSha256"))
+        else:
+            digests.extend(
+                entry.get(field)
+                for field in (
+                    "registrySignatureSha256",
+                    "publishAttestationBundleSha256",
+                    "provenanceBundleSha256",
+                )
+            )
         if not all(
             isinstance(item, str)
             and re.fullmatch(r"sha256:[a-f0-9]{64}", item)
@@ -315,21 +352,46 @@ def validate_codex_executable_policy(value: Any) -> dict[str, Any]:
                 "Codex executable allowlist digest is invalid",
             )
         if not (
-            entry.get("platform") in {"darwin-arm64", "darwin-x64"}
-            and entry.get("sourceClass")
+            entry.get("sourceClass")
             == "official-openai-npm-bundled-native"
             and entry.get("packageName") == "@openai/codex"
             and isinstance(entry.get("packageVersion"), str)
             and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", entry["packageVersion"])
             and entry.get("cliVersion") == f"codex-cli {entry['packageVersion']}"
-            and entry.get("signatureType") == "apple-developer-id"
-            and entry.get("signatureIdentity")
-            == "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
-            and entry.get("signatureTeamId") == "2DC432GLL2"
         ):
             reject(
                 "PROVIDER_EXECUTABLE_POLICY_INVALID",
                 "Codex executable allowlist attribution is invalid",
+            )
+        if platform_id.startswith("darwin-"):
+            valid_signature = (
+                entry.get("signatureType") == "apple-developer-id"
+                and entry.get("signatureIdentity")
+                == "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+                and entry.get("signatureTeamId") == "2DC432GLL2"
+            )
+        else:
+            valid_signature = (
+                entry.get("signatureType") == "npm-registry-slsa-v1"
+                and isinstance(entry.get("packageTarballSha512"), str)
+                and re.fullmatch(r"sha512:[a-f0-9]{128}", entry["packageTarballSha512"])
+                and isinstance(entry.get("registrySignatureKeyId"), str)
+                and re.fullmatch(
+                    r"SHA256:[A-Za-z0-9+/]{43}=?", entry["registrySignatureKeyId"]
+                )
+                and entry.get("provenanceBuilderId")
+                == "https://github.com/actions/runner/github-hosted"
+                and entry.get("provenanceRepository")
+                == "https://github.com/openai/codex"
+                and entry.get("provenanceWorkflowPath")
+                == ".github/workflows/rust-release.yml"
+                and entry.get("provenanceRef")
+                == f"refs/tags/rust-v{entry['packageVersion']}"
+            )
+        if not valid_signature:
+            reject(
+                "PROVIDER_EXECUTABLE_POLICY_INVALID",
+                "Codex executable release provenance is invalid",
             )
     return value
 
@@ -545,7 +607,20 @@ class DirectCodexRunner:
                 "Codex official package metadata is invalid",
             )
         candidates: list[tuple[Path, str]] = []
-        for platform_suffix in ("darwin-arm64", "darwin-x64"):
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+        platform_suffix = {
+            ("darwin", "arm64"): "darwin-arm64",
+            ("darwin", "x86_64"): "darwin-x64",
+            ("linux", "x86_64"): "linux-x64",
+            ("linux", "amd64"): "linux-x64",
+        }.get((system, machine))
+        if platform_suffix is None:
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex issuer platform is not release-managed",
+            )
+        for platform_suffix in (platform_suffix,):
             dependency_name = f"codex-{platform_suffix}"
             platform_dependency = f"@openai/{dependency_name}"
             expected_dependency = (
@@ -823,15 +898,16 @@ class DirectCodexRunner:
                         "PROVIDER_EXECUTABLE_CHANGED",
                         "Codex executable differs from the independent authority pin",
                     )
-                signature = self._apple_signature_identity(pinned_executable)
-                if any(
-                    signature[field] != self.executable_provenance[field]
-                    for field in signature
-                ):
-                    reject(
-                        "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
-                        "Codex signature differs from the independent authority pin",
-                    )
+                if self.platform_id.startswith("darwin-"):
+                    signature = self._apple_signature_identity(pinned_executable)
+                    if any(
+                        signature[field] != self.executable_provenance[field]
+                        for field in signature
+                    ):
+                        reject(
+                            "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
+                            "Codex signature differs from the independent authority pin",
+                        )
                 launch_environment = self._isolated_environment(Path(directory))
                 dispatch = {
                     "executable": str(pinned_executable),

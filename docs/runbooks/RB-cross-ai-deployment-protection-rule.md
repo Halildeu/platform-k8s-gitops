@@ -293,6 +293,11 @@ pinned trust-root digest. The output binds a stable `sourcePublicKeysetSha256`
 projection. Operational
 receipt fields such as `verifiedAt` do not move that digest; any key, immutable
 setting, reconciler-policy digest or public version-history change does. The
+Kubernetes issuer uses the release-managed `linux-x64` official npm artifact:
+the authority pins its tarball SHA-512, npm registry signature, canonical
+publish attestation, SLSA provenance, native ELF bytes and CLI version. The
+Darwin owner-review route separately retains its Apple Developer ID, team and
+full CDHash pin. A platform without its exact allowlist entry fails closed.
 existing v1 owner-local receipt is historical evidence and is deliberately not
 accepted as v2 input. Re-run the idempotent bootstrap after this source is
 merged/reviewed to obtain v2 public history; never hand-edit or reinterpret v1.

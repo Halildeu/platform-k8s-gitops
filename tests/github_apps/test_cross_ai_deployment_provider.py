@@ -26,6 +26,7 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     ReviewCoordinates,
     canonical_codex_execution_arguments,
     parse_canonical_review_response,
+    validate_codex_executable_policy,
 )
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
 
@@ -131,6 +132,98 @@ class ProviderExecutionTest(unittest.TestCase):
                     workspace=self.workspace,
                 )
         run.assert_not_called()
+
+    def test_linux_official_package_and_slsa_policy_are_release_managed(self) -> None:
+        package_root = self.wrapper.parent.parent
+        linux_root = package_root / "node_modules/@openai/codex-linux-x64"
+        linux_native = linux_root / "vendor/x86_64-unknown-linux-musl/bin/codex"
+        linux_native.parent.mkdir(parents=True)
+        linux_native.write_bytes(b"\x7fELF" + (b"pinned-linux-codex" * 16))
+        linux_native.chmod(0o755)
+        (linux_root / "package.json").write_text(
+            json.dumps({"name": "@openai/codex", "version": "9.9.9-linux-x64"}),
+            encoding="utf-8",
+        )
+        package = json.loads((package_root / "package.json").read_text())
+        package["optionalDependencies"] = {
+            "@openai/codex-linux-x64": "npm:@openai/codex@9.9.9-linux-x64"
+        }
+        (package_root / "package.json").write_text(json.dumps(package), encoding="utf-8")
+        linux_entry = {
+            "platform": "linux-x64",
+            "sourceClass": "official-openai-npm-bundled-native",
+            "packageName": "@openai/codex",
+            "packageVersion": "9.9.9",
+            "cliSha256": "sha256:" + hashlib.sha256(linux_native.read_bytes()).hexdigest(),
+            "cliVersion": "codex-cli 9.9.9",
+            "cliVersionSha256": (
+                "sha256:" + hashlib.sha256(b"codex-cli 9.9.9").hexdigest()
+            ),
+            "signatureType": "npm-registry-slsa-v1",
+            "packageTarballSha512": "sha512:" + ("1" * 128),
+            "registrySignatureKeyId": "SHA256:" + ("A" * 43) + "=",
+            "registrySignatureSha256": digest("registry-signature"),
+            "publishAttestationBundleSha256": digest("publish-attestation"),
+            "provenanceBundleSha256": digest("slsa-provenance"),
+            "provenanceBuilderId": "https://github.com/actions/runner/github-hosted",
+            "provenanceRepository": "https://github.com/openai/codex",
+            "provenanceWorkflowPath": ".github/workflows/rust-release.yml",
+            "provenanceRef": "refs/tags/rust-v9.9.9",
+        }
+        policy = {
+            "schemaVersion": "acik.codex-executable-policy.v1",
+            "allowedExecutables": [linux_entry],
+        }
+        with (
+            patch("platform.system", return_value="Linux"),
+            patch("platform.machine", return_value="x86_64"),
+        ):
+            runner = DirectCodexRunner(self.wrapper, executable_policy=policy)
+        self.assertEqual(runner.platform_id, "linux-x64")
+        self.assertEqual(runner.executable, linux_native.resolve())
+        self.assertEqual(runner.executable_provenance, linux_entry)
+        catalog = {
+            "models": [
+                {"slug": CODEX_MODEL, "visibility": "list", "supported_in_api": True}
+            ]
+        }
+        calls = [
+            subprocess.CompletedProcess([], 0, stdout=b"codex-cli 9.9.9\n", stderr=b""),
+            subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(catalog).encode(), stderr=b""
+            ),
+            subprocess.CompletedProcess(
+                [], 0, stdout=self.codex_events(AGREE_RESULT), stderr=b""
+            ),
+        ]
+        with (
+            patch("subprocess.run", side_effect=calls),
+            patch.object(DirectCodexRunner, "_apple_signature_identity") as codesign,
+        ):
+            receipt = runner.run(
+                prompt="review this digest", model=CODEX_MODEL, workspace=self.workspace
+            )
+        codesign.assert_not_called()
+        self.assertEqual(receipt.capability_snapshot["officialExecutableProvenance"], linux_entry)
+
+    def test_linux_policy_rejects_missing_slsa_provenance(self) -> None:
+        entry = {
+            "platform": "linux-x64",
+            "sourceClass": "official-openai-npm-bundled-native",
+            "packageName": "@openai/codex",
+            "packageVersion": "9.9.9",
+            "cliSha256": digest("linux-native"),
+            "cliVersion": "codex-cli 9.9.9",
+            "cliVersionSha256": digest("linux-version"),
+            "signatureType": "npm-registry-slsa-v1",
+        }
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_POLICY_INVALID"):
+            validate_codex_executable_policy(
+                {
+                    "schemaVersion": "acik.codex-executable-policy.v1",
+                    "allowedExecutables": [entry],
+                }
+            )
 
     def test_cursor_is_retired_before_subprocess_execution(self) -> None:
         with patch("subprocess.run") as run:

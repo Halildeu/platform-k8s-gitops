@@ -107,13 +107,10 @@
               "cliSha256",
               "cliVersion",
               "cliVersionSha256",
-              "signatureType",
-              "signatureIdentity",
-              "signatureTeamId",
-              "signatureCdHashSha256"
+              "signatureType"
             ],
             "properties": {
-              "platform": {"enum": ["darwin-arm64", "darwin-x64"]},
+              "platform": {"enum": ["darwin-arm64", "darwin-x64", "linux-x64"]},
               "sourceClass": {
                 "const": "official-openai-npm-bundled-native"
               },
@@ -128,13 +125,45 @@
                 "pattern": "^codex-cli [0-9]+\\.[0-9]+\\.[0-9]+$"
               },
               "cliVersionSha256": {"$ref": "#/$defs/digest"},
-              "signatureType": {"const": "apple-developer-id"},
-              "signatureIdentity": {
-                "const": "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+              "signatureType": {"enum": ["apple-developer-id", "npm-registry-slsa-v1"]},
+              "signatureIdentity": {"type": "string"},
+              "signatureTeamId": {"type": "string"},
+              "signatureCdHashSha256": {"$ref": "#/$defs/digest"},
+              "packageTarballSha512": {"type": "string", "pattern": "^sha512:[a-f0-9]{128}$"},
+              "registrySignatureKeyId": {"type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]{43}=?$"},
+              "registrySignatureSha256": {"$ref": "#/$defs/digest"},
+              "publishAttestationBundleSha256": {"$ref": "#/$defs/digest"},
+              "provenanceBundleSha256": {"$ref": "#/$defs/digest"},
+              "provenanceBuilderId": {"const": "https://github.com/actions/runner/github-hosted"},
+              "provenanceRepository": {"const": "https://github.com/openai/codex"},
+              "provenanceWorkflowPath": {"const": ".github/workflows/rust-release.yml"},
+              "provenanceRef": {"type": "string", "pattern": "^refs/tags/rust-v[0-9]+\\.[0-9]+\\.[0-9]+$"}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"platform": {"pattern": "^darwin-"}}},
+                "then": {
+                  "required": ["signatureIdentity", "signatureTeamId", "signatureCdHashSha256"],
+                  "properties": {
+                    "signatureType": {"const": "apple-developer-id"},
+                    "signatureIdentity": {"const": "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"},
+                    "signatureTeamId": {"const": "2DC432GLL2"}
+                  }
+                }
               },
-              "signatureTeamId": {"const": "2DC432GLL2"},
-              "signatureCdHashSha256": {"$ref": "#/$defs/digest"}
-            }
+              {
+                "if": {"properties": {"platform": {"const": "linux-x64"}}},
+                "then": {
+                  "required": [
+                    "packageTarballSha512", "registrySignatureKeyId",
+                    "registrySignatureSha256", "publishAttestationBundleSha256",
+                    "provenanceBundleSha256", "provenanceBuilderId",
+                    "provenanceRepository", "provenanceWorkflowPath", "provenanceRef"
+                  ],
+                  "properties": {"signatureType": {"const": "npm-registry-slsa-v1"}}
+                }
+              }
+            ]
           }
         }
       }
