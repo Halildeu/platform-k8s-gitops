@@ -5,9 +5,14 @@ set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
+source "${SCRIPT_DIR}/lib-test-keycloak-binding.sh"
+
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 REALM="${REALM:-platform-test}"
 KC_TOKEN_BASE_URL="${KC_TOKEN_BASE_URL:-http://127.0.0.1:8082}"
+readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 PERSONA_USERNAME="${PERSONA_USERNAME:-ethics-manager-test}"
 PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
@@ -36,6 +41,13 @@ KCADM=/opt/keycloak/bin/kcadm.sh
 }
 command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "FATAL: host curl missing" >&2; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "FATAL: host docker missing" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "FATAL: host jq missing" >&2; exit 1; }
+faz35_assert_test_keycloak_binding \
+  "${KC_CONTAINER}" "${KC_TOKEN_BASE_URL}" "${REALM}" "${KC_EXPECTED_ISSUER}" || {
+  echo "FATAL: TEST Keycloak container/loopback/issuer binding is invalid" >&2
+  exit 1
+}
 
 prepare_synthetic_password_file() {
   local file=$1 label=$2 candidate owner mode parent

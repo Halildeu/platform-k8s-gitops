@@ -5,13 +5,20 @@ set -Eeuo pipefail
 set +x
 umask 077
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
+source "${SCRIPT_DIR}/../faz35/lib-test-keycloak-binding.sh"
+
 OUT_PATH="${OUT_PATH:-/tmp/faz24-permission-writer-repair.json}"
+readonly KC_CONTAINER="platform-kc-test"
 readonly KC_BASE_URL="http://127.0.0.1:8082"
 readonly KC_REALM="platform-test"
+readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
 readonly WRITER_LOCAL_USER_ID="12"
+readonly WRITER_LEGACY_LOCAL_USER_ID="1204"
 # Faz 35 gives this synthetic permission writer its own active local profile;
 # it must never borrow the historical user 1204 / performance persona email.
 readonly WRITER_PROFILE_EMAIL="d35-admin-persona@acik.com"
@@ -25,6 +32,7 @@ readonly VAULT_INIT_FILE="/home/halil/bootstrap-drill/vault-init-test.json"
 
 STATUS="running"
 KC_ADMIN_PASSWORD_STDIN=false
+PRE_IDENTITY_CREDENTIAL_ONLY=false
 FAILURE_REASON=""
 EXACT_WRITER_MATCH=false
 KEYCLOAK_RESET=false
@@ -44,7 +52,8 @@ WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=false
 
 usage() {
   cat <<'EOF'
-Usage: repair-d35-permission-writer-credential.sh [--out PATH] [--keycloak-admin-password-stdin]
+Usage: repair-d35-permission-writer-credential.sh [--out PATH]
+       [--keycloak-admin-password-stdin] [--pre-identity-credential-only]
 
 Repairs missing platform-test D35 permission-writer service-profile fields,
 rotates its password, patches the matching Vault record, and verifies login plus
@@ -57,10 +66,24 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT_PATH="$2"; shift 2 ;;
     --keycloak-admin-password-stdin) KC_ADMIN_PASSWORD_STDIN=true; shift ;;
+    --pre-identity-credential-only) PRE_IDENTITY_CREDENTIAL_ONLY=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+for command_name in cmp curl jq docker openssl tr; do
+  command -v "${command_name}" >/dev/null 2>&1 || {
+    echo "ERROR: required command missing: ${command_name}" >&2
+    exit 2
+  }
+done
+
+faz35_assert_test_keycloak_binding \
+  "${KC_CONTAINER}" "${KC_BASE_URL}" "${KC_REALM}" "${KC_EXPECTED_ISSUER}" || {
+  echo "ERROR: TEST Keycloak container/loopback/issuer binding is invalid" >&2
+  exit 2
+}
 
 if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
   [[ -z "${KC_ADMIN_PASSWORD:-}" ]] || {
@@ -73,13 +96,6 @@ if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
     exit 2
   }
 fi
-
-for command_name in cmp curl jq docker openssl tr; do
-  command -v "${command_name}" >/dev/null 2>&1 || {
-    echo "ERROR: required command missing: ${command_name}" >&2
-    exit 2
-  }
-done
 
 TMP_DIR="$(mktemp -d /tmp/faz24-writer-repair.XXXXXX)"
 mkdir -p "$(dirname "${OUT_PATH}")"
@@ -323,11 +339,19 @@ code="$(http_status GET \
 jq -e \
   --arg writerId "${WRITER_USER_ID}" \
   --arg writerUsername "${WRITER_USERNAME}" \
-  --arg localUserId "${WRITER_LOCAL_USER_ID}" '
+  --arg localUserId "${WRITER_LOCAL_USER_ID}" \
+  --arg legacyUserId "${WRITER_LEGACY_LOCAL_USER_ID}" \
+  --argjson allowLegacy "${PRE_IDENTITY_CREDENTIAL_ONLY}" '
   .id == $writerId and
   .username == $writerUsername and
   .enabled == true and
-  .attributes.userId == [$localUserId]
+  (
+    (.attributes.userId == [$localUserId] and
+     .attributes.subscriberId == [$localUserId]) or
+    ($allowLegacy and
+     .attributes.userId == [$legacyUserId] and
+     .attributes.subscriberId == [$legacyUserId])
+  )
 ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
   || die "permission-writer-profile-precondition-local-user-mismatch"
 
@@ -478,6 +502,11 @@ if [[ "${EXISTING_WRITER_USERNAME}" == "${WRITER_USERNAME}" && -s "${EXISTING_PA
   if request_writer_token "${EXISTING_PASSWORD_FILE}" "${EXISTING_TOKEN_JSON}"; then
     VAULT_SYNCED=true
     WRITER_LOGIN_READY=true
+    if [[ "${PRE_IDENTITY_CREDENTIAL_ONLY}" == "true" ]]; then
+      STATUS="credential-ready"
+      write_result
+      exit 0
+    fi
     EXISTING_AUTH_CONFIG="${TMP_DIR}/existing-writer-auth.curl"
     EXISTING_ROLES_JSON="${TMP_DIR}/existing-roles.json"
     verify_roles_read "${WRITER_TOKEN}" "${EXISTING_AUTH_CONFIG}" "${EXISTING_ROLES_JSON}" \
@@ -552,6 +581,12 @@ WRITER_TOKEN_JSON="${TMP_DIR}/writer-token.json"
 request_writer_token "${NEW_PASSWORD_FILE}" "${WRITER_TOKEN_JSON}" \
   || die "permission-writer-login-readback-failed"
 WRITER_LOGIN_READY=true
+
+if [[ "${PRE_IDENTITY_CREDENTIAL_ONLY}" == "true" ]]; then
+  STATUS="credential-repaired"
+  write_result
+  exit 0
+fi
 
 WRITER_AUTH_CONFIG="${TMP_DIR}/writer-auth.curl"
 ROLES_JSON="${TMP_DIR}/roles.json"

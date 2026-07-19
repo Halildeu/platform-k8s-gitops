@@ -234,6 +234,7 @@ def _run_ambiguous_reset_scenario(
     required_actions: tuple[str, ...] = (),
     profile_put_scenario: str = "success",
     admin_password_via_stdin: bool = False,
+    pre_identity_credential_only: bool = False,
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -262,6 +263,10 @@ printf '%s\\n' '{NEW_PASSWORD}'
         """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "inspect" ]]; then
+  if [[ "$*" == *'platform-kc-test'* ]]; then
+    printf '%s' '[{"HostIp":"127.0.0.1","HostPort":"8082"}]'
+    exit 0
+  fi
   if [[ "${MOCK_VAULT_SCENARIO}" == 'missing-container' ]]; then
     exit 1
   fi
@@ -320,6 +325,10 @@ while [[ $# -gt 0 ]]; do
     *) shift ;;
   esac
 done
+if [[ "${url}" == *'/.well-known/openid-configuration' ]]; then
+  printf '%s' '{"issuer":"https://testai.acik.com/realms/platform-test","token_endpoint":"https://testai.acik.com/realms/platform-test/protocol/openid-connect/token"}'
+  exit 0
+fi
 : > "${output}"
 if [[ "${url}" == *'/realms/master/'* ]]; then
   printf '%s' '{"access_token":"admin-token"}' > "${output}"
@@ -520,7 +529,11 @@ fi
     attributes_state = tmp_path / "attributes-state.json"
     attributes_state.write_text(
         json.dumps(
-            {"sentinel": ["keep"], "userId": [writer_local_user_id]}
+            {
+                "sentinel": ["keep"],
+                "userId": [writer_local_user_id],
+                "subscriberId": [writer_local_user_id],
+            }
         ),
         encoding="utf-8",
     )
@@ -568,6 +581,8 @@ fi
         stdin_value = "mock-admin-password\n"
     else:
         env["KC_ADMIN_PASSWORD"] = "mock-admin-password"
+    if pre_identity_credential_only:
+        command.append("--pre-identity-credential-only")
     proc = subprocess.run(
         command,
         input=stdin_value,
@@ -602,10 +617,14 @@ def test_keycloak_admin_password_stdin_contract_reaches_ready_state(tmp_path):
     proc, result, _, _, _ = _run_ambiguous_reset_scenario(
         tmp_path,
         "new-success",
+        writer_local_user_id="1204",
         admin_password_via_stdin=True,
+        pre_identity_credential_only=True,
     )
     assert proc.returncode == 0, proc.stderr
-    assert result["status"] in {"already-ready", "repaired", "profile-repaired"}
+    assert result["status"] in {"credential-ready", "credential-repaired"}
+    assert result["permissionWriter"]["loginReady"] is True
+    assert result["permissionWriter"]["rolesReadReady"] is False
     assert "mock-admin-password" not in proc.stdout
     assert "mock-admin-password" not in proc.stderr
 

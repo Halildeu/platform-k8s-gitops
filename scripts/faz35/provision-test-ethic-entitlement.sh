@@ -11,11 +11,16 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/lib-vault-accessor-inventory.sh"
 # shellcheck source=scripts/faz35/lib-authz-projection.sh
 source "$SCRIPT_DIR/lib-authz-projection.sh"
+# shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
+source "$SCRIPT_DIR/lib-test-keycloak-binding.sh"
+# shellcheck source=scripts/faz35/lib-permission-role-catalog.sh
+source "$SCRIPT_DIR/lib-permission-role-catalog.sh"
 
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_REALM="${KC_REALM:-platform-test}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
+readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
 WRITER_VAULT_PATH="${WRITER_VAULT_PATH:-kv/platform/d35-3}"
@@ -54,6 +59,12 @@ for command_name in curl jq docker stat mktemp seq; do
     exit 1
   }
 done
+
+faz35_assert_test_keycloak_binding \
+  "$KC_CONTAINER" "$KC_BASE_URL" "$KC_REALM" "$KC_EXPECTED_ISSUER" || {
+  echo "FATAL: TEST Keycloak container/loopback/issuer binding is invalid" >&2
+  exit 1
+}
 
 validate_secret_file() {
   local file=$1 label=$2
@@ -223,6 +234,10 @@ target_user_id=$(faz35_activate_verified_profiles \
 roles_code=$(http_status GET "$BASE_URL/api/v1/roles" "$TMP_DIR/roles.json" \
   --config "$TMP_DIR/writer-auth.curl")
 [ "$roles_code" = 200 ] || { echo "FATAL: permission role list failed" >&2; exit 1; }
+faz35_validate_complete_role_catalog "$TMP_DIR/roles.json" || {
+  echo "FATAL: permission role catalog is incomplete or paged" >&2
+  exit 1
+}
 role_count=$(jq --arg name "$PERMISSION_ROLE_NAME" '[.items[]? | select(.name == $name)] | length' "$TMP_DIR/roles.json")
 [ "$role_count" = 0 ] || [ "$role_count" = 1 ] || {
   echo "FATAL: dedicated permission role is not unique" >&2

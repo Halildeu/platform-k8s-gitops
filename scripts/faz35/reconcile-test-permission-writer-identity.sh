@@ -8,6 +8,12 @@ set -Eeuo pipefail
 set +x
 umask 077
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
+source "${SCRIPT_DIR}/lib-test-keycloak-binding.sh"
+# shellcheck source=scripts/faz35/lib-permission-role-catalog.sh
+source "${SCRIPT_DIR}/lib-permission-role-catalog.sh"
+
 OUT_PATH="${OUT_PATH:-/tmp/faz35-permission-writer-identity.json}"
 readonly KUBE_CONTEXT="k3d-test"
 readonly KUBE_NS="platform-test"
@@ -62,18 +68,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
-  [[ -z "${KC_ADMIN_PASSWORD:-}" ]] || {
-    echo "ERROR: Keycloak admin password sources are ambiguous" >&2
-    exit 2
-  }
-  KC_ADMIN_PASSWORD=""
-  IFS= read -r KC_ADMIN_PASSWORD || [[ -n "${KC_ADMIN_PASSWORD}" ]] || {
-    echo "ERROR: Keycloak admin password stdin is empty" >&2
-    exit 2
-  }
-fi
-
 for command_name in cmp curl docker find grep jq kubectl mktemp sed stat tr wc; do
   command -v "${command_name}" >/dev/null 2>&1 || {
     echo "ERROR: required command missing: ${command_name}" >&2
@@ -94,29 +88,23 @@ done
   exit 2
 }
 
-# Bind the loopback admin URL to the exact TEST container before any request.
-# A process merely listening on 8082 is not sufficient confinement evidence.
-kc_port_binding="$(docker inspect -f '{{json (index .NetworkSettings.Ports "8080/tcp")}}' \
-  "${KC_CONTAINER}" 2>/dev/null)" || {
-  echo "ERROR: TEST Keycloak container binding is unreadable" >&2
+faz35_assert_test_keycloak_binding \
+  "${KC_CONTAINER}" "${KC_BASE_URL}" "${KC_REALM}" "${KC_EXPECTED_ISSUER}" || {
+  echo "ERROR: TEST Keycloak container/loopback/issuer binding is invalid" >&2
   exit 2
 }
-[[ "${kc_port_binding}" == '[{"HostIp":"127.0.0.1","HostPort":"8082"}]' ]] || {
-  echo "ERROR: TEST Keycloak container is not exclusively bound to 127.0.0.1:8082" >&2
-  exit 2
-}
-kc_discovery="$(curl -sS --max-time 10 \
-  "${KC_BASE_URL}/realms/${KC_REALM}/.well-known/openid-configuration")" || {
-  echo "ERROR: TEST Keycloak discovery is unreachable" >&2
-  exit 2
-}
-jq -e --arg issuer "${KC_EXPECTED_ISSUER}" \
-  '.issuer == $issuer and .token_endpoint == ($issuer + "/protocol/openid-connect/token")' \
-  <<<"${kc_discovery}" >/dev/null || {
-  echo "ERROR: loopback Keycloak does not advertise the platform-test issuer" >&2
-  exit 2
-}
-unset kc_discovery kc_port_binding
+
+if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
+  [[ -z "${KC_ADMIN_PASSWORD:-}" ]] || {
+    echo "ERROR: Keycloak admin password sources are ambiguous" >&2
+    exit 2
+  }
+  KC_ADMIN_PASSWORD=""
+  IFS= read -r KC_ADMIN_PASSWORD || [[ -n "${KC_ADMIN_PASSWORD}" ]] || {
+    echo "ERROR: Keycloak admin password stdin is empty" >&2
+    exit 2
+  }
+fi
 
 TMP_DIR="$(mktemp -d /tmp/faz35-writer-identity.XXXXXX)"
 mkdir -p "$(dirname "${OUT_PATH}")"
@@ -181,16 +169,6 @@ write_bearer_config() {
   local output="$1" token="$2"
   printf 'header = "Authorization: Bearer %s"\n' "${token}" > "${output}"
   chmod 600 "${output}"
-}
-
-validate_complete_role_catalog() {
-  local document="$1"
-  jq -e '
-    (.items | type) == "array" and
-    (.total | type) == "number" and
-    .total == (.items | length) and
-    .page == null and .pageSize == null
-  ' "${document}" >/dev/null
 }
 
 ke() {
@@ -418,7 +396,7 @@ unset WRITER_TOKEN
 code="$(http_status GET 'https://testai.acik.com/api/v1/roles' \
   "${TMP_DIR}/roles.json" --config "${WRITER_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "writer-bootstrap-role-read-denied"
-validate_complete_role_catalog "${TMP_DIR}/roles.json" \
+faz35_validate_complete_role_catalog "${TMP_DIR}/roles.json" \
   || die "writer-role-catalog-incomplete-or-paged"
 
 role_count="$(jq --arg name "${PROVISIONER_ROLE_NAME}" '[.items[]? | select(.name == $name)] | length' \
@@ -508,7 +486,7 @@ ACCESS_MANAGE_READY=true
 code="$(http_status GET 'https://testai.acik.com/api/v1/roles' \
   "${TMP_DIR}/roles-after.json" --config "${WRITER_AUTH_AFTER}")"
 [[ "${code}" == "200" ]] || die "writer-role-readback-denied"
-validate_complete_role_catalog "${TMP_DIR}/roles-after.json" \
+faz35_validate_complete_role_catalog "${TMP_DIR}/roles-after.json" \
   || die "writer-role-catalog-readback-incomplete-or-paged"
 ROLES_READ_READY=true
 

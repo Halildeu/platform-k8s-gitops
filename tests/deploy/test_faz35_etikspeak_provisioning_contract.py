@@ -37,6 +37,12 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.writer_credential_repair = (
             ROOT / "scripts/faz24/repair-d35-permission-writer-credential.sh"
         ).read_text()
+        cls.keycloak_binding_lib = (
+            ROOT / "scripts/faz35/lib-test-keycloak-binding.sh"
+        ).read_text()
+        cls.role_catalog_lib = (
+            ROOT / "scripts/faz35/lib-permission-role-catalog.sh"
+        ).read_text()
         cls.activation_runbook = (
             ROOT / "docs/runbooks/RB-faz35-etik-speak-test-activation.md"
         ).read_text()
@@ -162,7 +168,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('readonly KUBE_NS="platform-test"', self.writer_identity)
         self.assertIn('readonly PG_CONTAINER="platform-pg-test"', self.writer_identity)
         self.assertIn('readonly KC_CONTAINER="platform-kc-test"', self.writer_identity)
-        self.assertIn("TEST Keycloak container is not exclusively bound", self.writer_identity)
+        self.assertIn("TEST Keycloak container/loopback/issuer binding is invalid", self.writer_identity)
         self.assertIn('readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"', self.writer_identity)
         self.assertIn('productionMutation: false', self.writer_identity)
         self.assertIn('historicalUser1204Mutation: false', self.writer_identity)
@@ -183,6 +189,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("writer-provisioner-granule-conflict", self.writer_identity)
         self.assertIn("writer-provisioner-member-conflict", self.writer_identity)
         self.assertIn("writer-role-catalog-incomplete-or-paged", self.writer_identity)
+        self.assertIn("faz35_validate_complete_role_catalog", self.writer_identity)
         self.assertIn('(.modules // {}) == {ACCESS:"MANAGE"}', self.writer_identity)
         self.assertIn('((.allowedModules // []) | sort) == ["ACCESS"]', self.writer_identity)
         self.assertIn('.superAdmin == false', self.writer_identity)
@@ -211,14 +218,32 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         entitlement = self.activation_runbook.index(
             "./scripts/faz35/provision-test-ethic-entitlement.sh"
         )
-        self.assertLess(reconcile, repair)
-        self.assertLess(repair, entitlement)
+        self.assertLess(repair, reconcile)
+        self.assertLess(reconcile, entitlement)
         self.assertEqual(
             self.activation_runbook.count("--keycloak-admin-password-stdin"), 2
         )
         self.assertNotIn("KC_ADMIN_PASSWORD=\"$(", self.activation_runbook)
         self.assertIn("set +x", self.writer_identity)
         self.assertIn("set +x", self.writer_credential_repair)
+        self.assertIn("--pre-identity-credential-only", self.activation_runbook)
+
+    def test_all_keycloak_credential_paths_bind_the_exact_test_container(self):
+        for script in (
+            self.keycloak,
+            self.entitlement,
+            self.writer_identity,
+            self.writer_credential_repair,
+        ):
+            self.assertIn("lib-test-keycloak-binding.sh", script)
+            self.assertIn("faz35_assert_test_keycloak_binding", script)
+        self.assertIn('HostIp":"127.0.0.1', self.keycloak_binding_lib)
+        self.assertIn("/.well-known/openid-configuration", self.keycloak_binding_lib)
+
+    def test_entitlement_uses_complete_permission_role_catalog(self):
+        self.assertIn("faz35_validate_complete_role_catalog", self.entitlement)
+        self.assertIn("permission role catalog is incomplete or paged", self.entitlement)
+        self.assertIn('.total == (.items | length)', self.role_catalog_lib)
 
     def test_permission_writer_identity_never_puts_secrets_in_argv_or_evidence(self):
         self.assertIn('password@${KC_ADMIN_PASSWORD_FILE}', self.writer_identity)

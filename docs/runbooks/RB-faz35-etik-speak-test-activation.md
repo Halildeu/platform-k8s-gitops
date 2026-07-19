@@ -76,20 +76,23 @@ preserving the application's bearer/cookie credential-confusion boundary.
 ./scripts/faz35/provision-test-pg-vault.sh
 ./scripts/faz35/provision-test-keycloak.sh
 docker exec platform-kc-test cat /run/secrets/kc_admin_password | \
-  ./scripts/faz35/reconcile-test-permission-writer-identity.sh \
-    --keycloak-admin-password-stdin
-docker exec platform-kc-test cat /run/secrets/kc_admin_password | \
   ./scripts/faz24/repair-d35-permission-writer-credential.sh \
+    --keycloak-admin-password-stdin --pre-identity-credential-only
+docker exec platform-kc-test cat /run/secrets/kc_admin_password | \
+  ./scripts/faz35/reconcile-test-permission-writer-identity.sh \
     --keycloak-admin-password-stdin
 ./scripts/faz35/provision-test-ethic-entitlement.sh
 ```
 
-The identity reconciliation first binds the dedicated permission writer to
-local synthetic user `12`, preserves the historical performance identity
-`1204`, grants only `ACCESS=MANAGE`, and proves the fresh-token projection.
-The credential repair then verifies or rotates only that aligned writer before
-the entitlement provisioner uses it. Both scripts disable tracing before
-reading the TEST Keycloak admin secret through their explicit stdin contract.
+The credential-only repair first proves or rotates the exact writer login while
+accepting only its known pre-reconciliation identity (`1204`) or dedicated
+identity (`12`); it does not use that identity to mutate permission state. The
+identity reconciliation then binds the writer to local synthetic user `12`,
+preserves historical user `1204`, grants only `ACCESS=MANAGE`, and proves the
+fresh-token exact projection before the entitlement provisioner runs. Both
+scripts disable tracing and validate the TEST Keycloak container, loopback port
+and issuer before reading the admin secret through their explicit stdin
+contract.
 
 The Keycloak script prints a non-secret `ETHICS_STAFF_SUBJECT=<uuid>` line and
 stores the dedicated allow, wrong-org and OpenFGA-denied synthetic persona
