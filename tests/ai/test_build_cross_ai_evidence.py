@@ -141,6 +141,17 @@ class EvidenceBuilderTests(unittest.TestCase):
             "provider_findings_sections_missing_empty_duplicate_or_out_of_order",
         )
 
+    def test_rejects_text_before_first_priority_heading(self) -> None:
+        result = self.run_builder(
+            "Critical finding outside priority sections\n"
+            "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "provider_findings_sections_missing_empty_duplicate_or_out_of_order",
+        )
+
     def test_rejects_sensitive_provider_response_before_comment_build(self) -> None:
         values = (
             "person@example.com",

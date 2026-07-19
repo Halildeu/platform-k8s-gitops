@@ -84,6 +84,8 @@ def priority_sections(response: str) -> dict[str, str] | None:
     headings = list(PRIORITY_HEADING_RE.finditer(response))
     if [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]:
         return None
+    if response[:headings[0].start()].strip():
+        return None
     verdict_match = next(iter(VERDICT_RE.finditer(response)), None)
     if verdict_match is None:
         return None

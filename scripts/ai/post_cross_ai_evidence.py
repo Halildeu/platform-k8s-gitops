@@ -94,6 +94,7 @@ def response_contract(response: str) -> tuple[str, dict[str, str]] | None:
         or not lines
         or not VERDICT_RE.fullmatch(lines[-1])
         or [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]
+        or response[:headings[0].start()].strip()
     ):
         return None
     verdict_match = next(iter(VERDICT_RE.finditer(response)))
