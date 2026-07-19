@@ -18,7 +18,7 @@ SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
 EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-IMAGE_SET="$REPO_ROOT/runtime-artifacts/faz35-etik-speak/image-set/267146bafa5a415b60a5fd85efd6b2b51120e86ede8c97530fbc1201263c2c8f.json"
+IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/267146bafa5a415b60a5fd85efd6b2b51120e86ede8c97530fbc1201263c2c8f.json"
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2

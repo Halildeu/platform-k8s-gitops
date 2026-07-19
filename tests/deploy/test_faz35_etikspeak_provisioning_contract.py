@@ -84,10 +84,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             / "kustomize/overlays/test/activation/etik-speak/public-api-upstream-headers.yaml"
         ).read_text()
         image_sets = list(
-            (ROOT / "runtime-artifacts/faz35-etik-speak/image-set").glob("*.json")
+            (ROOT / "docs/faz-35-evidence/image-set").glob("*.json")
         )
         if len(image_sets) != 1:
-            raise AssertionError("expected exactly one Faz 35 image-set ledger")
+            raise AssertionError("expected exactly one Faz 35 image-set evidence manifest")
         cls.image_set_path = image_sets[0]
         cls.image_set = json.loads(cls.image_set_path.read_text())
 
