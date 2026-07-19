@@ -60,6 +60,19 @@ def evidence() -> dict:
     }
 
 
+def included_pr(body: str, head_sha: str, etag: str = '"pr-v1"') -> str:
+    return (
+        "HTTP/2.0 200 OK\n"
+        f"etag: {etag}\n"
+        "content-type: application/json\n\n"
+        + json.dumps({
+            "body": body,
+            "state": "open",
+            "head": {"sha": head_sha},
+        })
+    )
+
+
 class EvidenceValidationTests(unittest.TestCase):
     @staticmethod
     def validate(text: str) -> tuple[dict, str]:
@@ -108,9 +121,36 @@ class EvidenceValidationTests(unittest.TestCase):
         digest = hashlib.sha256(text.encode()).hexdigest()
         calls: list[list[str]] = []
         status_contexts: list[str] = []
+        current_body = "## Cross-AI\nConsultation mode: single\n"
+        etag_version = 0
+        get_count = 0
 
         def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal current_body, etag_version, get_count
             calls.append(command)
+            if "/pulls/" in command[2] and "GET" in command:
+                get_count += 1
+                if get_count == 2:
+                    current_body += "\nconcurrent human edit\n"
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=included_pr(
+                        current_body, payload["head_sha"], f'"pr-v{etag_version}"'
+                    )
+                )
+            if "/pulls/" in command[2]:
+                self.assertIn("If-Match:", " ".join(command))
+                posted = json.loads(str(kwargs["input"]))
+                current_body = posted["body"]
+                etag_version += 1
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "body": current_body,
+                        "state": "open",
+                        "head": {"sha": payload["head_sha"]},
+                    }),
+                )
             if "/statuses/" in command[2]:
                 posted = json.loads(str(kwargs["input"]))
                 status_contexts.append(posted["context"])
@@ -135,16 +175,7 @@ class EvidenceValidationTests(unittest.TestCase):
                         "updated_at": "2026-07-19T18:00:01Z",
                     }),
                 )
-            posted = json.loads(str(kwargs["input"]))
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout=json.dumps({
-                    "body": posted["body"],
-                    "state": "open",
-                    "head": {"sha": payload["head_sha"]},
-                }),
-            )
+            self.fail(f"unexpected command: {command}")
 
         result = MODULE.publish_evidence(
             repo="Halildeu/platform-k8s-gitops",
@@ -156,76 +187,46 @@ class EvidenceValidationTests(unittest.TestCase):
             pr_body="## Cross-AI\nConsultation mode: single\n",
             runner=runner,
         )
-        self.assertEqual(
-            calls[0][2],
-            f"repos/Halildeu/platform-k8s-gitops/statuses/{payload['head_sha']}",
-        )
-        self.assertEqual(calls[1][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
-        self.assertEqual(calls[2][2], calls[0][2])
+        self.assertEqual(calls[0][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
+        self.assertIn("GET", calls[0])
+        self.assertIn("PATCH", calls[1])
         self.assertEqual(
             status_contexts,
             ["cross-ai-audit", f"cross-ai/evidence/{digest}"],
         )
-        self.assertIn("/comments", calls[3][2])
-        self.assertEqual(calls[4][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
+        self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
+        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertEqual(result["ledger_context"], f"cross-ai/evidence/{digest}")
         self.assertEqual(
             result["audit_recheck_marker"],
             f"<!-- cross-ai-audit-recheck:10:11:{digest} -->",
         )
+        self.assertTrue(current_body.endswith(result["audit_recheck_marker"] + "\n"))
+        self.assertIn("concurrent human edit", current_body)
 
     def test_invalidation_failure_never_creates_binding_evidence(self) -> None:
         payload = evidence()
         text = json.dumps(payload, separators=(",", ":"))
         calls: list[list[str]] = []
 
-        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            calls.append(command)
-            return subprocess.CompletedProcess(command, 1, stdout="")
-
-        with contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                MODULE.publish_evidence(
-                    repo="Halildeu/platform-k8s-gitops",
-                    issue_number=2638,
-                    evidence=payload,
-                    evidence_text=text,
-                    body_sha256=hashlib.sha256(text.encode()).hexdigest(),
-                    pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
-                    pr_body="body",
-                    runner=runner,
-                )
-        self.assertEqual(len(calls), 1)
-        self.assertIn("/statuses/", calls[0][2])
-
-    def test_ledger_failure_after_invalidation_never_creates_comment(self) -> None:
-        payload = evidence()
-        text = json.dumps(payload, separators=(",", ":"))
-        calls: list[list[str]] = []
+        current_body = "body"
 
         def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal current_body
             calls.append(command)
-            posted = json.loads(str(kwargs["input"]))
-            if posted.get("context") == "cross-ai-audit":
+            if "/pulls/" in command[2] and "GET" in command:
                 return subprocess.CompletedProcess(
-                    command,
-                    0,
-                    stdout=json.dumps({
-                        **posted,
-                        "id": 1,
-                        "url": "https://api.github.com/statuses/1",
-                        "creator": {"login": "Halildeu"},
-                    }),
+                    command, 0, stdout=included_pr(current_body, payload["head_sha"])
                 )
             if "/pulls/" in command[2]:
+                current_body = json.loads(str(kwargs["input"]))["body"]
                 return subprocess.CompletedProcess(
-                    command,
-                    0,
-                    stdout=json.dumps({
-                        "body": posted["body"],
+                    command, 0, stdout=json.dumps({
+                        "body": current_body,
                         "state": "open",
                         "head": {"sha": payload["head_sha"]},
-                    }),
+                    })
                 )
             return subprocess.CompletedProcess(command, 1, stdout="")
 
@@ -242,18 +243,109 @@ class EvidenceValidationTests(unittest.TestCase):
                     runner=runner,
                 )
         self.assertEqual(len(calls), 3)
-        self.assertIn("/statuses/", calls[0][2])
+        self.assertIn("/pulls/", calls[0][2])
         self.assertIn("/pulls/", calls[1][2])
         self.assertIn("/statuses/", calls[2][2])
+
+    def test_etag_conflict_fails_before_status_or_evidence_mutation(self) -> None:
+        payload = evidence()
+        text = json.dumps(payload, separators=(",", ":"))
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            if "GET" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=included_pr("human body", payload["head_sha"])
+                )
+            self.assertIn("If-Match: \"pr-v1\"", " ".join(command))
+            return subprocess.CompletedProcess(command, 1, stdout="")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.publish_evidence(
+                    repo="Halildeu/platform-k8s-gitops",
+                    issue_number=2638,
+                    evidence=payload,
+                    evidence_text=text,
+                    body_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                    pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
+                    pr_body="human body",
+                    runner=runner,
+                )
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(any("/statuses/" in call[2] for call in calls))
+        self.assertFalse(any("/comments" in call[2] for call in calls))
+
+    def test_ledger_failure_after_invalidation_never_creates_comment(self) -> None:
+        payload = evidence()
+        text = json.dumps(payload, separators=(",", ":"))
+        calls: list[list[str]] = []
+        current_body = "body"
+
+        def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal current_body
+            calls.append(command)
+            if "/pulls/" in command[2] and "GET" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=included_pr(current_body, payload["head_sha"])
+                )
+            posted = json.loads(str(kwargs["input"]))
+            if "/pulls/" in command[2]:
+                current_body = posted["body"]
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "body": current_body,
+                        "state": "open",
+                        "head": {"sha": payload["head_sha"]},
+                    }),
+                )
+            if posted.get("context") == "cross-ai-audit":
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        **posted,
+                        "id": 1,
+                        "url": "https://api.github.com/statuses/1",
+                        "creator": {"login": "Halildeu"},
+                    }),
+                )
+            return subprocess.CompletedProcess(command, 1, stdout="")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.publish_evidence(
+                    repo="Halildeu/platform-k8s-gitops",
+                    issue_number=2638,
+                    evidence=payload,
+                    evidence_text=text,
+                    body_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                    pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
+                    pr_body="body",
+                    runner=runner,
+                )
+        self.assertEqual(len(calls), 6)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
+        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
+        self.assertFalse(any("/comments" in call[2] for call in calls))
 
     def test_comment_failure_occurs_after_durable_ledger(self) -> None:
         payload = evidence()
         text = json.dumps(payload, separators=(",", ":"))
         digest = hashlib.sha256(text.encode()).hexdigest()
         calls: list[list[str]] = []
+        current_body = "body"
 
         def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal current_body
             calls.append(command)
+            if "/pulls/" in command[2] and "GET" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=included_pr(current_body, payload["head_sha"])
+                )
             if "/statuses/" in command[2]:
                 posted = json.loads(str(kwargs["input"]))
                 return subprocess.CompletedProcess(
@@ -268,11 +360,12 @@ class EvidenceValidationTests(unittest.TestCase):
                 )
             if "/pulls/" in command[2]:
                 posted = json.loads(str(kwargs["input"]))
+                current_body = posted["body"]
                 return subprocess.CompletedProcess(
                     command,
                     0,
                     stdout=json.dumps({
-                        "body": posted["body"],
+                        "body": current_body,
                         "state": "open",
                         "head": {"sha": payload["head_sha"]},
                     }),
@@ -291,20 +384,28 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 4)
-        self.assertIn("/statuses/", calls[0][2])
-        self.assertIn("/pulls/", calls[1][2])
-        self.assertIn("/statuses/", calls[2][2])
-        self.assertIn("/comments", calls[3][2])
+        self.assertEqual(len(calls), 7)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
+        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
+        self.assertIn("/comments", calls[-1][2])
 
     def test_body_recheck_failure_leaves_pending_invalidation_after_comment(self) -> None:
         payload = evidence()
         text = json.dumps(payload, separators=(",", ":"))
         digest = hashlib.sha256(text.encode()).hexdigest()
         calls: list[list[str]] = []
+        current_body = "body"
+        patch_count = 0
 
         def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal current_body, patch_count
             calls.append(command)
+            if "/pulls/" in command[2] and "GET" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=included_pr(
+                        current_body, payload["head_sha"], f'"v{patch_count}"'
+                    )
+                )
             if "/statuses/" in command[2]:
                 posted = json.loads(str(kwargs["input"]))
                 return subprocess.CompletedProcess(
@@ -327,13 +428,17 @@ class EvidenceValidationTests(unittest.TestCase):
                         "updated_at": "2026-07-19T18:00:01Z",
                     }),
                 )
-            if "/pulls/" in command[2] and len(calls) == 2:
+            if "/pulls/" in command[2]:
+                patch_count += 1
+                if patch_count == 3:
+                    return subprocess.CompletedProcess(command, 1, stdout="")
                 posted = json.loads(str(kwargs["input"]))
+                current_body = posted["body"]
                 return subprocess.CompletedProcess(
                     command,
                     0,
                     stdout=json.dumps({
-                        "body": posted["body"],
+                        "body": current_body,
                         "state": "open",
                         "head": {"sha": payload["head_sha"]},
                     }),
@@ -352,11 +457,11 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 5)
-        self.assertIn("/pulls/", calls[1][2])
-        self.assertIn("/statuses/", calls[2][2])
-        self.assertIn("/comments", calls[3][2])
-        self.assertIn("/pulls/", calls[4][2])
+        self.assertEqual(len(calls), 9)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
+        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
+        self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
+        self.assertIn("PATCH", calls[-1])
 
     def test_invalid_pr_body_fails_before_any_github_mutation(self) -> None:
         payload = evidence()

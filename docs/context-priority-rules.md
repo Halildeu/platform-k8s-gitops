@@ -557,14 +557,19 @@ ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
 review ister. Poster exact şema/profil/provenance dışında fail-closed olur;
 trusted producer commit'inin exact PR base tip'inin atası olduğunu posting
-öncesinde doğrular. Yeni binding evidence görünür olmadan exact-head
-`cross-ai-audit` commit status'unu `pending` yapar ve status ID'sini PR body'deki
-ilk generation marker'ına hemen bağlar. Ardından immutable status ledger'ını
+öncesinde doğrular. Yeni binding evidence görünür olmadan ETag/`If-Match` ile
+güncellenen incomplete generation marker'ını PR body'ye yazar; böylece eski
+event body'leri geçersiz olur ve eşzamanlı insan/agent body değişiklikleri
+kaybolmaz. Exact-head `cross-ai-audit` commit status'unu ardından `pending`
+yapar ve status ID'sini PR body'deki generation marker'ına hemen bağlar. Ardından
+immutable status ledger'ını
 owner comment'ten önce üretir ve exact pending-id/ledger-id/digest taşıyan final
 marker'la trusted-base `pull_request_target: edited` audit'ini yeniden tetikler.
 Trusted completion helper event body/head ile canlı açık PR body/head'ini,
-marker'daki pending ID ile latest pending status'u ve marker'daki ledger ID ile
-exact digest/PR/owner ledger'ını yeniden doğrulamadan success yazamaz. Audit
+marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
+exact digest/PR/owner ledger'ını yeniden doğrulamadan success yazamaz. Success
+sonrasında daha yeni owner generation/body/head görülürse trusted workflow retry
+pending'i yeniden kurar; yeni generation bu fail-closed kaydı tüketebilir. Audit
 ancak tüm receipt/ledger/comment/lineage kontrolleri geçince exact generation
 için status'u `success` yapar. Ledger, comment veya body update başarısız kalırsa
 pending status fail-closed korunur; aynı evidence digest'iyle
@@ -594,15 +599,24 @@ predecessor branch protection ve required-check sözleşmesine tabidir; ham dire
 Codex çıktısı inceleme kanıtıdır ama canonical v4 receipt değildir. Yeni politika
 yalnız merge sonrası exact `main` push checkout'unda
 `scripts/ai/verify_cross_ai_source_activation.py` tarafından üretilen
-`cross-ai-source-trust-activation/v1` sonucu CI artifact'i olarak saklanıp,
-sonraki `pull_request_target` gate'i tarafından exact PR base SHA, successful
-run ID, main workflow/ref/event ve producer digest bağıyla yeniden tüketilince
+`cross-ai-source-trust-activation/v1` sonucu tüm CI job'ları geçtikten sonra
+bounded artifact ve aynı main SHA üzerindeki kalıcı
+`cross-ai/source-trust-activation` commit status'u olarak saklanıp, sonraki
+`pull_request_target` gate'i tarafından exact PR base SHA, successful run ID,
+main workflow/ref/event ve producer digest bağıyla yeniden tüketilince
 aktif kabul edilir; yalnız log'a yazılan veya tüketilmeyen çıktı aktivasyon
 yetkisi üretmez. Doğrulanmış artifact'teki `activated_at`, history immutability
 ve status-ledger otoritesinin effective başlangıcıdır; kaynakta sabitlenen politika
 tarihleri yalnız alt sınırdır. `activated_at` bu alt sınırdan önce veya izinli
-clock-skew dışında gelecekteyse artifact reddedilir. Bu epoch her CI run'ında
-duvar saatinden yeniden üretilmez; yalnız #2638 aktivasyon PR'ıyla ilk kez
+clock-skew dışında gelecekteyse kanıt reddedilir. Artifact süresi dolmuş veya
+indirilemiyorsa gate yalnız exact base SHA üzerindeki trusted
+`github-actions[bot]` activation status'unu doğrular; exact base checkout'unda
+aynı verifier ile `cross-ai-source-trust-activation/v2` recovery attestation
+üretir. Status'un target run'ı da canlı API'de `ci.yml + push + main + exact
+base SHA + success` olarak eşleşmelidir. Status anchor exact base'e eşit
+değilse veya kaynak digestleri exact base ile eşleşmiyorsa recovery fail-closed
+olur. Bu epoch her CI run'ında duvar
+saatinden yeniden üretilmez; yalnız #2638 aktivasyon PR'ıyla ilk kez
 `main`e giren immutable `cross-ai-source-trust-activation-marker/v1` marker'ını
 ve complete trusted producer stack'ini birlikte taşıyan ilk first-parent
 commit'in committer timestamp'inden deterministik türetilir. Sonraki producer

@@ -23,6 +23,7 @@ REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 RECHECK_MARKER_RE = re.compile(
     r"(?:\n\n)?<!-- cross-ai-audit-recheck:\d+(?::\d+)?:[0-9a-f]{64} -->\n?"
 )
+ETAG_RE = re.compile(r'^etag:\s*(\S+)\s*$', re.IGNORECASE | re.MULTILINE)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 THREAD_ID_RE = re.compile(
@@ -306,17 +307,75 @@ def audit_invalidation_payload(pr_url: str) -> dict:
     }
 
 
+def parse_included_pr_response(output: str) -> tuple[dict, str]:
+    normalized = output.replace("\r\n", "\n")
+    headers, separator, body = normalized.rpartition("\n\n")
+    match = ETAG_RE.search(headers)
+    if not separator or match is None:
+        fail("gh_pr_snapshot_invalid")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        fail("gh_pr_snapshot_invalid")
+    if not isinstance(payload, dict):
+        fail("gh_pr_snapshot_invalid")
+    return payload, match.group(1)
+
+
+def load_pr_snapshot(
+    *,
+    repo: str,
+    issue_number: int,
+    head_sha: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> tuple[dict, str]:
+    try:
+        result = runner(
+            [
+                "gh", "api", f"repos/{repo}/pulls/{issue_number}",
+                "--method", "GET", "--include",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_pr_snapshot_failed")
+    if result.returncode != 0:
+        fail("gh_pr_snapshot_failed")
+    snapshot, etag = parse_included_pr_response(result.stdout)
+    try:
+        current_head = snapshot["head"]["sha"].lower()
+        current_body = snapshot["body"]
+    except (KeyError, TypeError, AttributeError):
+        fail("gh_pr_snapshot_invalid")
+    if (
+        snapshot.get("state") != "open"
+        or current_head != head_sha.lower()
+        or not isinstance(current_body, str)
+    ):
+        fail("gh_pr_snapshot_invalid")
+    return snapshot, etag
+
+
 def patch_recheck_marker(
     *,
     repo: str,
     issue_number: int,
     head_sha: str,
-    clean_body: str,
     pending_status_id: int,
     ledger_status_id: int,
     body_sha256: str,
     runner: Callable[..., subprocess.CompletedProcess[str]],
 ) -> str:
+    snapshot, etag = load_pr_snapshot(
+        repo=repo,
+        issue_number=issue_number,
+        head_sha=head_sha,
+        runner=runner,
+    )
+    clean_body = RECHECK_MARKER_RE.sub("", snapshot["body"]).rstrip()
     marker = (
         "<!-- cross-ai-audit-recheck:"
         f"{pending_status_id}:{ledger_status_id}:{body_sha256} -->"
@@ -328,7 +387,7 @@ def patch_recheck_marker(
         update_result = runner(
             [
                 "gh", "api", f"repos/{repo}/pulls/{issue_number}",
-                "--method", "PATCH", "--input", "-",
+                "--method", "PATCH", "-H", f"If-Match: {etag}", "--input", "-",
             ],
             input=json.dumps({"body": updated_body}, separators=(",", ":")),
             text=True,
@@ -367,16 +426,23 @@ def publish_evidence(
 ) -> dict:
     """Publish evidence under one exact-head audit generation.
 
-    The required status becomes pending before any new binding evidence is
-    visible. Its GitHub status id is written into the PR body immediately, so
-    an older workflow event cannot clear a newer pending generation. The
-    ledger id is added only after the immutable status and owner comment exist.
-    Any partial publication therefore remains fail-closed.
+    A CAS-protected incomplete marker first supersedes every older workflow
+    event without exposing binding evidence. The required status then becomes
+    pending and its GitHub status id is written into the PR body immediately.
+    The ledger id is added only after the immutable status and owner comment
+    exist. Any partial publication therefore remains fail-closed.
     """
     if not isinstance(pr_body, str):
         fail("gh_pr_body_invalid")
-    clean_body = RECHECK_MARKER_RE.sub("", pr_body).rstrip()
-
+    patch_recheck_marker(
+        repo=repo,
+        issue_number=issue_number,
+        head_sha=evidence["head_sha"],
+        pending_status_id=0,
+        ledger_status_id=0,
+        body_sha256=body_sha256,
+        runner=runner,
+    )
     invalidation = audit_invalidation_payload(pr_url)
     try:
         invalidation_result = runner(
@@ -413,13 +479,12 @@ def publish_evidence(
     ):
         fail("gh_audit_invalidation_invalid")
 
-    # Change the PR body immediately after invalidation. Any audit run created
-    # from an older body generation can no longer clear this pending status.
+    # Bind the owner-created pending id to this generation. Every body write
+    # re-reads live state and uses If-Match, preserving concurrent user edits.
     patch_recheck_marker(
         repo=repo,
         issue_number=issue_number,
         head_sha=evidence["head_sha"],
-        clean_body=clean_body,
         pending_status_id=invalidation_id,
         ledger_status_id=0,
         body_sha256=body_sha256,
@@ -508,7 +573,6 @@ def publish_evidence(
         repo=repo,
         issue_number=issue_number,
         head_sha=evidence["head_sha"],
-        clean_body=clean_body,
         pending_status_id=invalidation_id,
         ledger_status_id=ledger_id,
         body_sha256=body_sha256,

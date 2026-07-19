@@ -107,37 +107,6 @@ jobs:
         run: |
           node tests/ci/test-cross-ai-automation.mjs
           python3 -m unittest discover -s tests/ai -p 'test_*.py'
-      - name: Cross-AI source-trust activation (trusted main push only)
-        if: github.event_name == 'push'
-        env:
-          ACTIVATION_SHA: ${{ github.sha }}
-          ACTIVATION_OUTPUT: ${{ runner.temp }}/cross-ai-source-trust-activation.json
-          ACTIVATION_REPOSITORY: ${{ github.repository }}
-          ACTIVATION_WORKFLOW_REF: ${{ github.workflow_ref }}
-          ACTIVATION_EVENT_NAME: ${{ github.event_name }}
-          ACTIVATION_GIT_REF: ${{ github.ref }}
-          ACTIVATION_RUN_ID: ${{ github.run_id }}
-          ACTIVATION_RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          python3 scripts/ai/verify_cross_ai_source_activation.py \
-            --repo . \
-            --trusted-ref "$ACTIVATION_SHA" \
-            --expected-sha "$ACTIVATION_SHA" \
-            --repository "$ACTIVATION_REPOSITORY" \
-            --workflow-ref "$ACTIVATION_WORKFLOW_REF" \
-            --event-name "$ACTIVATION_EVENT_NAME" \
-            --git-ref "$ACTIVATION_GIT_REF" \
-            --run-id "$ACTIVATION_RUN_ID" \
-            --run-attempt "$ACTIVATION_RUN_ATTEMPT" \
-            --output "$ACTIVATION_OUTPUT"
-      - name: Persist Cross-AI source-trust activation
-        if: github.event_name == 'push'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: cross-ai-source-trust-activation-${{ github.sha }}
-          path: ${{ runner.temp }}/cross-ai-source-trust-activation.json
-          if-no-files-found: error
-          retention-days: 90
       # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
       # the Argo root (owner-gated activation). Render sanity + isolation guards
       # (Codex 019ebc51 P2 — machine-enforced, not self-attestation).
@@ -377,3 +346,77 @@ jobs:
             fi
             echo "✓ ${overlay} placeholder temiz"
           done
+
+  cross-ai-source-activation:
+    name: Cross-AI Source Trust Activation
+    if: github.event_name == 'push'
+    needs:
+      - kustomize-build
+      - yaml-lint
+      - shell-lint
+      - closure-language-check
+      - placeholder-leak-check
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      statuses: write
+    steps:
+      - name: Checkout exact successful main SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify Cross-AI source-trust activation
+        env:
+          ACTIVATION_SHA: ${{ github.sha }}
+          ACTIVATION_OUTPUT: ${{ runner.temp }}/cross-ai-source-trust-activation.json
+          ACTIVATION_REPOSITORY: ${{ github.repository }}
+          ACTIVATION_WORKFLOW_REF: ${{ github.workflow_ref }}
+          ACTIVATION_EVENT_NAME: ${{ github.event_name }}
+          ACTIVATION_GIT_REF: ${{ github.ref }}
+          ACTIVATION_RUN_ID: ${{ github.run_id }}
+          ACTIVATION_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 scripts/ai/verify_cross_ai_source_activation.py \
+            --repo . \
+            --trusted-ref "$ACTIVATION_SHA" \
+            --expected-sha "$ACTIVATION_SHA" \
+            --repository "$ACTIVATION_REPOSITORY" \
+            --workflow-ref "$ACTIVATION_WORKFLOW_REF" \
+            --event-name "$ACTIVATION_EVENT_NAME" \
+            --git-ref "$ACTIVATION_GIT_REF" \
+            --run-id "$ACTIVATION_RUN_ID" \
+            --run-attempt "$ACTIVATION_RUN_ATTEMPT" \
+            --output "$ACTIVATION_OUTPUT"
+      - name: Persist bounded activation artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cross-ai-source-trust-activation-${{ github.sha }}
+          path: ${{ runner.temp }}/cross-ai-source-trust-activation.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Persist durable activation status on main SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ACTIVATION_SHA: ${{ github.sha }}
+          ACTIVATION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          payload="$(jq -nc \
+            --arg target_url "$ACTIVATION_RUN_URL" \
+            '{state:"success",context:"cross-ai/source-trust-activation",description:"Cross-AI source trust activated",target_url:$target_url}')"
+          created="$(gh api \
+            "repos/${GH_REPO}/statuses/${ACTIVATION_SHA}" \
+            --method POST \
+            --input - <<<"$payload")"
+          jq -e \
+            --arg target_url "$ACTIVATION_RUN_URL" \
+            '.state == "success"
+             and .context == "cross-ai/source-trust-activation"
+             and .description == "Cross-AI source trust activated"
+             and .target_url == $target_url
+             and .creator.login == "github-actions[bot]"
+             and (.id | type == "number")' \
+            <<<"$created" >/dev/null

@@ -106,13 +106,17 @@ jobs:
         with:
           node-version: 20
 
-      - name: Load exact-base Cross-AI source-trust activation
+      - name: Load or recover exact-base Cross-AI source-trust activation
         id: activation
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           ACTIVATION_DIR: ${{ runner.temp }}/cross-ai-source-trust-activation
+          ACTIVATION_WORKFLOW_REF: ${{ github.workflow_ref }}
+          ACTIVATION_RUN_ID: ${{ github.run_id }}
+          ACTIVATION_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           run_id="$({
@@ -121,13 +125,54 @@ jobs:
           } | jq -r --arg sha "$PR_BASE_SHA" \
             '.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success") | .id' \
             | sed -n '1p')"
-          test -n "$run_id"
           mkdir -p "$ACTIVATION_DIR"
-          gh run download "$run_id" \
-            --repo "$GH_REPO" \
-            --name "cross-ai-source-trust-activation-${PR_BASE_SHA}" \
-            --dir "$ACTIVATION_DIR"
           activation_file="${ACTIVATION_DIR}/cross-ai-source-trust-activation.json"
+          if [[ -n "$run_id" ]] && gh run download "$run_id" \
+              --repo "$GH_REPO" \
+              --name "cross-ai-source-trust-activation-${PR_BASE_SHA}" \
+              --dir "$ACTIVATION_DIR"; then
+            test -s "$activation_file"
+          else
+            rm -f "$activation_file"
+            test "$PR_BASE_REF" = "main"
+            anchor_file="${ACTIVATION_DIR}/durable-main-status-anchor.json"
+            statuses="$(gh api --paginate --slurp \
+              "repos/${GH_REPO}/commits/${PR_BASE_SHA}/statuses?per_page=100")"
+            status="$(jq -c '
+              [ .[][]
+                | select(.context == "cross-ai/source-trust-activation")
+                | select(.state == "success")
+                | select(.description == "Cross-AI source trust activated")
+                | select(.creator.login == "github-actions[bot]")
+              ] | max_by(.id) // empty
+            ' <<<"$statuses")"
+            test -n "$status"
+            anchor_run_id="$(jq -r '
+              .target_url
+              | capture("/actions/runs/(?<id>[0-9]+)$").id
+            ' <<<"$status")"
+            anchor_run="$(gh api \
+              "repos/${GH_REPO}/actions/runs/${anchor_run_id}")"
+            jq -nc \
+              --arg anchor_sha "$PR_BASE_SHA" \
+              --argjson status "$status" \
+              --argjson run "$anchor_run" \
+              '{anchor_sha:$anchor_sha,status:$status,run:$run}' > "$anchor_file"
+            test -s "$anchor_file"
+            python3 scripts/ai/verify_cross_ai_source_activation.py \
+              --repo . \
+              --trusted-ref "$PR_BASE_SHA" \
+              --expected-sha "$PR_BASE_SHA" \
+              --repository "$GH_REPO" \
+              --workflow-ref "$ACTIVATION_WORKFLOW_REF" \
+              --event-name "pull_request_target" \
+              --git-ref "refs/heads/main" \
+              --run-id "$ACTIVATION_RUN_ID" \
+              --run-attempt "$ACTIVATION_RUN_ATTEMPT" \
+              --recovery-anchor-file "$anchor_file" \
+              --output "$activation_file"
+            run_id="$ACTIVATION_RUN_ID"
+          fi
           test -s "$activation_file"
           echo "file=$activation_file" >> "$GITHUB_OUTPUT"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"

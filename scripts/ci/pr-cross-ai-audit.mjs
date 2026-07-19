@@ -87,9 +87,13 @@ const TRUSTED_CODEX_NATIVE_SHA256 = new Map([
   ['0.144.1:codex-linux-arm64', '9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07'],
   ['0.144.1:codex-linux-x64', 'a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902'],
 ]);
-const SOURCE_ACTIVATION_KEYS = [
+const SOURCE_ACTIVATION_V1_KEYS = [
   'activated_at', 'event_name', 'ok', 'ref', 'repository', 'run_attempt',
   'run_id', 'schema', 'source_digests', 'trusted_sha', 'workflow_ref',
+];
+const SOURCE_ACTIVATION_V2_KEYS = [
+  ...SOURCE_ACTIVATION_V1_KEYS,
+  'activation_mode', 'anchor_run_id', 'anchor_sha', 'anchor_status_id',
 ];
 const VERIFIED_SOURCE_ACTIVATION_MS = Symbol('verified-source-activation-ms');
 const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
@@ -464,15 +468,34 @@ function sourceActivationFinding(prMeta, trustedSourceDigestOverrides) {
   const runId = String(attestation?.run_id ?? '');
   const runAttempt = String(attestation?.run_attempt ?? '');
   const activatedAtMs = Date.parse(attestation?.activated_at || '');
+  const v1 = attestation?.schema === 'cross-ai-source-trust-activation/v1';
+  const v2 = attestation?.schema === 'cross-ai-source-trust-activation/v2';
+  const expectedKeys = v2 ? SOURCE_ACTIVATION_V2_KEYS : SOURCE_ACTIVATION_V1_KEYS;
+  const contextPass = v1
+    ? (
+      attestation?.workflow_ref === `${prMeta?.baseRepo}/.github/workflows/ci.yml@refs/heads/main`
+      && attestation?.event_name === 'push'
+    )
+    : (
+      v2
+      && attestation?.workflow_ref === `${prMeta?.baseRepo}/.github/workflows/gate-cross-ai-audit.yml@refs/heads/main`
+      && attestation?.event_name === 'pull_request_target'
+      && attestation?.activation_mode === 'durable-main-status-recovery'
+      && COMMIT_SHA_RE.test(attestation?.anchor_sha || '')
+      && attestation.anchor_sha.toLowerCase() === prMeta?.baseSha?.toLowerCase()
+      && Number.isInteger(attestation?.anchor_status_id)
+      && attestation.anchor_status_id > 0
+      && /^\d+$/.test(String(attestation?.anchor_run_id || ''))
+      && Number(attestation.anchor_run_id) > 0
+    );
   const pass = Boolean(
     attestation
-    && keys.join(',') === [...SOURCE_ACTIVATION_KEYS].sort().join(',')
+    && keys.join(',') === [...expectedKeys].sort().join(',')
     && attestation.ok === true
-    && attestation.schema === 'cross-ai-source-trust-activation/v1'
+    && (v1 || v2)
     && attestation.trusted_sha === prMeta?.baseSha?.toLowerCase()
     && attestation.repository === prMeta?.baseRepo
-    && attestation.workflow_ref === `${prMeta?.baseRepo}/.github/workflows/ci.yml@refs/heads/main`
-    && attestation.event_name === 'push'
+    && contextPass
     && attestation.ref === 'refs/heads/main'
     && /^\d+$/.test(runId)
     && Number(runId) > 0
@@ -491,8 +514,12 @@ function sourceActivationFinding(prMeta, trustedSourceDigestOverrides) {
     pass,
     activatedAtMs: pass ? activatedAtMs : null,
     detail: pass
-      ? `exact main base ${prMeta.baseSha.slice(0, 12)} successful CI activation artifact'i ile bağlı`
-      : 'exact PR base için başarılı main-push source activation artifact doğrulanamadı',
+      ? (
+        v2
+          ? `exact main base ${prMeta.baseSha.slice(0, 12)} kalıcı main status recovery kanıtı ile bağlı`
+          : `exact main base ${prMeta.baseSha.slice(0, 12)} successful CI activation artifact'i ile bağlı`
+      )
+      : 'exact PR base için source activation artifact veya kalıcı main status recovery kanıtı doğrulanamadı',
   };
 }
 

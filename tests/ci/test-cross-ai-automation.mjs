@@ -136,6 +136,20 @@ const sourceActivation = (
   run_attempt: '1',
   activated_at: '2026-07-19T17:30:00Z',
 });
+const sourceActivationRecovery = (
+  trustedSha = BASE_TIP_SHA,
+  sourceDigests = CURRENT_TRUSTED_SOURCE_DIGESTS,
+  runId = '12345',
+) => ({
+  ...sourceActivation(trustedSha, sourceDigests, runId),
+  schema: 'cross-ai-source-trust-activation/v2',
+  workflow_ref: `${REPO}/.github/workflows/gate-cross-ai-audit.yml@refs/heads/main`,
+  event_name: 'pull_request_target',
+  activation_mode: 'durable-main-status-recovery',
+  anchor_sha: trustedSha,
+  anchor_status_id: 987,
+  anchor_run_id: '7654',
+});
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
 const evidenceBody = (provider, model, response, options = {}) => JSON.stringify({
@@ -1154,6 +1168,10 @@ const cases = [
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['normal PR accepts durable main-status activation recovery',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [ROUTINE_PATH], sourceActivationAttestation: sourceActivationRecovery() }, 0],
+  ['durable activation recovery rejects a non-exact-base anchor',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [ROUTINE_PATH], sourceActivationAttestation: { ...sourceActivationRecovery(), anchor_sha: '9'.repeat(40) }, expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
   ['two-step force-push history still discovers an ancestor REVISE tombstone',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],

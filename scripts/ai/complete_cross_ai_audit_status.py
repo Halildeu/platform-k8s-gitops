@@ -20,6 +20,7 @@ MARKER_RE = re.compile(
 AUDIT_CONTEXT = "cross-ai-audit"
 PENDING_DESCRIPTION = "Cross-AI evidence changed; trusted audit required"
 TRUSTED_WORKFLOW_STATUS_CREATOR = "github-actions[bot]"
+RETRY_DESCRIPTION_PREFIX = "Cross-AI audit retry required generation="
 
 
 def fail(code: str) -> NoReturn:
@@ -62,6 +63,57 @@ def flatten_status_pages(payload: object) -> list[dict]:
             fail("github_audit_status_history_invalid")
         statuses.extend(page)
     return statuses
+
+
+def creator_login(status: dict | None) -> str:
+    try:
+        return status["creator"]["login"].lower()
+    except (KeyError, TypeError, AttributeError):
+        return ""
+
+
+def valid_owner_pending(status: dict | None, generation: int, owner: str, url: str) -> bool:
+    return bool(
+        status
+        and status.get("id") == generation
+        and status.get("state") == "pending"
+        and status.get("context") == AUDIT_CONTEXT
+        and status.get("description") == PENDING_DESCRIPTION
+        and status.get("target_url") == url
+        and creator_login(status) == owner
+    )
+
+
+def valid_retry_pending(status: dict | None, generation: int, url: str) -> bool:
+    return bool(
+        status
+        and status.get("state") == "pending"
+        and status.get("context") == AUDIT_CONTEXT
+        and status.get("description") == f"{RETRY_DESCRIPTION_PREFIX}{generation}"
+        and status.get("target_url") == url
+        and creator_login(status) == TRUSTED_WORKFLOW_STATUS_CREATOR
+        and isinstance(status.get("id"), int)
+        and status["id"] > generation
+    )
+
+
+def post_retry_pending(repo: str, head: str, url: str, generation: int) -> dict:
+    payload = json.dumps(
+        {
+            "state": "pending",
+            "context": AUDIT_CONTEXT,
+            "description": f"{RETRY_DESCRIPTION_PREFIX}{generation}",
+            "target_url": url,
+        },
+        separators=(",", ":"),
+    )
+    created = gh_json(
+        [f"repos/{repo}/statuses/{head}", "--method", "POST", "--input", "-"],
+        input_text=payload,
+    )
+    if not valid_retry_pending(created, generation, url):
+        fail("audit_retry_status_invalid")
+    return created
 
 
 def complete_status(repo: str, issue: int, event_path: Path) -> dict:
@@ -130,6 +182,12 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         fail("audit_generation_marker_incomplete")
 
     owner = repo.split("/", 1)[0].lower()
+    owner_pending = next(
+        (status for status in audit_statuses if status.get("id") == pending_status_id),
+        None,
+    )
+    if not valid_owner_pending(owner_pending, pending_status_id, owner, expected_url):
+        fail("audit_generation_owner_pending_invalid")
     ledger = next(
         (status for status in statuses if status.get("id") == ledger_status_id),
         None,
@@ -147,10 +205,18 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
 
     success_description = f"Trusted Cross-AI audit passed generation={pending_status_id}"
     if latest_audit is not None and latest_audit.get("state") == "success":
-        try:
-            success_creator = latest_audit["creator"]["login"].lower()
-        except (KeyError, TypeError, AttributeError):
-            fail("audit_generation_success_invalid")
+        success_creator = creator_login(latest_audit)
+        newer_owner_pending = [
+            status for status in audit_statuses
+            if status.get("id", 0) > pending_status_id
+            and creator_login(status) == owner
+            and status.get("state") == "pending"
+            and status.get("description") == PENDING_DESCRIPTION
+        ]
+        if newer_owner_pending:
+            next_generation = max(status["id"] for status in newer_owner_pending)
+            post_retry_pending(repo, event_head, expected_url, next_generation)
+            fail("audit_generation_superseded_after_success")
         if (
             latest_audit.get("description") != success_description
             or latest_audit.get("target_url") != expected_url
@@ -164,16 +230,9 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
             "generation": pending_status_id,
             "status_id": latest_audit["id"],
         }
-    try:
-        latest_creator = latest_audit["creator"]["login"].lower()
-    except (KeyError, TypeError, AttributeError):
-        fail("audit_generation_not_latest_pending")
-    if (
-        latest_audit.get("state") != "pending"
-        or latest_audit["id"] != pending_status_id
-        or latest_audit.get("description") != PENDING_DESCRIPTION
-        or latest_audit.get("target_url") != expected_url
-        or latest_creator != owner
+    if not (
+        valid_owner_pending(latest_audit, pending_status_id, owner, expected_url)
+        or valid_retry_pending(latest_audit, pending_status_id, expected_url)
     ):
         fail("audit_generation_not_latest_pending")
 
@@ -204,6 +263,55 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or created_creator != TRUSTED_WORKFLOW_STATUS_CREATOR
     ):
         fail("audit_success_status_invalid")
+
+    current_after = gh_json([f"repos/{repo}/pulls/{issue}", "--method", "GET"])
+    pages_after = gh_json([
+        "--paginate",
+        "--slurp",
+        f"repos/{repo}/commits/{event_head}/statuses?per_page=100",
+        "--method",
+        "GET",
+    ])
+    statuses_after = flatten_status_pages(pages_after)
+    audit_after = [
+        status for status in statuses_after
+        if status.get("context") == AUDIT_CONTEXT
+        and isinstance(status.get("id"), int)
+    ]
+    newer_owner_pending = [
+        status for status in audit_after
+        if status["id"] > pending_status_id
+        and status.get("state") == "pending"
+        and status.get("description") == PENDING_DESCRIPTION
+        and status.get("target_url") == expected_url
+        and creator_login(status) == owner
+    ]
+    try:
+        current_after_head = current_after["head"]["sha"].lower()
+        current_after_base = current_after["base"]["sha"].lower()
+        current_after_body = current_after.get("body") or ""
+    except (KeyError, TypeError, AttributeError):
+        current_after_head = ""
+        current_after_base = ""
+        current_after_body = ""
+    superseded = bool(
+        current_after.get("state") != "open"
+        or current_after_head != event_head
+        or current_after_base != event_base
+        or current_after_body != event_body
+        or newer_owner_pending
+    )
+    if superseded:
+        marker_matches = MARKER_RE.findall(current_after_body)
+        next_generation = pending_status_id
+        if len(marker_matches) == 1:
+            candidate = int(marker_matches[0][0])
+            if any(valid_owner_pending(status, candidate, owner, expected_url) for status in audit_after):
+                next_generation = candidate
+        elif newer_owner_pending:
+            next_generation = max(status["id"] for status in newer_owner_pending)
+        post_retry_pending(repo, event_head, expected_url, next_generation)
+        fail("audit_generation_superseded_after_success")
     return {
         "ok": True,
         "action": "marked-current",

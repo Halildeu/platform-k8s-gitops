@@ -123,10 +123,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.current_pr(body),
             [[self.pending(), self.ledger()]],
             success,
+            self.current_pr(body),
+            [[self.pending(), self.ledger(), success]],
         ])
         self.assertEqual(result["action"], "marked-current")
         self.assertEqual(result["generation"], 10)
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 5)
         self.assertIn(f"statuses/{self.head}", calls[2][2])
 
     def test_stale_event_body_or_force_push_cannot_clear_pending(self) -> None:
@@ -206,6 +208,124 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         ])
         self.assertEqual(result["action"], "already-current")
         self.assertEqual(len(calls), 2)
+
+    def test_new_owner_generation_after_validation_restores_pending(self) -> None:
+        old_body = self.write_event()
+        new_body = self.body(20, 21)
+        success = {
+            "id": 30,
+            "state": "success",
+            "context": "cross-ai-audit",
+            "description": "Trusted Cross-AI audit passed generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        retry = {
+            "id": 31,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=20",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        responses = [
+            self.current_pr(old_body),
+            [[self.pending(), self.ledger()]],
+            success,
+            self.current_pr(new_body),
+            [[
+                self.pending(),
+                self.ledger(),
+                self.pending(identifier=20),
+                self.ledger(identifier=21),
+                success,
+            ]],
+            retry,
+        ]
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+        self.assertEqual(len(calls), 6)
+        self.assertIn(f"statuses/{self.head}", calls[-1][2])
+
+    def test_trusted_retry_pending_can_resume_exact_owner_generation(self) -> None:
+        body = self.write_event()
+        retry = {
+            "id": 12,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        success = {
+            "id": 13,
+            "state": "success",
+            "context": "cross-ai-audit",
+            "description": "Trusted Cross-AI audit passed generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        result, _calls = self.execute([
+            self.current_pr(body),
+            [[self.pending(), self.ledger(), retry]],
+            success,
+            self.current_pr(body),
+            [[self.pending(), self.ledger(), retry, success]],
+        ])
+        self.assertEqual(result["action"], "marked-current")
+
+    def test_stale_success_with_newer_owner_pending_is_reinvalidated(self) -> None:
+        body = self.write_event()
+        stale_success = {
+            "id": 30,
+            "state": "success",
+            "context": "cross-ai-audit",
+            "description": "Trusted Cross-AI audit passed generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        retry = {
+            "id": 31,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=20",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        responses = [
+            self.current_pr(body),
+            [[
+                self.pending(),
+                self.ledger(),
+                self.pending(identifier=20),
+                stale_success,
+            ]],
+            retry,
+        ]
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
 
     def test_non_owner_or_different_pending_generation_cannot_be_cleared(self) -> None:
         body = self.write_event()

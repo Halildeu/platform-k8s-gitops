@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import tempfile
 import unittest
@@ -189,6 +190,179 @@ class SourceActivationTests(unittest.TestCase):
         with (self.repo / first_path).open("ab") as handle:
             handle.write(b"\n# untrusted mutation\n")
         self.assert_activation_error("trusted_source_checkout_mismatch", activation_sha)
+
+    def test_durable_main_status_recovers_expired_artifact(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        anchor_file = self.repo / "anchor.json"
+        anchor_file.write_text(
+            json.dumps({
+                "anchor_sha": activation_sha,
+                "status": {
+                    "id": 987,
+                    "sha": activation_sha,
+                    "state": "success",
+                    "context": MODULE.ACTIVATION_STATUS_CONTEXT,
+                    "description": MODULE.ACTIVATION_STATUS_DESCRIPTION,
+                    "target_url": (
+                        "https://github.com/Halildeu/platform-k8s-gitops/"
+                        "actions/runs/7654"
+                    ),
+                    "created_at": "2099-01-01T00:00:00Z",
+                    "creator": {"login": "github-actions[bot]"},
+                },
+                "run": {
+                    "id": 7654,
+                    "head_sha": activation_sha,
+                    "event": "push",
+                    "head_branch": "main",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "path": ".github/workflows/ci.yml",
+                    "html_url": (
+                        "https://github.com/Halildeu/platform-k8s-gitops/"
+                        "actions/runs/7654"
+                    ),
+                    "repository": {"full_name": "Halildeu/platform-k8s-gitops"},
+                },
+            }),
+            encoding="utf-8",
+        )
+        result = MODULE.verify_activation(
+            self.repo,
+            activation_sha,
+            activation_sha,
+            repository="Halildeu/platform-k8s-gitops",
+            workflow_ref=(
+                "Halildeu/platform-k8s-gitops/"
+                ".github/workflows/gate-cross-ai-audit.yml@refs/heads/main"
+            ),
+            event_name="pull_request_target",
+            git_ref="refs/heads/main",
+            run_id="9999",
+            run_attempt="2",
+            recovery_anchor_file=anchor_file,
+        )
+        self.assertEqual(result["schema"], "cross-ai-source-trust-activation/v2")
+        self.assertEqual(result["activation_mode"], "durable-main-status-recovery")
+        self.assertEqual(result["anchor_sha"], activation_sha)
+        self.assertEqual(result["anchor_status_id"], 987)
+        self.assertEqual(result["anchor_run_id"], "7654")
+
+    def test_recovery_rejects_non_actions_activation_status(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        anchor_file = self.repo / "anchor.json"
+        anchor_file.write_text(
+            json.dumps({
+                "anchor_sha": activation_sha,
+                "status": {
+                    "id": 987,
+                    "sha": activation_sha,
+                    "state": "success",
+                    "context": MODULE.ACTIVATION_STATUS_CONTEXT,
+                    "description": MODULE.ACTIVATION_STATUS_DESCRIPTION,
+                    "target_url": (
+                        "https://github.com/Halildeu/platform-k8s-gitops/"
+                        "actions/runs/7654"
+                    ),
+                    "created_at": "2099-01-01T00:00:00Z",
+                    "creator": {"login": "collaborator"},
+                },
+                "run": {
+                    "id": 7654,
+                    "head_sha": activation_sha,
+                    "event": "push",
+                    "head_branch": "main",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "path": ".github/workflows/ci.yml",
+                    "html_url": (
+                        "https://github.com/Halildeu/platform-k8s-gitops/"
+                        "actions/runs/7654"
+                    ),
+                    "repository": {"full_name": "Halildeu/platform-k8s-gitops"},
+                },
+            }),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            MODULE.ActivationError, "^recovery_anchor_invalid$"
+        ):
+            MODULE.verify_activation(
+                self.repo,
+                activation_sha,
+                activation_sha,
+                repository="Halildeu/platform-k8s-gitops",
+                workflow_ref=(
+                    "Halildeu/platform-k8s-gitops/"
+                    ".github/workflows/gate-cross-ai-audit.yml@refs/heads/main"
+                ),
+                event_name="pull_request_target",
+                git_ref="refs/heads/main",
+                run_id="9999",
+                run_attempt="2",
+                recovery_anchor_file=anchor_file,
+            )
+
+    def test_recovery_rejects_success_from_an_older_main_commit(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        (self.repo / "README.md").write_text("new base\n", encoding="utf-8")
+        self.commit("new exact base without a successful activation status")
+        exact_base_sha = self.head_sha()
+        anchor_file = self.repo / "anchor.json"
+        anchor_file.write_text(
+            json.dumps({
+                "anchor_sha": activation_sha,
+                "status": {
+                    "id": 987,
+                    "sha": activation_sha,
+                    "state": "success",
+                    "context": MODULE.ACTIVATION_STATUS_CONTEXT,
+                    "description": MODULE.ACTIVATION_STATUS_DESCRIPTION,
+                    "target_url": (
+                        "https://github.com/Halildeu/platform-k8s-gitops/"
+                        "actions/runs/7654"
+                    ),
+                    "created_at": "2099-01-01T00:00:00Z",
+                    "creator": {"login": "github-actions[bot]"},
+                },
+                "run": {
+                    "id": 7654,
+                    "head_sha": activation_sha,
+                    "event": "push",
+                    "head_branch": "main",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "path": ".github/workflows/ci.yml",
+                    "html_url": (
+                        "https://github.com/Halildeu/platform-k8s-gitops/"
+                        "actions/runs/7654"
+                    ),
+                    "repository": {"full_name": "Halildeu/platform-k8s-gitops"},
+                },
+            }),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            MODULE.ActivationError, "^recovery_anchor_not_exact_base$"
+        ):
+            MODULE.verify_activation(
+                self.repo,
+                exact_base_sha,
+                exact_base_sha,
+                repository="Halildeu/platform-k8s-gitops",
+                workflow_ref=(
+                    "Halildeu/platform-k8s-gitops/"
+                    ".github/workflows/gate-cross-ai-audit.yml@refs/heads/main"
+                ),
+                event_name="pull_request_target",
+                git_ref="refs/heads/main",
+                run_id="9999",
+                run_attempt="2",
+                recovery_anchor_file=anchor_file,
+            )
 
 
 if __name__ == "__main__":
