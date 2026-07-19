@@ -126,10 +126,17 @@ check_object_headroom() {
     quota_failures=$((quota_failures + 1))
   fi
 }
-check_object_headroom services 2 2
-check_object_headroom configmaps 2 2
-check_object_headroom secrets 2 2
-check_object_headroom pods 4 2
+if [ "$PREFLIGHT_STAGE" = foundation ]; then
+  # Provisioning creates one Kubernetes Secret for the dedicated Vault
+  # AppRole. Keep one additional Secret slot for retry/repair, but do not make
+  # foundation provisioning depend on workload quotas that activation owns.
+  check_object_headroom secrets 1 1
+else
+  check_object_headroom services 2 2
+  check_object_headroom configmaps 2 2
+  check_object_headroom secrets 2 2
+  check_object_headroom pods 4 2
+fi
 [ "$quota_failures" -eq 0 ] || exit 1
 
 public_ip=""

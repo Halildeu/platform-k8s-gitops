@@ -116,9 +116,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("secret file must be a regular non-symlink", self.pg_vault)
         self.assertRegex(
             self.openfga,
-            re.compile(r"STAFF_SUBJECT.*required", re.DOTALL),
+            re.compile(r"STAFF_SUBJECT=.*WRONG_ORG_SUBJECT=.*DENIED_SUBJECT", re.DOTALL),
         )
-        self.assertIn("STAFF_SUBJECT must be a Keycloak UUID", self.openfga)
+        self.assertIn("must be a Keycloak UUID from provision-test-keycloak.sh", self.openfga)
 
     def test_keycloak_provisioner_mints_and_checks_real_token_contract(self):
         self.assertIn("--data-binary @-", self.keycloak)
@@ -138,7 +138,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("optional-client-scopes", self.keycloak)
         self.assertIn("default-client-scopes", self.keycloak)
         self.assertIn("scope-mappings/realm", self.keycloak)
-        self.assertIn("is not role-bound to ethics-manager", self.keycloak)
+        self.assertIn("role mapping is not the exact ethics-manager allowlist", self.keycloak)
+        self.assertIn("realm role drifted from the non-composite allowlist", self.keycloak)
+        self.assertIn("mapper set drifted from the exact allowlist", self.keycloak)
+        self.assertIn("must not contain protocol mappers", self.keycloak)
+        self.assertIn("has unexpected realm/client role mappings", self.keycloak)
+        self.assertIn("must not inherit privileges from a group", self.keycloak)
+        self.assertIn("contains a forbidden audience", self.keycloak)
         self.assertIn("kc add-roles", self.keycloak)
         self.assertNotIn("kcadm.sh set-password", self.keycloak)
         self.assertNotIn("--new-password", self.keycloak)
@@ -197,7 +203,27 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("token_no_default_policy=true", self.pg_vault)
         self.assertIn("secret_id_ttl=720h", self.pg_vault)
         self.assertIn("secret-id-accessor/destroy", self.pg_vault)
+        self.assertIn("existing AppRole credentials could not be enumerated", self.pg_vault)
+        self.assertIn("post-rotation AppRole credential enumeration failed", self.pg_vault)
+        self.assertIn("stale AppRole credential accessor remains", self.pg_vault)
         self.assertIn('--from-file=secret-id="$approle_secret_file"', self.pg_vault)
+
+    def test_negative_personas_are_bound_to_openfga_deny_postconditions(self):
+        self.assertIn("ETHICS_WRONG_ORG_SUBJECT=$wrong_org_id", self.keycloak)
+        self.assertIn("ETHICS_DENIED_SUBJECT=$denied_id", self.keycloak)
+        self.assertIn("WRONG_ORG_SUBJECT", self.openfga)
+        self.assertIn("DENIED_SUBJECT", self.openfga)
+        self.assertIn("assert_no_direct_allow", self.openfga)
+        self.assertIn("negative persona has a pre-existing direct Etik Speak allow tuple", self.openfga)
+        self.assertIn("wrong-org-deny", self.openfga)
+        self.assertIn("denied-persona-deny", self.openfga)
+
+    def test_authority_and_persona_password_files_are_strictly_bounded(self):
+        for script in (self.pg_vault, self.keycloak):
+            self.assertIn("Vault init file must be a readable regular non-symlink", script)
+            self.assertIn("Vault init file must be invoking-user-owned mode 600", script)
+        self.assertIn("persona password fails the length/format policy", self.keycloak)
+        self.assertIn("negative-persona password fails the length/format policy", self.keycloak)
 
     def test_preflight_is_read_only_and_binds_live_dependencies(self):
         self.assertIn('SSH_TARGET" = "halil@staging-sw', self.preflight)
@@ -219,6 +245,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "ServerAliveCountMax=2",
             "--request-timeout=10s",
             "--max-time 10",
+            'if [ "$PREFLIGHT_STAGE" = foundation ]',
+            "check_object_headroom secrets 1 1",
             "check_object_headroom services 2 2",
             "check_object_headroom configmaps 2 2",
             "check_object_headroom secrets 2 2",

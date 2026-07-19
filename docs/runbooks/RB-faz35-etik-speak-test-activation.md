@@ -88,7 +88,9 @@ Use the printed subject to promote the isolated OpenFGA model and seed only the
 allow-persona product relations:
 
 ```bash
-STAFF_SUBJECT='<uuid-from-keycloak-step>' \
+STAFF_SUBJECT='<allow-uuid-from-keycloak-step>' \
+WRONG_ORG_SUBJECT='<wrong-org-uuid-from-keycloak-step>' \
+DENIED_SUBJECT='<denied-uuid-from-keycloak-step>' \
   ./scripts/faz35/provision-test-openfga.sh
 ```
 

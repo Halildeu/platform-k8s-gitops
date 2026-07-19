@@ -63,7 +63,15 @@ done
   exit 1
 }
 command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
-[ -r "$VAULT_INIT_FILE" ] || { echo "FATAL: Vault init file unreadable" >&2; exit 1; }
+[ -r "$VAULT_INIT_FILE" ] && [ -f "$VAULT_INIT_FILE" ] && [ ! -L "$VAULT_INIT_FILE" ] || {
+  echo "FATAL: Vault init file must be a readable regular non-symlink" >&2
+  exit 1
+}
+[ "$(stat -c '%u' "$VAULT_INIT_FILE")" = "$(id -u)" ] && \
+  [ "$(stat -c '%a' "$VAULT_INIT_FILE")" = 600 ] || {
+  echo "FATAL: Vault init file must be invoking-user-owned mode 600" >&2
+  exit 1
+}
 
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
 approle_secret_file=""
@@ -233,8 +241,21 @@ old_accessors=$(printf '%s\n' "$vault_root_token" | docker exec -i \
     set -eu
     IFS= read -r VAULT_TOKEN
     export VAULT_TOKEN
-    vault list -format=json "auth/approle/role/$1/secret-id" 2>/dev/null || printf "[]"
-  ' sh "$ESO_APPROLE_NAME")
+    error_file=$(mktemp)
+    trap '\''rm -f "$error_file"'\'' EXIT
+    if vault list -format=json "auth/approle/role/$1/secret-id" 2>"$error_file"; then
+      exit 0
+    fi
+    if grep -Eqi "no value found|not found" "$error_file"; then
+      printf "[]"
+      exit 0
+    fi
+    printf "Vault AppRole accessor list failed; rotation refused.\n" >&2
+    exit 45
+  ' sh "$ESO_APPROLE_NAME") || {
+  echo "FATAL: existing AppRole credentials could not be enumerated" >&2
+  exit 1
+}
 approle_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
   -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
     set -eu
@@ -272,7 +293,22 @@ printf '%s' "$old_accessors" | jq -r '.[]?' | while IFS= read -r accessor; do
         secret_id_accessor="$SECRET_ID_ACCESSOR" >/dev/null
     ' sh "$ESO_APPROLE_NAME"
 done
-unset old_accessors new_accessor
+final_accessors=$(printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    exec vault list -format=json "auth/approle/role/$1/secret-id"
+  ' sh "$ESO_APPROLE_NAME") || {
+  echo "FATAL: post-rotation AppRole credential enumeration failed" >&2
+  exit 1
+}
+printf '%s' "$final_accessors" | jq -e --arg expected "$new_accessor" \
+  'type == "array" and length == 1 and .[0] == $expected' >/dev/null || {
+  echo "FATAL: stale AppRole credential accessor remains after rotation" >&2
+  exit 1
+}
+unset old_accessors final_accessors new_accessor
 
 # Create/validate the login role without embedding a cleartext password in SQL.
 docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'

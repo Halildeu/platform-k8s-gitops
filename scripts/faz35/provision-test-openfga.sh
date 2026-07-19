@@ -18,7 +18,10 @@ POD_DEPLOY="${POD_DEPLOY:-deploy/meeting-service}"
 OPENFGA_BASE="${OPENFGA_BASE:-http://openfga:8080}"
 STORE_NAME="${STORE_NAME:-platform-test-etik-speak}"
 ETHICS_ORG_ID="${ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000001}"
+WRONG_ETHICS_ORG_ID="${WRONG_ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000002}"
 STAFF_SUBJECT="${STAFF_SUBJECT:-}"
+WRONG_ORG_SUBJECT="${WRONG_ORG_SUBJECT:-}"
+DENIED_SUBJECT="${DENIED_SUBJECT:-}"
 
 [ "$KUBE_NS" = "platform-test" ] && [ "$KUBE_CONTEXT" = "k3d-test" ] || {
   echo "FATAL: this script is k3d-test/platform-test only" >&2
@@ -28,7 +31,8 @@ for binding in \
   "$POD_DEPLOY=deploy/meeting-service" \
   "$OPENFGA_BASE=http://openfga:8080" \
   "$STORE_NAME=platform-test-etik-speak" \
-  "$ETHICS_ORG_ID=00000000-0000-0000-0000-000000000001"; do
+  "$ETHICS_ORG_ID=00000000-0000-0000-0000-000000000001" \
+  "$WRONG_ETHICS_ORG_ID=00000000-0000-0000-0000-000000000002"; do
   [ "${binding%%=*}" = "${binding#*=}" ] || {
     echo "FATAL: mutation target override refused: ${binding%%=*}" >&2
     exit 1
@@ -40,12 +44,21 @@ done
   echo "FATAL: MODEL_JSON override refused" >&2
   exit 1
 }
-[ -n "$STAFF_SUBJECT" ] || {
-  echo "FATAL: STAFF_SUBJECT is required; use provision-test-keycloak.sh output" >&2
-  exit 1
-}
-printf '%s' "$STAFF_SUBJECT" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
-  echo "FATAL: STAFF_SUBJECT must be a Keycloak UUID subject" >&2
+for subject_binding in \
+  "STAFF_SUBJECT=$STAFF_SUBJECT" \
+  "WRONG_ORG_SUBJECT=$WRONG_ORG_SUBJECT" \
+  "DENIED_SUBJECT=$DENIED_SUBJECT"; do
+  subject_name=${subject_binding%%=*}
+  subject_value=${subject_binding#*=}
+  printf '%s' "$subject_value" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
+    echo "FATAL: $subject_name must be a Keycloak UUID from provision-test-keycloak.sh" >&2
+    exit 1
+  }
+done
+[ "$STAFF_SUBJECT" != "$WRONG_ORG_SUBJECT" ] && \
+  [ "$STAFF_SUBJECT" != "$DENIED_SUBJECT" ] && \
+  [ "$WRONG_ORG_SUBJECT" != "$DENIED_SUBJECT" ] || {
+  echo "FATAL: positive and negative Keycloak subjects must be distinct" >&2
   exit 1
 }
 command -v jq >/dev/null 2>&1 || { echo "FATAL: jq missing" >&2; exit 1; }
@@ -109,6 +122,31 @@ if [ -z "$model_id" ]; then
 fi
 [ -n "$model_id" ] || { echo "FATAL: OpenFGA model id unresolved" >&2; exit 1; }
 
+assert_no_direct_allow() {
+  local subject=$1 org_id=$2 response code body
+  response=$(jq -nc --arg user "user:$subject" --arg object "ethics_product:$org_id" \
+    '{tuple_key:{user:$user,object:$object},page_size:100}' \
+    | pod_post "$OPENFGA_BASE/stores/$store_id/read")
+  code=${response##*$'\n'}
+  body=${response%$'\n'*}
+  [ "$code" = 200 ] || {
+    echo "FATAL: negative-persona direct tuple read HTTP $code" >&2
+    exit 1
+  }
+  printf '%s' "$body" | jq -e '
+    [.tuples[]?.key.relation | select(. == "viewer" or . == "triager" or . == "handler")] | length == 0
+  ' >/dev/null || {
+    echo "FATAL: negative persona has a pre-existing direct Etik Speak allow tuple" >&2
+    exit 1
+  }
+}
+
+# Fail before adding the positive manager tuples if either negative persona has
+# drifted into a direct product allow relation.
+assert_no_direct_allow "$WRONG_ORG_SUBJECT" "$WRONG_ETHICS_ORG_ID"
+assert_no_direct_allow "$WRONG_ORG_SUBJECT" "$ETHICS_ORG_ID"
+assert_no_direct_allow "$DENIED_SUBJECT" "$ETHICS_ORG_ID"
+
 write_relation() {
   local relation=$1 response code body
   response=$(jq -nc --arg model "$model_id" --arg user "user:$STAFF_SUBJECT" \
@@ -141,7 +179,23 @@ for relation in case_viewer case_triager case_handler; do
   }
 done
 
-echo "OpenFGA: isolated Etik Speak store/model and staff allow checks OK"
+check_expected() {
+  local subject=$1 relation=$2 org_id=$3 expected=$4 label=$5 response code body
+  response=$(jq -nc --arg model "$model_id" --arg user "user:$subject" \
+    --arg relation "$relation" --arg object "ethics_product:$org_id" \
+    '{authorization_model_id:$model,tuple_key:{user:$user,relation:$relation,object:$object}}' \
+    | pod_post "$OPENFGA_BASE/stores/$store_id/check")
+  code=${response##*$'\n'}
+  body=${response%$'\n'*}
+  [ "$code" = 200 ] && [ "$(printf '%s' "$body" | jq -r '.allowed')" = "$expected" ] || {
+    echo "FATAL: OpenFGA $label expected allowed=$expected" >&2
+    exit 1
+  }
+}
+check_expected "$WRONG_ORG_SUBJECT" case_viewer "$WRONG_ETHICS_ORG_ID" false wrong-org-deny
+check_expected "$DENIED_SUBJECT" case_viewer "$ETHICS_ORG_ID" false denied-persona-deny
+
+echo "OpenFGA: isolated store/model; positive allow and two negative deny postconditions OK"
 echo "ETHICS_OPENFGA_STORE_ID=$store_id"
 echo "ETHICS_OPENFGA_MODEL_ID=$model_id"
 echo "OpenFGA: pin these non-secret IDs plus the canonical digest in GitOps before activation"
