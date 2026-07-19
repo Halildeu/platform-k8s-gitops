@@ -971,6 +971,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             expected_cross_ai_trust_root_sha256=(
                 ADVISORY_FIXTURE.authority.expected_trust_root_sha256
             ),
+            codex_executable_policy=(
+                ADVISORY_FIXTURE.authority.codex_executable_policy
+            ),
         )
 
     def client_for_policy(

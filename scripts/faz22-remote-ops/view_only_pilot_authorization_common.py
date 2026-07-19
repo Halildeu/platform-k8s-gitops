@@ -66,6 +66,7 @@ def validate_codex_advisory_evidence(
     trust_root: dict[str, Any],
     revocations_envelope: dict[str, Any],
     expected_trust_root_sha256: str,
+    codex_executable_policy: dict[str, Any],
     reference_time: datetime,
 ) -> dict[str, Any]:
     """Verify the comment-carried leaf against independent signed authority."""
@@ -86,6 +87,7 @@ def validate_codex_advisory_evidence(
             trust_root=trust_root,
             revocations_envelope=revocations_envelope,
             expected_trust_root_sha256=expected_trust_root_sha256,
+            codex_executable_policy=codex_executable_policy,
             expected_bindings=expected_bindings,
             scope_bytes=scope_bytes,
             now=reference_time,

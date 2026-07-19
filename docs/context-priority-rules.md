@@ -362,7 +362,10 @@ belirsizliği veya risk için kullanılan sınırlı kalite kapısıdır.
    yüksek etkili review exact `gpt-5.6-sol` + `xhigh` kullanır. CLI başlangıç
    kimliğinde provider/model/effort exact görülmeden kanal tamamlanmış sayılmaz.
    Structured `Consultation class: routine|high-impact` alanı model seçimini
-   bağlar: `routine` yalnız Spark, `high-impact` yalnız SOL kabul eder. Bilinen
+   bağlar: `routine` yalnız Spark, `high-impact` yalnız SOL kabul eder. Canlı
+   katalogda exact Spark slug'ı bulunmadığı sürece routine `single`
+   `tracked_pending` kalır; başka Codex modeli, wrapper veya SOL fallback olarak
+   kullanılamaz. Normal rutin iş bu durumda `none` ile ilerler. Bilinen
    yüksek etkili path/branch sınıfı `routine` beyanını fail-closed reddeder;
    path adına yansımayan semantik yüksek etkiyi agent `high-impact` beyan eder.
    Changed-files kanıtı eksikse, consultation
@@ -465,7 +468,14 @@ Codex receipt: provider=openai; requested=<gpt-5.3-codex-spark|gpt-5.6-sol>; act
 Ref gövdesi `cross-ai-provider-evidence/v3` şemasında imzalı DSSE review leaf'i,
 fixed prompt-domain ve prompt SHA-256'sını, exact base-tip/base/head/scope bağını,
 Codex JSON-event transcript digestini ve sınıfa bağlı sabit Spark/SOL
-`xhigh`/read-only/ephemeral launch capability snapshot'ını taşır.
+`xhigh`/read-only/ephemeral launch capability snapshot'ını taşır. Launch ayrıca
+repo-public authority manifestindeki release-managed resmi OpenAI npm paket,
+native executable digest, CLI version ve Apple Developer ID/CDHash allowlist
+girdisine exact bağlıdır; runner'ın self-report ettiği executable kimliği authority
+değildir. Codex JSON stream model kimliği raporlamadığı için receipt'teki
+`actual` alanı provider-reported iddiası değil, bu imzalı sabit launch isteğinin
+`trusted-launch-attested` izdüşümüdür; capability içindeki
+`providerReportedModel` exact `null` kalır.
 `scripts/ai/build_cross_ai_evidence.py`
 git koordinatlarını ve canonical scope'u worktree'den kendi türetir; caller response,
 subject, model veya koordinat kabul etmez. `scripts/ai/post_cross_ai_evidence.py`

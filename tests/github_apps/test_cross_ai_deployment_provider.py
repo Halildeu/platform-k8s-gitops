@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -19,22 +21,18 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     DirectCodexRunner,
     ProviderExecutionReceipt,
     ProviderReviewIssuer,
-    REVIEW_RESULT_SCHEMA_VERSION,
     ReviewCoordinates,
+    parse_canonical_review_response,
 )
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
 
 
-REVIEW_RESULT = json.dumps(
-    {
-        "schemaVersion": REVIEW_RESULT_SCHEMA_VERSION,
-        "verdict": "PARTIAL",
-        "findingIds": [],
-        "resolvedFindingIds": ["FINDING_A"],
-        "acknowledgedFindingIds": ["FINDING_A"],
-    },
-    separators=(",", ":"),
+REVIEW_RESULT = (
+    "P0\nNone\nP1\n"
+    "- P1-FINDING_A | scripts/example.py:10 | Concrete example finding.\n"
+    "P2\nNone\nVERDICT: REVISE"
 )
+AGREE_RESULT = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
 
 
 class StaticSigner:
@@ -54,6 +52,60 @@ class ProviderExecutionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.workspace = Path(self.directory.name)
+        package_root = self.workspace / "node_modules/@openai/codex"
+        wrapper = package_root / "bin/codex.js"
+        native = (
+            package_root
+            / "node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex"
+        )
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        wrapper.chmod(0o755)
+        native.parent.mkdir(parents=True)
+        shutil.copyfile("/bin/sh", native)
+        native.chmod(0o755)
+        (package_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "@openai/codex",
+                    "version": "9.9.9",
+                    "optionalDependencies": {
+                        "@openai/codex-darwin-arm64": (
+                            "npm:@openai/codex@9.9.9-darwin-arm64"
+                        )
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        cli_digest = "sha256:" + hashlib.sha256(native.read_bytes()).hexdigest()
+        version = b"codex-cli 9.9.9"
+        self.signature = {
+            "signatureIdentity": (
+                "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+            ),
+            "signatureTeamId": "2DC432GLL2",
+            "signatureCdHashSha256": digest("test-cdhash"),
+        }
+        self.executable_entry = {
+            "platform": "darwin-arm64",
+            "sourceClass": "official-openai-npm-bundled-native",
+            "packageName": "@openai/codex",
+            "packageVersion": "9.9.9",
+            "cliSha256": cli_digest,
+            "cliVersion": version.decode(),
+            "cliVersionSha256": (
+                "sha256:" + hashlib.sha256(version).hexdigest()
+            ),
+            "signatureType": "apple-developer-id",
+            **self.signature,
+        }
+        self.executable_policy = {
+            "schemaVersion": "acik.codex-executable-policy.v1",
+            "allowedExecutables": [self.executable_entry],
+        }
+        self.wrapper = wrapper
+        self.native = native
 
     def tearDown(self) -> None:
         self.directory.cleanup()
@@ -112,12 +164,21 @@ class ProviderExecutionTest(unittest.TestCase):
             ]
         }
         calls = [
-            subprocess.CompletedProcess([], 0, stdout=b"codex-cli 1\n", stderr=b""),
+            subprocess.CompletedProcess([], 0, stdout=b"codex-cli 9.9.9\n", stderr=b""),
             subprocess.CompletedProcess([], 0, stdout=json.dumps(catalog).encode(), stderr=b""),
             subprocess.CompletedProcess([], 0, stdout=self.codex_events(REVIEW_RESULT), stderr=b""),
         ]
-        runner = DirectCodexRunner(Path("/bin/sh"))
-        with patch("subprocess.run", side_effect=calls) as run:
+        runner = DirectCodexRunner(
+            self.wrapper, executable_policy=self.executable_policy
+        )
+        with (
+            patch("subprocess.run", side_effect=calls) as run,
+            patch.object(
+                DirectCodexRunner,
+                "_apple_signature_identity",
+                return_value=self.signature,
+            ),
+        ):
             receipt = runner.run(
                 prompt="review this digest", model=CODEX_MODEL, workspace=self.workspace
             )
@@ -135,6 +196,10 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(
             receipt.capability_snapshot_sha256,
             sha256_digest(receipt.capability_snapshot),
+        )
+        self.assertEqual(
+            receipt.capability_snapshot["officialExecutableProvenance"],
+            self.executable_entry,
         )
         self.assertEqual(
             run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
@@ -197,7 +262,7 @@ class ProviderExecutionTest(unittest.TestCase):
         }
         responses = iter(
             [
-                subprocess.CompletedProcess([], 0, stdout=b"codex-cli 1\n", stderr=b""),
+                subprocess.CompletedProcess([], 0, stdout=b"codex-cli 9.9.9\n", stderr=b""),
                 subprocess.CompletedProcess(
                     [], 0, stdout=json.dumps(catalog).encode(), stderr=b""
                 ),
@@ -219,9 +284,18 @@ class ProviderExecutionTest(unittest.TestCase):
                 executable.write_bytes(b"changed")
             return response
 
-        with patch("subprocess.run", side_effect=mutate_after_execution):
+        with (
+            patch("subprocess.run", side_effect=mutate_after_execution),
+            patch.object(
+                DirectCodexRunner,
+                "_apple_signature_identity",
+                return_value=self.signature,
+            ),
+        ):
             with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_CHANGED"):
-                DirectCodexRunner(Path("/bin/sh")).run(
+                DirectCodexRunner(
+                    self.wrapper, executable_policy=self.executable_policy
+                ).run(
                     prompt="review this digest",
                     model=CODEX_MODEL,
                     workspace=self.workspace,
@@ -233,7 +307,120 @@ class ProviderExecutionTest(unittest.TestCase):
         fake.chmod(0o755)
         with patch.dict(os.environ, {"PATH": str(self.workspace)}):
             with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_INVALID"):
-                DirectCodexRunner()
+                DirectCodexRunner(executable_policy=self.executable_policy)
+
+    def test_direct_codex_rejects_unpinned_or_replaced_native_before_launch(self) -> None:
+        wrong_policy = json.loads(json.dumps(self.executable_policy))
+        wrong_policy["allowedExecutables"][0]["cliSha256"] = digest("wrong-binary")
+        with patch("subprocess.run") as run:
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_NOT_PINNED"):
+                DirectCodexRunner(self.wrapper, executable_policy=wrong_policy)
+        run.assert_not_called()
+
+        runner = DirectCodexRunner(
+            self.wrapper, executable_policy=self.executable_policy
+        )
+        self.native.write_bytes(b"replacement")
+        with patch("subprocess.run") as run:
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_CHANGED"):
+                runner.run(
+                    prompt="review this digest",
+                    model=CODEX_MODEL,
+                    workspace=self.workspace,
+                )
+        run.assert_not_called()
+
+    def test_direct_codex_rejects_signature_identity_mismatch(self) -> None:
+        runner = DirectCodexRunner(
+            self.wrapper, executable_policy=self.executable_policy
+        )
+        wrong_signature = {**self.signature, "signatureTeamId": "WRONGTEAM1"}
+        with patch.object(
+            DirectCodexRunner,
+            "_apple_signature_identity",
+            return_value=wrong_signature,
+        ):
+            with self.assertRaisesRegex(
+                PolicyError, "PROVIDER_EXECUTABLE_SIGNATURE_INVALID"
+            ):
+                runner.run(
+                    prompt="review this digest",
+                    model=CODEX_MODEL,
+                    workspace=self.workspace,
+                )
+
+    def test_direct_codex_rejects_self_reported_version_mismatch(self) -> None:
+        runner = DirectCodexRunner(
+            self.wrapper, executable_policy=self.executable_policy
+        )
+        catalog = {
+            "models": [
+                {"slug": CODEX_MODEL, "visibility": "list", "supported_in_api": True}
+            ]
+        }
+        calls = [
+            subprocess.CompletedProcess([], 0, stdout=b"codex-cli 9.9.8\n", stderr=b""),
+            subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(catalog).encode(), stderr=b""
+            ),
+        ]
+        with (
+            patch("subprocess.run", side_effect=calls) as run,
+            patch.object(
+                DirectCodexRunner,
+                "_apple_signature_identity",
+                return_value=self.signature,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                PolicyError, "PROVIDER_EXECUTABLE_VERSION_INVALID"
+            ):
+                runner.run(
+                    prompt="review this digest",
+                    model=CODEX_MODEL,
+                    workspace=self.workspace,
+                )
+        self.assertEqual(run.call_count, 2)
+
+    def test_canonical_response_parser_rejects_every_shape_bypass(self) -> None:
+        self.assertEqual(
+            parse_canonical_review_response(AGREE_RESULT)["verdict"], "AGREE"
+        )
+        malformed = {
+            "missing section": "P0\nNone\nP1\nNone\nVERDICT: AGREE",
+            "duplicate verdict": AGREE_RESULT + "\nVERDICT: AGREE",
+            "agree with finding": (
+                "P0\nNone\nP1\n"
+                "- P1-BAD | scripts/a.py:1 | This finding blocks acceptance.\n"
+                "P2\nNone\nVERDICT: AGREE"
+            ),
+            "case mismatch": "P0\nnone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+            "file line missing": (
+                "P0\nNone\nP1\n- P1-BAD | scripts/a.py | Missing line binding.\n"
+                "P2\nNone\nVERDICT: REVISE"
+            ),
+            "path traversal": (
+                "P0\nNone\nP1\n"
+                "- P1-BAD | ../scripts/a.py:1 | Traversal is not a repository path.\n"
+                "P2\nNone\nVERDICT: REVISE"
+            ),
+            "caller-authored empty-array JSON AGREE": json.dumps(
+                {
+                    "schemaVersion": "acik.cross-ai-provider-review-result.v1",
+                    "verdict": "AGREE",
+                    "findingIds": [],
+                    "resolvedFindingIds": [],
+                    "acknowledgedFindingIds": [],
+                },
+                separators=(",", ":"),
+            ),
+        }
+        for label, response in malformed.items():
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                    PolicyError, "PROVIDER_REVIEW_RESULT_INVALID"
+                ):
+                    parse_canonical_review_response(response)
 
 
 class ProviderIssuerTest(unittest.TestCase):
@@ -277,7 +464,9 @@ class ProviderIssuerTest(unittest.TestCase):
             capability_snapshot={"source": "test"},
             capability_snapshot_sha256="",
             input_sha256=digest("input"),
-            output_sha256=digest("output"),
+            output_sha256=(
+                "sha256:" + hashlib.sha256(REVIEW_RESULT.encode("utf-8")).hexdigest()
+            ),
             result_text=REVIEW_RESULT,
         )
         receipt = ProviderExecutionReceipt(
@@ -336,6 +525,7 @@ class ProviderIssuerTest(unittest.TestCase):
             ("reasoning_effort", "high"),
             ("sandbox", "workspace-write"),
             ("ephemeral", False),
+            ("output_sha256", digest("repackaged-output")),
         ):
             altered = ProviderExecutionReceipt(
                 **{**receipt.__dict__, field: invalid}
@@ -357,7 +547,7 @@ class ProviderIssuerTest(unittest.TestCase):
                     ),
                 )
 
-    def test_issuer_rejects_unknown_review_result_schema(self) -> None:
+    def test_issuer_rejects_malformed_canonical_review_result(self) -> None:
         factory = FixtureFactory()
         issuer = ProviderReviewIssuer(
             signer=StaticSigner(factory, factory.OPENAI_KEY_ID),
@@ -382,8 +572,13 @@ class ProviderIssuerTest(unittest.TestCase):
             capability_snapshot={"source": "test-invalid"},
             capability_snapshot_sha256="",
             input_sha256=digest("input"),
-            output_sha256=digest("output"),
-            result_text=REVIEW_RESULT.replace(".v1", ".v2"),
+            output_sha256=(
+                "sha256:"
+                + hashlib.sha256(
+                    "P0\nNone\nP1\nNone\nVERDICT: AGREE".encode("utf-8")
+                ).hexdigest()
+            ),
+            result_text="P0\nNone\nP1\nNone\nVERDICT: AGREE",
         )
         receipt = ProviderExecutionReceipt(
             **{

@@ -62,8 +62,7 @@ if e["schema"] != "cross-ai-provider-evidence/v3" or e["test_signature_valid"] i
 s = e["subject"]
 if s != {"base_tip_sha": a.base_tip_sha, "base_sha": a.base_sha, "head_sha": a.head_sha, "scope_sha256": a.scope_sha256}:
     raise SystemExit(1)
-r = json.loads(e["response"])
-if r != {"acknowledgedFindingIds": [], "findingIds": [], "resolvedFindingIds": [], "schemaVersion": "acik.cross-ai-provider-review-result.v1", "verdict": "AGREE"}:
+if e["response"] != "P0\\nNone\\nP1\\nNone\\nP2\\nNone\\nVERDICT: AGREE":
     raise SystemExit(1)
 `);
 const scopeFile = join(dir, 'scope.patch');
@@ -77,14 +76,8 @@ const NOW_MS = Date.now();
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
-const SIGNED_AGREE_RESPONSE = JSON.stringify({
-  acknowledgedFindingIds: [],
-  findingIds: [],
-  resolvedFindingIds: [],
-  schemaVersion: 'acik.cross-ai-provider-review-result.v1',
-  verdict: 'AGREE',
-});
-const evidenceBody = (_provider, model, _response) => JSON.stringify({
+const SIGNED_AGREE_RESPONSE = 'P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE';
+const evidenceBody = (_provider, model, response) => JSON.stringify({
   schema: 'cross-ai-provider-evidence/v3',
   test_signature_valid: true,
   model,
@@ -94,7 +87,7 @@ const evidenceBody = (_provider, model, _response) => JSON.stringify({
     head_sha: HEAD_SHA,
     scope_sha256: SCOPE_SHA256,
   },
-  response: SIGNED_AGREE_RESPONSE,
+  response,
 });
 const evidenceComment = (body, offsetMs = 0) => ({
   body,
@@ -109,10 +102,10 @@ const CODEX_REF = evidenceRef(1003);
 const SPARK_REF = evidenceRef(1004);
 const PEER_REF = SPARK_REF;
 const EVIDENCE = {
-  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
-  [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
-  [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
-  [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 3_000),
+  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', SIGNED_AGREE_RESPONSE), 0),
+  [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', SIGNED_AGREE_RESPONSE), 1_000),
+  [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', SIGNED_AGREE_RESPONSE), 2_000),
+  [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', SIGNED_AGREE_RESPONSE), 3_000),
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.

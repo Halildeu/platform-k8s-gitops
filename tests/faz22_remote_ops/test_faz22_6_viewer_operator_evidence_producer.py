@@ -50,6 +50,9 @@ class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
             expected_cross_ai_trust_root_sha256=(
                 fixtures.ADVISORY_FIXTURE.authority.expected_trust_root_sha256
             ),
+            codex_executable_policy=(
+                fixtures.ADVISORY_FIXTURE.authority.codex_executable_policy
+            ),
         )
         self.assertEqual("operator", child["evidenceType"])
         self.assertEqual(fixtures.binding(), child["binding"])
@@ -81,6 +84,9 @@ class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
                 ),
                 expected_cross_ai_trust_root_sha256=(
                     fixtures.ADVISORY_FIXTURE.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=(
+                    fixtures.ADVISORY_FIXTURE.authority.codex_executable_policy
                 ),
             )
 

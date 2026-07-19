@@ -41,6 +41,7 @@ class PublicReviewAuthorityTests(unittest.TestCase):
             "schemaVersion": "acik.cross-ai-provider-review-authority.v1",
             "status": status,
             "authoritySource": "test-vault-transit-public-export",
+            "codexExecutablePolicy": self.fixture.authority.codex_executable_policy,
             "trustRootPath": (
                 "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
                 if active else None

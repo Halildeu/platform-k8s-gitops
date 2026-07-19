@@ -92,6 +92,9 @@ class EvidenceBuilderTests(unittest.TestCase):
             expected_trust_root_sha256=(
                 self.fixture.authority.expected_trust_root_sha256
             ),
+            codex_executable_policy=(
+                self.fixture.authority.codex_executable_policy
+            ),
             expected_bindings=self.fixture.bindings,
             scope_bytes=self.fixture.scope_bytes,
             now=self.fixture.factory.now,

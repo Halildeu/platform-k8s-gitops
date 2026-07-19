@@ -93,6 +93,7 @@ def main() -> None:
             trust_root=authority.trust_root,
             revocations_envelope=authority.revocations_envelope,
             expected_trust_root_sha256=authority.expected_trust_root_sha256,
+            codex_executable_policy=authority.codex_executable_policy,
             expected_bindings={
                 "base_tip_sha": args.base_tip_sha,
                 "base_sha": args.base_sha,
