@@ -8,8 +8,9 @@ authorized by this ADR.
 **Owner issues:** ES-002 [#2648](https://github.com/Halildeu/platform-k8s-gitops/issues/2648), ES-101 [#2656](https://github.com/Halildeu/platform-k8s-gitops/issues/2656)
 
 **Product charter:** [Faz 35 Etik Speak](../faz-35-etik-speak-product-charter.md)
-**Direct Anthropic review:** `claude-opus-4-8`, verdict `AGREE`, session
-`db892e56-f573-47dd-80d6-a5a5a1f43b10`.
+**Current review governance:** direct Codex-only migration [#2688](https://github.com/Halildeu/platform-k8s-gitops/issues/2688).
+The latest exact-head `gpt-5.6-sol` re-review is `tracked_pending` because the
+provider usage limit stopped the call before a verdict; no fallback is accepted.
 
 ## Context
 

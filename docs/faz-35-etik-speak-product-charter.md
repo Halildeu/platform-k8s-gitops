@@ -161,8 +161,10 @@ arızası diğerini devre dışı bırakmaz.
 - `org_id` authoritative, `product_id=etik-speak` explicit'tir.
 - Narrative, reporter identity/link, mailbox credential, attachment ve audit
   ayrı compartment'lardır.
-- Raw access secret yalnız başarı ekranında bir kez gösterilir; server yalnız
-  yavaş KDF hash'i ve doğrulama metadata'sı saklar.
+- Raw access secret browserda güvenli RNG ile üretilir, başarılı receipt
+  ekranında yalnız kullanıcıya gösterilir ve identical retry dışında yeniden
+  gönderilmez; server hiçbir response'ta secret döndürmez, yalnız yavaş KDF
+  hash'i ve doğrulama metadata'sı saklar.
 - Public API write-mostly'dir; case listesi, kimlik okuma, staff note ve sealed
   evidence sunmaz.
 - Staff API SSO + product entitlement + OpenFGA kararı olmadan içerik döndürmez.

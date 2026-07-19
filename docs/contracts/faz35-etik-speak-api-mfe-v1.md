@@ -18,8 +18,10 @@
 - `productId` is server-owned constant `etik-speak`.
 - Success for intake means Report, Case, ReporterAccessGrant hash and outbox
   rows committed in one product-local DB transaction.
-- Raw reporter access secret appears only in the successful creation response,
-  never in later reads, events or logs.
+- The browser generates the reporter access secret with a cryptographically
+  secure RNG before intake. The same secret and idempotency key are reused only
+  for an identical retry. The server stores only its slow-KDF hash and never
+  returns the raw secret in a response, later read, event or log.
 - JSON ignores additive unknown response fields. Required field removal/type
   change needs `/v2` or a new media-type major.
 - `Idempotency-Key` is required for intake and message creation; same key and
@@ -30,16 +32,19 @@
 
 ## 2. Common protocol
 
-Requests and responses use UTF-8 JSON and an explicit content type:
+The first test slice uses UTF-8 JSON and an explicit content type:
 
 ```http
-Content-Type: application/vnd.acik.etik-speak.v1+json
-Accept: application/vnd.acik.etik-speak.v1+json
+Content-Type: application/json
+Accept: application/json
 ```
 
-Every response has `X-Request-Id`. Mutation responses include `ETag` when
-optimistic concurrency applies. Timestamps are RFC 3339 UTC. IDs are opaque
-UUID/ULID strings and contain no tenant, date, identity or sequence information.
+Sensitive API responses use `Cache-Control: no-store`. Conditional case
+updates carry the current numeric version in the response body and require a
+quoted `If-Match` value on the next write. `X-Request-Id` and response `ETag`
+headers are production-hardening gates, not claimed by the first synthetic
+test slice. Timestamps are RFC 3339 UTC. IDs are opaque UUID strings and
+contain no tenant, date, identity or sequence information.
 
 Error envelope:
 
@@ -80,8 +85,8 @@ tenant or channel input.
   "subject": "Kısa konu",
   "description": "Bildirim metni",
   "locale": "tr",
-  "reporter": null,
-  "consents": [{"type": "PRIVACY_NOTICE", "version": "2026-07-18"}]
+  "accessSecret": "browser-generated-32-byte-base64url-value",
+  "noticeVersion": "tr-test-pilot-v1"
 }
 ```
 
@@ -100,9 +105,9 @@ slice boundary, not evidence that those CORE capabilities are complete.
 ```json
 {
   "receiptId": "01...",
-  "accessSecret": "shown-once-high-entropy-value",
   "createdAt": "2026-07-18T12:00:00Z",
-  "mailboxPath": "/mailbox"
+  "mailboxPath": "/mailbox",
+  "idempotentReplay": false
 }
 ```
 
@@ -149,15 +154,18 @@ Minimal roles/relations:
 
 | Action | Required relation | Explicit deny |
 |---|---|---|
-| list/read case | `case_viewer` + org/product scope | conflicted/recused/technical admin |
-| assign | `case_triager` | self/conflicted target, cross-org |
-| reply reporter | `case_handler` | conflicted/recused, closed/held policy deny |
-| internal note | `case_handler` | reporter/public credential |
-| sealed original | `evidence_reveal_approved` | normal handler/triager |
+| list/read case | product `case_viewer` + DB org scope | technical admin |
+| assign | product `case_triager` + DB org scope | cross-org |
+| reply reporter | product `case_handler` + DB org scope | closed/held policy deny |
+| internal note | product `case_handler` + DB org scope | reporter/public credential |
+| sealed original | product `evidence_reveal_approved` | normal handler/triager |
 | product config | `ethics_product_admin` | does not imply case content read |
 
-Case list returns summary fields only after per-object authorization. A database
-tenant filter is defense-in-depth and never substitutes object authorization.
+The first synthetic test slice evaluates the staff subject against the
+org-owned `ethics_product:<orgId>` object and also filters every case query by
+the server-resolved `org_id`. Per-case conflict/recusal tuples are an explicit
+later feature gate; they are not claimed by this slice. Product authorization
+and the database org filter are both required and fail closed.
 
 ## 5. Domain and transaction contract
 
@@ -170,15 +178,15 @@ Required compartments/entities:
   separately authorized;
 - `messages`: `REPORTER`, `STAFF_PUBLIC`, `INTERNAL_NOTE` visibility;
 - `evidence_artifacts`: quarantine/sealed/sanitized digests and derivation;
-- `audit_outbox` and `notification_outbox`: product-local durable intents.
+- `audit_outbox`: product-local durable audit intents.
 
 Anonymous intake atomically writes exactly the report, case,
 reporter-access-grant hash, audit-outbox event and idempotency marker. It writes
 no reporter-identity or case-identity-link row. Confidential/named modes add
 their separately authorized identity/link rows only when that compartment is
-enabled. Notification outbox creation may share the transaction when configured,
-but provider delivery, Keycloak, suite entitlement, WORM sink and external
-scanner are not synchronous success dependencies. Attachment state may be
+enabled. Notification outbox creation and downstream audit publication are
+later integration gates; provider delivery, Keycloak, suite entitlement, WORM
+sink and external scanner are not synchronous success dependencies. Attachment state may be
 `QUARANTINED` until scan/sanitize finishes; it is never silently `CLEAN`.
 
 ## 6. Event contract

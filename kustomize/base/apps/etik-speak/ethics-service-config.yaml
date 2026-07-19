@@ -8,7 +8,9 @@ data:
   SERVER_PORT: "8099"
   ETHICS_DB_URL: "jdbc:postgresql://postgres:5432/ethics"
   ETHICS_DB_SCHEMA: "ethics_service"
-  ETHICS_PUBLIC_ORG_ID: "00000000-0000-0000-0000-000000000035"
+  # Same canonical platform-test tenant carried by the authorized staff JWT.
+  # A phase-number placeholder here would commit reports to an invisible org.
+  ETHICS_PUBLIC_ORG_ID: "00000000-0000-0000-0000-000000000001"
   ETHICS_MAILBOX_SESSION_TTL: "15m"
   ETHICS_SECRET_ITERATIONS: "210000"
   SECURITY_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
