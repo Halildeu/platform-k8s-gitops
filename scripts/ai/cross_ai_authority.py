@@ -426,6 +426,11 @@ def validate_authority_history_transition(
             raise AuthorityUnavailable(
                 f"provider-review same-root revocation transition is invalid: {exc.code}"
             ) from exc
+        if changed != {head_revocations_path}:
+            raise AuthorityUnavailable(
+                "provider-review same-root revocation transition changes paths outside "
+                "the signed revocations file"
+            )
 
     if manifest_name not in changed:
         if history_changes:
