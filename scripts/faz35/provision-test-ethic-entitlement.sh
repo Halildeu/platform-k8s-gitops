@@ -211,13 +211,15 @@ for label in target wrong-org denied; do
     echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
     exit 1
   fi
+  local_user_id=$(<"$TMP_DIR/$label-user-id")
+  authz_member_id=$(faz35_authz_member_id "$TMP_DIR/$label-authz-before.json" "$local_user_id") || {
+    echo "FATAL: $label authz identity differs from the canonical local profile" >&2
+    exit 1
+  }
   [ "$label" != target ] || target_projection_before=$projection_state
+  [ "$label" != target ] || target_user_id=$authz_member_id
+  unset local_user_id authz_member_id
 done
-target_user_id=$(jq -r '.subscriberId' "$TMP_DIR/target-authz-before.json")
-[ "$target_user_id" = "$(<"$TMP_DIR/target-user-id")" ] || {
-  echo "FATAL: target authz subscriberId differs from the activated local profile" >&2
-  exit 1
-}
 unset projection_state
 
 # Activate only after all three authz projections have passed the no-ETHIC /

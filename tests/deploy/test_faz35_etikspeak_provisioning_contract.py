@@ -221,6 +221,51 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("existing target ETHIC projection is not linked to the exact dedicated role", self.entitlement)
         self.assertIn('if [ "$member_present" = false ]; then', self.entitlement)
 
+    def test_authz_member_identity_must_match_local_user_before_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "authz.json"
+            path.write_text(json.dumps({
+                "userId": "41",
+                "subscriberId": 41,
+                "modules": {},
+                "allowedModules": [],
+            }))
+            exact = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; faz35_authz_member_id "$2" "$3"',
+                    "bash",
+                    str(self.authz_projection_lib_path),
+                    str(path),
+                    "41",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(exact.stdout.strip(), "41")
+            for wrong_id in ("42", "not-numeric"):
+                mismatch = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; faz35_authz_member_id "$2" "$3"',
+                        "bash",
+                        str(self.authz_projection_lib_path),
+                        str(path),
+                        wrong_id,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(mismatch.returncode, 0)
+
+        identity_check = self.entitlement.index("authz identity differs from the canonical local profile")
+        activation = self.entitlement.index("/api/v1/users/$user_id/activation")
+        self.assertLess(identity_check, activation)
+        self.assertIn('faz35_authz_member_id "$TMP_DIR/$label-authz-before.json"', self.entitlement)
+
     def test_persona_secret_file_and_subject_are_bounded(self):
         self.assertIn("umask 077", self.keycloak)
         self.assertIn('prepare_synthetic_password_file "$PERSONA_PASSWORD_FILE" persona', self.keycloak)
@@ -243,8 +288,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("/api/v1/users/by-email", self.entitlement)
         self.assertIn("/api/v1/users/$user_id/activation", self.entitlement)
         self.assertIn("$label active local profile postcondition failed", self.entitlement)
-        self.assertIn("target_user_id=$(jq -r '.subscriberId'", self.entitlement)
-        self.assertIn("target authz subscriberId differs from the activated local profile", self.entitlement)
+        self.assertIn("target_user_id=$authz_member_id", self.entitlement)
+        self.assertIn("$label authz identity differs from the canonical local profile", self.entitlement)
         self.assertNotIn("target_user_id=$(jq -r '.userId'", self.entitlement)
         self.assertIn('numeric subscriberId is missing', self.authz_projection_lib)
         self.assertIn('userId and subscriberId differ', self.authz_projection_lib)
