@@ -662,18 +662,34 @@ class EvidenceContractV2Test(unittest.TestCase):
         self.assertEqual(result.provider_families, ("openai",))
         self.assertEqual(result.final_review_digests, (direct_agree_digest,))
 
-    def test_rotation_accepts_leaf_issued_while_previous_key_was_valid(self) -> None:
+    def test_rotation_accepts_previous_key_only_while_it_remains_active(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         provider = next(
             item for item in trust_root["keys"] if item["role"] == "provider-review"
         )
-        provider["notAfter"] = "2026-07-18T20:16:00Z"
+        provider["notAfter"] = "2026-07-18T20:31:00Z"
         result = EvidenceVerifier(
             trust_root=trust_root,
             revocations_envelope=self.fixture.revocations_envelope,
             now=self.fixture.now,
         ).verify_bundle(self.fixture.bundle_envelope)
         self.assertEqual(result.provider_families, ("openai",))
+
+    def test_active_verification_rejects_expired_key_with_backdated_leaf(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        provider = next(
+            item for item in trust_root["keys"] if item["role"] == "provider-review"
+        )
+        # The existing leaf was signed during this interval, but the key is no
+        # longer active at the independent observation time. issuedAt cannot
+        # turn the retired key back into an active acceptance authority.
+        provider["notAfter"] = "2026-07-18T20:16:00Z"
+        with self.assertRaisesRegex(PolicyError, "TRUST_ACTIVE_KEY_MISSING"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            ).verify_bundle(self.fixture.bundle_envelope)
 
     def test_v2_rejects_ephemeral_root_lifetime(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)

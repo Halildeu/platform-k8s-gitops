@@ -98,6 +98,65 @@ def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str
     return body
 
 
+def verify_runtime_advisory_comment(
+    comment: dict[str, Any], expected_owner_login: str,
+) -> tuple[str, dict[str, Any]]:
+    comment_id = comment.get("id")
+    ref = comment.get("html_url")
+    expected_ref = (
+        f"https://github.com/{EXPECTED_REPOSITORY}/issues/2373"
+        f"#issuecomment-{comment_id}"
+    )
+    user = comment.get("user")
+    body = comment.get("body")
+    if not isinstance(comment_id, int) or comment_id < 1 or ref != expected_ref:
+        raise AuthorizationError("aiAdvisory runtime comment identity mismatch")
+    if comment.get("issue_url") != (
+        f"https://api.github.com/repos/{EXPECTED_REPOSITORY}/issues/2373"
+    ):
+        raise AuthorizationError("aiAdvisory is not bound to canonical #2373")
+    if (
+        not isinstance(user, dict)
+        or user.get("login") != expected_owner_login
+        or comment.get("author_association") != "OWNER"
+    ):
+        raise AuthorizationError("aiAdvisory runtime owner attribution mismatch")
+    if not isinstance(body, str):
+        raise AuthorizationError("aiAdvisory body is missing")
+    return body, {
+        "commentId": comment_id,
+        "ref": ref,
+        "bodySha256": digest_bytes(body.encode()),
+        "authorLogin": expected_owner_login,
+        "authorAssociation": "OWNER",
+    }
+
+
+def advisory_bindings_from_body(body: str) -> dict[str, str]:
+    try:
+        evidence = json.loads(body)
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise AuthorizationError("Codex advisory evidence subject is unreadable") from exc
+    subject = evidence.get("subject") if isinstance(evidence, dict) else None
+    if not isinstance(subject, dict):
+        raise AuthorizationError("Codex advisory evidence subject is missing")
+    values = {
+        "base_tip_sha": subject.get("baseTipSha"),
+        "base_sha": subject.get("baseSha"),
+        "head_sha": subject.get("headSha"),
+    }
+    scope = subject.get("scopeSha256")
+    if any(
+        not isinstance(value, str) or not GIT_SHA.fullmatch(value)
+        for value in values.values()
+    ):
+        raise AuthorizationError("Codex advisory git binding is invalid")
+    if not isinstance(scope, str) or not SHA256.fullmatch(scope):
+        raise AuthorizationError("Codex advisory scope binding is invalid")
+    values["scope_sha256"] = scope.removeprefix("sha256:")
+    return values
+
+
 def canonical_reviewer_set(
     environment: dict[str, Any], triggering_actor: str, require_prevent_self_review: bool,
 ) -> tuple[int, str]:
@@ -165,32 +224,47 @@ def build_authorization(
     codex_executable_policy: dict[str, Any],
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
-    if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "active":
-        raise AuthorizationError("owner policy is not active Codex-only v2")
-    require_keys(policy["aiAdvisory"], {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation", "advisoryOnly", "consensusVerdict", "providers", "provenanceClass", "providerCryptographicAttestation", "evidenceBinding", "maxAgeHours"}, "policy.aiAdvisory")
-    if policy["aiAdvisory"]["advisoryOnly"] is not True or policy["aiAdvisory"]["consensusVerdict"] != "AGREE":
-        raise AuthorizationError("Codex-only AI advisory is not AGREE/advisory-only")
-    providers = policy["aiAdvisory"]["providers"]
-    if providers != EXPECTED_ADVISORY_PROVIDERS:
-        raise AuthorizationError("AI advisory provider is not exact Codex-only SOL")
-    if (
-        policy["aiAdvisory"]["provenanceClass"] != "signed-direct-codex-launch-attested-v3"
-        or policy["aiAdvisory"]["providerCryptographicAttestation"] is not True
+    if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "tracked_pending":
+        raise AuthorizationError("owner policy is not the stable Codex-only v2 constraint")
+    if not isinstance(policy["ownerDirective"], dict) or not isinstance(
+        policy["aiAdvisory"], dict
     ):
-        raise AuthorizationError("AI advisory provenance boundary is not explicit")
-    advisory_binding = policy["aiAdvisory"]["evidenceBinding"]
+        raise AuthorizationError("owner/advisory policy entries are invalid")
+    verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective")
+    require_keys(policy["aiAdvisory"], {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation", "advisoryOnly", "consensusVerdict", "providers", "provenanceClass", "providerCryptographicAttestation", "evidenceBinding", "maxAgeHours"}, "policy.aiAdvisory")
+    advisory_policy = policy["aiAdvisory"]
+    advisory_binding = advisory_policy["evidenceBinding"]
     if not isinstance(advisory_binding, dict):
-        raise AuthorizationError("Codex advisory expected binding is missing")
+        raise AuthorizationError("Codex advisory policy binding template is missing")
     require_keys(
         advisory_binding, ADVISORY_BINDING_POLICY_KEYS,
         "policy.aiAdvisory.evidenceBinding",
     )
-    expected_advisory_bindings = {
-        "base_tip_sha": advisory_binding["baseTipSha"],
-        "base_sha": advisory_binding["baseSha"],
-        "head_sha": advisory_binding["headSha"],
-        "scope_sha256": advisory_binding["scopeSha256"],
-    }
+    if not (
+        advisory_policy["advisoryOnly"] is True
+        and advisory_policy["consensusVerdict"] == "PENDING"
+        and all(
+            advisory_policy[field] is None
+            for field in (
+                "commentId", "ref", "bodySha256", "authorLogin",
+                "authorAssociation",
+            )
+        )
+        and all(value is None for value in advisory_binding.values())
+    ):
+        raise AuthorizationError("Codex advisory policy must remain a stable pending template")
+    providers = advisory_policy["providers"]
+    if providers != EXPECTED_ADVISORY_PROVIDERS:
+        raise AuthorizationError("AI advisory provider is not exact Codex-only SOL")
+    if (
+        advisory_policy["provenanceClass"] != "signed-direct-codex-launch-attested-v3"
+        or advisory_policy["providerCryptographicAttestation"] is not True
+    ):
+        raise AuthorizationError("AI advisory provenance boundary is not explicit")
+    advisory_body, advisory_transport = verify_runtime_advisory_comment(
+        advisory_comment, policy["ownerDirective"]["authorLogin"],
+    )
+    expected_advisory_bindings = advisory_bindings_from_body(advisory_body)
     if not isinstance(head_sha, str) or not GIT_SHA.fullmatch(head_sha):
         raise AuthorizationError("authorization run identity is invalid")
     if head_sha != expected_advisory_bindings["head_sha"]:
@@ -204,8 +278,6 @@ def build_authorization(
     expires = parse_utc(expires_at, "expiresAt")
     if not valid_from <= issued < expires <= valid_until:
         raise AuthorizationError("authorization is outside owner-policy lifecycle")
-    verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective")
-    advisory_body = verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory")
     try:
         validate_codex_advisory_evidence(
             advisory_body,
@@ -254,7 +326,7 @@ def build_authorization(
         raise AuthorizationError("authorization exceeds the absolute TTL limit")
     try:
         validate_codex_advisory_comment_timing(
-            advisory_comment, issued, policy["aiAdvisory"]["maxAgeHours"],
+            advisory_comment, issued, advisory_policy["maxAgeHours"],
         )
     except CodexEvidenceError as exc:
         raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
@@ -289,8 +361,13 @@ def build_authorization(
         "aiAdvisoryOnly": True,
         "aiAdvisoryProvenanceClass": "signed-direct-codex-launch-attested-v3",
         "aiProviderCryptographicAttestation": True,
-        "aiAdvisoryRef": policy["aiAdvisory"]["ref"],
-        "aiAdvisorySha256": policy["aiAdvisory"]["bodySha256"],
+        "aiAdvisoryCommentId": advisory_transport["commentId"],
+        "aiAdvisoryRef": advisory_transport["ref"],
+        "aiAdvisorySha256": advisory_transport["bodySha256"],
+        "aiAdvisoryBaseTipSha": expected_advisory_bindings["base_tip_sha"],
+        "aiAdvisoryBaseSha": expected_advisory_bindings["base_sha"],
+        "aiAdvisoryHeadSha": expected_advisory_bindings["head_sha"],
+        "aiAdvisoryScopeSha256": expected_advisory_bindings["scope_sha256"],
         "aiConsensusVerdict": "AGREE",
         "legalTrackingIssueRef": legal["ref"],
         "legalTrackStatus": "tracked_pending",
@@ -341,16 +418,23 @@ def main() -> int:
         revocations, _ = load_object(args.revocations, "revocation ledger")
         repo_root = Path(__file__).resolve().parents[2]
         authority = load_active_authority(repo_root)
-        binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
+        advisory_body = advisory.get("body")
+        if not isinstance(advisory_body, str):
+            raise AuthorizationError("AI advisory comment body is missing")
+        binding = advisory_bindings_from_body(advisory_body)
+        if binding["head_sha"] != args.head_sha:
+            raise AuthorizationError(
+                "authorization head does not match Codex advisory head binding"
+            )
         advisory_scope_bytes, _, _ = derive_scope(
             repo_root,
-            base_tip_sha=binding.get("baseTipSha", ""),
-            base_sha=binding.get("baseSha", ""),
-            head_sha=binding.get("headSha", ""),
+            base_tip_sha=binding["base_tip_sha"],
+            base_sha=binding["base_sha"],
+            head_sha=binding["head_sha"],
             max_scope_bytes=MAX_SCOPE_BYTES,
             scan_secrets=True,
         )
-        if hashlib.sha256(advisory_scope_bytes).hexdigest() != binding.get("scopeSha256"):
+        if hashlib.sha256(advisory_scope_bytes).hexdigest() != binding["scope_sha256"]:
             raise AuthorizationError("canonical advisory scope digest mismatch")
         result = build_authorization(
             policy, owner, advisory, legal, environment, revocations,

@@ -615,9 +615,30 @@ class DirectCodexRunner:
         messages: list[str] = []
         for event in events:
             event_type = event.get("type")
-            if event_type in {"thread.started", "turn.started", "turn.completed"}:
+            if event_type == "thread.started":
+                if set(event) != {"type", "thread_id"}:
+                    reject(
+                        "PROVIDER_TOOL_EVENT_REJECTED",
+                        "Codex thread event contains fields outside the no-tool contract",
+                    )
                 continue
-            if event_type != "item.completed":
+            if event_type == "turn.started":
+                if set(event) != {"type"}:
+                    reject(
+                        "PROVIDER_TOOL_EVENT_REJECTED",
+                        "Codex turn start contains fields outside the no-tool contract",
+                    )
+                continue
+            if event_type == "turn.completed":
+                if set(event) != {"type", "usage"} or not isinstance(
+                    event.get("usage"), dict
+                ):
+                    reject(
+                        "PROVIDER_TOOL_EVENT_REJECTED",
+                        "Codex turn completion is outside the no-tool contract",
+                    )
+                continue
+            if event_type != "item.completed" or set(event) != {"type", "item"}:
                 reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex emitted a non-terminal event")
             item = event.get("item")
             if not isinstance(item, dict):

@@ -19,6 +19,9 @@ on:
         description: "For apply: bounded test-only viewer exposure TTL in minutes (5-120)"
         required: false
         default: "10"
+      advisory_comment_id:
+        description: "For apply: immutable #2373 signed Codex evidence comment ID"
+        required: false
 
 permissions:
   actions: read
@@ -78,6 +81,7 @@ jobs:
           PILOT_OPERATOR_SHA256: ${{ secrets.VIEW_ONLY_PILOT_OPERATOR_SHA256 }}
           PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
           PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
+          ADVISORY_COMMENT_ID: ${{ inputs.advisory_comment_id }}
         run: |
           set -euo pipefail
           policy=config/faz22-6-view-only-pilot-owner-policy.v2.json
@@ -86,13 +90,16 @@ jobs:
           test -s "$revocations"
           jq -e '
             .schemaVersion == "faz22.6-view-only-pilot-owner-policy-v2"
-            and .status == "active"
-            and .aiAdvisory.consensusVerdict == "AGREE"
+            and .status == "tracked_pending"
+            and .aiAdvisory.consensusVerdict == "PENDING"
             and .aiAdvisory.providers == ["OpenAI/gpt-5.6-sol"]
             and .aiAdvisory.provenanceClass == "signed-direct-codex-launch-attested-v3"
             and .aiAdvisory.providerCryptographicAttestation == true
+            and ([.aiAdvisory.commentId, .aiAdvisory.ref, .aiAdvisory.bodySha256,
+                  .aiAdvisory.authorLogin, .aiAdvisory.authorAssociation] | all(. == null))
+            and ([.aiAdvisory.evidenceBinding[]] | all(. == null))
           ' "$policy" >/dev/null || {
-            echo "::error::Codex-only v2 owner policy is not active; protected apply remains blocked"
+            echo "::error::Codex-only v2 owner policy is not the stable pending constraint"
             exit 1
           }
           for name in PILOT_OPERATOR_SHA256 PILOT_DEVICE_SHA256; do
@@ -119,7 +126,11 @@ jobs:
           out="$RUNNER_TEMP/faz22-view-only-pilot-authorization"
           mkdir -p "$out"
           owner_comment_id="$(jq -er '.ownerDirective.commentId' "$policy")"
-          advisory_comment_id="$(jq -er '.aiAdvisory.commentId' "$policy")"
+          advisory_comment_id="${ADVISORY_COMMENT_ID:-}"
+          printf '%s' "$advisory_comment_id" | grep -Eq '^[1-9][0-9]*$' || {
+            echo "::error::apply requires an immutable signed Codex evidence comment ID"
+            exit 1
+          }
           gh api "repos/$GITHUB_REPOSITORY/issues/comments/$owner_comment_id" > "$out/owner-comment.json"
           gh api "repos/$GITHUB_REPOSITORY/issues/comments/$advisory_comment_id" > "$out/advisory-comment.json"
           gh api "repos/$GITHUB_REPOSITORY/issues/2374" > "$out/legal-issue.json"

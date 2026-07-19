@@ -25,9 +25,23 @@ def verify_dependency_lock_contract(text: str) -> None:
         raise ValueError("version-only signed-authority dependency install is forbidden")
 
 
-def verify_operator_history_contract(text: str) -> None:
+def verify_history_contract(text: str) -> None:
     if text.count("fetch-depth: 0") != 1:
-        raise ValueError("operator evidence checkout must retain complete git history")
+        raise ValueError("signed authority checkout must retain complete git history")
+
+
+def verify_runtime_advisory_contract(text: str) -> None:
+    required = (
+        "advisory_comment_id:",
+        'ADVISORY_COMMENT_ID: ${{ inputs.advisory_comment_id }}',
+        'advisory_comment_id="${ADVISORY_COMMENT_ID:-}"',
+        '.status == "tracked_pending"',
+        '.aiAdvisory.consensusVerdict == "PENDING"',
+    )
+    if any(token not in text for token in required):
+        raise ValueError("runtime advisory binding contract is missing")
+    if "jq -er '.aiAdvisory.commentId'" in text:
+        raise ValueError("circular policy advisory binding is forbidden")
 
 
 class SignedAuthorityWorkflowContractTest(unittest.TestCase):
@@ -38,7 +52,9 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
         for name, text in rendered.items():
             with self.subTest(workflow=name):
                 verify_dependency_lock_contract(text)
-        verify_operator_history_contract(rendered["operator"])
+        for text in rendered.values():
+            verify_history_contract(text)
+        verify_runtime_advisory_contract(rendered["apply"])
 
     def test_each_dependency_lock_omission_fails_closed(self):
         for name, path in WORKFLOWS.items():
@@ -53,10 +69,31 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "contract missing"):
                         verify_dependency_lock_contract(mutated)
 
-    def test_operator_fetch_depth_omission_fails_closed(self):
-        original = WORKFLOWS["operator"].read_text(encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "complete git history"):
-            verify_operator_history_contract(original.replace("fetch-depth: 0", "", 1))
+    def test_fetch_depth_omission_fails_closed(self):
+        for name, path in WORKFLOWS.items():
+            original = path.read_text(encoding="utf-8")
+            with self.subTest(workflow=name):
+                with self.assertRaisesRegex(ValueError, "complete git history"):
+                    verify_history_contract(
+                        original.replace("fetch-depth: 0", "", 1)
+                    )
+
+    def test_runtime_advisory_input_or_pending_policy_omission_fails_closed(self):
+        original = WORKFLOWS["apply"].read_text(encoding="utf-8")
+        for token in (
+            "advisory_comment_id:",
+            'ADVISORY_COMMENT_ID: ${{ inputs.advisory_comment_id }}',
+            'advisory_comment_id="${ADVISORY_COMMENT_ID:-}"',
+            '.status == "tracked_pending"',
+            '.aiAdvisory.consensusVerdict == "PENDING"',
+        ):
+            with self.subTest(omitted=token):
+                with self.assertRaisesRegex(ValueError, "contract is missing"):
+                    verify_runtime_advisory_contract(original.replace(token, "", 1))
+        with self.assertRaisesRegex(ValueError, "circular policy"):
+            verify_runtime_advisory_contract(
+                original + "\njq -er '.aiAdvisory.commentId'\n"
+            )
 
 
 if __name__ == "__main__":

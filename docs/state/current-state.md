@@ -28,10 +28,14 @@ of new authorization. Every active authorization/receipt/product-evidence
 consumer is rebound to versioned policy v2, which accepts only an owner-bound
 canonical signed `cross-ai-provider-evidence/v3` comment proving direct
 `gpt-5.6-sol xhigh`, read-only, ephemeral and finding-free `AGREE`. Canonical
-v2 is deliberately `tracked_pending` with no fabricated advisory comment, so
-new protected activation remains fail-closed until a real Codex-only advisory
-is bound and the policy is deliberately activated. Existing v1 Claude evidence
-is historical only; it cannot mint a fresh grant.
+v2 is deliberately and permanently `tracked_pending`: it is the immutable
+constraint template, not a container for a receipt whose insertion would change
+the reviewed commit. A protected apply receives one #2373 advisory comment ID,
+fetches the immutable comment, independently derives its exact git scope, and
+binds the verified signed leaf into the authorization receipt. Until that real
+Codex-only advisory and the public TEST authority exist, activation remains
+fail-closed. Existing v1 Claude evidence is historical only; it cannot mint a
+fresh grant.
 
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 

@@ -382,6 +382,13 @@ require_grep "name: faz22-view-only-pilot" "$VIEWER_APPLY_WORKFLOW"
 require_grep "build-view-only-pilot-owner-authorization.py" "$VIEWER_APPLY_WORKFLOW"
 require_grep "verify-view-only-pilot-authorization-receipt.py" "$VIEWER_APPLY_WORKFLOW"
 require_grep "--triggering-actor" "$VIEWER_APPLY_WORKFLOW"
+require_grep "advisory_comment_id:" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'ADVISORY_COMMENT_ID: ${{ inputs.advisory_comment_id }}' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'advisory_comment_id="${ADVISORY_COMMENT_ID:-}"' "$VIEWER_APPLY_WORKFLOW"
+if grep -Fq "jq -er '.aiAdvisory.commentId'" "$VIEWER_APPLY_WORKFLOW"; then
+  echo "protected apply must not read a circular advisory comment binding from policy" >&2
+  exit 1
+fi
 require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
@@ -389,6 +396,7 @@ require_grep 'rm -f "$out/owner-comment.json" "$out/advisory-comment.json"' \
   "$VIEWER_APPLY_WORKFLOW"
 require_grep 'legalClearanceClaimed' "$VIEWER_AUTH_BUILDER"
 require_grep 'providerCryptographicAttestation' "$VIEWER_AUTH_BUILDER"
+require_grep 'advisory_bindings_from_body' "$VIEWER_AUTH_BUILDER"
 require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_COMMON"
 require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_BUILDER"
 require_grep 'faz22.6-view-only-pilot-owner-policy-v2' "$VIEWER_OWNER_POLICY"

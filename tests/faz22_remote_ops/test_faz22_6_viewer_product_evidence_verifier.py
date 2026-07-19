@@ -9,6 +9,7 @@ import unittest
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py"
 sys.path.insert(0, str(MODULE_PATH.parents[2]))
@@ -523,7 +524,7 @@ def encode_zip(files):
 def owner_policy_fixture():
     return {
         "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v2",
-        "status": "active",
+        "status": "tracked_pending",
         "ownerDirective": {
             "commentId": OWNER_COMMENT_ID,
             "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373#issuecomment-{OWNER_COMMENT_ID}",
@@ -532,21 +533,21 @@ def owner_policy_fixture():
             "authorAssociation": "OWNER",
         },
         "aiAdvisory": {
-            "commentId": ADVISORY_COMMENT_ID,
-            "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373#issuecomment-{ADVISORY_COMMENT_ID}",
-            "bodySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),
-            "authorLogin": "Halildeu",
-            "authorAssociation": "OWNER",
+            "commentId": None,
+            "ref": None,
+            "bodySha256": None,
+            "authorLogin": None,
+            "authorAssociation": None,
             "advisoryOnly": True,
-            "consensusVerdict": "AGREE",
+            "consensusVerdict": "PENDING",
             "providers": ["OpenAI/gpt-5.6-sol"],
             "provenanceClass": "signed-direct-codex-launch-attested-v3",
             "providerCryptographicAttestation": True,
             "evidenceBinding": {
-                "baseTipSha": ADVISORY_BASE_TIP_SHA,
-                "baseSha": ADVISORY_BASE_SHA,
-                "headSha": HEAD_SHA,
-                "scopeSha256": ADVISORY_SCOPE_SHA256,
+                "baseTipSha": None,
+                "baseSha": None,
+                "headSha": None,
+                "scopeSha256": None,
             },
             "maxAgeHours": 168,
         },
@@ -613,8 +614,13 @@ def authorization_document():
         "aiAdvisoryOnly": True,
         "aiAdvisoryProvenanceClass": "signed-direct-codex-launch-attested-v3",
         "aiProviderCryptographicAttestation": True,
-        "aiAdvisoryRef": owner_policy_fixture()["aiAdvisory"]["ref"],
+        "aiAdvisoryCommentId": ADVISORY_COMMENT_ID,
+        "aiAdvisoryRef": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373#issuecomment-{ADVISORY_COMMENT_ID}",
         "aiAdvisorySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),
+        "aiAdvisoryBaseTipSha": ADVISORY_BASE_TIP_SHA,
+        "aiAdvisoryBaseSha": ADVISORY_BASE_SHA,
+        "aiAdvisoryHeadSha": HEAD_SHA,
+        "aiAdvisoryScopeSha256": ADVISORY_SCOPE_SHA256,
         "aiConsensusVerdict": "AGREE",
         "legalTrackingIssueRef": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374",
         "legalTrackStatus": "tracked_pending",
@@ -908,7 +914,7 @@ class FakeClient:
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/comments/{ADVISORY_COMMENT_ID}":
             return {
                 "id": ADVISORY_COMMENT_ID,
-                "html_url": owner_policy_fixture()["aiAdvisory"]["ref"],
+                "html_url": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373#issuecomment-{ADVISORY_COMMENT_ID}",
                 "issue_url": f"https://api.github.com/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373",
                 "author_association": "OWNER",
                 "user": {"login": "Halildeu"},
@@ -959,13 +965,16 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         VERIFIER.REVOCATION_LEDGER = self.original_revocation_ledger
         self.temp_dir.cleanup()
 
-    def verify(self, client=None, now=NOW):
+    def verify(
+        self, client=None, now=NOW,
+        advisory_scope_bytes=ADVISORY_FIXTURE.scope_bytes,
+    ):
         return VERIFIER.verify_product_evidence(
             client or FakeClient(),
             VERIFIER.EXPECTED_REPOSITORY,
             RUN_ID,
             now=now,
-            advisory_scope_bytes=ADVISORY_FIXTURE.scope_bytes,
+            advisory_scope_bytes=advisory_scope_bytes,
             cross_ai_trust_root=ADVISORY_FIXTURE.authority.trust_root,
             cross_ai_revocations=ADVISORY_FIXTURE.authority.revocations_envelope,
             expected_cross_ai_trust_root_sha256=(
@@ -985,10 +994,16 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         authorization["ownerPolicySha256"] = VERIFIER.digest_json(policy_value)
         authorization["ownerDirectiveRef"] = policy_value["ownerDirective"]["ref"]
         authorization["ownerDirectiveSha256"] = policy_value["ownerDirective"]["bodySha256"]
-        authorization["aiAdvisoryRef"] = policy_value["aiAdvisory"]["ref"]
-        authorization["aiAdvisorySha256"] = policy_value["aiAdvisory"]["bodySha256"]
         authorization["aiAdvisoryProvenanceClass"] = policy_value["aiAdvisory"]["provenanceClass"]
         if legacy_v1:
+            for field in (
+                "aiAdvisoryCommentId", "aiAdvisoryBaseTipSha",
+                "aiAdvisoryBaseSha", "aiAdvisoryHeadSha",
+                "aiAdvisoryScopeSha256",
+            ):
+                authorization.pop(field)
+            authorization["aiAdvisoryRef"] = policy_value["aiAdvisory"]["ref"]
+            authorization["aiAdvisorySha256"] = policy_value["aiAdvisory"]["bodySha256"]
             authorization["aiProviderCryptographicAttestation"] = False
         authorization.update(authorization_updates or {})
         raw_authorization = VERIFIER.canonical_bytes(authorization) + b"\n"
@@ -1038,6 +1053,31 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         self.assertIn(f"evidence_root_sha256: {result['evidenceRootSha256']}", result["marker"])
         self.assertNotIn("sessionId", result["marker"])
         self.assertNotIn("deviceId", result["marker"])
+
+    def test_runtime_advisory_binding_derives_scope_without_policy_mutation(self):
+        with patch.object(
+            VERIFIER,
+            "derive_scope",
+            return_value=(ADVISORY_FIXTURE.scope_bytes, 0, 0),
+        ) as derive:
+            result = self.verify(advisory_scope_bytes=None)
+        self.assertEqual(result["status"], "pass")
+        derive.assert_called_once_with(
+            VERIFIER.ROOT,
+            base_tip_sha=ADVISORY_BASE_TIP_SHA,
+            base_sha=ADVISORY_BASE_SHA,
+            head_sha=HEAD_SHA,
+            max_scope_bytes=VERIFIER.MAX_SCOPE_BYTES,
+            scan_secrets=True,
+        )
+        policy_value = json.loads(VERIFIER.OWNER_POLICY_V2.read_bytes())
+        self.assertEqual(policy_value["status"], "tracked_pending")
+        self.assertTrue(
+            all(
+                value is None
+                for value in policy_value["aiAdvisory"]["evidenceBinding"].values()
+            )
+        )
 
     def test_post_pilot_source_attestation_is_allowed_before_producer(self):
         archive = build_archive(
@@ -1199,19 +1239,21 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             self.verify(client)
 
     def test_advisory_expected_bindings_edit_and_freshness_fail_closed(self):
-        for policy_key, evidence_key, bad_value in (
-            ("baseTipSha", "base_tip_sha", "1" * 40),
-            ("baseSha", "base_sha", "2" * 40),
-            ("headSha", "head_sha", "3" * 40),
-            ("scopeSha256", "scope_sha256", "4" * 64),
+        for authorization_field, evidence_key, bad_value in (
+            ("aiAdvisoryBaseTipSha", "base_tip_sha", "1" * 40),
+            ("aiAdvisoryBaseSha", "base_sha", "2" * 40),
+            ("aiAdvisoryHeadSha", "head_sha", "3" * 40),
+            ("aiAdvisoryScopeSha256", "scope_sha256", "4" * 64),
         ):
             with self.subTest(binding=evidence_key):
                 policy_value = owner_policy_fixture()
-                policy_value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
-                client = self.client_for_policy(policy_value)
+                client = self.client_for_policy(
+                    policy_value,
+                    authorization_updates={authorization_field: bad_value},
+                )
                 with self.assertRaisesRegex(
                     VERIFIER.EvidenceError,
-                    "activation/advisory head binding|scope bytes differ|subject or prompt binding mismatch",
+                    "activation/advisory head binding|canonical advisory scope digest|scope bytes differ|subject or prompt binding mismatch",
                 ):
                     self.verify(client)
 

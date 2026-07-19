@@ -45,7 +45,7 @@ ADVISORY_BODY = json.dumps(
 def policy():
     return {
         "schemaVersion": AUTH.POLICY_SCHEMA,
-        "status": "active",
+        "status": "tracked_pending",
         "ownerDirective": {
             "commentId": 101,
             "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-101",
@@ -54,21 +54,21 @@ def policy():
             "authorAssociation": "OWNER",
         },
         "aiAdvisory": {
-            "commentId": 102,
-            "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-102",
-            "bodySha256": AUTH.digest_bytes(ADVISORY_BODY.encode()),
-            "authorLogin": "Halildeu",
-            "authorAssociation": "OWNER",
+            "commentId": None,
+            "ref": None,
+            "bodySha256": None,
+            "authorLogin": None,
+            "authorAssociation": None,
             "advisoryOnly": True,
-            "consensusVerdict": "AGREE",
+            "consensusVerdict": "PENDING",
             "providers": ["OpenAI/gpt-5.6-sol"],
             "provenanceClass": "signed-direct-codex-launch-attested-v3",
             "providerCryptographicAttestation": True,
             "evidenceBinding": {
-                "baseTipSha": ADVISORY_BASE_TIP_SHA,
-                "baseSha": ADVISORY_BASE_SHA,
-                "headSha": ADVISORY_HEAD_SHA,
-                "scopeSha256": ADVISORY_SCOPE_SHA256,
+                "baseTipSha": None,
+                "baseSha": None,
+                "headSha": None,
+                "scopeSha256": None,
             },
             "maxAgeHours": 168,
         },
@@ -174,6 +174,15 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         self.assertTrue(
             all(value is None for value in canonical["aiAdvisory"]["evidenceBinding"].values())
         )
+        self.assertTrue(
+            all(
+                canonical["aiAdvisory"][field] is None
+                for field in (
+                    "commentId", "ref", "bodySha256", "authorLogin",
+                    "authorAssociation",
+                )
+            )
+        )
         self.assertNotIn("MiniMax", json.dumps(canonical, sort_keys=True))
         self.assertNotIn("Anthropic", json.dumps(canonical, sort_keys=True))
 
@@ -217,8 +226,13 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
 
     def test_revise_or_legal_clearance_claim_fails_closed(self):
         value = policy()
+        value["status"] = "active"
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "stable Codex-only"):
+            self.build(policy=value)
+
+        value = policy()
         value["aiAdvisory"]["consensusVerdict"] = "REVISE"
-        with self.assertRaisesRegex(AUTH.AuthorizationError, "not AGREE"):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "stable pending template"):
             self.build(policy=value)
 
         value = policy()
@@ -236,24 +250,20 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             self.build(policy=value)
 
         bad_comment = comment(102, "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE")
-        value = policy()
-        value["aiAdvisory"]["bodySha256"] = AUTH.digest_bytes(bad_comment["body"].encode())
-        with self.assertRaisesRegex(AUTH.AuthorizationError, "Codex-only AI advisory evidence"):
-            self.build(policy=value, advisory_comment=bad_comment)
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "evidence subject"):
+            self.build(advisory_comment=bad_comment)
 
         downgraded = json.loads(ADVISORY_BODY)
         downgraded["capability_snapshot"]["requestedModel"] = "gpt-5.3-codex-spark"
         downgraded_body = json.dumps(downgraded, separators=(",", ":"))
         downgraded_comment = comment(102, downgraded_body)
-        value = policy()
-        value["aiAdvisory"]["bodySha256"] = AUTH.digest_bytes(downgraded_body.encode())
         with self.assertRaisesRegex(AUTH.AuthorizationError, "capability differs"):
-            self.build(policy=value, advisory_comment=downgraded_comment)
+            self.build(advisory_comment=downgraded_comment)
 
         immutable_v1 = json.loads(
             (REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json").read_bytes()
         )
-        with self.assertRaisesRegex(AUTH.AuthorizationError, "not active Codex-only v2"):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "stable Codex-only v2"):
             self.build(policy=immutable_v1)
 
     def test_closed_legal_ticket_or_unprotected_environment_fails_closed(self):
@@ -309,20 +319,10 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         ):
             self.build(head_sha="b" * 40)
 
-        for policy_key, evidence_key, bad_value in (
-            ("baseTipSha", "base_tip_sha", "1" * 40),
-            ("baseSha", "base_sha", "2" * 40),
-            ("headSha", "head_sha", "3" * 40),
-            ("scopeSha256", "scope_sha256", "4" * 64),
-        ):
-            with self.subTest(binding=evidence_key):
-                value = policy()
-                value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
-                with self.assertRaisesRegex(
-                    AUTH.AuthorizationError,
-                    "authorization head does not match|scope bytes differ|subject or prompt binding mismatch",
-                ):
-                    self.build(policy=value)
+        value = policy()
+        value["aiAdvisory"]["evidenceBinding"]["headSha"] = "3" * 40
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "stable pending template"):
+            self.build(policy=value)
 
         edited = comment(
             102, ADVISORY_BODY, updated_at="2026-07-15T00:00:01Z",
@@ -373,6 +373,8 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             (REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json").read_bytes()
         )
         legacy = self.build()
+        for field in RECEIPT.CURRENT_V2_ADVISORY_BINDING_FIELDS:
+            legacy.pop(field)
         legacy["ownerPolicySha256"] = AUTH.digest_bytes(AUTH.canonical_bytes(legacy_policy))
         legacy["ownerDirectiveRef"] = legacy_policy["ownerDirective"]["ref"]
         legacy["ownerDirectiveSha256"] = legacy_policy["ownerDirective"]["bodySha256"]

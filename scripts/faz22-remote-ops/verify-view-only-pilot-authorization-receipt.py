@@ -37,6 +37,11 @@ EXPECTED_FIELDS = {
     "revocationLedgerRef", "issuedAt", "expiresAt", "authorizationRunId",
     "authorizationHeadSha",
 }
+CURRENT_V2_ADVISORY_BINDING_FIELDS = {
+    "aiAdvisoryCommentId", "aiAdvisoryBaseTipSha", "aiAdvisoryBaseSha",
+    "aiAdvisoryHeadSha", "aiAdvisoryScopeSha256",
+}
+RAW_SHA256 = re.compile(r"^[a-f0-9]{64}$")
 
 
 class ReceiptError(Exception):
@@ -70,7 +75,13 @@ def verify(
     activation_run_created_at: datetime | None = None,
     activation_run_started_at: datetime | None = None,
 ) -> None:
-    if set(receipt) != EXPECTED_FIELDS:
+    policy_schema = policy.get("schemaVersion")
+    legacy_v1 = policy_schema == LEGACY_POLICY_SCHEMA_V1
+    expected_fields = (
+        EXPECTED_FIELDS if legacy_v1
+        else EXPECTED_FIELDS | CURRENT_V2_ADVISORY_BINDING_FIELDS
+    )
+    if set(receipt) != expected_fields:
         raise ReceiptError("authorization receipt field set mismatch")
     if receipt["schemaVersion"] != SCHEMA or receipt["minimumAcceptedAuthorizationSchema"] != SCHEMA:
         raise ReceiptError("authorization receipt is not strict v2")
@@ -86,8 +97,6 @@ def verify(
             raise ReceiptError(f"authorization {field} is invalid")
     if receipt["operatorSha256"] == receipt["deviceSha256"]:
         raise ReceiptError("authorization operator/device bindings are not distinct")
-    policy_schema = policy.get("schemaVersion")
-    legacy_v1 = policy_schema == LEGACY_POLICY_SCHEMA_V1
     if legacy_v1 and not allow_legacy_v1:
         raise ReceiptError("legacy v1 policy is forbidden for this verification mode")
     expected_provenance = (
@@ -120,11 +129,12 @@ def verify(
     ):
         raise ReceiptError("authorization bounded privacy controls are invalid")
     advisory = policy.get("aiAdvisory")
-    if not isinstance(advisory, dict) or policy.get("status") != "active":
-        raise ReceiptError("canonical owner policy is not active")
+    if not isinstance(advisory, dict):
+        raise ReceiptError("canonical owner policy advisory is missing")
     if legacy_v1:
         if (
-            digest_bytes(canonical_bytes(policy)) != LEGACY_POLICY_CANONICAL_SHA256
+            policy.get("status") != "active"
+            or digest_bytes(canonical_bytes(policy)) != LEGACY_POLICY_CANONICAL_SHA256
             or advisory.get("providers")
             != ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"]
             or advisory.get("consensusVerdict") != "AGREE"
@@ -133,21 +143,55 @@ def verify(
             raise ReceiptError("legacy v1 policy is not the immutable forensic contract")
     elif (
         policy_schema != POLICY_SCHEMA_V2
+        or policy.get("status") != "tracked_pending"
         or advisory.get("providers") != ["OpenAI/gpt-5.6-sol"]
-        or advisory.get("consensusVerdict") != "AGREE"
+        or advisory.get("consensusVerdict") != "PENDING"
         or advisory.get("provenanceClass") != "signed-direct-codex-launch-attested-v3"
         or advisory.get("providerCryptographicAttestation") is not True
+        or any(
+            advisory.get(field) is not None
+            for field in (
+                "commentId", "ref", "bodySha256", "authorLogin",
+                "authorAssociation",
+            )
+        )
+        or not isinstance(advisory.get("evidenceBinding"), dict)
+        or any(value is not None for value in advisory["evidenceBinding"].values())
     ):
-        raise ReceiptError("canonical owner policy is not active Codex-only v2")
+        raise ReceiptError("canonical owner policy is not the stable Codex-only v2 constraint")
     policy_digest = digest_bytes(canonical_bytes(policy))
     if receipt["ownerPolicySha256"] != policy_digest:
         raise ReceiptError("canonical owner policy digest mismatch")
-    for receipt_field, policy_field in (
-        ("aiAdvisoryRef", "ref"),
-        ("aiAdvisorySha256", "bodySha256"),
-    ):
-        if receipt[receipt_field] != advisory.get(policy_field):
-            raise ReceiptError(f"authorization {receipt_field} policy binding mismatch")
+    if legacy_v1:
+        for receipt_field, policy_field in (
+            ("aiAdvisoryRef", "ref"),
+            ("aiAdvisorySha256", "bodySha256"),
+        ):
+            if receipt[receipt_field] != advisory.get(policy_field):
+                raise ReceiptError(
+                    f"authorization {receipt_field} policy binding mismatch"
+                )
+    else:
+        if (
+            not isinstance(receipt["aiAdvisoryCommentId"], int)
+            or receipt["aiAdvisoryCommentId"] < 1
+            or receipt["aiAdvisoryRef"] != (
+                "https://github.com/Halildeu/platform-k8s-gitops/issues/2373"
+                f"#issuecomment-{receipt['aiAdvisoryCommentId']}"
+            )
+            or any(
+                not isinstance(receipt[field], str)
+                or not GIT_SHA.fullmatch(receipt[field])
+                for field in (
+                    "aiAdvisoryBaseTipSha", "aiAdvisoryBaseSha",
+                    "aiAdvisoryHeadSha",
+                )
+            )
+            or receipt["aiAdvisoryHeadSha"] != expected_head_sha
+            or not isinstance(receipt["aiAdvisoryScopeSha256"], str)
+            or not RAW_SHA256.fullmatch(receipt["aiAdvisoryScopeSha256"])
+        ):
+            raise ReceiptError("authorization runtime advisory binding is invalid")
     owner = policy.get("ownerDirective")
     if not isinstance(owner, dict) or (
         receipt["ownerDirectiveRef"] != owner.get("ref")

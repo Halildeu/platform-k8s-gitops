@@ -147,11 +147,82 @@ def build_signed_evidence(
         scope_sha256=scope_sha256,
         prompt=prompt,
     )
+    subject_sha256 = sha256_digest(subject)
+    preflight_now = utc_now().replace(microsecond=0)
+    preflight_authority = authority or load_active_authority(
+        workspace, now=preflight_now
+    )
+    active_signer = signer or VaultTransitSigner(
+        vault_origin=args.vault_origin,
+        token_file=args.vault_token_file,
+        mount="cross-ai",
+        key_name="openai",
+        key_version=args.vault_key_version,
+    )
+    preflight_verifier = EvidenceVerifier(
+        trust_root=preflight_authority.trust_root,
+        revocations_envelope=preflight_authority.revocations_envelope,
+        now=preflight_now,
+        expected_trust_root_sha256=(
+            preflight_authority.expected_trust_root_sha256
+        ),
+    )
+    key = preflight_verifier.require_active_signing_key(
+        key_id=active_signer.key_id,
+        role="provider-review",
+        provider_family="openai",
+        issued_at=preflight_now,
+    )
+    if (
+        key.allowed_channels != ("openai-codex",)
+        or set(key.allowed_model_ids)
+        != {CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL}
+        or key.allowed_model_identity_classes != ("trusted-launch-attested",)
+        or key.direct_provider_cli is not True
+    ):
+        reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
+    execution = (
+        runner
+        or DirectCodexRunner(
+            executable_policy=preflight_authority.codex_executable_policy
+        )
+    ).run(
+        prompt=prompt,
+        model=model,
+        workspace=workspace,
+        timeout_seconds=args.timeout_seconds,
+    )
+    # The provider call can run for up to 20 minutes. Reload and revalidate the
+    # complete public authority only after it returns so leaf time, signer
+    # status, root/key validity and the revocation snapshot cannot be frozen at
+    # launch time.
     now = utc_now().replace(microsecond=0)
     expires = now + timedelta(minutes=90)
     issued_at = now.isoformat().replace("+00:00", "Z")
     expires_at = expires.isoformat().replace("+00:00", "Z")
-    subject_sha256 = sha256_digest(subject)
+    active_authority = authority or load_active_authority(workspace, now=now)
+    trust_root = active_authority.trust_root
+    revocations = active_authority.revocations_envelope
+    verifier = EvidenceVerifier(
+        trust_root=trust_root,
+        revocations_envelope=revocations,
+        now=now,
+        expected_trust_root_sha256=active_authority.expected_trust_root_sha256,
+    )
+    key = verifier.require_active_signing_key(
+        key_id=active_signer.key_id,
+        role="provider-review",
+        provider_family="openai",
+        issued_at=now,
+    )
+    if (
+        key.allowed_channels != ("openai-codex",)
+        or set(key.allowed_model_ids)
+        != {CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL}
+        or key.allowed_model_identity_classes != ("trusted-launch-attested",)
+        or key.direct_provider_cli is not True
+    ):
+        reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
     coordinates = ReviewCoordinates(
         review_id=str(uuid4()),
         review_chain_id=str(uuid4()),
@@ -166,47 +237,6 @@ def build_signed_evidence(
         ),
         issued_at=issued_at,
         expires_at=expires_at,
-    )
-    active_authority = authority or load_active_authority(workspace, now=now)
-    trust_root = active_authority.trust_root
-    revocations = active_authority.revocations_envelope
-    active_signer = signer or VaultTransitSigner(
-        vault_origin=args.vault_origin,
-        token_file=args.vault_token_file,
-        mount="cross-ai",
-        key_name="openai",
-        key_version=args.vault_key_version,
-    )
-    verifier = EvidenceVerifier(
-        trust_root=trust_root,
-        revocations_envelope=revocations,
-        now=now,
-        expected_trust_root_sha256=active_authority.expected_trust_root_sha256,
-    )
-    key = verifier.require_active_signing_key(
-        key_id=active_signer.key_id,
-        role="provider-review",
-        provider_family="openai",
-        issued_at=parse_utc(issued_at, "review.issuedAt"),
-    )
-    if (
-        key.allowed_channels != ("openai-codex",)
-        or set(key.allowed_model_ids)
-        != {CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL}
-        or key.allowed_model_identity_classes != ("trusted-launch-attested",)
-        or key.direct_provider_cli is not True
-    ):
-        reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
-    execution = (
-        runner
-        or DirectCodexRunner(
-            executable_policy=active_authority.codex_executable_policy
-        )
-    ).run(
-        prompt=prompt,
-        model=model,
-        workspace=workspace,
-        timeout_seconds=args.timeout_seconds,
     )
     envelope = ProviderReviewIssuer(
         signer=active_signer,

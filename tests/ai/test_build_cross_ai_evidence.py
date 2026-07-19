@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -100,6 +102,65 @@ class EvidenceBuilderTests(unittest.TestCase):
             now=self.fixture.factory.now,
             require_agree=True,
         )
+
+    def test_leaf_time_and_authority_are_refreshed_after_provider_returns(self) -> None:
+        runner = StaticRunner()
+        completed_at = self.fixture.factory.now + timedelta(minutes=10)
+        with (
+            patch.object(
+                MODULE,
+                "_scope",
+                return_value=(self.fixture.bindings, self.fixture.scope_bytes),
+            ),
+            patch.object(
+                MODULE, "utc_now",
+                side_effect=[self.fixture.factory.now, completed_at],
+            ),
+        ):
+            MODULE.build_signed_evidence(
+                self.args,
+                runner=runner,
+                signer=StaticSigner(
+                    self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
+                ),
+                authority=self.fixture.authority,
+            )
+        evidence = json.loads(self.output.read_bytes())
+        leaf = json.loads(
+            base64.b64decode(evidence["review_envelope"]["payload"], validate=True)
+        )
+        self.assertEqual(
+            leaf["issuedAt"], completed_at.isoformat().replace("+00:00", "Z")
+        )
+
+        self.output.unlink()
+        runner = StaticRunner()
+        stale_time = self.fixture.factory.now + timedelta(hours=2)
+        with (
+            patch.object(
+                MODULE,
+                "_scope",
+                return_value=(self.fixture.bindings, self.fixture.scope_bytes),
+            ),
+            patch.object(
+                MODULE, "utc_now",
+                side_effect=[self.fixture.factory.now, stale_time],
+            ),
+            patch.object(
+                MODULE, "load_active_authority",
+                return_value=self.fixture.authority,
+            ) as authority_loader,
+        ):
+            with self.assertRaisesRegex(PolicyError, "REVOCATIONS_STALE"):
+                MODULE.build_signed_evidence(
+                    self.args,
+                    runner=runner,
+                    signer=StaticSigner(
+                        self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
+                    ),
+                )
+        self.assertEqual(authority_loader.call_count, 2)
+        self.assertEqual(runner.calls, 1)
 
     def test_old_caller_authored_response_and_coordinate_arguments_are_rejected(self) -> None:
         result = subprocess.run(
