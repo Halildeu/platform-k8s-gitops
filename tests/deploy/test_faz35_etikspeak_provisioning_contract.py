@@ -27,6 +27,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
         ).read_text()
+        cls.test_root = (
+            ROOT / "kustomize/overlays/test/kustomization.yaml"
+        ).read_text()
 
     def test_raw_credentials_are_not_in_docker_exec_arguments(self):
         combined = "\n".join((self.pg_vault, self.keycloak, self.openfga))
@@ -119,6 +122,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "speakup.acik.com",
             "ssl_verify_result",
             "OVERLAY_MUST_OVERRIDE",
+            "ServerAliveCountMax=2",
+            "--request-timeout=10s",
+            "--max-time 10",
+            "check_object_headroom services 2 2",
+            "check_object_headroom configmaps 1 2",
+            "check_object_headroom secrets 1 2",
+            "check_object_headroom pods 4 2",
         ):
             self.assertIn(required, self.preflight)
         self.assertNotRegex(
@@ -129,6 +139,30 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.preflight,
             r"vault\s+(kv\s+)?(put|patch|delete|write)",
         )
+
+    def test_test_quota_preserves_etikspeak_activation_and_repair_reserve(self):
+        quota_patch = re.search(
+            r"(?s)- target:\s+kind: ResourceQuota\s+name: platform-quota"
+            r"\s+patch: \|-\s+(.*?)(?=\n  - target:|\Z)",
+            self.test_root,
+        )
+        self.assertIsNotNone(quota_patch)
+        patch = quota_patch.group(1)
+        expected = {
+            "/spec/hard/services": "40",
+            "/spec/hard/secrets": "44",
+            "/spec/hard/pods": "34",
+            "/spec/hard/configmaps": "35",
+        }
+        for path, value in expected.items():
+            with self.subTest(path=path):
+                self.assertRegex(
+                    patch,
+                    re.escape(f"path: {path}")
+                    + r"\s+value: \"?"
+                    + re.escape(value)
+                    + r"\"?",
+                )
 
 
 if __name__ == "__main__":

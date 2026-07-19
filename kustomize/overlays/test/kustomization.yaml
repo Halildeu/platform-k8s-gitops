@@ -8247,13 +8247,26 @@ patches:
       # reconcile. 2026-07-03: Faz 24 #2186 meeting-ai test bridge found live
       # services=32/32 after Endpoints/NetPolicy synced; keep small test-only
       # headroom so the selectorless Service can reconcile via GitOps.
+      # 2026-07-19: Faz 35 Etik Speak adds two Services. Live was 34/36, which
+      # would leave zero rollback/repair headroom; 40 leaves four slots after
+      # the product cell is active. Test-only; prod quota is unchanged.
       - op: replace
         path: /spec/hard/services
-        value: "36"
+        value: "40"
       # 2026-06-28: Faz 22.6 #548 dedicated device-key broker adds three
       # isolated ExternalSecret-owned Secrets (runtime, TLS, signer). Live
       # namespace was already secrets=30/30, so keep this test-only object
       # quota honest instead of reusing the shared broker secret path.
+      # Faz 35 adds one ESO-owned Secret; 44 retains five steady-state slots.
       - op: replace
         path: /spec/hard/secrets
-        value: "40"
+        value: "44"
+      # Faz 35 steady state adds two pods; simultaneous maxSurge adds four.
+      # Live was 26/30, so 34 preserves four slots after worst-case surge.
+      - op: replace
+        path: /spec/hard/pods
+        value: "34"
+      # Faz 35 adds one ConfigMap. Live was 30/31; 35 preserves four slots.
+      - op: replace
+        path: /spec/hard/configmaps
+        value: "35"
