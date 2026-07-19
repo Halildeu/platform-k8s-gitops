@@ -1033,7 +1033,6 @@ const TWO_STEP_FORCE_PUSH_FIXTURE = {
   },
   statuses: {
     [HIDDEN_REVISE_H1]: [{
-      sha: HIDDEN_REVISE_H1,
       context: `cross-ai/evidence/${HIDDEN_REVISE_DIGEST}`,
       state: 'failure',
       description: `v4 openai REVISE pr=${PR_NUMBER} thread=${HIDDEN_REVISE_THREAD}`,

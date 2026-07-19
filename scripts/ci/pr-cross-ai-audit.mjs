@@ -1028,9 +1028,11 @@ async function loadPullRequestEvidenceComments(prMeta, evidenceOverrides) {
   return null;
 }
 
-function evidenceLedgerStatusFromPayload(payload) {
+function evidenceLedgerStatusFromPayload(payload, queriedSha) {
   return {
-    sha: payload?.sha,
+    // GitHub's commit-status representation does not carry the commit SHA.
+    // Bind each record to the already validated SHA used in the GET endpoint.
+    sha: queriedSha,
     context: payload?.context,
     state: payload?.state,
     description: payload?.description,
@@ -1117,7 +1119,7 @@ async function loadPullRequestEvidenceLedger(prMeta, ledgerOverrides) {
         if (!Array.isArray(payload)) return null;
         statuses.push(...payload
           .filter((status) => status?.context?.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX))
-          .map(evidenceLedgerStatusFromPayload));
+          .map((status) => evidenceLedgerStatusFromPayload(status, sha)));
         if (payload.length < 100) break;
         if (page === 10) return null;
       }

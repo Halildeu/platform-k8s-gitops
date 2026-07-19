@@ -313,6 +313,8 @@ def publish_evidence(
     expected_status = status_ledger_payload(
         evidence, body_sha256, issue_number, pr_url
     )
+    # GitHub's commit-status response omits the commit SHA. The validated
+    # evidence head is authoritative because it is embedded in this POST path.
     status_payload = json.dumps(
         expected_status,
         ensure_ascii=False,
@@ -339,13 +341,11 @@ def publish_evidence(
         status_record = json.loads(status_result.stdout)
         ledger_ref = status_record["url"]
         ledger_context = status_record["context"]
-        ledger_sha = status_record["sha"].lower()
         ledger_creator = status_record["creator"]["login"].lower()
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_status_ledger_invalid")
     if (
         ledger_context != f"cross-ai/evidence/{body_sha256}"
-        or ledger_sha != evidence["head_sha"].lower()
         or ledger_creator != repo.split("/", 1)[0].lower()
         or status_record.get("state") != expected_status["state"]
         or status_record.get("description") != expected_status["description"]

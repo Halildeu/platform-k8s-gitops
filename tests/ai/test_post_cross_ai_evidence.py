@@ -123,7 +123,6 @@ class EvidenceValidationTests(unittest.TestCase):
                     stdout=json.dumps({
                         **expected,
                         "url": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/statuses/1",
-                        "sha": payload["head_sha"],
                         "creator": {"login": "Halildeu"},
                     }),
                 )
@@ -146,7 +145,10 @@ class EvidenceValidationTests(unittest.TestCase):
             pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
             runner=runner,
         )
-        self.assertIn("/statuses/", calls[0][2])
+        self.assertEqual(
+            calls[0][2],
+            f"repos/Halildeu/platform-k8s-gitops/statuses/{payload['head_sha']}",
+        )
         self.assertIn("/comments", calls[1][2])
         self.assertEqual(result["ledger_context"], f"cross-ai/evidence/{digest}")
 
@@ -194,7 +196,6 @@ class EvidenceValidationTests(unittest.TestCase):
                     stdout=json.dumps({
                         **expected,
                         "url": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/statuses/2",
-                        "sha": payload["head_sha"],
                         "creator": {"login": "Halildeu"},
                     }),
                 )
