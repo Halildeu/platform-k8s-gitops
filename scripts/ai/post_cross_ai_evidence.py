@@ -280,7 +280,7 @@ def status_ledger_payload(
     evidence: dict,
     body_sha256: str,
     issue_number: int,
-    api_ref: str,
+    pr_url: str,
 ) -> dict:
     thread_id = evidence["execution_provenance"]["thread_id"]
     return {
@@ -290,7 +290,106 @@ def status_ledger_payload(
             f"v4 openai {evidence['verdict']} pr={issue_number} "
             f"thread={thread_id}"
         ),
-        "target_url": api_ref,
+        "target_url": pr_url,
+    }
+
+
+def publish_evidence(
+    *,
+    repo: str,
+    issue_number: int,
+    evidence: dict,
+    evidence_text: str,
+    body_sha256: str,
+    pr_url: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict:
+    """Publish the immutable ledger before its mutable comment payload.
+
+    A failed comment write leaves a fail-closed ledger tombstone. Retrying may
+    create an identical status, which the verifier coalesces by evidence digest.
+    This ordering prevents an unledgered owner comment from poisoning the PR.
+    """
+    expected_status = status_ledger_payload(
+        evidence, body_sha256, issue_number, pr_url
+    )
+    status_payload = json.dumps(
+        expected_status,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    try:
+        status_result = runner(
+            [
+                "gh", "api",
+                f"repos/{repo}/statuses/{evidence['head_sha']}",
+                "--method", "POST", "--input", "-",
+            ],
+            input=status_payload,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_status_ledger_failed")
+    if status_result.returncode != 0:
+        fail("gh_status_ledger_failed")
+    try:
+        status_record = json.loads(status_result.stdout)
+        ledger_ref = status_record["url"]
+        ledger_context = status_record["context"]
+        ledger_sha = status_record["sha"].lower()
+        ledger_creator = status_record["creator"]["login"].lower()
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("gh_status_ledger_invalid")
+    if (
+        ledger_context != f"cross-ai/evidence/{body_sha256}"
+        or ledger_sha != evidence["head_sha"].lower()
+        or ledger_creator != repo.split("/", 1)[0].lower()
+        or status_record.get("state") != expected_status["state"]
+        or status_record.get("description") != expected_status["description"]
+        or status_record.get("target_url") != pr_url
+    ):
+        fail("gh_status_ledger_invalid")
+
+    payload = json.dumps(
+        {"body": evidence_text}, ensure_ascii=False, separators=(",", ":")
+    )
+    try:
+        result = runner(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/issues/{issue_number}/comments",
+                "--method",
+                "POST",
+                "--input",
+                "-",
+            ],
+            input=payload,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_post_failed")
+    if result.returncode != 0:
+        fail("gh_post_failed")
+    try:
+        comment = json.loads(result.stdout)
+        api_ref = comment["url"]
+        created_at = comment["created_at"]
+        updated_at = comment["updated_at"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        fail("gh_response_invalid")
+    return {
+        "ref": api_ref,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "ledger_ref": ledger_ref,
+        "ledger_context": ledger_context,
     }
 
 
@@ -329,6 +428,7 @@ def main() -> None:
         pr_base_sha = pr["base"]["sha"].lower()
         pr_head_sha = pr["head"]["sha"].lower()
         pr_state = pr["state"]
+        pr_url = pr["html_url"]
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_pr_binding_invalid")
     evidence, body_sha256 = validate_evidence_text(
@@ -340,75 +440,17 @@ def main() -> None:
         or evidence["head_sha"].lower() != pr_head_sha
     ):
         fail("github_pr_binding_mismatch")
-    payload = json.dumps({"body": text}, ensure_ascii=False, separators=(",", ":"))
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{args.repo}/issues/{args.issue}/comments",
-                "--method",
-                "POST",
-                "--input",
-                "-",
-            ],
-            input=payload,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except OSError:
-        fail("gh_post_failed")
-    if result.returncode != 0:
-        fail("gh_post_failed")
-    try:
-        comment = json.loads(result.stdout)
-        api_ref = comment["url"]
-        created_at = comment["created_at"]
-        updated_at = comment["updated_at"]
-    except (json.JSONDecodeError, KeyError, TypeError):
-        fail("gh_response_invalid")
-    expected_status = status_ledger_payload(
-        evidence, body_sha256, args.issue, api_ref
+    expected_pr_url = f"https://github.com/{args.repo}/pull/{args.issue}"
+    if pr_url != expected_pr_url:
+        fail("gh_pr_binding_invalid")
+    publication = publish_evidence(
+        repo=args.repo,
+        issue_number=args.issue,
+        evidence=evidence,
+        evidence_text=text,
+        body_sha256=body_sha256,
+        pr_url=pr_url,
     )
-    status_payload = json.dumps(
-        expected_status,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    try:
-        status_result = subprocess.run(
-            [
-                "gh", "api",
-                f"repos/{args.repo}/statuses/{evidence['head_sha']}",
-                "--method", "POST", "--input", "-",
-            ],
-            input=status_payload,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except OSError:
-        fail("gh_status_ledger_failed")
-    if status_result.returncode != 0:
-        fail("gh_status_ledger_failed")
-    try:
-        status_record = json.loads(status_result.stdout)
-        ledger_ref = status_record["url"]
-        ledger_context = status_record["context"]
-        ledger_sha = status_record["sha"].lower()
-    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
-        fail("gh_status_ledger_invalid")
-    if (
-        ledger_context != f"cross-ai/evidence/{body_sha256}"
-        or ledger_sha != evidence["head_sha"].lower()
-        or status_record.get("state") != expected_status["state"]
-        or status_record.get("description") != expected_status["description"]
-        or status_record.get("target_url") != api_ref
-    ):
-        fail("gh_status_ledger_invalid")
     print(
         json.dumps(
             {
@@ -417,12 +459,12 @@ def main() -> None:
                 "actual_model": evidence["actual_model"],
                 "execution_profile": evidence["execution_profile"],
                 "verdict": evidence["verdict"],
-                "ref": api_ref,
+                "ref": publication["ref"],
                 "sha256": body_sha256,
-                "created_at": created_at,
-                "updated_at": updated_at,
-                "ledger_ref": ledger_ref,
-                "ledger_context": ledger_context,
+                "created_at": publication["created_at"],
+                "updated_at": publication["updated_at"],
+                "ledger_ref": publication["ledger_ref"],
+                "ledger_context": publication["ledger_context"],
             },
             ensure_ascii=False,
         )

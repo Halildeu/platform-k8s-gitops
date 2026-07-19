@@ -695,6 +695,10 @@ function validEvidenceRef(value, baseRepo) {
   }
 }
 
+function validLedgerTargetUrl(value, baseRepo, issueNumber) {
+  return value === `https://github.com/${baseRepo}/pull/${issueNumber}`;
+}
+
 function sha256Utf8(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
@@ -1141,7 +1145,8 @@ async function appendPriorRevisionFinding(
   const records = [];
   const invalidCandidates = [];
   const commentByRef = new Map(comments.map((comment) => [comment?.ref, comment]));
-  const ledgerByTarget = new Map();
+  const commentsByDigest = new Map();
+  const ledgerByDigest = new Map();
   for (const status of ledger) {
     const digest = typeof status?.context === 'string'
       && status.context.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX)
@@ -1163,24 +1168,39 @@ async function appendPriorRevisionFinding(
       && UUID_RE.test(threadId || '')
       && status?.state === expectedState
       && COMMIT_SHA_RE.test(status?.sha || '')
-      && validEvidenceRef(status?.targetUrl, prMeta.baseRepo)
+      && validLedgerTargetUrl(status?.targetUrl, prMeta.baseRepo, prMeta.issueNumber)
       && typeof status?.creator === 'string'
       && status.creator.toLowerCase() === expectedOwner.toLowerCase()
       && Number.isFinite(createdAtMs)
       && status.createdAt === status.updatedAt
     );
-    if (!valid || ledgerByTarget.has(status?.targetUrl)) {
-      invalidCandidates.push(`${status?.ref || 'missing-ledger-ref'} (invalid or duplicate status ledger)`);
+    if (!valid) {
+      invalidCandidates.push(`${status?.ref || 'missing-ledger-ref'} (invalid status ledger)`);
       continue;
     }
-    ledgerByTarget.set(status.targetUrl, {
+    const record = {
       ...status,
       digest: digest.toLowerCase(),
       provider: 'openai',
       verdict,
       threadId,
       createdAtMs,
-    });
+    };
+    const existing = ledgerByDigest.get(record.digest);
+    if (existing) {
+      const sameAuthority = [
+        'sha', 'context', 'state', 'description', 'targetUrl', 'creator',
+      ].every((key) => existing[key] === record[key])
+        && existing.verdict === record.verdict
+        && existing.threadId === record.threadId;
+      if (!sameAuthority) {
+        invalidCandidates.push(`${status?.ref || 'missing-ledger-ref'} (conflicting status ledger)`);
+      } else if (record.createdAtMs < existing.createdAtMs) {
+        ledgerByDigest.set(record.digest, record);
+      }
+      continue;
+    }
+    ledgerByDigest.set(record.digest, record);
   }
   for (const comment of comments) {
     // Live history is loaded from the current PR endpoint. Local overrides are
@@ -1221,16 +1241,34 @@ async function appendPriorRevisionFinding(
       (candidate) => candidate.provider === body?.provider,
     );
     const commentCreatedAtMs = Date.parse(comment?.createdAt || '');
-    const ledgerRequired = body?.schema === 'cross-ai-provider-evidence/v4'
+    if (
+      body?.schema === 'cross-ai-provider-evidence/v3'
       && body?.provider === 'openai'
       && Number.isFinite(commentCreatedAtMs)
-      && commentCreatedAtMs >= EVIDENCE_STATUS_LEDGER_CUTOFF_MS;
-    if (ledgerRequired) {
-      if (!ledgerByTarget.has(comment.ref)) {
-        invalidCandidates.push(`${comment?.ref || 'missing-ref'} (missing immutable status ledger)`);
-      }
-      // Current v4 authority is reconstructed from the immutable ledger below.
+      && commentCreatedAtMs >= EVIDENCE_STATUS_LEDGER_CUTOFF_MS
+    ) {
+      invalidCandidates.push(`${comment?.ref || 'missing-ref'} (retired OpenAI v3 evidence)`);
       continue;
+    }
+    const openAiV4 = body?.schema === 'cross-ai-provider-evidence/v4'
+      && body?.provider === 'openai';
+    const ledgerRequired = openAiV4
+      && Number.isFinite(commentCreatedAtMs)
+      && commentCreatedAtMs >= EVIDENCE_STATUS_LEDGER_CUTOFF_MS;
+    if (openAiV4) {
+      const digest = sha256Utf8(comment.body);
+      if (ledgerByDigest.has(digest)) {
+        const matchingComments = commentsByDigest.get(digest) || [];
+        matchingComments.push(comment);
+        commentsByDigest.set(digest, matchingComments);
+        // A matching immutable status is the single authority, including for
+        // pre-cutoff comments that already carry a valid ledger record.
+        continue;
+      }
+      if (ledgerRequired) {
+        invalidCandidates.push(`${comment?.ref || 'missing-ref'} (missing immutable status ledger)`);
+        continue;
+      }
     }
     // Strict immutable v1 evidence predating each provider's exact schema or
     // authority retirement remains read-only history. Current, edited, or
@@ -1294,40 +1332,42 @@ async function appendPriorRevisionFinding(
     }
   }
 
-  for (const status of ledgerByTarget.values()) {
-    const comment = commentByRef.get(status.targetUrl);
-    if (!comment) {
+  for (const status of ledgerByDigest.values()) {
+    const matchingComments = commentsByDigest.get(status.digest) || [];
+    if (matchingComments.length === 0) {
       records.push({
         provider: status.provider,
         verdict: status.verdict,
         createdAtMs: status.createdAtMs,
         evidenceSha256: status.digest,
         threadId: status.threadId,
-        ref: status.targetUrl,
+        ref: status.ref,
         currentBindingFresh: false,
         tombstone: true,
       });
       continue;
     }
     const expected = EVIDENCE_PROVIDERS.openai;
-    const parsed = sha256Utf8(comment.body || '') === status.digest
-      ? parseEvidenceComment(comment, expected, expectedOwner, {
+    const selectedComment = matchingComments.find(
+      (candidate) => selectedEvidenceRefs.has(candidate.ref),
+    ) || matchingComments[0];
+    const parsed = parseEvidenceComment(selectedComment, expected, expectedOwner, {
           issueNumber: prMeta.issueNumber,
           enforceFreshness: false,
           trustedSourceAnchorSha: baseTip,
           trustedSourceDigestOverrides,
-        })
-      : null;
+        });
     if (
       !parsed
       || parsed.evidence.verdict !== status.verdict
       || parsed.evidence.head_sha?.toLowerCase() !== status.sha?.toLowerCase()
       || parsed.evidence.execution_provenance?.thread_id?.toLowerCase() !== status.threadId
+      || parsed.createdAtMs < status.createdAtMs
     ) {
       invalidCandidates.push(`${status.ref || 'missing-ledger-ref'} (status ledger payload mismatch)`);
       continue;
     }
-    const current = parseEvidenceComment(comment, expected, expectedOwner, {
+    const current = parseEvidenceComment(selectedComment, expected, expectedOwner, {
       issueNumber: prMeta.issueNumber,
       binding: { baseTip, base, head: parsed.evidence.head_sha, scope },
       trustedSourceAnchorSha: baseTip,
@@ -1339,14 +1379,17 @@ async function appendPriorRevisionFinding(
       createdAtMs: status.createdAtMs,
       evidenceSha256: status.digest,
       threadId: status.threadId,
-      ref: status.targetUrl,
-      currentBindingFresh: Boolean(current) && selectedEvidenceRefs.has(status.targetUrl),
+      ref: selectedComment.ref,
+      currentBindingFresh: Boolean(current) && selectedEvidenceRefs.has(selectedComment.ref),
       tombstone: false,
     });
   }
 
   const selectedLedgerMissing = [...selectedEvidenceRefs]
-    .filter((ref) => !ledgerByTarget.has(ref));
+    .filter((ref) => {
+      const comment = commentByRef.get(ref);
+      return !comment || !ledgerByDigest.has(sha256Utf8(comment.body || ''));
+    });
   findings.push({
     check: 'consultation_selected_receipts_ledgered',
     pass: selectedLedgerMissing.length === 0,

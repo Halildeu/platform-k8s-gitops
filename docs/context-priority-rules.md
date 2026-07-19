@@ -430,13 +430,17 @@ Bir Codex `REVISE` kaydı yalnız PR gövdesinde seçilmiş daha yeni Codex rece
 referansındaki `AGREE` ile çözülür; `none` veya challenger yorumları çözüm
 yetkisi üretmez. Düzenlenmiş ya da yapısal olarak geçersiz
 evidence adayı geçmişten sessizce düşmez, gate'i fail-closed yapar. Politika
-aktivasyonundan sonra her owner-authored OpenAI v4 evidence yorumu PR numarası,
+aktivasyonundan sonra her owner-authored OpenAI v4 evidence için PR numarası,
 exact head, body SHA-256, thread ve verdict'e bağlı ayrı create-only commit-status
-ledger kaydı üretir. Gate mevcut PR commit'leriyle birlikte force-push timeline
-head'lerini tarar; yorum silinse bile `REVISE` ledger tombstone olarak kalır.
-Yorum edit'i, seçilmiş receipt için eksik ledger veya ledger/comment bağ
-uyuşmazlığı fail-closed yapar ve yeni create-once yorum gerekir. Dar tarihsel docs-only
-muafiyeti de aynı PR'daki açık `REVISE` geçmişini atlayamaz.
+ledger kaydı yorumdan önce üretilir ve exact PR URL'sine bağlanır. Gate yorumları
+ledger'a mutable yorum URL'siyle değil body digest'iyle bağlar; aynı digest'in
+exact retry kopyaları tek authority kaydıdır, çelişkili duplicate fail-closed olur.
+Gate mevcut PR commit'leriyle birlikte force-push timeline head'lerini tarar;
+yorum POST'u başarısız olsa veya yorum silinse bile `REVISE` ledger tombstone
+olarak kalır. Yorum edit'i, seçilmiş receipt için eksik ledger,
+ledger/comment bağ uyuşmazlığı veya aktivasyon sonrasında oluşturulmuş OpenAI v3
+adayı fail-closed yapar. Dar tarihsel docs-only muafiyeti de aynı PR'daki açık
+`REVISE` geçmişini atlayamaz.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
 
@@ -525,8 +529,10 @@ ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
 review ister. Poster exact şema/profil/provenance dışında fail-closed olur;
 trusted producer commit'inin exact PR base tip'inin atası olduğunu posting
-öncesinde doğrular, owner comment ile immutable status ledger'ı birlikte üretir.
-CI receipt, GitHub comment gövdesi ve status-ledger bağını birlikte doğrular.
+öncesinde doğrular, immutable status ledger'ı owner comment'ten önce üretir.
+Comment yazımı başarısız kalırsa ledger tombstone korunur; aynı evidence digest'i
+ile retry güvenlidir. CI receipt, GitHub comment gövdesi ve status-ledger bağını
+digest üzerinden birlikte doğrular.
 Böylece normal sohbet
 yanıtı desteklenen araç zincirinde OpenAI `single` evidence olarak yeniden
 etiketlenemez. Bu kayıt yine provider imzalı değildir ve

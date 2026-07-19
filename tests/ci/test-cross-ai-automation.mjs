@@ -179,7 +179,7 @@ const evidenceLedgerFromMap = (evidenceMap) => Object.entries(evidenceMap)
       context: `cross-ai/evidence/${sha256(comment.body)}`,
       state: body.verdict === 'AGREE' ? 'success' : 'failure',
       description: `v4 openai ${body.verdict} pr=${comment.issueNumber} thread=${body.execution_provenance?.thread_id}`,
-      targetUrl: ref,
+      targetUrl: `https://github.com/${REPO}/pull/${comment.issueNumber}`,
       creator: comment.author,
       createdAt: comment.createdAt,
       updatedAt: comment.createdAt,
@@ -197,6 +197,37 @@ const EVIDENCE = {
   ),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
   [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
+};
+const RETRIED_CODEX_REF = evidenceRef(1017);
+const RETRIED_EVIDENCE = {
+  ...EVIDENCE,
+  [RETRIED_CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 3_000),
+};
+const CODEX_V3_BODY = (() => {
+  const body = JSON.parse(EVIDENCE[CODEX_REF].body);
+  body.schema = 'cross-ai-provider-evidence/v3';
+  body.execution_provenance = {
+    schema: 'codex-native-execution-provenance/v1',
+    thread_id: body.execution_provenance.thread_id,
+    cli_version: body.execution_provenance.cli_version,
+    cli_native_target: body.execution_provenance.cli_native_target,
+    cli_native_sha256: body.execution_provenance.cli_native_sha256,
+    trust_root: body.execution_provenance.trust_root,
+    stderr_classification: body.execution_provenance.stderr_classification,
+  };
+  return JSON.stringify(body);
+})();
+const HISTORICAL_CODEX_V3_EVIDENCE = {
+  [evidenceRef(1015)]: evidenceCommentAt(
+    CODEX_V3_BODY,
+    Date.parse('2026-07-19T17:00:00Z'),
+  ),
+};
+const CURRENT_CODEX_V3_EVIDENCE = {
+  [evidenceRef(1016)]: evidenceCommentAt(
+    CODEX_V3_BODY,
+    Date.parse('2026-07-19T17:10:00Z'),
+  ),
 };
 const MINIMAX_V3_BODY = evidenceBody(
   'minimax',
@@ -562,6 +593,10 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     return 0;
   } catch (e) {
     const status = e.status ?? -1;
+    if (process.env.CROSS_AI_TEST_DEBUG === 'true') {
+      const output = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+      process.stderr.write(`\n[cross-ai test debug]\n${output}\n`);
+    }
     if (expectedFailureCheck) {
       const output = `${e.stdout ?? ''}${e.stderr ?? ''}`;
       return output.includes(`✗ ${expectedFailureCheck}`) ? status : -2;
@@ -1058,6 +1093,15 @@ const cases = [
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: CURRENT_CLAUDE_V3_EVIDENCE,
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['none mode keeps pre-ledger OpenAI v3 as read-only history',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: HISTORICAL_CODEX_V3_EVIDENCE }, 0],
+  ['none mode rejects OpenAI v3 created after ledger activation',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: CURRENT_CODEX_V3_EVIDENCE,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['none mode cannot hide an unreferenced same-head Codex REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -1199,6 +1243,29 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode coalesces an exact status-first status/comment retry',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidence: RETRIED_EVIDENCE,
+      evidenceLedger: evidenceLedgerFromMap(RETRIED_EVIDENCE) }, 0],
+  ['explicit single mode rejects a conflicting status retry for one digest',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidenceLedger: (() => {
+        const statuses = evidenceLedgerFromMap(EVIDENCE);
+        const status = statuses.find(
+          (candidate) => candidate.context === `cross-ai/evidence/${sha256(EVIDENCE[CODEX_REF].body)}`,
+        );
+        return [...statuses, {
+          ...status,
+          state: 'failure',
+          description: status.description.replace('AGREE', 'REVISE'),
+          ref: `https://api.github.com/repos/${REPO}/statuses/conflict`,
+          createdAt: new Date(Date.parse(status.createdAt) + 1_000).toISOString(),
+          updatedAt: new Date(Date.parse(status.createdAt) + 1_000).toISOString(),
+        }];
+      })(),
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['explicit single mode rejects a selected receipt without an immutable ledger status',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
@@ -1226,7 +1293,7 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: replayedSelectedCodexBody, changedFiles: [ROUTINE_PATH],
       evidence: resolvedCodexReviseEvidence,
-      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['a newly executed selected AGREE resolves a prior REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
@@ -1552,7 +1619,9 @@ const cases = [
 ];
 
 let fails = 0;
+const caseFilter = process.env.CROSS_AI_TEST_FILTER ?? '';
 for (const [name, spec, expect] of cases) {
+  if (caseFilter && !name.includes(caseFilter)) continue;
   const rc = runCase(spec);
   const ok = rc === expect;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  (rc=${rc}, expect=${expect})`);
