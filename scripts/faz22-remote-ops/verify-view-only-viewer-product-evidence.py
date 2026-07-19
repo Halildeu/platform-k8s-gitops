@@ -1103,6 +1103,10 @@ def verify_activation_authorization(
     if present_durable_fields and present_durable_fields != durable_fields:
         raise EvidenceError("protected authorization durable carrier field set is incomplete")
     durable_carrier = present_durable_fields == durable_fields
+    if not durable_carrier and not allow_legacy_v1:
+        raise EvidenceError(
+            "current product activation requires the complete durable authorization carrier"
+        )
 
     archived_advisory_comment: dict[str, Any] | None = None
     archived_owner_comment: dict[str, Any] | None = None

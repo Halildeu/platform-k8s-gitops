@@ -75,6 +75,7 @@ const GENESIS_MAX_RUN_AGE_MS = 24 * 60 * 60 * 1000;
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
+  /^CONTRIBUTING\.md$/,
   /^PLAN\.md$/,
   /^docs\/context-priority-rules\.md$/,
   /^docs\/(?:RB-ats-39d-testai|faz-24-meeting-intelligence-plan|runbooks\/RB-faz22\.6-view-only-viewer-pilot-enable)\.md$/,

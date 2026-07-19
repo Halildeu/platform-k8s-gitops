@@ -1542,6 +1542,23 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             operator_child, VERIFIER.CHILD_SCHEMA, "preexisting v2 operator child"
         )
 
+    def test_current_v2_operator_without_durable_carrier_fails_closed(self):
+        operator = child_documents()["operator"]["payload"]
+        for field in (
+            "activationActorLogin", "activationCreatedAt", "activationRunStartedAt",
+            "activationUpdatedAt", "authorizationCarrierBase64",
+            "advisoryCommentCarrierBase64", "ownerDirectiveCarrierBase64",
+        ):
+            operator.pop(field)
+        with self.assertRaisesRegex(
+            VERIFIER.EvidenceError, "complete durable authorization carrier"
+        ):
+            VERIFIER.verify_activation_authorization(
+                FakeClient(), operator, HEAD_SHA, binding(),
+                datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
+            )
+
     def test_preexisting_v2_operator_child_uses_bounded_legacy_decoder(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
         client = self.client_for_policy(legacy_policy, legacy_v1=True)
