@@ -253,7 +253,11 @@ def resolve_codex_native() -> tuple[bytes, str, str, str, str]:
     package_suffix, target, executable_name = platform_spec
     dependency_name = f"@openai/{package_suffix}"
     expected_dependency = f"npm:@openai/codex@{version}-{package_suffix.removeprefix('codex-')}"
-    if package.get("optionalDependencies", {}).get(dependency_name) != expected_dependency:
+    optional_dependencies = package.get("optionalDependencies")
+    if (
+        not isinstance(optional_dependencies, dict)
+        or optional_dependencies.get(dependency_name) != expected_dependency
+    ):
         fail("codex_platform_package_invalid")
     platform_root = package_root / "node_modules" / "@openai" / package_suffix
     platform_package = read_json_object(
@@ -443,9 +447,12 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
                         fail("codex_event_sequence_invalid")
                     reasoning_in_progress.add(item_id)
                 else:
-                    if item_id not in reasoning_in_progress:
+                    if item_id in reasoning_completed:
                         fail("codex_event_sequence_invalid")
-                    reasoning_in_progress.remove(item_id)
+                    # Codex JSONL may emit reasoning as completion-only. When a
+                    # matching start exists, consume it; otherwise record the
+                    # bounded unique completion without inventing lifecycle state.
+                    reasoning_in_progress.discard(item_id)
                     reasoning_completed.add(item_id)
                 continue
             if event_type != "item.completed" or item_type != "agent_message":

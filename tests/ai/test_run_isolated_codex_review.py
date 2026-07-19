@@ -86,6 +86,9 @@ if os.environ.get("FAKE_REASONING_EVENT") == "1":
     reasoning = {"id":"item_r","type":"reasoning","text":"internal summary"}
     print(json.dumps({"type":"item.started","item":reasoning}))
     print(json.dumps({"type":"item.completed","item":reasoning}))
+if os.environ.get("FAKE_REASONING_COMPLETION_ONLY") == "1":
+    reasoning = {"id":"item_complete","type":"reasoning","text":"summary"}
+    print(json.dumps({"type":"item.completed","item":reasoning}))
 if os.environ.get("FAKE_REASONING_MISMATCH") == "1":
     print(json.dumps({"type":"item.started","item":{"id":"item_r1","type":"reasoning"}}))
     print(json.dumps({"type":"item.completed","item":{"id":"item_r2","type":"reasoning"}}))
@@ -210,6 +213,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         fake_codex.write_text(FAKE_CODEX, encoding="utf-8")
         fake_codex.chmod(0o700)
         self.fake_codex = fake_codex
+        self.package_manifest = package_root / "package.json"
         self.execution_marker = self.root / "native-executed.txt"
         self.protected_input = self.root / "provider-must-not-read.txt"
         self.protected_input.write_text("not-for-provider", encoding="utf-8")
@@ -289,6 +293,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         skip_turn_started: bool = False,
         duplicate_turn_started: bool = False,
         reasoning_event: bool = False,
+        reasoning_completion_only: bool = False,
         duplicate_agent_message: bool = False,
         reasoning_after_agent: bool = False,
         reasoning_mismatch: bool = False,
@@ -315,6 +320,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             env["FAKE_DUPLICATE_TURN_STARTED"] = "1"
         if reasoning_event:
             env["FAKE_REASONING_EVENT"] = "1"
+        if reasoning_completion_only:
+            env["FAKE_REASONING_COMPLETION_ONLY"] = "1"
         if duplicate_agent_message:
             env["FAKE_DUPLICATE_AGENT_MESSAGE"] = "1"
         if reasoning_after_agent:
@@ -454,6 +461,12 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         evidence = json.loads(self.output.read_text(encoding="utf-8"))
         self.assertEqual(evidence["verdict"], "AGREE")
 
+    def test_accepts_unique_completion_only_reasoning_event(self) -> None:
+        result = self.run_harness(reasoning_completion_only=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        evidence = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(evidence["verdict"], "AGREE")
+
     def test_rejects_duplicate_or_post_terminal_items(self) -> None:
         for options in (
             {"duplicate_agent_message": True},
@@ -541,6 +554,22 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             "codex_native_identity_unverifiable",
         )
         self.assertFalse(self.execution_marker.exists())
+
+    def test_rejects_non_object_optional_dependencies_cleanly(self) -> None:
+        original = json.loads(self.package_manifest.read_text(encoding="utf-8"))
+        for malformed in ([], "not-an-object"):
+            with self.subTest(malformed=malformed):
+                manifest = dict(original)
+                manifest["optionalDependencies"] = malformed
+                self.package_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+                result = self.run_harness()
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(self.output.exists())
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "codex_platform_package_invalid",
+                )
+                self.assertFalse(self.execution_marker.exists())
 
 
 if __name__ == "__main__":
