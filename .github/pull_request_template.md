@@ -71,6 +71,7 @@ Critical-Fix: no
 Implementer AI: Codex
 Consultation mode: none
 Consultation reason: <neden none|single seçildi; en az 10 karakter>
+# Consultation class: routine|high-impact # yalnız single; model seçimini bağlar
 # Verdict: AGREE # yalnız single
 # Consultation base tip: <single exact target tip>
 # Consultation base: <single exact merge-base>
@@ -82,7 +83,10 @@ Consultation reason: <neden none|single seçildi; en az 10 karakter>
 **Field semantik**:
 - `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
-- `single`: scope sınıfına uygun exact direct Codex model receipt'i + `xhigh` +
+- `single`: `Consultation class` zorunludur; `routine` exact Spark'a,
+  `high-impact` exact SOL'a bağlanır. Bilinen governance/security/migration/
+  production yollarında yalnız `high-impact` kabul edilir. Scope sınıfına uygun
+  exact direct Codex model receipt'i + `xhigh` +
   read-only/ephemeral execution + exact base/head/scope + `AGREE`; bu kalite
   kapısı bağımsız-provider konsensüsü sayılmaz.
 - Claude ve MiniMax receipt her modda fail-closed reddedilir.

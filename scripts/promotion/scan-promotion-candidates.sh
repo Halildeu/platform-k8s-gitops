@@ -240,6 +240,7 @@ User-approval evidence: scan-promotion-candidates.sh DRAFT pattern — operator 
 Implementer AI: Codex
 Consultation mode: single
 Consultation reason: Production desired-state promotion requires exact-head high-impact Codex review
+Consultation class: high-impact
 Consultation base tip: pending-exact-final-head
 Consultation base: pending-exact-final-head
 Consultation commit: pending-exact-final-head

@@ -74,6 +74,7 @@ const REQUIRED_REASONING_EFFORT = 'xhigh';
 const REQUIRED_SANDBOX = 'read-only';
 const FORBIDDEN_CONSULTATION_FIELDS = new Set(['claude receipt', 'minimax receipt']);
 const CONSULTATION_MODES = new Set(['none', 'single']);
+const CONSULTATION_CLASSES = new Set(['routine', 'high-impact']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
@@ -84,7 +85,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   // Tombstone: deleting the retired wrapper remains a governance change, and
   // any future MiniMax-named review helper cannot be reintroduced under none.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|verify_cross_ai_evidence_comment)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
@@ -434,7 +435,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Consultation class|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -489,38 +490,47 @@ function meaningfulStatement(value) {
     && new Set(words).size >= 3;
 }
 
-function minimumConsultationMode(prMeta) {
+function minimumConsultationClass(prMeta) {
   const files = prMeta?.changedFiles;
-  // Missing event-bound scope metadata must never silently authorize `none`.
-  // Raising the floor to `single` is the intentional fail-closed fallback.
   if (!Array.isArray(files) || files.length === 0) {
-    return { mode: 'single', reason: 'changed-files metadata missing' };
+    return { classification: 'high-impact', reason: 'changed-files metadata missing' };
   }
   const governancePath = files.find((path) =>
     CONSULTATION_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
   );
   if (governancePath) {
-    return { mode: 'single', reason: `consultation governance path: ${governancePath}` };
+    return { classification: 'high-impact', reason: `consultation governance path: ${governancePath}` };
   }
   const branchPrefix = CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES.find((prefix) =>
     (prMeta?.headRef || '').startsWith(prefix)
   );
   if (branchPrefix) {
-    return { mode: 'single', reason: `production promotion branch: ${branchPrefix}` };
+    return { classification: 'high-impact', reason: `production promotion branch: ${branchPrefix}` };
   }
   const highRiskPath = files.find((path) =>
     CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS.some((pattern) => pattern.test(path))
   );
   if (highRiskPath) {
-    return { mode: 'single', reason: `high-confidence risk path: ${highRiskPath}` };
+    return { classification: 'high-impact', reason: `high-confidence risk path: ${highRiskPath}` };
+  }
+  return { classification: 'routine', reason: 'routine scope' };
+}
+
+function minimumConsultationMode(prMeta) {
+  const minimumClass = minimumConsultationClass(prMeta);
+  // Missing event-bound metadata and every recognized high-impact scope must
+  // never silently authorize `none`.
+  if (minimumClass.classification === 'high-impact') {
+    return { mode: 'single', reason: minimumClass.reason };
   }
   return { mode: 'none', reason: 'routine scope' };
 }
 
-function expectedConsultationModel(prMeta) {
-  return minimumConsultationMode(prMeta).mode === 'single'
-    ? HIGH_IMPACT_CODEX_MODEL
-    : ROUTINE_CODEX_MODEL;
+function expectedConsultationModel(fields) {
+  const classification = (fields['consultation class'] || '').trim().toLowerCase();
+  if (classification === 'high-impact') return HIGH_IMPACT_CODEX_MODEL;
+  if (classification === 'routine') return ROUTINE_CODEX_MODEL;
+  return null;
 }
 
 function parseReceipt(value) {
@@ -776,7 +786,7 @@ async function appendConsultationFindings(
   for (const field of receiptFields) {
     const expected = {
       ...CONSULTATION_RECEIPTS[field],
-      model: expectedConsultationModel(prMeta),
+      model: expectedConsultationModel(fields),
     };
     const receipt = parseReceipt(fields[field]);
     if (receipt?.ref) refs.push(receipt.ref);
@@ -822,6 +832,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const findings = [];
   const mode = (fields['consultation mode'] || '').trim().toLowerCase();
   const reason = (fields['consultation reason'] || '').trim();
+  const consultationClass = (fields['consultation class'] || '').trim().toLowerCase();
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
@@ -829,7 +840,9 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     Object.hasOwn(fields, field)
   );
   const requiredFloor = minimumConsultationMode(prMeta);
+  const requiredClass = minimumConsultationClass(prMeta);
   const modeRank = { none: 0, single: 1 };
+  const classRank = { routine: 0, 'high-impact': 1 };
   const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
     Object.hasOwn(fields, field)
   );
@@ -898,6 +911,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       'consultation base',
       'consultation commit',
       'consultation scope',
+      'consultation class',
     ];
     const presentOutcomeFields = outcomeFields.filter((field) => Object.hasOwn(fields, field));
     findings.push({
@@ -916,6 +930,23 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
     return findings;
   }
+
+  findings.push({
+    check: 'consultation_class_valid',
+    pass: CONSULTATION_CLASSES.has(consultationClass),
+    detail: CONSULTATION_CLASSES.has(consultationClass)
+      ? `consultation class ${consultationClass}`
+      : 'single mode Consultation class yalnız routine veya high-impact olabilir',
+  });
+  findings.push({
+    check: 'consultation_class_meets_scope_floor',
+    pass: CONSULTATION_CLASSES.has(consultationClass)
+      && classRank[consultationClass] >= classRank[requiredClass.classification],
+    detail: CONSULTATION_CLASSES.has(consultationClass)
+      && classRank[consultationClass] >= classRank[requiredClass.classification]
+      ? `${requiredClass.reason}; ${consultationClass} class floor'u karşılıyor`
+      : `${requiredClass.reason}; en az ${requiredClass.classification} class zorunlu`,
+  });
 
   const baseFields = [
     'consultation base tip',
@@ -944,7 +975,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     findings.push({
       check: 'consultation_single_exact_channel_count',
       pass: presentReceipts.length === 1 && presentReceipts[0] === 'codex receipt',
-      detail: `single mode exact direct OpenAI Codex ${expectedConsultationModel(prMeta)} xhigh read-only ephemeral channel requires one receipt`,
+      detail: `single mode ${consultationClass || 'missing-class'} class için exact direct OpenAI Codex ${expectedConsultationModel(fields) || 'unresolved-model'} xhigh read-only ephemeral channel requires one receipt`,
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',

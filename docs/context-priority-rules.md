@@ -361,6 +361,10 @@ belirsizliği veya risk için kullanılan sınırlı kalite kapısıdır.
    `gpt-5.3-codex-spark` + `xhigh`; governance/security/migration/production
    yüksek etkili review exact `gpt-5.6-sol` + `xhigh` kullanır. CLI başlangıç
    kimliğinde provider/model/effort exact görülmeden kanal tamamlanmış sayılmaz.
+   Structured `Consultation class: routine|high-impact` alanı model seçimini
+   bağlar: `routine` yalnız Spark, `high-impact` yalnız SOL kabul eder. Bilinen
+   yüksek etkili path/branch sınıfı `routine` beyanını fail-closed reddeder;
+   path adına yansımayan semantik yüksek etkiyi agent `high-impact` beyan eder.
    Changed-files kanıtı eksikse, consultation
    governance/audit/evidence dosyası, yüksek güvenli
    RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa
@@ -407,6 +411,7 @@ PR structured alanları:
 Implementer AI: Codex
 Consultation mode: none|single
 Consultation reason: <neden bu mod seçildi>
+Consultation class: routine|high-impact # yalnız single
 Verdict: AGREE # yalnız single
 Consultation base tip: <single exact target tip>
 Consultation base: <single exact merge-base>
@@ -430,7 +435,9 @@ ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
 sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
 oracle'ı değildir. Authz, retention/silme, concurrency, cutover veya geri
 döndürülemez başka bir karar path adına yansımıyorsa agent doğru
-`single` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
+`single` modu ile `Consultation class: high-impact` beyan etmek zorundadır;
+`none` veya `routine` bu sorumluluğu kaldırmaz. Parser class-model bağını
+doğrular; bu semantik sorumluluğu path adına göre tahmin etmez.
 Geri döndürülemez production mutation, gerçek kullanıcı rızası, protected
 Environment reviewer veya isimli hukuk/yetkili kararı Codex receipt ile ikame
 edilmez; human gate olarak kalır.

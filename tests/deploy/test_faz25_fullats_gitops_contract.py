@@ -425,11 +425,11 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             'require_exact_body_line "Consultation base tip: $PROMOTION_BASE_SHA"',
             'require_exact_body_line "Consultation commit: $promotion_head"',
             'require_exact_body_line "Consultation mode: single"',
+            'require_exact_body_line "Consultation class: high-impact"',
             'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
             "exact high-impact Codex receipt binding is missing or invalid",
             "fetched Codex evidence metadata or body digest is invalid",
-            "fetched Codex evidence is not exact-scope bound",
             "Claude and MiniMax receipts are forbidden by forward policy",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
@@ -570,6 +570,7 @@ if [[ "$*" == *"/pulls/2636"* ]]; then
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
     "Consultation mode: single" \
+    "Consultation class: high-impact" \
     "Consultation reason: Protected rollback enforcement requires exact high impact Codex review." \
     "Verdict: AGREE" \
     "$receipt_line")"
@@ -579,8 +580,12 @@ if [[ "$*" == *"/pulls/2636"* ]]; then
     --arg body "$body" \
     '{merged_at:"2026-07-18T00:00:00Z",merge_commit_sha:$merge,head:{sha:$head},body:$body}'
 elif [[ "$*" == *"issues/comments/123456789"* ]]; then
+  evidence_comment_body="$evidence_body"
+  if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "body-newline" ]]; then
+    evidence_comment_body="${evidence_body}"$'\n'
+  fi
   jq -n \
-    --arg body "$evidence_body" \
+    --arg body "$evidence_comment_body" \
     '{body:$body,user:{login:"Halildeu"},author_association:"OWNER",created_at:"2026-07-19T00:00:00Z",updated_at:"2026-07-19T00:00:00Z"}'
 elif [[ "$*" == *"/git/commits/$PROMOTION_HEAD_SHA"* ]]; then
   if [[ "${FAKE_TREE_MISMATCH:-0}" == "1" ]]; then printf '%040d\n' 6; else printf '%s\n' "$PROMOTION_TREE_SHA"; fi
@@ -596,6 +601,7 @@ fi
             (False, True, "none", 1),
             (False, False, "missing-base-tip", 1),
             (False, False, "bad-digest", 1),
+            (False, False, "body-newline", 1),
             (False, False, "internal-head", 1),
         ):
             with self.subTest(
