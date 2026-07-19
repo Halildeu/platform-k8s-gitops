@@ -191,16 +191,16 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         }
         self.assertEqual(supported_platforms, scanner_platforms)
 
-    def test_resolves_standard_windows_npm_cmd_shim_to_package_root(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            launcher = root / "codex.cmd"
-            launcher.write_text("@echo off\n", encoding="utf-8")
-            expected = root / "node_modules" / "@openai" / "codex"
-            self.assertEqual(
-                MODULE.resolve_codex_package_root(str(launcher), "windows"),
-                expected,
-            )
+    def test_windows_fails_closed_before_package_resolution(self) -> None:
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="C:/npm/codex.cmd"),
+            mock.patch.object(MODULE.platform, "system", return_value="Windows"),
+            mock.patch.object(MODULE.platform, "machine", return_value="AMD64"),
+            self.assertRaises(SystemExit),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as output,
+        ):
+            MODULE.resolve_codex_native()
+        self.assertIn('"error": "codex_platform_unsupported"', output.getvalue())
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()

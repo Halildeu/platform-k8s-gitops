@@ -73,8 +73,6 @@ TRUSTED_CODEX_NATIVE_SHA256 = {
     ("0.144.1", "codex-darwin-x64"): "c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c",
     ("0.144.1", "codex-linux-arm64"): "9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07",
     ("0.144.1", "codex-linux-x64"): "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
-    ("0.144.1", "codex-win32-arm64"): "d3d92e9c10a6f3371a425214c3df67eb97ec5c2ff1b88876410fe0e61d4791da",
-    ("0.144.1", "codex-win32-x64"): "cbacbb9726262ef558b4af0438a1b2a5bba9076132401d947b5b4d2bf92ab0e4",
 }
 CODEX_PROVENANCE_KEYS = {
     "schema",

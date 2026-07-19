@@ -9,7 +9,8 @@
 // Usage:
 //   node scripts/ci/pr-cross-ai-audit.mjs --event-path "$GITHUB_EVENT_PATH"
 //   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path> \
-//     --base-tip-sha <sha> --head-sha <sha> --evidence-file <json-map>
+//     --issue-number <pr> --base-tip-sha <sha> --head-sha <sha> \
+//     --evidence-file <json-map>
 //
 // Exit codes:
 //   0 — PASS
@@ -57,8 +58,6 @@ const TRUSTED_CODEX_NATIVE_SHA256 = new Map([
   ['0.144.1:codex-darwin-x64', 'c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c'],
   ['0.144.1:codex-linux-arm64', '9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07'],
   ['0.144.1:codex-linux-x64', 'a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902'],
-  ['0.144.1:codex-win32-arm64', 'd3d92e9c10a6f3371a425214c3df67eb97ec5c2ff1b88876410fe0e61d4791da'],
-  ['0.144.1:codex-win32-x64', 'cbacbb9726262ef558b4af0438a1b2a5bba9076132401d947b5b4d2bf92ab0e4'],
 ]);
 const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
@@ -323,6 +322,7 @@ function loadInput(args) {
     return {
       body: readFileSync(args['body-file'], 'utf8'),
       prMeta: {
+        issueNumber: Number(args['issue-number']) || null,
         headRef: '',
         headSha: args['head-sha'] ?? '',
         baseSha: args['base-tip-sha'] ?? '',
@@ -343,6 +343,7 @@ function loadInput(args) {
     return {
       body: pr.body ?? '',
       prMeta: {
+        issueNumber: Number(pr.number ?? ev.number) || null,
         headRef: pr.head?.ref ?? '',
         headSha: pr.head?.sha ?? '',
         baseSha: pr.base?.sha ?? '',
@@ -635,21 +636,18 @@ async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
     });
     if (!response.ok) return null;
     const payload = await response.json();
-    return {
-      body: payload?.body,
-      author: payload?.user?.login,
-      authorAssociation: payload?.author_association,
-      createdAt: payload?.created_at,
-      updatedAt: payload?.updated_at,
-    };
+    return issueCommentFromPayload(payload);
   } catch {
     return null;
   }
 }
 
-function parseBoundEvidence(
-  comment, expected, expectedOwner, baseTip, base, head, scope,
-) {
+function parseEvidenceComment(comment, expected, expectedOwner, options = {}) {
+  const {
+    issueNumber = null,
+    enforceFreshness = true,
+    binding = null,
+  } = options;
   const createdAtMs = Date.parse(comment?.createdAt || '');
   const evidenceAgeMs = Date.now() - createdAtMs;
   if (
@@ -662,7 +660,9 @@ function parseBoundEvidence(
     || comment.createdAt !== comment.updatedAt
     || !Number.isFinite(createdAtMs)
     || evidenceAgeMs < -EVIDENCE_FUTURE_SKEW_MS
-    || evidenceAgeMs > EVIDENCE_MAX_AGE_MS
+    || (enforceFreshness && evidenceAgeMs > EVIDENCE_MAX_AGE_MS)
+    || !Number.isInteger(issueNumber)
+    || comment.issueNumber !== issueNumber
   ) return null;
   let evidence;
   try {
@@ -695,6 +695,12 @@ function parseBoundEvidence(
     )
     : provenance === null;
   const responseVerdict = parseProviderResponseVerdict(evidence.response);
+  const bindingMatches = !binding || Boolean(
+    evidence.base_tip_sha?.toLowerCase() === binding.baseTip.toLowerCase()
+    && evidence.base_sha?.toLowerCase() === binding.base.toLowerCase()
+    && evidence.head_sha?.toLowerCase() === binding.head.toLowerCase()
+    && evidence.scope_sha256?.toLowerCase() === binding.scope.toLowerCase()
+  );
   const valid = Boolean(
     evidence.schema === 'cross-ai-provider-evidence/v3'
     && evidence.provider === expected.provider
@@ -704,10 +710,7 @@ function parseBoundEvidence(
     )
     && evidence.execution_profile === expected.execution
     && provenanceMatches
-    && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
-    && evidence.base_sha?.toLowerCase() === base.toLowerCase()
-    && evidence.head_sha?.toLowerCase() === head.toLowerCase()
-    && evidence.scope_sha256?.toLowerCase() === scope.toLowerCase()
+    && bindingMatches
     && ['AGREE', 'REVISE'].includes(evidence.verdict)
     && responseVerdict === evidence.verdict
     && typeof evidence.response === 'string'
@@ -720,16 +723,17 @@ function parseBoundEvidence(
 }
 
 function evidenceMatches(
-  comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
+  comment, receipt, expected, expectedOwner, issueNumber, baseTip, base, head, scope,
 ) {
   if (
     !comment
     || typeof comment.body !== 'string'
     || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
   ) return false;
-  const parsed = parseBoundEvidence(
-    comment, expected, expectedOwner, baseTip, base, head, scope,
-  );
+  const parsed = parseEvidenceComment(comment, expected, expectedOwner, {
+    issueNumber,
+    binding: { baseTip, base, head, scope },
+  });
   return Boolean(
     parsed
     && parsed.evidence.requested_model === receipt.requested
@@ -738,32 +742,38 @@ function evidenceMatches(
 }
 
 function issueCommentFromPayload(payload) {
+  let issueNumber = null;
+  try {
+    const issuePath = new URL(payload?.issue_url || '').pathname;
+    const match = issuePath.match(/^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
+    issueNumber = match ? Number(match[1]) : null;
+  } catch {
+    issueNumber = null;
+  }
   return {
     body: payload?.body,
     author: payload?.user?.login,
     authorAssociation: payload?.author_association,
     createdAt: payload?.created_at,
     updatedAt: payload?.updated_at,
+    issueNumber,
   };
 }
 
-async function loadRepositoryEvidenceComments(prMeta, evidenceOverrides) {
+async function loadPullRequestEvidenceComments(prMeta, evidenceOverrides) {
   const overrideComments = Object.values(evidenceOverrides).filter(
     (comment) => comment && typeof comment === 'object' && !Array.isArray(comment),
   );
   if (overrideComments.length > 0) return overrideComments;
 
-  if (!prMeta?.baseRepo) return null;
+  if (!prMeta?.baseRepo || !Number.isInteger(prMeta?.issueNumber)) return null;
   const headers = { Accept: 'application/vnd.github+json' };
   const token = env.GITHUB_TOKEN || env.GH_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
   const comments = [];
-  const since = new Date(
-    Date.now() - EVIDENCE_MAX_AGE_MS - EVIDENCE_FUTURE_SKEW_MS,
-  ).toISOString();
   try {
     for (let page = 1; page <= 10; page += 1) {
-      const url = `https://api.github.com/repos/${prMeta.baseRepo}/issues/comments?sort=created&direction=desc&since=${encodeURIComponent(since)}&per_page=100&page=${page}`;
+      const url = `https://api.github.com/repos/${prMeta.baseRepo}/issues/${prMeta.issueNumber}/comments?per_page=100&page=${page}`;
       const response = await fetch(url, {
         headers,
         signal: AbortSignal.timeout(15_000),
@@ -777,7 +787,7 @@ async function loadRepositoryEvidenceComments(prMeta, evidenceOverrides) {
   } catch {
     return null;
   }
-  // More than 1,000 fresh comments would make this scan incomplete. Do not infer that
+  // More than 1,000 PR comments would make this scan incomplete. Do not infer that
   // an unresolved revision is absent from a truncated history.
   return null;
 }
@@ -792,15 +802,16 @@ async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
     && COMMIT_SHA_RE.test(base)
     && COMMIT_SHA_RE.test(head)
     && SHA256_RE.test(scope)
-    && Boolean(expectedOwner);
+    && Boolean(expectedOwner)
+    && Number.isInteger(prMeta?.issueNumber);
   const comments = bindingValid
-    ? await loadRepositoryEvidenceComments(prMeta, evidenceOverrides)
+    ? await loadPullRequestEvidenceComments(prMeta, evidenceOverrides)
     : null;
   if (!comments) {
     findings.push({
       check: 'consultation_prior_revise_resolved',
       pass: false,
-      detail: 'Exact-head issue yorum geçmişi eksiksiz yüklenemedi; önceki REVISE zinciri fail-closed',
+      detail: 'PR yorum geçmişi eksiksiz yüklenemedi; önceki REVISE zinciri fail-closed',
     });
     return;
   }
@@ -817,14 +828,20 @@ async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
       (candidate) => candidate.provider === body?.provider,
     );
     if (!expected) continue;
-    const parsed = parseBoundEvidence(
-      comment, expected, expectedOwner, baseTip, base, head, scope,
-    );
+    const parsed = parseEvidenceComment(comment, expected, expectedOwner, {
+      issueNumber: prMeta.issueNumber,
+      enforceFreshness: false,
+    });
     if (parsed) {
+      const current = parseEvidenceComment(comment, expected, expectedOwner, {
+        issueNumber: prMeta.issueNumber,
+        binding: { baseTip, base, head, scope },
+      });
       records.push({
         provider: parsed.evidence.provider,
         verdict: parsed.evidence.verdict,
         createdAtMs: parsed.createdAtMs,
+        currentBindingFresh: Boolean(current),
       });
     }
   }
@@ -837,19 +854,21 @@ async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
         .map((record) => record.createdAtMs),
       Number.NEGATIVE_INFINITY,
     );
-    const latestAgree = Math.max(
-      ...providerRecords.filter((record) => record.verdict === 'AGREE')
+    const latestCurrentAgree = Math.max(
+      ...providerRecords.filter((record) => (
+        record.verdict === 'AGREE' && record.currentBindingFresh
+      ))
         .map((record) => record.createdAtMs),
       Number.NEGATIVE_INFINITY,
     );
-    if (latestRevise >= latestAgree) unresolved.push(provider);
+    if (latestRevise >= latestCurrentAgree) unresolved.push(provider);
   }
   findings.push({
     check: 'consultation_prior_revise_resolved',
     pass: unresolved.length === 0,
     detail: unresolved.length === 0
-      ? 'Aynı base/head/scope geçmişinde her provider REVISE kaydı daha yeni aynı-provider AGREE ile karşılanıyor'
-      : `Aynı base/head/scope için çözülmemiş REVISE provider: ${unresolved.join(', ')}`,
+      ? 'PR geçmişindeki her provider REVISE kaydı daha yeni ve güncel base/head/scope bağlı aynı-provider AGREE ile karşılanıyor'
+      : `PR geçmişinde güncel base/head/scope AGREE bekleyen REVISE provider: ${unresolved.join(', ')}`,
   });
 }
 
@@ -975,7 +994,7 @@ async function appendConsultationFindings(
       : null;
     const pass = shapePass && evidenceMatches(
       evidenceComment, receipt, expected, expectedOwner,
-      baseTip, base, commit, scope,
+      prMeta?.issueNumber, baseTip, base, commit, scope,
     );
     findings.push({
       check: field.replaceAll(' ', '_'),

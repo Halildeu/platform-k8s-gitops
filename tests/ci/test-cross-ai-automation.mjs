@@ -36,6 +36,7 @@ const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
 const NOW_MS = Date.now();
+const PR_NUMBER = 2690;
 const EXECUTION_PROFILE = {
   anthropic: 'claude-cli-no-session-persistence-exact-scope-v1',
   openai: 'codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
@@ -67,12 +68,13 @@ const evidenceBody = (provider, model, response) => JSON.stringify({
   response_sha256: sha256(response),
   response,
 });
-const evidenceComment = (body, offsetMs = 0) => ({
+const evidenceComment = (body, offsetMs = 0, issueNumber = PR_NUMBER) => ({
   body,
   author: 'Halildeu',
   authorAssociation: 'OWNER',
   createdAt: new Date(NOW_MS + offsetMs).toISOString(),
   updatedAt: new Date(NOW_MS + offsetMs).toISOString(),
+  issueNumber,
 });
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
@@ -99,6 +101,38 @@ const resolvedClaudeReviseEvidence = {
   ...unresolvedClaudeReviseEvidence,
   [UNREFERENCED_CLAUDE_AGREE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
 };
+const changedBindingClaudeReviseBody = JSON.stringify({
+  ...JSON.parse(claudeReviseBody),
+  base_tip_sha: 'd'.repeat(40),
+  base_sha: 'e'.repeat(40),
+  head_sha: 'f'.repeat(40),
+  scope_sha256: 'b'.repeat(64),
+});
+const unresolvedChangedBindingEvidence = {
+  ...EVIDENCE,
+  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(changedBindingClaudeReviseBody, 3_000),
+};
+const resolvedChangedBindingEvidence = {
+  ...unresolvedChangedBindingEvidence,
+  [UNREFERENCED_CLAUDE_AGREE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+};
+const differentPrEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 0, PR_NUMBER + 1),
+};
+const agedUnresolvedReviseComment = evidenceComment(claudeReviseBody);
+agedUnresolvedReviseComment.createdAt = new Date(
+  NOW_MS - (8 * 24 * 60 * 60 * 1000),
+).toISOString();
+agedUnresolvedReviseComment.updatedAt = agedUnresolvedReviseComment.createdAt;
+const agedUnresolvedReviseEvidence = {
+  [UNREFERENCED_CLAUDE_REVISE_REF]: agedUnresolvedReviseComment,
+};
+const otherPrReviseEvidence = {
+  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(
+    claudeReviseBody, 0, PR_NUMBER + 1,
+  ),
+};
 const SOL_RECEIPT_SPARK_EVIDENCE = {
   ...EVIDENCE,
   [CODEX_REF]: evidenceComment(EVIDENCE[SPARK_REF].body, 2_000),
@@ -119,6 +153,7 @@ const REVERSED_DUAL_CODEX_EVIDENCE = {
 function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
   const event = {
     pull_request: {
+      number: PR_NUMBER,
       body,
       head: { ref: branch, sha: headSha, repo: { full_name: headRepo } },
       base: { sha: baseSha, repo: { full_name: REPO } },
@@ -597,6 +632,15 @@ const cases = [
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: unresolvedClaudeReviseEvidence,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['none mode cannot hide a REVISE older than the selected receipt freshness window',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: agedUnresolvedReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['a REVISE on another PR does not contaminate this PR history',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: otherPrReviseEvidence }, 0],
   ['explicit none mode accepts substantive prose containing the word none',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody.replace(/^Consultation reason:.*$/m, 'Consultation reason: Reversible documentation update; none of the protected runtime paths apply.'),
@@ -658,6 +702,15 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
       evidence: resolvedClaudeReviseEvidence }, 0],
+  ['a prior-head REVISE remains unresolved after PR head and scope change',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidence: unresolvedChangedBindingEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['a current-head same-provider AGREE resolves a prior-head REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidence: resolvedChangedBindingEvidence }, 0],
   ['explicit single mode rejects SOL receipt bound to Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: solReceiptSparkEvidenceBody, changedFiles: [GOVERNANCE_PATH],
@@ -794,6 +847,9 @@ const cases = [
   ['normal PR + evidence ref points to a different repository -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace(CLAUDE_REF, 'https://api.github.com/repos/other/repo/issues/comments/1001') }, 1],
+  ['normal PR + fetched evidence belongs to a different PR -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: differentPrEvidence, expectedFailureCheck: 'claude_receipt' }, 1],
   ['normal PR + malformed receipt digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF].body), 'not-a-sha256') }, 1],

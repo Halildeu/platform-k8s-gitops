@@ -66,16 +66,12 @@ PLATFORM_PACKAGES = {
     ("linux", "aarch64"): ("codex-linux-arm64", "aarch64-unknown-linux-musl", "codex"),
     ("linux", "arm64"): ("codex-linux-arm64", "aarch64-unknown-linux-musl", "codex"),
     ("linux", "x86_64"): ("codex-linux-x64", "x86_64-unknown-linux-musl", "codex"),
-    ("windows", "amd64"): ("codex-win32-x64", "x86_64-pc-windows-msvc", "codex.exe"),
-    ("windows", "arm64"): ("codex-win32-arm64", "aarch64-pc-windows-msvc", "codex.exe"),
 }
 TRUSTED_CODEX_NATIVE_SHA256 = {
     ("0.144.1", "codex-darwin-arm64"): "29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a",
     ("0.144.1", "codex-darwin-x64"): "c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c",
     ("0.144.1", "codex-linux-arm64"): "9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07",
     ("0.144.1", "codex-linux-x64"): "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
-    ("0.144.1", "codex-win32-arm64"): "d3d92e9c10a6f3371a425214c3df67eb97ec5c2ff1b88876410fe0e61d4791da",
-    ("0.144.1", "codex-win32-x64"): "cbacbb9726262ef558b4af0438a1b2a5bba9076132401d947b5b4d2bf92ab0e4",
 }
 TRUSTED_GITLEAKS_NATIVE_SHA256 = {
     (GITLEAKS_VERSION, "darwin", "arm64"): "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302",
@@ -84,8 +80,6 @@ TRUSTED_GITLEAKS_NATIVE_SHA256 = {
     (GITLEAKS_VERSION, "linux", "arm64"): "00e91bbe655bd7c47753e8cfe61cb76ea1a5d7e7702fe161ee40102b46b3823b",
     (GITLEAKS_VERSION, "linux", "aarch64"): "00e91bbe655bd7c47753e8cfe61cb76ea1a5d7e7702fe161ee40102b46b3823b",
     (GITLEAKS_VERSION, "linux", "x86_64"): "88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509",
-    (GITLEAKS_VERSION, "windows", "arm64"): "200df852fdecbedb19a33960657333cba5e231740bc8968972b507b50f93b194",
-    (GITLEAKS_VERSION, "windows", "amd64"): "17157e2ee8b76fc8b1d8bee607a250e34b8a8023c8bc81822d4b5ee4d78fcb7c",
 }
 DISABLED_CODEX_FEATURES = (
     "apps",
@@ -262,13 +256,8 @@ def read_json_object(path: Path, error: str) -> dict:
     return value
 
 
-def resolve_codex_package_root(launcher_name: str, system: str) -> Path:
-    launcher = Path(launcher_name)
-    if system == "windows":
-        if launcher.stem.lower() != "codex" or launcher.suffix.lower() != ".cmd":
-            fail("codex_package_invalid")
-        return launcher.parent / "node_modules" / "@openai" / "codex"
-    launcher = launcher.resolve()
+def resolve_codex_package_root(launcher_name: str) -> Path:
+    launcher = Path(launcher_name).resolve()
     package_root = launcher.parent.parent
     if launcher != package_root / "bin" / "codex.js":
         fail("codex_package_invalid")
@@ -280,7 +269,10 @@ def resolve_codex_native() -> tuple[bytes, str, str, str, str]:
     if launcher_name is None:
         fail("codex_unavailable")
     system = platform.system().lower()
-    package_root = resolve_codex_package_root(launcher_name, system)
+    platform_spec = PLATFORM_PACKAGES.get((system, platform.machine().lower()))
+    if platform_spec is None:
+        fail("codex_platform_unsupported")
+    package_root = resolve_codex_package_root(launcher_name)
     package = read_json_object(package_root / "package.json", "codex_package_invalid")
     if (
         package.get("name") != "@openai/codex"
@@ -290,11 +282,6 @@ def resolve_codex_native() -> tuple[bytes, str, str, str, str]:
     version = package.get("version")
     if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         fail("codex_package_invalid")
-    platform_spec = PLATFORM_PACKAGES.get(
-        (system, platform.machine().lower())
-    )
-    if platform_spec is None:
-        fail("codex_platform_unsupported")
     package_suffix, target, executable_name = platform_spec
     dependency_name = f"@openai/{package_suffix}"
     expected_dependency = f"npm:@openai/codex@{version}-{package_suffix.removeprefix('codex-')}"
@@ -370,8 +357,7 @@ def resolve_gitleaks_native() -> tuple[bytes, str, str]:
         != native_digest
     ):
         fail("gitleaks_identity_unverifiable")
-    executable_name = "gitleaks.exe" if system == "windows" else "gitleaks"
-    return native_bytes, executable_name, native_digest
+    return native_bytes, "gitleaks", native_digest
 
 
 def build_codex_environment() -> dict[str, str]:
