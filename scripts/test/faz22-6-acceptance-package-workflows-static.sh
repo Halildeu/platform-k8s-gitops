@@ -44,6 +44,7 @@ VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization
 VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
 VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v2.json"
 VIEWER_LEGACY_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
+VIEWER_OWNER_POLICY_HISTORY="$ROOT/config/faz22-6-view-only-pilot-owner-policy-history"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
@@ -123,6 +124,58 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH"; do
   require_file "$path"
 done
+
+python3 - "$VIEWER_OWNER_POLICY" "$VIEWER_OWNER_POLICY_HISTORY" <<'PY'
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+active = pathlib.Path(sys.argv[1])
+history = pathlib.Path(sys.argv[2])
+if not history.is_dir():
+    raise SystemExit("VIEW_ONLY owner policy history is missing")
+
+def digest(path: pathlib.Path) -> str:
+    value = json.loads(path.read_bytes())
+    canonical = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+entries = sorted(history.iterdir())
+if not entries:
+    raise SystemExit("VIEW_ONLY owner policy history is empty")
+for entry in entries:
+    if not entry.is_file() or not re.fullmatch(r"[a-f0-9]{64}\.json", entry.name):
+        raise SystemExit(f"invalid VIEW_ONLY owner policy history path: {entry.name}")
+    if digest(entry) != entry.stem:
+        raise SystemExit(f"VIEW_ONLY owner policy archive digest mismatch: {entry.name}")
+active_digest = digest(active)
+if not (history / f"{active_digest}.json").is_file():
+    raise SystemExit("active VIEW_ONLY owner policy lacks a content-addressed archive")
+PY
+
+if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+  history_rel="config/faz22-6-view-only-pilot-owner-policy-history"
+  base_sha="$(jq -r '.pull_request.base.sha // .before // empty' "$GITHUB_EVENT_PATH")"
+  head_sha="$(jq -r '.pull_request.head.sha // .after // empty' "$GITHUB_EVENT_PATH")"
+  if [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] \
+    && [ "$base_sha" != "0000000000000000000000000000000000000000" ]; then
+    while IFS=$'\t' read -r status _path; do
+      [ -z "$status" ] && continue
+      case "$status" in
+        A) ;;
+        *)
+          echo "VIEW_ONLY owner policy history is append-only: $status $_path" >&2
+          exit 1
+          ;;
+      esac
+    done < <(git -C "$ROOT" diff --name-status --no-renames "$base_sha...$head_sha" -- "$history_rel")
+  fi
+fi
 
 bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_NEGATIVE_COLLECTOR" \
   "$VIEWER_TERMINATION_COLLECTOR" "$VIEWER_ROLLBACK_CONFIG"

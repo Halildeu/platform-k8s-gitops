@@ -160,6 +160,28 @@ class PublicReviewAuthorityTests(unittest.TestCase):
                 now=self.fixture.factory.now + timedelta(hours=2),
             )
 
+    def test_active_locator_requires_an_active_openai_provider_key(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.authority.trust_root)
+        for key in trust_root["keys"]:
+            if key["role"] == "provider-review":
+                key["notAfter"] = "2026-07-18T20:00:00Z"
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            trust_root,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
+            self.fixture.authority.revocations_envelope,
+        )
+        manifest = self.manifest()
+        manifest["expectedTrustRootSha256"] = sha256_digest(trust_root)
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            manifest,
+        )
+        with self.assertRaisesRegex(AuthorityUnavailable, "no active OpenAI"):
+            load_active_authority(self.root, now=self.fixture.factory.now)
+
     def test_retired_root_is_content_addressed_and_bounded_to_pre_retirement_evidence(self) -> None:
         digest = self.fixture.authority.expected_trust_root_sha256
         digest_hex = digest.removeprefix("sha256:")
@@ -535,9 +557,7 @@ class GenesisTransitionTests(unittest.TestCase):
             }
         )
         for key in replacement["keys"]:
-            if key["keyId"] == "vault-transit://cross-ai/openai#v1":
-                key["notAfter"] = "2026-07-19T20:30:00Z"
-            else:
+            if key["keyId"] != "vault-transit://cross-ai/openai#v1":
                 key["notBefore"] = "2026-07-18T20:30:00Z"
                 key["notAfter"] = (
                     "2026-07-25T20:30:00Z"
@@ -646,6 +666,30 @@ class GenesisTransitionTests(unittest.TestCase):
             now=self.fixture.factory.now,
         )
 
+    def test_same_root_rejects_executable_policy_change_without_archive(self) -> None:
+        manifest = self.authority_manifest(active=True)
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            manifest,
+        )
+        base = self.commit("active authority before policy drift")
+        changed = copy.deepcopy(manifest)
+        changed["codexExecutablePolicy"]["allowedExecutables"][0][
+            "packageVersion"
+        ] = "10.0.0"
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            changed,
+        )
+        head = self.commit("mutate executable policy without rotation")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "requires a root rotation"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, head),
+                now=self.fixture.factory.now,
+            )
+
     def test_root_rotation_rejects_public_key_reassignment_across_generations(self) -> None:
         base, valid_head = self.install_rotation()
         self.git("checkout", "-q", valid_head)
@@ -669,6 +713,55 @@ class GenesisTransitionTests(unittest.TestCase):
         bad_head = self.commit("reuse predecessor public key")
         self.git("reset", "-q", "--hard", base)
         with self.assertRaisesRegex(AuthorityUnavailable, "reassigns a predecessor"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, bad_head),
+                now=self.fixture.factory.now,
+            )
+
+    def test_root_rotation_rejects_provider_key_validity_reset(self) -> None:
+        base, valid_head = self.install_rotation()
+        self.git("checkout", "-q", valid_head)
+        root_path = "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+        manifest_path = "config/github-apps/cross-ai-provider-review-authority.v1.json"
+        replacement = json.loads((self.root / root_path).read_text())
+        carried = next(
+            key
+            for key in replacement["keys"]
+            if key["keyId"] == "vault-transit://cross-ai/openai#v1"
+        )
+        carried["notAfter"] = "2026-07-25T20:30:00Z"
+        manifest = json.loads((self.root / manifest_path).read_text())
+        manifest["expectedTrustRootSha256"] = sha256_digest(replacement)
+        self.write_json(root_path, replacement)
+        self.write_json(manifest_path, manifest)
+        bad_head = self.commit("extend predecessor provider validity")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "reassigns a predecessor"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, bad_head),
+                now=self.fixture.factory.now,
+            )
+
+    def test_root_rotation_requires_provider_overlap(self) -> None:
+        base, valid_head = self.install_rotation()
+        self.git("checkout", "-q", valid_head)
+        root_path = "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+        manifest_path = "config/github-apps/cross-ai-provider-review-authority.v1.json"
+        replacement = json.loads((self.root / root_path).read_text())
+        replacement["keys"] = [
+            key
+            for key in replacement["keys"]
+            if key["keyId"] != "vault-transit://cross-ai/openai#v1"
+        ]
+        manifest = json.loads((self.root / manifest_path).read_text())
+        manifest["expectedTrustRootSha256"] = sha256_digest(replacement)
+        self.write_json(root_path, replacement)
+        self.write_json(manifest_path, manifest)
+        bad_head = self.commit("drop provider overlap")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "required provider key overlap"):
             validate_authority_history_transition(
                 self.root,
                 expected_bindings=self.history_bindings(base, bad_head),
@@ -737,9 +830,7 @@ class GenesisTransitionTests(unittest.TestCase):
         replacement_root["issuedAt"] = "2026-07-18T20:00:00Z"
         replacement_root["expiresAt"] = "2026-08-17T20:00:00Z"
         for key in replacement_root["keys"]:
-            if key["keyId"] == "vault-transit://cross-ai/openai#v1":
-                key["notAfter"] = "2026-07-19T20:00:00Z"
-            else:
+            if key["keyId"] != "vault-transit://cross-ai/openai#v1":
                 key["notBefore"] = "2026-07-18T20:00:00Z"
                 key["notAfter"] = (
                     "2026-07-25T20:00:00Z"

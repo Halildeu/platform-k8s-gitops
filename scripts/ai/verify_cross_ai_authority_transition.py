@@ -32,6 +32,7 @@ from scripts.ai.cross_ai_authority import (
     MANIFEST_SCHEMA,
     AuthorityUnavailable,
     load_staged_activation_authority,
+    require_active_codex_provider_key,
 )
 from scripts.ai.prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
@@ -142,6 +143,11 @@ def stage_public_authority(
         verifier.require_active_signing_key(
             key_id=head_genesis["issuerRuntimePolicy"]["attestorKeyId"],
             role="runner-management",
+            issued_at=now,
+        )
+        require_active_codex_provider_key(
+            verifier,
+            trust_root,
             issued_at=now,
         )
     except PolicyError as exc:

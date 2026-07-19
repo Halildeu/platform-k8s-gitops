@@ -1005,14 +1005,18 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.original_owner_policy_v2 = VERIFIER.OWNER_POLICY_V2
+        self.original_owner_policy_history = VERIFIER.OWNER_POLICY_HISTORY
         self.original_revocation_ledger = VERIFIER.REVOCATION_LEDGER
         VERIFIER.OWNER_POLICY_V2 = Path(self.temp_dir.name) / "owner-policy.json"
+        VERIFIER.OWNER_POLICY_HISTORY = Path(self.temp_dir.name) / "owner-policy-history"
+        VERIFIER.OWNER_POLICY_HISTORY.mkdir()
         VERIFIER.REVOCATION_LEDGER = Path(self.temp_dir.name) / "revocations.json"
         VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(owner_policy_fixture()))
         VERIFIER.REVOCATION_LEDGER.write_bytes(encode_json(revocation_fixture()))
 
     def tearDown(self):
         VERIFIER.OWNER_POLICY_V2 = self.original_owner_policy_v2
+        VERIFIER.OWNER_POLICY_HISTORY = self.original_owner_policy_history
         VERIFIER.REVOCATION_LEDGER = self.original_revocation_ledger
         self.temp_dir.cleanup()
 
@@ -1455,6 +1459,20 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             self.assertEqual(0, VERIFIER.main())
         self.assertEqual(VERIFIER.ROOT, verify.call_args.kwargs["authority_repo_root"])
         self.assertNotIn("cross_ai_trust_root", verify.call_args.kwargs)
+
+    def test_v2_replay_resolves_content_addressed_policy_after_current_changes(self):
+        archived_policy = owner_policy_fixture()
+        client = self.client_for_policy(archived_policy)
+        archived_digest = VERIFIER.digest_json(archived_policy).removeprefix("sha256:")
+        (VERIFIER.OWNER_POLICY_HISTORY / f"{archived_digest}.json").write_bytes(
+            encode_json(archived_policy)
+        )
+        replacement = copy.deepcopy(archived_policy)
+        replacement["legalTracking"]["ref"] = (
+            "https://github.com/Halildeu/platform-k8s-gitops/issues/9999"
+        )
+        VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(replacement))
+        self.assertEqual("pass", self.verify(client)["status"])
 
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())

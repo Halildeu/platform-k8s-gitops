@@ -50,6 +50,7 @@ ROOT_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-root-v2.s
 CHILD_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
 OWNER_POLICY_V2 = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
 OWNER_POLICY_V1 = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+OWNER_POLICY_HISTORY = ROOT / "config/faz22-6-view-only-pilot-owner-policy-history"
 REVOCATION_LEDGER = ROOT / "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
 EVIDENCE_SCHEMA = "faz22.6.viewOnlyViewerProductEvidence.v2"
@@ -1051,11 +1052,21 @@ def load_bound_owner_policy(
 ) -> tuple[dict[str, Any], bool]:
     """Select exactly one content-addressed v2 or immutable legacy-v1 policy."""
 
+    digest_hex = expected_digest.removeprefix("sha256:")
+    if not re.fullmatch(r"[a-f0-9]{64}", digest_hex):
+        raise EvidenceError("authorization owner policy digest is invalid")
+    archived_v2 = OWNER_POLICY_HISTORY / f"{digest_hex}.json"
+    candidates = [(OWNER_POLICY_V2, False), (OWNER_POLICY_V1, True)]
+    if archived_v2.is_file():
+        candidates.append((archived_v2, False))
     matches: list[tuple[dict[str, Any], bool]] = []
-    for path, legacy_v1 in ((OWNER_POLICY_V2, False), (OWNER_POLICY_V1, True)):
+    matched_digests: set[str] = set()
+    for path, legacy_v1 in candidates:
         policy = load_json_bytes(path.read_bytes(), f"canonical owner policy {path.name}")
-        if digest_json(policy) == expected_digest:
+        policy_digest = digest_json(policy)
+        if policy_digest == expected_digest and policy_digest not in matched_digests:
             matches.append((policy, legacy_v1))
+            matched_digests.add(policy_digest)
     if len(matches) != 1:
         raise EvidenceError("authorization owner policy digest is not a unique canonical contract")
     policy, legacy_v1 = matches[0]

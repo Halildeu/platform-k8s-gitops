@@ -353,6 +353,8 @@ const VIEW_ONLY_CODEX_POLICY_PATHS = [
   '.github/workflows/faz22-6-view-only-viewer-termination-collector.yml',
   'config/faz22-6-view-only-pilot-owner-policy.v1.json',
   'config/faz22-6-view-only-pilot-owner-policy.v2.json',
+  'config/faz22-6-view-only-pilot-owner-policy-history/'
+    + `${'a'.repeat(64)}.json`,
   'scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py',
   'scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py',
   'scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py',

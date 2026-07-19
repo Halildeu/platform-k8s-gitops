@@ -7,7 +7,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,36 @@ class PublicReviewAuthority:
     codex_executable_policy: dict[str, Any]
     issuer_runtime_policy: dict[str, Any]
     observed_at: datetime
+
+
+def require_active_codex_provider_key(
+    verifier: EvidenceVerifier,
+    trust_root: dict[str, Any],
+    *,
+    issued_at: datetime,
+) -> None:
+    """Require at least one usable direct-Codex provider key at the boundary."""
+
+    candidates = [
+        key
+        for key in trust_root.get("keys", [])
+        if key.get("role") == "provider-review"
+        and key.get("providerFamily") == "openai"
+    ]
+    for key in candidates:
+        try:
+            verifier.require_active_signing_key(
+                key_id=key["keyId"],
+                role="provider-review",
+                provider_family="openai",
+                issued_at=issued_at,
+            )
+            return
+        except (KeyError, PolicyError):
+            continue
+    raise AuthorityUnavailable(
+        "provider-review public authority has no active OpenAI provider key"
+    )
 
 
 def _validate_document(value: Any, schema: dict[str, Any], label: str) -> dict[str, Any]:
@@ -98,6 +128,11 @@ def _load_public_authority(
         verifier.require_active_signing_key(
             key_id=locator["issuerRuntimePolicy"]["attestorKeyId"],
             role="runner-management",
+            issued_at=review_reference_time or now,
+        )
+        require_active_codex_provider_key(
+            verifier,
+            trust_root,
             issued_at=review_reference_time or now,
         )
     except PolicyError as exc:
@@ -306,6 +341,15 @@ def validate_authority_history_transition(
             raise AuthorityUnavailable(
                 "provider-review retired authority history is immutable"
             )
+        if (
+            head_manifest["codexExecutablePolicy"]
+            != base_manifest["codexExecutablePolicy"]
+            or head_manifest["issuerRuntimePolicy"]
+            != base_manifest["issuerRuntimePolicy"]
+        ):
+            raise AuthorityUnavailable(
+                "provider-review executable or runtime policy requires a root rotation"
+            )
         return
 
     if not isinstance(base_digest, str) or not isinstance(head_digest, str):
@@ -374,6 +418,8 @@ def validate_authority_history_transition(
                 tuple(key["allowedModelIds"]),
                 tuple(key["allowedModelIdentityClasses"]),
                 key["directProviderCli"],
+                key["notBefore"],
+                key["notAfter"],
             )
 
         immediate_keys = {
@@ -429,6 +475,27 @@ def validate_authority_history_transition(
             "provider-review replacement issuance is outside the predecessor boundary"
         )
 
+    minimum_overlap = timedelta(
+        hours=base_manifest["rotationPolicy"]["minimumKeyOverlapHours"]
+    )
+    overlap_deadline = retired_at + minimum_overlap
+    shared_provider_overlap = False
+    for key in new_root["keys"]:
+        if key.get("role") != "provider-review" or key.get("providerFamily") != "openai":
+            continue
+        public_key = decode_public_key(key["publicKeyBase64"], key["keyId"])
+        if public_key not in immediate_keys or identity(key) != immediate_keys[public_key]:
+            continue
+        not_before = parse_utc(key["notBefore"], "providerKey.notBefore")
+        not_after = parse_utc(key["notAfter"], "providerKey.notAfter")
+        if not_before <= retired_at and not_after >= overlap_deadline:
+            shared_provider_overlap = True
+            break
+    if not shared_provider_overlap:
+        raise AuthorityUnavailable(
+            "provider-review root rotation lacks the required provider key overlap"
+        )
+
     expected_history_entry = {
         "trustRootPath": archive_root_path,
         "revocationsPath": archive_revocations_path,
@@ -454,6 +521,11 @@ def validate_authority_history_transition(
         verifier.require_active_signing_key(
             key_id=head_manifest["issuerRuntimePolicy"]["attestorKeyId"],
             role="runner-management",
+            issued_at=retired_at,
+        )
+        require_active_codex_provider_key(
+            verifier,
+            new_root,
             issued_at=retired_at,
         )
     except PolicyError as exc:
@@ -701,5 +773,6 @@ __all__ = [
     "load_authority_for_evidence",
     "load_revocation_refresh_authority",
     "load_staged_activation_authority",
+    "require_active_codex_provider_key",
     "validate_authority_history_transition",
 ]

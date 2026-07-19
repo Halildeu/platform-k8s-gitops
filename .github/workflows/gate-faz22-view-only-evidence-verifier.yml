@@ -27,6 +27,8 @@ on:
       - 'schema/faz22-6-view-only-kvkk-*.schema.json'
       - 'schema/faz22-6-view-only-viewer-product-evidence-*-v2.schema.json'
       - 'config/faz22-6-view-only-kvkk-approver-policy.v1.json'
+      - 'config/faz22-6-view-only-pilot-owner-policy*.json'
+      - 'config/faz22-6-view-only-pilot-owner-policy-history/**'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/lib-github-read-api.sh'
       - 'scripts/faz22-remote-ops/extract-exact-zip.py'
@@ -97,6 +99,8 @@ on:
       - 'schema/faz22-6-view-only-kvkk-*.schema.json'
       - 'schema/faz22-6-view-only-viewer-product-evidence-*-v2.schema.json'
       - 'config/faz22-6-view-only-kvkk-approver-policy.v1.json'
+      - 'config/faz22-6-view-only-pilot-owner-policy*.json'
+      - 'config/faz22-6-view-only-pilot-owner-policy-history/**'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/lib-github-read-api.sh'
       - 'scripts/faz22-remote-ops/extract-exact-zip.py'
@@ -155,6 +159,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
       - name: Install JSON Schema and Ed25519 verifier dependencies
         run: python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
