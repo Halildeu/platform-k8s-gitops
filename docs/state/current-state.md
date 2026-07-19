@@ -8,7 +8,10 @@ separate-context direct OpenAI Codex invocation: routine review uses exact
 `gpt-5.3-codex-spark xhigh`; governance, security, migration and production
 review uses exact `gpt-5.6-sol xhigh`. Both require read-only sandboxing and an
 ephemeral session. Claude, MiniMax, Cursor, UI, wrapper and fallback receipts
-are rejected; active modes are only `none|single`.
+are rejected; active modes are only `none|single`. A `single` PR must bind the
+model with `Consultation class: routine|high-impact`: routine accepts only
+Spark, high-impact accepts only SOL, and known high-impact paths cannot claim
+the routine class.
 
 #2688 source work updates the PR audit evidence schema to v2 and narrows the
 inactive signed deployment-protection v2 trust root to OpenAI only. Historical

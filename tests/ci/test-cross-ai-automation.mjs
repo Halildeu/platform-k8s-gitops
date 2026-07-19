@@ -176,6 +176,7 @@ const explicitSingleBody =
   `Implementer AI: Codex\n` +
   `Consultation mode: single\n` +
   `Consultation reason: Exact direct Codex review is required for this high impact scope.\n` +
+  `Consultation class: high-impact\n` +
   `Verdict: AGREE\n` +
   `Consultation base tip: ${BASE_TIP_SHA}\n` +
   `Consultation base: ${BASE_SHA}\n` +
@@ -188,6 +189,7 @@ const explicitRoutineSingleBody =
       'Consultation reason: Exact direct Codex review is required for this high impact scope.',
       'Consultation reason: Optional routine review uses the bounded Codex Spark channel.',
     )
+    .replace('Consultation class: high-impact', 'Consultation class: routine')
     .replace(CODEX_RECEIPT_LINE, SPARK_RECEIPT_LINE);
 // All current acceptance/evidence tests use the explicit forward contract.
 // The old fixture remains only for explicit legacy-rejection coverage.
@@ -610,8 +612,13 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleClaudeBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['Claude receipt cannot replace the only accepted Codex channel',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleClaudeReceiptBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['routine single rejects high-impact Codex SOL model',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['routine path accepts explicit semantic high-impact class with Codex SOL',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['single rejects a missing consultation class even with valid SOL evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody.replace(/^Consultation class:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],
+  ['governance path rejects routine class and Spark evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [GOVERNANCE_PATH] }, 1],
   ['governance single rejects routine Codex Spark model',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [GOVERNANCE_PATH] }, 1],
   ['single rejects non-xhigh reasoning effort',

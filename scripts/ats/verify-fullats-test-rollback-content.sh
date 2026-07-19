@@ -45,6 +45,7 @@ require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation base tip: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation commit: $promotion_head"
 require_exact_body_line "Consultation mode: single"
+require_exact_body_line "Consultation class: high-impact"
 require_exact_body_line "Verdict: AGREE"
 consultation_reason="$(sed -nE 's/^Consultation reason:[[:space:]]*(.{10,})[[:space:]]*$/\1/p' <<<"$promotion_body")"
 [[ -n "$consultation_reason" ]] || exit 1
@@ -59,25 +60,14 @@ fi
 receipt_ref="$(sed -nE 's/^.*; ref=(https:\/\/api\.github\.com\/repos\/Halildeu\/platform-k8s-gitops\/issues\/comments\/[1-9][0-9]*); sha256=[0-9a-f]{64}$/\1/p' <<<"$receipt_line")"
 receipt_sha256="$(sed -nE 's/^.*; sha256=([0-9a-f]{64})$/\1/p' <<<"$receipt_line")"
 evidence_comment="$(gh api "$receipt_ref")"
-evidence_body="$(jq -r '.body // empty' <<<"$evidence_comment")"
-[[ "$(jq -r '.user.login // empty' <<<"$evidence_comment")" == "Halildeu" && \
-   "$(jq -r '.author_association // empty' <<<"$evidence_comment")" == "OWNER" && \
-   "$(jq -r '.created_at // empty' <<<"$evidence_comment")" == \
-     "$(jq -r '.updated_at // empty' <<<"$evidence_comment")" && \
-   -n "$evidence_body" && \
-   "$(printf '%s' "$evidence_body" | shasum -a 256 | awk '{print $1}')" == "$receipt_sha256" ]] || exit 1
-python3 -c '
-import sys
-from scripts.ai.post_cross_ai_evidence import validate_evidence_text
-body = sys.stdin.read()
-if body.endswith("\n"):
-    body = body[:-1]
-evidence, _ = validate_evidence_text(body)
-expected = (sys.argv[1], sys.argv[2], sys.argv[3])
-actual = (evidence.get("base_tip_sha"), evidence.get("head_sha"), evidence.get("scope_sha256"))
-if actual != expected or evidence.get("base_sha") != expected[0] or evidence.get("verdict") != "AGREE":
-    raise SystemExit(1)
-' "$PROMOTION_BASE_SHA" "$promotion_head" "$promotion_scope" <<<"$evidence_body" >/dev/null || exit 1
+printf '%s' "$evidence_comment" | python3 scripts/ai/verify_cross_ai_evidence_comment.py \
+  --owner Halildeu \
+  --body-sha256 "$receipt_sha256" \
+  --base-tip-sha "$PROMOTION_BASE_SHA" \
+  --base-sha "$PROMOTION_BASE_SHA" \
+  --head-sha "$promotion_head" \
+  --scope-sha256 "$promotion_scope" \
+  --model gpt-5.6-sol >/dev/null || exit 1
 [[ "$(grep -Ec '^(Claude|MiniMax) receipt:' <<<"$promotion_body" || true)" == "0" ]] || exit 1
 
 [[ "$(git rev-list --parents -n 1 "$PR_HEAD_SHA" | awk '{print NF - 1}')" == "1" ]] || exit 1
