@@ -211,37 +211,14 @@ for label in target wrong-org denied; do
     echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
     exit 1
   fi
-  local_user_id=$(<"$TMP_DIR/$label-user-id")
-  authz_member_id=$(faz35_authz_member_id "$TMP_DIR/$label-authz-before.json" "$local_user_id") || {
-    echo "FATAL: $label authz identity differs from the canonical local profile" >&2
-    exit 1
-  }
   [ "$label" != target ] || target_projection_before=$projection_state
-  [ "$label" != target ] || target_user_id=$authz_member_id
-  unset local_user_id authz_member_id
 done
 unset projection_state
 
-# Activate only after all three authz projections have passed the no-ETHIC /
-# exact-prior-state preflight above. This keeps a drift failure mutation-free.
-for label in target wrong-org denied; do
-  user_id=$(<"$TMP_DIR/$label-user-id")
-  if [ "$(jq -r '.enabled' "$TMP_DIR/$label-user.json")" = false ]; then
-    printf '{"active":true}' >"$TMP_DIR/$label-activation.json"
-    code=$(http_status PUT "$BASE_URL/api/v1/users/$user_id/activation" \
-      "$TMP_DIR/$label-activation-response.json" --config "$TMP_DIR/writer-auth.curl" \
-      -H 'Content-Type: application/json' --data-binary "@$TMP_DIR/$label-activation.json")
-    [ "$code" = 200 ] || { echo "FATAL: $label local user activation failed" >&2; exit 1; }
-  fi
-  code=$(http_status GET "$BASE_URL/api/v1/users/me/profile" \
-    "$TMP_DIR/$label-profile-active.json" --config "$TMP_DIR/$label-auth.curl")
-  if [ "$code" != 200 ] || ! jq -e --argjson expected "$user_id" \
-      '.id == $expected and .enabled == true' "$TMP_DIR/$label-profile-active.json" >/dev/null; then
-    echo "FATAL: $label active local profile postcondition failed" >&2
-    exit 1
-  fi
-  unset user_id
-done
+# The helper validates all three authz/local bindings before its first HTTP
+# activation. Any mismatch returns nonzero with zero activation requests.
+target_user_id=$(faz35_activate_verified_profiles \
+  "$TMP_DIR" "$BASE_URL" "$TMP_DIR/writer-auth.curl") || exit 1
 
 roles_code=$(http_status GET "$BASE_URL/api/v1/roles" "$TMP_DIR/roles.json" \
   --config "$TMP_DIR/writer-auth.curl")

@@ -261,10 +261,50 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 )
                 self.assertNotEqual(mismatch.returncode, 0)
 
-        identity_check = self.entitlement.index("authz identity differs from the canonical local profile")
-        activation = self.entitlement.index("/api/v1/users/$user_id/activation")
+        identity_check = self.authz_projection_lib.index("authz identity differs from the canonical local profile")
+        activation = self.authz_projection_lib.index("/api/v1/users/$user_id/activation")
         self.assertLess(identity_check, activation)
-        self.assertIn('faz35_authz_member_id "$TMP_DIR/$label-authz-before.json"', self.entitlement)
+        self.assertIn("target_user_id=$(faz35_activate_verified_profiles", self.entitlement)
+
+    def test_identity_mismatch_executes_zero_activation_http_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            for label, local_id, authz_id in (
+                ("target", 41, 41),
+                ("wrong-org", 42, 99),
+                ("denied", 43, 43),
+            ):
+                (tmp_path / f"{label}-user-id").write_text(str(local_id))
+                (tmp_path / f"{label}-user.json").write_text(json.dumps({
+                    "id": local_id,
+                    "enabled": False,
+                }))
+                (tmp_path / f"{label}-authz-before.json").write_text(json.dumps({
+                    "userId": str(authz_id),
+                    "subscriberId": authz_id,
+                    "modules": {},
+                    "allowedModules": [],
+                }))
+
+            marker = tmp_path / "http-called"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; marker=$4; '
+                    'http_status() { printf called >"$marker"; printf 200; }; '
+                    'faz35_activate_verified_profiles "$2" https://test.invalid "$3"',
+                    "bash",
+                    str(self.authz_projection_lib_path),
+                    str(tmp_path),
+                    str(tmp_path / "writer-auth.curl"),
+                    str(marker),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
 
     def test_persona_secret_file_and_subject_are_bounded(self):
         self.assertIn("umask 077", self.keycloak)
@@ -286,10 +326,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("/api/v1/users/me/profile", self.entitlement)
         self.assertIn('.message == "ACCOUNT_DISABLED"', self.entitlement)
         self.assertIn("/api/v1/users/by-email", self.entitlement)
-        self.assertIn("/api/v1/users/$user_id/activation", self.entitlement)
-        self.assertIn("$label active local profile postcondition failed", self.entitlement)
-        self.assertIn("target_user_id=$authz_member_id", self.entitlement)
-        self.assertIn("$label authz identity differs from the canonical local profile", self.entitlement)
+        self.assertIn("/api/v1/users/$user_id/activation", self.authz_projection_lib)
+        self.assertIn("$label active local profile postcondition failed", self.authz_projection_lib)
+        self.assertIn("target_user_id=$(faz35_activate_verified_profiles", self.entitlement)
+        self.assertIn("$label authz identity differs from the canonical local profile", self.authz_projection_lib)
         self.assertNotIn("target_user_id=$(jq -r '.userId'", self.entitlement)
         self.assertIn('numeric subscriberId is missing', self.authz_projection_lib)
         self.assertIn('userId and subscriberId differ', self.authz_projection_lib)
