@@ -31,6 +31,34 @@ const BOT = 'github-actions[bot]';
 // (Codex 019e4048 Q2 — per-prefix actor contract).
 const APP_BOT = 'platform-gitops-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
+const FETCH_PRELOAD = join(dir, 'github-fetch-preload.mjs');
+writeFileSync(FETCH_PRELOAD, `
+const fixture = JSON.parse(process.env.CROSS_AI_GITHUB_FIXTURE || '{}');
+globalThis.fetch = async (input) => {
+  const url = new URL(String(input));
+  const page = Number(url.searchParams.get('page') || '1');
+  let payload;
+  const compareMarker = '/compare/';
+  if (url.pathname.includes(compareMarker)) {
+    const comparison = decodeURIComponent(url.pathname.split(compareMarker)[1]);
+    const head = comparison.split('...')[1];
+    const commits = fixture.lineages?.[head] || [];
+    payload = {
+      total_commits: commits.length,
+      commits: page === 1 ? commits.map((sha) => ({ sha })) : [],
+    };
+  } else if (url.pathname.endsWith('/comments')) {
+    payload = [];
+  } else if (url.pathname.endsWith('/timeline')) {
+    payload = page === 1 ? (fixture.timeline || []) : [];
+  } else {
+    const statusMatch = url.pathname.match(/\\/commits\\/([0-9a-f]{40})\\/statuses$/i);
+    if (statusMatch) payload = page === 1 ? (fixture.statuses?.[statusMatch[1]] || []) : [];
+  }
+  if (payload === undefined) return { ok: false, status: 404, json: async () => ({}) };
+  return { ok: true, status: 200, json: async () => payload };
+};
+`);
 const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
@@ -519,7 +547,7 @@ const REVERSED_DUAL_CODEX_EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, includeEvidenceOverride = true, evidenceLedger, includeEvidenceLedgerOverride = true, sourceActivationAttestation, includeSourceActivationAttestation = true, activationRunId, trustedSourceDigests = TRUSTED_SOURCE_DIGEST_OVERRIDES, includeTrustedSourceOverride = true, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, includeEvidenceOverride = true, evidenceLedger, includeEvidenceLedgerOverride = true, sourceActivationAttestation, includeSourceActivationAttestation = true, activationRunId, trustedSourceDigests = TRUSTED_SOURCE_DIGEST_OVERRIDES, includeTrustedSourceOverride = true, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck, githubApiFixture }) {
   const event = {
     pull_request: {
       number: PR_NUMBER,
@@ -589,6 +617,10 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     const childEnv = { ...process.env };
     if (githubActions) childEnv.GITHUB_ACTIONS = 'true';
     else delete childEnv.GITHUB_ACTIONS;
+    if (githubApiFixture) {
+      childEnv.NODE_OPTIONS = `--import=${FETCH_PRELOAD}`;
+      childEnv.CROSS_AI_GITHUB_FIXTURE = JSON.stringify(githubApiFixture);
+    }
     execFileSync('node', cmdArgs, { stdio: 'pipe', env: childEnv });
     return 0;
   } catch (e) {
@@ -970,6 +1002,34 @@ const FULLATS_ATTESTATION = {
   expected_paths: FULLATS_ROLLBACK_FILES,
 };
 const VERIFIED_LEDGER = `release-candidates/platform-backend/${'a'.repeat(40)}.json`;
+const HIDDEN_REVISE_H1 = '1'.repeat(40);
+const HIDDEN_REVISE_H2 = '2'.repeat(40);
+const HIDDEN_REVISE_DIGEST = '3'.repeat(64);
+const HIDDEN_REVISE_THREAD = '019f7785-c66d-7992-a21a-d4097d9eb3fd';
+const TWO_STEP_FORCE_PUSH_FIXTURE = {
+  timeline: [{
+    event: 'head_ref_force_pushed',
+    before_commit: HIDDEN_REVISE_H2,
+    after_commit: HEAD_SHA,
+  }],
+  lineages: {
+    [HIDDEN_REVISE_H2]: [HIDDEN_REVISE_H1, HIDDEN_REVISE_H2],
+    [HEAD_SHA]: [HEAD_SHA],
+  },
+  statuses: {
+    [HIDDEN_REVISE_H1]: [{
+      sha: HIDDEN_REVISE_H1,
+      context: `cross-ai/evidence/${HIDDEN_REVISE_DIGEST}`,
+      state: 'failure',
+      description: `v4 openai REVISE pr=${PR_NUMBER} thread=${HIDDEN_REVISE_THREAD}`,
+      target_url: `https://github.com/${REPO}/pull/${PR_NUMBER}`,
+      creator: { login: 'Halildeu' },
+      created_at: new Date(NOW_MS + 5_000).toISOString(),
+      updated_at: new Date(NOW_MS + 5_000).toISOString(),
+      url: `https://api.github.com/repos/${REPO}/statuses/hidden-h1`,
+    }],
+  },
+};
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
 // Dependabot doesn't fill the Cross-AI body fields; the exemption is gated by
@@ -983,6 +1043,15 @@ const dependabotBody =
 const cases = [
   ['valid automation PR (auto-test-overlay, App-bot author + App-bot sender)',
     { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
+  ['valid automation exemption cannot bypass an unresolved Codex REVISE',
+    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT,
+      body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY],
+      evidence: unresolvedCodexReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['automation lane can resolve a REVISE only with a valid selected fresh Codex AGREE',
+    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT,
+      body: `${autoBody(WF)}${freshSelectedCodexBody.replace(/^## Cross-AI\n/u, '')}`,
+      changedFiles: [PRIMARY_OVERLAY], evidence: freshSelectedCodexReviseEvidence }, 0],
   ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid Full ATS two-file frontend rollback PR (App-bot)',
@@ -1038,6 +1107,13 @@ const cases = [
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['two-step force-push history still discovers an ancestor REVISE tombstone',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: {},
+      includeEvidenceLedgerOverride: false,
+      githubApiFixture: TWO_STEP_FORCE_PUSH_FIXTURE,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['normal PR without successful exact-base source activation -> blocked',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, changedFiles: [ROUTINE_PATH],
@@ -1601,6 +1677,11 @@ const cases = [
   ['#898 valid dependabot PR (prefix + dependabot[bot] author/sender + same-repo + github-actions allowlist diff) -> exempt PASS',
     { branch: 'dependabot/github_actions/actions/setup-node-6', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
       body: dependabotBody, changedFiles: ['.github/workflows/ci.yml'] }, 0],
+  ['#898 dependabot exemption cannot bypass an unresolved Codex REVISE',
+    { branch: 'dependabot/github_actions/actions/setup-node-6', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
+      body: dependabotBody, changedFiles: ['.github/workflows/ci.yml'],
+      evidence: unresolvedCodexReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['#898 dependabot PR with non-allowlisted diff path (src/main.py) -> blocked',
     { branch: 'dependabot/python_pkg/foo', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
       body: dependabotBody, changedFiles: ['.github/workflows/ci.yml', 'src/main.py'] }, 1],

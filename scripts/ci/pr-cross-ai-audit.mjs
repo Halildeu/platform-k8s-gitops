@@ -1048,20 +1048,9 @@ async function loadPullRequestEvidenceLedger(prMeta, ledgerOverrides) {
   const headers = { Accept: 'application/vnd.github+json' };
   const token = env.GITHUB_TOKEN || env.GH_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
-  const commits = [];
+  const lineageHeads = new Set();
+  if (COMMIT_SHA_RE.test(prMeta?.headSha || '')) lineageHeads.add(prMeta.headSha);
   try {
-    for (let page = 1; page <= 10; page += 1) {
-      const response = await fetch(
-        `https://api.github.com/repos/${prMeta.baseRepo}/pulls/${prMeta.issueNumber}/commits?per_page=100&page=${page}`,
-        { headers, signal: AbortSignal.timeout(15_000) },
-      );
-      if (!response.ok) return null;
-      const payload = await response.json();
-      if (!Array.isArray(payload)) return null;
-      commits.push(...payload.map((commit) => commit?.sha).filter((sha) => COMMIT_SHA_RE.test(sha || '')));
-      if (payload.length < 100) break;
-      if (page === 10) return null;
-    }
     for (let page = 1; page <= 10; page += 1) {
       const response = await fetch(
         `https://api.github.com/repos/${prMeta.baseRepo}/issues/${prMeta.issueNumber}/timeline?per_page=100&page=${page}`,
@@ -1079,14 +1068,45 @@ async function loadPullRequestEvidenceLedger(prMeta, ledgerOverrides) {
           const candidate = typeof event?.[field] === 'string'
             ? event[field]
             : event?.[field]?.sha;
-          if (COMMIT_SHA_RE.test(candidate || '')) commits.push(candidate);
+          if (COMMIT_SHA_RE.test(candidate || '')) lineageHeads.add(candidate);
         }
       }
       if (payload.length < 100) break;
       if (page === 10) return null;
     }
+    if (!COMMIT_SHA_RE.test(prMeta?.baseSha || '') || lineageHeads.size === 0) return null;
+    const commits = new Set();
+    for (const lineageHead of lineageHeads) {
+      commits.add(lineageHead);
+      let compared = 0;
+      let totalCommits = null;
+      for (let page = 1; page <= 10; page += 1) {
+        const response = await fetch(
+          `https://api.github.com/repos/${prMeta.baseRepo}/compare/${prMeta.baseSha}...${lineageHead}?per_page=100&page=${page}`,
+          { headers, signal: AbortSignal.timeout(15_000) },
+        );
+        if (!response.ok) return null;
+        const payload = await response.json();
+        if (!payload || !Array.isArray(payload.commits)) return null;
+        if (page === 1) {
+          totalCommits = Number(payload.total_commits);
+          if (!Number.isInteger(totalCommits) || totalCommits < 0 || totalCommits > 1_000) {
+            return null;
+          }
+        }
+        const pageShas = payload.commits
+          .map((commit) => commit?.sha)
+          .filter((sha) => COMMIT_SHA_RE.test(sha || ''));
+        if (pageShas.length !== payload.commits.length) return null;
+        pageShas.forEach((sha) => commits.add(sha));
+        compared += pageShas.length;
+        if (compared >= totalCommits) break;
+        if (payload.commits.length < 100 || page === 10) return null;
+      }
+      if (compared !== totalCommits) return null;
+    }
     const statuses = [];
-    for (const sha of new Set(commits)) {
+    for (const sha of commits) {
       for (let page = 1; page <= 10; page += 1) {
         const response = await fetch(
           `https://api.github.com/repos/${prMeta.baseRepo}/commits/${sha}/statuses?per_page=100&page=${page}`,
@@ -1613,9 +1633,14 @@ async function auditExplicitConsultationMode(
   );
   const requiredFloor = minimumConsultationMode(prMeta);
   const modeRank = { none: 0, single: 1 };
-  const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
+  const automationMetadata = new Set([
+    'cross-ai exempt reason', 'automation source', 'automation evidence',
+  ]);
+  const automationPrefix = matchedAutomationPrefix(prMeta?.headRef || '');
+  const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) => (
     Object.hasOwn(fields, field)
-  );
+    && !(automationPrefix && automationMetadata.has(field))
+  ));
 
   findings.push({
     check: 'consultation_mode_valid',
@@ -2336,6 +2361,17 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     `[cross-ai-audit] dependabot exemption mode — head.ref "${prMeta.headRef}"`,
   );
   findings = auditDependabot(prMeta);
+  const section = extractCrossAiSection(body);
+  const fields = section ? extractFields(section) : {};
+  if (Object.hasOwn(fields, 'consultation mode')) {
+    findings.push(...await audit(
+      body, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
+    ));
+  } else {
+    await appendPriorRevisionFinding(
+      findings, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
+    );
+  }
 } else {
   const automationPrefix = prMeta ? matchedAutomationPrefix(prMeta.headRef) : null;
   if (automationPrefix) {
@@ -2343,6 +2379,17 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
       `[cross-ai-audit] automation-PR exemption mode — head.ref "${prMeta.headRef}" matches "${automationPrefix}"`,
     );
     findings = auditAutomation(body, prMeta);
+    const section = extractCrossAiSection(body);
+    const fields = section ? extractFields(section) : {};
+    if (Object.hasOwn(fields, 'consultation mode')) {
+      findings.push(...await audit(
+        body, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
+      ));
+    } else {
+      await appendPriorRevisionFinding(
+        findings, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
+      );
+    }
   } else {
     findings = await audit(
       body, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,

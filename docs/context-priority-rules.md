@@ -435,12 +435,17 @@ exact head, body SHA-256, thread ve verdict'e bağlı ayrı create-only commit-s
 ledger kaydı yorumdan önce üretilir ve exact PR URL'sine bağlanır. Gate yorumları
 ledger'a mutable yorum URL'siyle değil body digest'iyle bağlar; aynı digest'in
 exact retry kopyaları tek authority kaydıdır, çelişkili duplicate fail-closed olur.
-Gate mevcut PR commit'leriyle birlikte force-push timeline head'lerini tarar;
-yorum POST'u başarısız olsa veya yorum silinse bile `REVISE` ledger tombstone
+Gate mevcut PR head'ini, force-push timeline uçlarını ve her ucun target base'e
+göre compare ile doğrulanan commit lineage'ını tarar; araya fast-forward commit
+eklenip sonra force-push yapılsa da eski `REVISE` status'u görünmez hale gelmez.
+Yorum POST'u başarısız olsa veya yorum silinse bile `REVISE` ledger tombstone
 olarak kalır. Yorum edit'i, seçilmiş receipt için eksik ledger,
 ledger/comment bağ uyuşmazlığı veya aktivasyon sonrasında oluşturulmuş OpenAI v3
 adayı fail-closed yapar. Dar tarihsel docs-only muafiyeti de aynı PR'daki açık
-`REVISE` geçmişini atlayamaz.
+`REVISE` geçmişini atlayamaz. Aynı kural Dependabot ve doğrulanmış otomasyon
+muafiyet yollarında da çalışır. Otomasyon PR'ı açık `Consultation mode` taşıyorsa
+otomasyon kimlik/içerik kontratı ile normal consultation kontratı birlikte
+geçmeden seçilmiş yeni Codex `AGREE` önceki `REVISE` kaydını çözmüş sayılmaz.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
 
@@ -578,7 +583,8 @@ döndürülemez başka bir karar path adına yansımıyorsa agent doğru
 `Consultation mode` içermeyen tarihsel PR gövdeleri GitHub'da immutable kayıt
 olarak kalabilir; güncel gate bunları yeniden doğrulamaz ve `PASS`/acceptance
 üretmez. Yalnız dar `docs-only historical` allowlist'i receiptsiz muafiyet
-olarak kalır; bu muafiyet açık Codex `REVISE` geçmişini çözmez. Güncel parser'da
+olarak kalır; bu muafiyet ile Dependabot/automation muafiyetleri açık Codex
+`REVISE` geçmişini çözmez. Güncel parser'da
 görülen her MiniMax receipt fail-closed reddedilir.
 Yeni PR şablonu yalnız açık `none|single` sözleşmesini üretir; `single` yalnız
 Codex receipt ister. Claude challenger receipt veya gate yetkisi üretmez.
