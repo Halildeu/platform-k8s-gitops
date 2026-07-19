@@ -544,6 +544,9 @@ esac
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
 evidence_response="$(printf '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')"
+if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "response-revise" ]]; then
+  evidence_response="$(printf '## P0\nConcrete finding\n## P1\nNone\n## P2\nNone\nVERDICT: REVISE')"
+fi
 evidence_response_sha="$(printf '%s' "$evidence_response" | shasum -a 256 | awk '{print $1}')"
 evidence_head="$PROMOTION_HEAD_SHA"
 if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "internal-head" ]]; then
@@ -602,6 +605,7 @@ fi
             (False, False, "missing-base-tip", 1),
             (False, False, "bad-digest", 1),
             (False, False, "body-newline", 1),
+            (False, False, "response-revise", 1),
             (False, False, "internal-head", 1),
         ):
             with self.subTest(

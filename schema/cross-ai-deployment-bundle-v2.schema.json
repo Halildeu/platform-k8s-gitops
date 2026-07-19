@@ -39,7 +39,7 @@
     },
     "reviewEnvelopes": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 1,
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/dsse_envelope"

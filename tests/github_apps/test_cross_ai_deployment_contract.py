@@ -622,6 +622,46 @@ class EvidenceContractV2Test(unittest.TestCase):
             "application/vnd.acik.cross-ai-deployment-bundle.v2+json",
         )
 
+    def test_accepts_single_round_direct_agree_v2_bundle(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        prior_tip = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        subject_digest = prior_tip["subjectSha256"]
+        closure_root = sha256_digest(
+            {
+                "domain": self.factory.closure_domain,
+                "subjectSha256": subject_digest,
+                "entries": [],
+            }
+        )
+        direct_agree = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000010",
+            chain_id="40000000-0000-4000-8000-000000000010",
+            key_id=self.factory.OPENAI_KEY_ID,
+            round_number=1,
+            verdict="AGREE",
+            previous=None,
+            closure_root=closure_root,
+            issued_at="2026-07-18T20:15:00Z",
+            subject_digest=subject_digest,
+        )
+        direct_agree_digest = sha256_digest(direct_agree)
+        bundle["reviewEnvelopes"] = [direct_agree]
+        bundle["closure"] = {
+            "entries": [],
+            "closureRootSha256": closure_root,
+        }
+        bundle["consensus"] = {
+            "providerFamilies": ["openai"],
+            "finalAgreeReviewSha256": [direct_agree_digest],
+            "closureRootSha256": closure_root,
+            "openMustFixFindingCount": 0,
+        }
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+
+        result = self.verifier().verify_bundle(self.fixture.bundle_envelope)
+        self.assertEqual(result.provider_families, ("openai",))
+        self.assertEqual(result.final_review_digests, (direct_agree_digest,))
+
     def test_v2_rejects_retired_providers_and_openai_provider_report_upgrade(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         openai = next(

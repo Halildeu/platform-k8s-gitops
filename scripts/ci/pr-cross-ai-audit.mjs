@@ -82,6 +82,13 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
+  /^schema\/cross-ai-deployment-(?:trust-root|review|bundle)-v2\.schema\.json$/,
+  /^scripts\/github_apps\/cross_ai_deployment_policy\//,
+  /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_test_trust_root)\.py$/,
+  /^scripts\/ops\/vault-policy-reconcile\.sh$/,
+  /^tests\/github_apps\/(?:cross_ai_policy_fixtures|test_cross_ai_[^/]+)\.py$/,
+  /^docs\/adr\/0045-signed-cross-ai-custom-deployment-protection-rule\.md$/,
+  /^docs\/runbooks\/RB-cross-ai-deployment-protection-rule\.md$/,
   // Tombstone: deleting the retired wrapper remains a governance change, and
   // any future MiniMax-named review helper cannot be reintroduced under none.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
@@ -91,7 +98,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
 ];
 const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
-  /(?:^|\/)vault\/polic(?:y|ies)\/[^/]+\.hcl$/i,
+  /(?:^|\/)vault(?:\/|-)polic(?:y|ies)\/.+\.hcl$/i,
   /(?:^|\/)(?:db\/migration|migrations?)(?:\/|$)/i,
   /^kustomize\/overlays\/prod\//i,
   /^host-compose\/[^/]+\/prod\//i,

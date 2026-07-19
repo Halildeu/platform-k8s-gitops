@@ -62,6 +62,30 @@ class EvidenceValidationTests(unittest.TestCase):
         payload["response_sha256"] = "f" * 64
         self.assert_rejected(payload)
 
+    def test_rejects_external_agree_when_response_terminal_verdict_is_revise(self) -> None:
+        payload = evidence()
+        payload["response"] = (
+            "P0\nConcrete finding\nP1\nNone\nP2\nNone\nVERDICT: REVISE"
+        )
+        payload["response_sha256"] = hashlib.sha256(
+            payload["response"].encode("utf-8")
+        ).hexdigest()
+        self.assert_rejected(payload)
+
+    def test_rejects_malformed_or_nonterminal_provider_response(self) -> None:
+        for response in (
+            "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE\nextra",
+            "P0\nNone\nP1\nNone\nVERDICT: AGREE",
+            "P0\nFinding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+        ):
+            payload = evidence()
+            payload["response"] = response
+            payload["response_sha256"] = hashlib.sha256(
+                response.encode("utf-8")
+            ).hexdigest()
+            with self.subTest(response=response):
+                self.assert_rejected(payload)
+
     def test_rejects_wrong_provider_model_or_execution_identity(self) -> None:
         mutations = (
             {"provider": "anthropic"},
