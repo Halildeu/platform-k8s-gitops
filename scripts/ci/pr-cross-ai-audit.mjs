@@ -828,6 +828,15 @@ async function appendPriorRevisionFinding(
     // broader so contract tests can prove evidence from another PR is ignored,
     // not misclassified as a malformed candidate for this PR.
     if (comment?.issueNumber !== prMeta.issueNumber) continue;
+    // Historical evidence is an owner-authored governance record. Ignore
+    // untrusted evidence-like prose here so an arbitrary commenter cannot
+    // poison the PR gate. A receipt selected by the PR body still passes the
+    // stricter parseEvidenceComment owner/association checks separately.
+    if (
+      typeof comment?.author !== 'string'
+      || comment.author.toLowerCase() !== expectedOwner.toLowerCase()
+      || comment.authorAssociation !== 'OWNER'
+    ) continue;
     let body;
     try {
       body = JSON.parse(comment?.body || '');
@@ -842,8 +851,11 @@ async function appendPriorRevisionFinding(
     const expected = Object.values(CONSULTATION_RECEIPTS).find(
       (candidate) => candidate.provider === body?.provider,
     );
+    // MiniMax v1 evidence predates the retirement policy. Preserve an
+    // untouched record as read-only history, but never exempt v3 evidence:
+    // v3 is the current schema and a new MiniMax record must fail closed.
     const immutableRetiredMinimaxRecord = body?.provider === 'minimax'
-      && body?.schema === 'cross-ai-provider-evidence/v3'
+      && body?.schema === 'cross-ai-provider-evidence/v1'
       && comment?.createdAt === comment?.updatedAt;
     if (immutableRetiredMinimaxRecord) continue;
     const evidenceSignalCount = [

@@ -82,9 +82,32 @@ const CODEX_REF = evidenceRef(1003);
 const SPARK_REF = evidenceRef(1004);
 const EVIDENCE = {
   [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
-  [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
   [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
+};
+const MINIMAX_V3_BODY = evidenceBody(
+  'minimax',
+  'minimax/MiniMax-M3',
+  '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
+);
+const MINIMAX_V3_EVIDENCE = {
+  [MINIMAX_REF]: evidenceComment(MINIMAX_V3_BODY, 1_000),
+};
+const MINIMAX_V1_BODY = JSON.stringify({
+  schema: 'cross-ai-provider-evidence/v1',
+  provider: 'minimax',
+  requested_model: 'minimax/MiniMax-M3',
+  actual_model: 'minimax/MiniMax-M3',
+  base_tip_sha: BASE_TIP_SHA,
+  base_sha: BASE_SHA,
+  head_sha: HEAD_SHA,
+  scope_sha256: SCOPE_SHA256,
+  verdict: 'AGREE',
+  response_sha256: sha256('## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'),
+  response: '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
+});
+const MINIMAX_V1_EVIDENCE = {
+  [MINIMAX_REF]: evidenceComment(MINIMAX_V1_BODY, 1_000),
 };
 const UNREFERENCED_CLAUDE_REVISE_REF = evidenceRef(1005);
 const UNREFERENCED_CLAUDE_AGREE_REF = evidenceRef(1006);
@@ -169,6 +192,37 @@ const strippedIdentityHistoricalReviseComment = evidenceComment(
 strippedIdentityHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
 const strippedIdentityHistoricalReviseEvidence = {
   [UNREFERENCED_CLAUDE_REVISE_REF]: strippedIdentityHistoricalReviseComment,
+};
+const immutableHistoricalMinimaxV1Evidence = {
+  ...MINIMAX_V1_EVIDENCE,
+};
+const immutableHistoricalMinimaxV3Evidence = {
+  ...MINIMAX_V3_EVIDENCE,
+};
+const editedHistoricalMinimaxV1Comment = {
+  ...MINIMAX_V1_EVIDENCE[MINIMAX_REF],
+  updatedAt: new Date(NOW_MS + 5_000).toISOString(),
+};
+const editedHistoricalMinimaxV1Evidence = {
+  [MINIMAX_REF]: editedHistoricalMinimaxV1Comment,
+};
+const nonOwnerEvidenceRef = evidenceRef(1007);
+const nonOwnerJsonEvidence = {
+  [nonOwnerEvidenceRef]: {
+    ...evidenceComment(claudeReviseBody, 3_000),
+    author: 'mallory',
+    authorAssociation: 'CONTRIBUTOR',
+  },
+};
+const nonOwnerRawEvidence = {
+  [nonOwnerEvidenceRef]: {
+    ...evidenceComment(
+      'cross-ai-provider-evidence/v3 base_tip_sha head_sha verdict REVISE',
+      3_000,
+    ),
+    author: 'mallory',
+    authorAssociation: 'NONE',
+  },
 };
 const SOL_RECEIPT_SPARK_EVIDENCE = {
   ...EVIDENCE,
@@ -256,7 +310,7 @@ const renderedRollbackBody = rollbackBodyMatch[1]
   .replaceAll('__FAILED_SHA__', HEAD_SHA);
 
 const MINIMAX_RECEIPT_LINE =
-  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF].body)}`;
+  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(MINIMAX_V3_BODY)}`;
 const legacyPeerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
   `Implementer AI: Claude\nReviewer AI: Codex\n` +
@@ -432,23 +486,23 @@ const wrongAssociationEvidence = {
 };
 const outOfOrderEvidence = {
   ...EVIDENCE,
-  [MINIMAX_REF]: {
-    ...EVIDENCE[MINIMAX_REF],
+  [CODEX_REF]: {
+    ...EVIDENCE[CODEX_REF],
     createdAt: new Date(NOW_MS - 1_000).toISOString(),
     updatedAt: new Date(NOW_MS - 1_000).toISOString(),
   },
 };
 const equalTimestampEvidence = {
   ...EVIDENCE,
-  [MINIMAX_REF]: {
-    ...EVIDENCE[MINIMAX_REF],
+  [CODEX_REF]: {
+    ...EVIDENCE[CODEX_REF],
     createdAt: EVIDENCE[CLAUDE_REF].createdAt,
     updatedAt: EVIDENCE[CLAUDE_REF].updatedAt,
   },
 };
 const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const minimaxReviseBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
+  ...JSON.parse(MINIMAX_V3_BODY),
   verdict: 'REVISE',
   response_sha256: sha256(minimaxReviseResponse),
   response: minimaxReviseResponse,
@@ -698,6 +752,28 @@ const cases = [
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: strippedIdentityHistoricalReviseEvidence,
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an immutable retired MiniMax v1 record remains read-only history',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: immutableHistoricalMinimaxV1Evidence }, 0],
+  ['a new MiniMax v3 history record fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: immutableHistoricalMinimaxV3Evidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an edited retired MiniMax v1 record fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: editedHistoricalMinimaxV1Evidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['non-owner JSON evidence-like history cannot poison the gate',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: nonOwnerJsonEvidence }, 0],
+  ['non-owner raw evidence-like history cannot poison the gate',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: nonOwnerRawEvidence }, 0],
   ['explicit none mode accepts substantive prose containing the word none',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody.replace(/^Consultation reason:.*$/m, 'Consultation reason: Reversible documentation update; none of the protected runtime paths apply.'),
@@ -948,7 +1024,7 @@ const cases = [
       body: peerBody.replace(CODEX_REF, CLAUDE_REF) }, 1],
   ['Claude/Codex AGREE plus forbidden MiniMax REVISE -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace(sha256(EVIDENCE[MINIMAX_REF].body), sha256(minimaxReviseBody))}\n`, evidence: minimaxReviseEvidence }, 1],
+      body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace(sha256(MINIMAX_V3_BODY), sha256(minimaxReviseBody))}\n`, evidence: minimaxReviseEvidence }, 1],
   ['provider response with empty P0/P1/P2 sections -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: emptySectionsPeerBody, evidence: emptySectionsEvidence }, 1],
