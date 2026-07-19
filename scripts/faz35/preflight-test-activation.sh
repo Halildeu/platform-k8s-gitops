@@ -17,6 +17,9 @@ ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
 SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.yaml"
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
 EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
+MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SHA256.json"
+EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
+EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/267146bafa5a415b60a5fd85efd6b2b51120e86ede8c97530fbc1201263c2c8f.json"
 
@@ -272,6 +275,24 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   printf '%s' "$role_id" | grep -Eq \
     '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
     echo "FATAL: pinned dedicated Vault role ID is not a UUID" >&2
+    exit 1
+  }
+  jq -e --arg store_ref "$EXPECTED_OPENFGA_STORE_REF" --arg model_id "$model_id" '
+    .promotion.test.status == "verified" and
+    .promotion.test.store_ref == $store_ref and
+    .promotion.test.model_id_env == $model_id and
+    .promotion.test.evidence_completeness == "complete"
+  ' "$MODEL_LEDGER" >/dev/null || {
+    echo "FATAL: runtime ledger is not bound to the verified canonical TEST store/model" >&2
+    exit 1
+  }
+  live_store=$(remote \
+    "kubectl --request-timeout=10s --context k3d-test -n platform-test exec deploy/meeting-service -- curl --connect-timeout 5 --max-time 10 -fsS 'http://openfga:8080/stores/$store_id'")
+  printf '%s' "$live_store" | jq -e --arg store_id "$store_id" \
+    --arg store_name "$EXPECTED_OPENFGA_STORE_NAME" '
+      .id == $store_id and .name == $store_name and .deleted_at == null
+    ' >/dev/null || {
+    echo "FATAL: pinned OpenFGA store is not the canonical live Etik Speak TEST store" >&2
     exit 1
   }
   live_model=$(remote \

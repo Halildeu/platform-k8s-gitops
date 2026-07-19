@@ -144,7 +144,13 @@ print(json.dumps({
     "sub": claims.get("sub"),
     "preferred_username": claims.get("preferred_username"),
     "org_id": claims.get("org_id"),
+    "aud": claims.get("aud"),
+    "azp": claims.get("azp"),
+    "scope": claims.get("scope"),
     "roles": claims.get("realm_access", {}).get("roles", []),
+    "resource_roles": claims.get("resource_access", {}),
+    "groups": claims.get("groups", []),
+    "has_authorization": "authorization" in claims,
 }, separators=(",", ":")))
 ' >"$claims_file" || {
     echo "FATAL: $label live Keycloak token is not a valid JWT" >&2
@@ -154,9 +160,36 @@ print(json.dumps({
     --arg username "$username" --arg org "$expected_org" '
       .iss == $issuer and .sub == $subject and
       .preferred_username == $username and .org_id == $org and
-      ((.roles // []) | index("ethics-manager") != null)
+      .azp == "frontend" and
+      ((.aud | type) == "array") and
+      ((.aud | sort) == ([
+        "account", "ats-api", "audio-gateway-service", "auth-service",
+        "ethics-manager", "frontend", "meeting-service",
+        "notification-orchestrator", "remote-bridge-operator-api"
+      ] | sort)) and
+      ((.scope | type) == "string") and
+      ((.scope | split(" ") | sort) == ([
+        "ats.application.read", "ats.application.status.write",
+        "ats.citation.write", "ats.consent.write", "ats.dsar.write",
+        "ats.erasure.execute", "ats.export.read", "ats.export.repair",
+        "ats.export.write", "ats.recording.write", "ats.review.read",
+        "ats.review.write", "ats.transcript.read", "ats.transcription.write",
+        "email", "ethics:case:manage", "notify-canary", "openid", "profile"
+      ] | sort)) and
+      ((.roles | type) == "array") and
+      ((.roles | sort) == ([
+        "default-roles-platform-test", "ethics-manager",
+        "offline_access", "uma_authorization"
+      ] | sort)) and
+      ((.resource_roles | keys | sort) == ["account"]) and
+      ((.resource_roles.account.roles | type) == "array") and
+      ((.resource_roles.account.roles | sort) == ([
+        "manage-account", "manage-account-links", "view-profile"
+      ] | sort)) and
+      ((.groups | type) == "array" and (.groups | length) == 0) and
+      (.has_authorization == false)
     ' "$claims_file" >/dev/null || {
-    echo "FATAL: $label subject does not match the canonical live Keycloak persona" >&2
+    echo "FATAL: $label subject/token does not match the exact least-privilege Keycloak persona contract" >&2
     exit 1
   }
 }

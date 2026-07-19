@@ -64,7 +64,12 @@ done
   echo "FATAL: ESO_POLICY_FILE override refused" >&2
   exit 1
 }
-command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
+for command_name in docker jq mktemp openssl stat; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    echo "FATAL: required command missing: $command_name" >&2
+    exit 1
+  }
+done
 [ -r "$VAULT_INIT_FILE" ] && [ -f "$VAULT_INIT_FILE" ] && [ ! -L "$VAULT_INIT_FILE" ] || {
   echo "FATAL: Vault init file must be a readable regular non-symlink" >&2
   exit 1
@@ -79,7 +84,7 @@ command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 
 # the Etik Speak database. This read-only phase precedes every Vault, AppRole,
 # Kubernetes and PostgreSQL mutation.
 preflight_existing_pg_role() {
-  local role_exists database_name database_inventory
+  local role_exists database_name database_inventory database_inventory_file
   role_exists=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
     "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ethics_app')")
   [ "$role_exists" = t ] || return 0
@@ -133,18 +138,36 @@ END
 $$;
 SQL
 
+  # A JSON aggregate preserves every legal PostgreSQL database name, including
+  # embedded or trailing newlines. Newline-delimited psql output is not a safe
+  # record boundary for identifiers. Convert the validated JSON array to a NUL-
+  # delimited private file before iterating, and check the producer separately.
   database_inventory=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
-    "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname") || {
+    "SELECT COALESCE(json_agg(datname ORDER BY datname), '[]'::json)::text FROM pg_database WHERE datallowconn AND datname <> 'template0'") || {
     echo "FATAL: PostgreSQL database inventory failed before ACL validation" >&2
     exit 1
   }
-  [ -n "$database_inventory" ] || {
-    echo "FATAL: PostgreSQL database inventory is unexpectedly empty" >&2
+  printf '%s' "$database_inventory" | jq -e '
+    type == "array" and length > 0 and
+    all(.[]; type == "string" and length > 0) and
+    (length == (unique | length))
+  ' >/dev/null || {
+    echo "FATAL: PostgreSQL database inventory is empty, malformed, or duplicated" >&2
     exit 1
   }
-  while IFS= read -r database_name; do
-    docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
-      -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+  database_inventory_file=$(mktemp /tmp/faz35-pg-database-inventory.XXXXXX)
+  chmod 600 "$database_inventory_file"
+  printf '%s' "$database_inventory" | jq -j '.[] | .,"\u0000"' \
+    >"$database_inventory_file" || {
+    rm -f "$database_inventory_file"
+    echo "FATAL: PostgreSQL database inventory framing failed" >&2
+    exit 1
+  }
+  (
+    trap 'rm -f "$database_inventory_file"' EXIT
+    while IFS= read -r -d '' database_name; do
+      docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
+        -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 DO $$
 DECLARE
   target_oid oid;
@@ -191,7 +214,8 @@ BEGIN
 END
 $$;
 SQL
-  done <<<"$database_inventory"
+    done <"$database_inventory_file"
+  )
 }
 preflight_existing_pg_role
 

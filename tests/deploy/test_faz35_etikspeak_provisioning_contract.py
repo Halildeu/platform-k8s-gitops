@@ -449,8 +449,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("must be a Keycloak UUID from provision-test-keycloak.sh", self.openfga)
         self.assertIn("lib-test-keycloak-binding.sh", self.openfga)
         self.assertIn("assert_subject_persona_binding", self.openfga)
-        self.assertIn("subject does not match the canonical live Keycloak persona", self.openfga)
+        self.assertIn("exact least-privilege Keycloak persona contract", self.openfga)
         self.assertIn('"password@$password_file"', self.openfga)
+        for exact_claim in (
+            '.azp == "frontend"',
+            '(.aud | sort)',
+            '(.scope | split(" ") | sort)',
+            '(.roles | sort)',
+            '(.resource_roles | keys | sort) == ["account"]',
+            '(.groups | type) == "array"',
+            '(.has_authorization == false)',
+        ):
+            self.assertIn(exact_claim, self.openfga)
         subject_proof = self.openfga.index(
             'assert_subject_persona_binding "$DENIED_USERNAME"'
         )
@@ -809,7 +819,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("canonical synthetic persona username is ambiguous", self.keycloak)
         self.assertIn("synthetic username is ambiguous", self.keycloak)
         self.assertIn("PostgreSQL database inventory failed before ACL validation", self.pg_vault)
-        self.assertIn("PostgreSQL database inventory is unexpectedly empty", self.pg_vault)
+        self.assertIn("PostgreSQL database inventory is empty, malformed, or duplicated", self.pg_vault)
+        self.assertIn("json_agg(datname ORDER BY datname)", self.pg_vault)
+        self.assertIn("jq -j '.[] | .,\"\\u0000\"'", self.pg_vault)
+        self.assertIn("read -r -d '' database_name", self.pg_vault)
+        self.assertIn("PostgreSQL database inventory framing failed", self.pg_vault)
         self.assertNotIn('done < <(docker exec "$PG_CONTAINER"', self.pg_vault)
         self.assertIn("client inventory could not be read", self.keycloak)
         self.assertIn("client inventory is empty or malformed", self.keycloak)
@@ -894,6 +908,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "image set content does not match its content-addressed filename",
             "image set schema/source-head binding is invalid",
             'kustomize build "$REPO_ROOT/kustomize/overlays/test"',
+            'EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"',
+            'EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"',
+            'runtime ledger is not bound to the verified canonical TEST store/model',
+            'pinned OpenFGA store is not the canonical live Etik Speak TEST store',
         ):
             self.assertIn(required, self.preflight)
         self.assertNotRegex(
