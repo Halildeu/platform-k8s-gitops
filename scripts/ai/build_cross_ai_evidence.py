@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Build one strict Anthropic cross-ai-provider-evidence/v3 comment body.
+"""Shared response validator; direct provider evidence building is disabled.
 
-The full provider response is read from stdin so it never enters process argv.
-The resulting single-line JSON can be posted as an issue comment; the PR receipt
-uses SHA-256 of these exact UTF-8 bytes.
-
-OpenAI evidence is deliberately rejected here and must be produced by
-run_isolated_codex_review.py, which executes the fixed isolated Codex profile.
+Authoritative OpenAI evidence is produced only by run_isolated_codex_review.py,
+which executes and observes the fixed isolated Codex profile. Claude remains an
+optional non-authoritative challenger until an equivalent verified harness
+exists, so stdin responses cannot be repackaged as provider execution proof.
 """
 
 from __future__ import annotations
@@ -70,11 +68,6 @@ COOKIE_HEADER_RE = re.compile(
     r"^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$",
     re.IGNORECASE | re.MULTILINE,
 )
-PROVIDER_MODELS = {"anthropic": ("claude-opus-4-8",)}
-PROVIDER_EXECUTION_PROFILES = {
-    "anthropic": "claude-cli-no-session-persistence-exact-scope-v1",
-}
-DIRECT_BUILDER_PROVIDERS = ("anthropic",)
 MAX_RESPONSE_BYTES = 48_000
 MAX_EVIDENCE_BYTES = 60_000
 UNATTESTED_ACTUAL_MODEL = "not-provider-attested"
@@ -154,45 +147,22 @@ def serialize_evidence(
     scope_sha256: str,
     response: str,
 ) -> str:
-    expected_models = PROVIDER_MODELS.get(provider, ())
-    if provider != "anthropic":
-        fail("openai_evidence_requires_isolated_harness")
-    if requested_model not in expected_models or actual_model != requested_model:
-        fail("provider_model_mismatch")
-    for value in (base_tip_sha, base_sha, head_sha):
-        if not COMMIT_SHA_RE.fullmatch(value):
-            fail("invalid_commit_sha")
-    if not SHA256_RE.fullmatch(scope_sha256):
-        fail("invalid_scope_sha256")
-    verdict = validate_provider_response(response)
-    response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
-    evidence = json.dumps(
-        {
-            "schema": "cross-ai-provider-evidence/v3",
-            "provider": provider,
-            "requested_model": requested_model,
-            "actual_model": actual_model,
-            "execution_profile": PROVIDER_EXECUTION_PROFILES[provider],
-            "execution_provenance": None,
-            "base_tip_sha": base_tip_sha.lower(),
-            "base_sha": base_sha.lower(),
-            "head_sha": head_sha.lower(),
-            "scope_sha256": scope_sha256.lower(),
-            "verdict": verdict,
-            "response_sha256": response_sha256,
-            "response": response,
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
+    del (
+        provider,
+        requested_model,
+        actual_model,
+        base_tip_sha,
+        base_sha,
+        head_sha,
+        scope_sha256,
+        response,
     )
-    if len(evidence.encode("utf-8")) > MAX_EVIDENCE_BYTES:
-        fail("evidence_comment_too_large")
-    return evidence
+    fail("direct_provider_evidence_builder_disabled")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=DIRECT_BUILDER_PROVIDERS, required=True)
+    parser.add_argument("--provider", required=True)
     parser.add_argument("--requested-model", required=True)
     parser.add_argument("--actual-model", required=True)
     parser.add_argument("--base-tip-sha", required=True)

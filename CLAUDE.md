@@ -90,13 +90,14 @@ mavis communication peers
   güvenlik/authz, production promotion, migration ve diğer yüksek etkili
   scope'ta `--review-tier high-impact` ile exact `gpt-5.6-sol` + `xhigh`
   kullanılır. Spark yüksek etkili gate'i geçemez.
-- `dual` yalnız isteğe bağlı direct Claude Opus 4.8 challenger ekler; hiçbir
-  path Claude'u zorunlu primary yapmaz. MiniMax çağrılmaz, receipt'i üretilmez
-  ve yeni acceptance zincirinde kabul edilmez.
+- CI/PR acceptance yalnız `none|single` kabul eder. Claude yalnız isteğe bağlı,
+  receipt/gate yetkisi olmayan challenger'dır; çıktısı Codex evidence olarak
+  yeniden paketlenemez. MiniMax çağrılmaz, receipt'i üretilmez ve yeni
+  acceptance zincirinde kabul edilmez.
 - Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
-  review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
-  kanallar değişen exact scope üzerinde yeniden inceler.
+  review açma. Geçerli `REVISE` bulgusu düzeltildiyse canonical isolated Codex
+  kanalı değişen exact scope üzerinde yeniden inceler.
 - Varsayımsal senaryoyu yalnız yol/opsiyon keşfinde ve açıkça non-authoritative
   kullan. Kesin review'da yalnız mevcut exact scope'tan somut, yeniden
   üretilebilir bulgu yaz; “ileride gevşetilirse/olabilir/potansiyel” iddiasını
@@ -168,8 +169,8 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
   routine=Spark xhigh, yüksek etkili=SOL xhigh.
 - Ayrı ephemeral/read-only/exact-scope Codex süreci implementer Codex olsa da
   tek başına Cross-AI kabul edilir; provider-distinct kanal zorunlu değildir.
-- Ek adversarial değer varsa en fazla bir direct Claude Opus 4.8 challenger
-  eklenebilir; Claude primary veya merge için zorunlu kanal değildir.
+- Ek adversarial değer varsa direct Claude Opus 4.8 yalnız non-authoritative
+  challenger olabilir; Claude primary, receipt veya merge gate'i değildir.
 - Cursor veya Cursor-routed model kullanma.
 - Geçerli bulguları absorb et; `REVISE` kapanmadan hazır/merge-ready deme.
 - Varsayımsal yol keşfini kesin karar veya receipt gibi sunma; yalnız mevcut
@@ -178,7 +179,7 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
   erişilemiyorsa dürüstçe `tracked_pending` bırak, yapay `PASS` üretme.
 
 **Çıktı**:
-- `none` modda kısa gerekçe; `single/dual` modda sağlayıcı + exact model + exact
+- `none` modda kısa gerekçe; `single` modda sağlayıcı + exact model + exact
   base-tip/base/head/scope + verdict + evidence ref/digest kaydedilir.
 - Plan iterasyonları kullanıcıya gösterilmez; seçilen az kanalın somut ve
   absorbe edilen bulguları kanıtlanır.

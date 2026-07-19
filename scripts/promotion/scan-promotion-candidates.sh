@@ -238,21 +238,18 @@ User-approval evidence: scan-promotion-candidates.sh DRAFT pattern — operator 
 ## Cross-AI
 
 Implementer AI: Codex
-Reviewer AI: Claude
-Consultation mode: dual
-Consultation reason: Production desired-state promotion requires exact-head independent review
-Risk trigger: production-cutover: immutable production desired state promotion approval
+Consultation mode: single
+Consultation reason: Production desired-state promotion requires exact-head isolated Codex review
 Consultation base tip: pending-exact-final-head
 Consultation base: pending-exact-final-head
 Consultation commit: pending-exact-final-head
 Consultation scope: pending-exact-final-head
-Claude receipt: pending-exact-final-head
 Codex receipt: pending-exact-final-head
 Verdict: tracked_pending
 
 Production desired-state promotion is not automation-exempt. The draft remains
-fail-closed until Claude Opus 4.8 and Codex 5.6 SOL receipts for the
-exact final head replace these placeholders.
+fail-closed until the isolated Codex 5.6 SOL receipt for the exact final head
+replaces these placeholders.
 
 🤖 Auto-opened by scan-promotion-candidates.sh (Codex Sprint B B1)
 EOM

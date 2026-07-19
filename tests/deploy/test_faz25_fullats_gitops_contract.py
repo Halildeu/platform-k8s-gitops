@@ -1164,26 +1164,30 @@ fi
         self.assertEqual(desired.group(1), workflow.group(1))
         self.assertEqual(workflow.group(1), runtime.group(1))
 
-    def test_consultation_defaults_to_none_then_isolated_codex_and_optional_dual(self):
+    def test_consultation_defaults_to_none_then_isolated_codex_single(self):
         rule = "Durumsal Cross-AI istişare — context-isolated Codex primary"
         self.assertIn(rule, self.agents)
         self.assertIn("`Consultation mode: none`", self.agents)
         self.assertIn("`single`", self.agents)
-        self.assertIn("`dual`", self.agents)
-        self.assertIn("claude --model claude-opus-4-8", self.context_rules)
+        self.assertNotIn("`dual`", self.agents)
         self.assertIn("`gpt-5.3-codex-spark`", self.context_rules)
         self.assertIn("`gpt-5.6-sol`", self.context_rules)
         self.assertIn("`codex-exec-ephemeral-read-only-exact-scope-no-tools-v2`", self.agents)
         self.assertIn("`scripts/ai/run_isolated_codex_review.py`", self.agents)
-        self.assertIn("Genel `build_cross_ai_evidence.py` OpenAI girdisini", self.agents)
+        self.assertIn(
+            "Genel `build_cross_ai_evidence.py` bütün direct-provider evidence üretimini",
+            self.agents,
+        )
         self.assertIn("modül seviyesinde yeniden paketleme girişimini reddeder", self.agents)
         self.assertIn("repo-pinned-codex-native-sha256-v1", self.agents)
-        self.assertIn("Evidence v3", self.agents)
+        self.assertIn("Evidence v4", self.agents)
+        self.assertIn("provenance v2", self.agents)
+        self.assertIn("trusted-base-cross-ai-sources-sha256-v1", self.agents)
+        self.assertIn("attest_cross_ai_scope_pii.py", self.agents)
         self.assertIn("provider çeşitliliği zorunlu değildir", self.agents)
         self.assertIn("MiniMax yeni istişarelerde çağrılmaz", self.agents)
         self.assertIn("Cursor ve AI uygulama pencereleri de istişare yolu değildir", self.agents)
         self.assertIn("consultation governance/enforcement dosyası", self.agents)
-        self.assertIn("hiçbir path otomatik olarak `dual` istemez", self.agents)
         self.assertIn("implementer Codex olsa bile", self.agents)
         self.assertIn("Provider çeşitliliği zorunlu değildir", self.context_rules)
         self.assertIn("exact Codex", self.context_rules)
@@ -1201,8 +1205,7 @@ fi
         )
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
         self.assertIn("**`single` — kesin bağımsız Cross-AI review:**", self.context_rules)
-        self.assertIn("**`dual` — isteğe bağlı ek adversarial görüş:**", self.context_rules)
-        self.assertIn("direct Anthropic", self.context_rules)
+        self.assertIn("Direct Anthropic", self.context_rules)
         self.assertIn("`--review-tier high-impact` exact `gpt-5.6-sol`", self.context_rules)
         self.assertIn("Routine scope'ta", self.context_rules)
         self.assertIn("governance/yüksek etkili scope'ta", self.context_rules)
@@ -1217,10 +1220,12 @@ fi
         self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
         self.assertIn("AI uygulama pencereleri", self.context_rules)
         self.assertIn("Normal/current sohbet içindeki öz-yorum", self.context_rules)
-        self.assertIn("irreversible-production", self.context_rules)
         self.assertIn("Path/branch sınıflandırıcısı", self.context_rules)
         self.assertIn("`none` receipt", self.context_rules)
-        self.assertIn("`dual` yayın sırası zorunlu değildir", self.context_rules)
+        self.assertIn("Claude\nve MiniMax receipt alanları fail-closed reddedilir", self.context_rules)
+        self.assertIn("cross-ai-provider-evidence/v4", self.context_rules)
+        self.assertIn("codex-native-execution-provenance/v2", self.context_rules)
+        self.assertIn("pii_attester_sha256", self.context_rules)
 
 if __name__ == "__main__":
     unittest.main()

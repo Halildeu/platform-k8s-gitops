@@ -350,7 +350,7 @@ Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
 adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
 belirsizliği veya risk için kullanılan sınırlı araçtır.
 
-Üç açık mod vardır:
+İki açık acceptance modu vardır:
 
 1. **`none` — varsayılan:** Rutin implementation/test işinde provider çağrısı
    yapılmaz. PR'da somut `Consultation reason` yazılır; receipt üretilmez.
@@ -360,14 +360,28 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    enforcement kodunun kendisi değişse de mekanik taban `single` kalır.
 2. **`single` — kesin bağımsız Cross-AI review:** Tek ve birincil kanal direct
    OpenAI Codex'tir. Çağrı ayrı bir süreçte, yalnız hazırlanmış exact scope/head
-   ile ve şu zorunlu profil üzerinden çalışır:
+   ile çalışır. Scope external provider'a verilmeden önce exact scope byte'ları
+   owner tarafından secret/PII açısından incelenir ve create-once attestation
+   üretilir:
+
+   ```bash
+   python3 scripts/ai/attest_cross_ai_scope_pii.py \
+     --scope-file <CANONICAL_SCOPE_PATH> \
+     --scope-sha256 <CANONICAL_SCOPE_SHA256> \
+     --decision no-sensitive-pii \
+     --output <CREATE_ONCE_PII_ATTESTATION>
+   ```
+
+   Ardından şu zorunlu profil çalışır:
 
    ```bash
    python3 scripts/ai/run_isolated_codex_review.py \
      --worktree <ABSOLUTE_WORKTREE> \
      --scope-file <CANONICAL_SCOPE_PATH> \
      --scope-sha256 <CANONICAL_SCOPE_SHA256> \
+     --pii-attestation-file <OWNER_ONLY_PII_ATTESTATION> \
      --base-ref origin/main \
+     --trusted-source-ref origin/main \
      --base-tip-sha <BASE_TIP_SHA> --base-sha <BASE_SHA> \
      --head-sha <HEAD_SHA> --evidence-output <CREATE_ONCE_OUTPUT> \
      --review-tier routine
@@ -390,12 +404,12 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    yorumunu almaz. Implementer Codex olsa dahi bu process/context isolation,
    proje acceptance sözleşmesinde bağımsız Cross-AI reviewer sayılır ve tek
    başına `single` kapısını karşılar. Provider çeşitliliği zorunlu değildir.
-3. **`dual` — isteğe bağlı ek adversarial görüş:** Exact Codex `single` primary
-   korunur ve direct Anthropic `claude --model claude-opus-4-8` challenger
-   eklenir. Toplam iki kanal aşılmaz. Hiçbir path/risk kategorisi otomatik
-   `dual` zorunluluğu üretmez; Claude erişilemezliği geçerli Codex `single`
-   hükmünü `tracked_pending` yapmaz. MiniMax çağrısı, makbuzu veya wrapper'ı
-   yeni karar için kabul edilmez.
+
+Direct Anthropic Claude yalnız isteğe bağlı, non-authoritative challenger
+olabilir. Claude çıktısı PR receipt'i, CI acceptance kanalı veya Codex evidence
+girdisi değildir ve yeniden paketlenemez. Claude erişilemezliği geçerli Codex
+`single` hükmünü `tracked_pending` yapmaz. MiniMax çağrısı, makbuzu veya
+wrapper'ı yeni karar için kabul edilmez.
 
 Cursor CLI/MCP/model/harness, Cursor-routed model ve AI uygulama pencereleri
 istişare kanalı değildir. Normal/current sohbet içindeki öz-yorum da bağımsız
@@ -403,14 +417,14 @@ kanal sayılmaz; kabul yalnız ayrı `codex exec` süreci + ephemeral + read-onl
 exact-scope profilinin tamamı sağlanırsa verilir. CLI, credential, exact model,
 sandbox veya ephemeral capability hazır değilse UI/wrapper fallback yapılmaz.
 `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta review
-tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
-kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
+tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde canonical isolated Codex
+kanalı değişen exact scope üzerinde yeniden inceler.
 Yalnız commit metadata'sı değişmiş, target base-tip + merge-base + canonical
 scope SHA-256 aynı kalmışsa fresh receipt review head'ine bağlı biçimde yeniden
 kullanılabilir; scope byte'ı değiştiğinde yeni exact-scope review zorunludur.
-Bir provider `REVISE` kaydı yalnız PR gövdesinde seçilmiş aynı-provider receipt
-referansındaki daha yeni `AGREE` ile çözülür; `none` veya seçilmemiş yan kanal
-yorumları çözüm yetkisi üretmez. Düzenlenmiş ya da yapısal olarak geçersiz
+Bir Codex `REVISE` kaydı yalnız PR gövdesinde seçilmiş daha yeni Codex receipt
+referansındaki `AGREE` ile çözülür; `none` veya challenger yorumları çözüm
+yetkisi üretmez. Düzenlenmiş ya da yapısal olarak geçersiz
 evidence adayı geçmişten sessizce düşmez, gate'i fail-closed yapar.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
@@ -422,7 +436,7 @@ merge, deploy, readiness, acceptance ya da kapanış kararı için kullanılamaz
 Seçilen yol uygulanmadan önce karar gerekiyorsa ayrı bir kesin inceleme exact
 mevcut scope/head ve doğrulanabilir kod, test veya canlı kanıta bağlanır.
 
-Kesin `single`/`dual` incelemede bulgu:
+Kesin `single` incelemede bulgu:
 
 - sağlanan mevcut scope'ta bulunmalı,
 - somut ve yeniden üretilebilir olmalı,
@@ -443,23 +457,17 @@ PR structured alanları:
 
 ```yaml
 Implementer AI: Codex|Claude|Gemini|other # other yalnız none modunda
-Consultation mode: none|single|dual
+Consultation mode: none|single
 Consultation reason: <neden bu mod seçildi>
-Risk trigger: <kategori>: <somut açıklama> # yalnız dual
-Verdict: AGREE # yalnız single/dual
-Consultation base tip: <single/dual exact target tip>
-Consultation base: <single/dual exact merge-base>
-Consultation commit: <single/dual reviewed head; current head farklıysa canonical scope byte-identical olmalı>
-Consultation scope: <single/dual content SHA-256>
-Codex receipt: <single/dual exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
-Claude receipt: <yalnız dual exact challenger receipt>
+Verdict: AGREE # yalnız single
+Consultation base tip: <single exact target tip>
+Consultation base: <single exact merge-base>
+Consultation commit: <single reviewed head; current head farklıysa canonical scope byte-identical olmalı>
+Consultation scope: <single content SHA-256>
+Codex receipt: <single exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
 ```
 
-`Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
-`privacy-retention`, `data-migration`, `concurrency`, `production-cutover` veya
-`human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
-serbest/placeholder/tekrarlı metin fail-closed reddedilir.
-`single` ve `dual` audit attribution için implementer kimliğini canonical tutar;
+`single` audit attribution için implementer kimliğini canonical tutar;
 `other` yalnız receipt taşımayan `none` modunda kullanılabilir. Codex implementer
 ile Codex `single` aynı sağlayıcı olsa da ayrı ephemeral/read-only exact-scope
 süreç sözleşmesi nedeniyle kabul edilir; farklı sağlayıcı iddiası yazılmaz.
@@ -467,20 +475,18 @@ süreç sözleşmesi nedeniyle kabul edilir; farklı sağlayıcı iddiası yazı
 risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
 `single` yalnız exact Codex execution-profile receipt'i taşır. Routine scope'ta
 Spark varsayılandır ve Spark/SOL ikisi de kabul edilir; gate'in `single` zemini
-zorunlu tuttuğu governance/yüksek etkili scope'ta ve `dual` modunda exact SOL
-zorunludur. `dual` exact Codex + exact Claude receipt taşır. MiniMax alanı
-fail-closed reddedilir. `dual` yayın sırası zorunlu değildir;
-paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal
+zorunlu tuttuğu governance/yüksek etkili scope'ta exact SOL zorunludur. Claude
+ve MiniMax receipt alanları fail-closed reddedilir. `single` çıktısı `P0/P1/P2` ve tek terminal
 `VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
 onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
 freshness, digest, redaction ve provider/model eşlemesi korunur.
 
-Güncel evidence comment gövdesi exact `cross-ai-provider-evidence/v3` JSON'dur.
+Güncel evidence comment gövdesi exact `cross-ai-provider-evidence/v4` JSON'dur.
 `additionalProperties` kabul edilmez; `single` Codex kanıtında aşağıdaki
 `execution_profile` değeri exact olmalıdır:
 
 ```json
-{"schema":"cross-ai-provider-evidence/v3","provider":"openai","requested_model":"gpt-5.3-codex-spark|gpt-5.6-sol","actual_model":"not-provider-attested","execution_profile":"codex-exec-ephemeral-read-only-exact-scope-no-tools-v2","execution_provenance":{"schema":"codex-native-execution-provenance/v1","thread_id":"<uuid>","cli_version":"<pinned-version>","cli_native_target":"<pinned-platform-package>","cli_native_sha256":"<pinned-64hex>","trust_root":"repo-pinned-codex-native-sha256-v1","stderr_classification":"empty|allowlisted-model-cache-schema-warning-v1"},"base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
+{"schema":"cross-ai-provider-evidence/v4","provider":"openai","requested_model":"gpt-5.3-codex-spark|gpt-5.6-sol","actual_model":"not-provider-attested","execution_profile":"codex-exec-ephemeral-read-only-exact-scope-no-tools-v2","execution_provenance":{"schema":"codex-native-execution-provenance/v2","thread_id":"<uuid>","cli_version":"<pinned-version>","cli_native_target":"<pinned-platform-package>","cli_native_sha256":"<pinned-64hex>","trust_root":"repo-pinned-codex-native-sha256-v1","stderr_classification":"empty|allowlisted-model-cache-schema-warning-v1","source_trust_root":"trusted-base-cross-ai-sources-sha256-v1","trusted_base_sha":"<40hex>","review_harness_sha256":"<64hex>","scope_preparer_sha256":"<64hex>","pii_attester_sha256":"<64hex>","evidence_builder_sha256":"<64hex>","pii_review_status":"no-sensitive-pii","pii_attestation_sha256":"<64hex>"},"base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
 ```
 
 Desteklenen OpenAI evidence yolu yalnız
@@ -492,7 +498,12 @@ byte'larıyla eşleştirir; sabit talimat + untrusted scope'u tek stdin payload'
 verir, herhangi bir tool/repo erişim event'ini reddeder ve evidence'ı mode-0600
 create-once yazar. Native binary SHA-256, repo-review edilmiş
 `repo-pinned-codex-native-sha256-v1` release pinsetiyle byte-exact eşleşmeden
-çağrı başlamaz. Evidence v3 exact CLI version/target/native SHA-256/trust-root
+çağrı başlamaz. Çalışan harness, scope preparer, PII attester ve builder
+byte'ları `trusted-base-cross-ai-sources-sha256-v1` ile exact base tip'e bağlı
+olmalıdır. Scope external provider'a verilmeden önce owner-only
+`attest_cross_ai_scope_pii.py` exact digest için `no-sensitive-pii` kararı
+üretmelidir; yokluğu `tracked_pending` olur. Evidence v4 exact CLI
+version/target/native SHA-256/trust-root, producer kimlikleri, PII attestation
 ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
 review ister. Poster exact şema/profil/provenance dışında fail-closed olur; CI
@@ -521,14 +532,14 @@ ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
 sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
 oracle'ı değildir. Authz, retention/silme, concurrency, cutover veya geri
 döndürülemez başka bir karar path adına yansımıyorsa agent doğru
-`single/dual` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
+`single` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
 
 `Consultation mode` içermeyen tarihsel PR gövdeleri GitHub'da immutable kayıt
 olarak kalabilir; güncel gate bunları yeniden doğrulamaz ve `PASS`/acceptance
 üretmez. Yalnız dar `docs-only historical` allowlist'i receiptsiz muafiyet
 olarak kalır. Güncel parser'da görülen her MiniMax receipt fail-closed reddedilir.
-Yeni PR şablonu yalnız açık `none|single|dual` sözleşmesini üretir; single için
-Codex, dual için Codex + Claude ister.
+Yeni PR şablonu yalnız açık `none|single` sözleşmesini üretir; `single` yalnız
+Codex receipt ister. Claude challenger receipt veya gate yetkisi üretmez.
 
 İstişare hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
 Environment reviewer/gerçek kullanıcı rızası/hukuk veya secret-owner kapısının

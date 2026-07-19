@@ -292,7 +292,15 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         )
         source = self.worktree / "scope-source.txt"
         source.write_text("base\n", encoding="utf-8")
-        subprocess.run(["git", "add", "scope-source.txt"], cwd=self.worktree, check=True)
+        # The review producer must come from the target's trusted base, not from
+        # the pull request under review. Seed the exact executing sources into
+        # the synthetic base commit so the positive path proves that binding.
+        for relative_path in MODULE.TRUSTED_SOURCE_PATHS.values():
+            target = self.worktree / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((ROOT / relative_path).read_bytes())
+        (self.worktree / "AGENTS.md").write_text("synthetic trusted base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.worktree, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=self.worktree, check=True)
         self.base_sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=self.worktree, text=True
@@ -337,6 +345,27 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         if prepare.returncode != 0:
             raise RuntimeError(prepare.stdout + prepare.stderr)
         self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
+        self.pii_attestation = self.root / "pii-attestation.json"
+        attestation = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/ai/attest_cross_ai_scope_pii.py"),
+                "--scope-file",
+                str(self.scope),
+                "--scope-sha256",
+                self.scope_sha,
+                "--decision",
+                "no-sensitive-pii",
+                "--output",
+                str(self.pii_attestation),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if attestation.returncode != 0:
+            raise RuntimeError(attestation.stdout + attestation.stderr)
         self.output = self.root / "evidence.json"
         self.expected_stdin = self.root / "expected-stdin.txt"
         self.expected_stdin.write_text(
@@ -367,6 +396,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         gitleaks_finding: bool = False,
         large_stdout: bool = False,
         large_stderr: bool = False,
+        pii_attestation_file: Path | None = None,
+        untrusted_source: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -414,7 +445,11 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             str(self.scope),
             "--scope-sha256",
             self.scope_sha,
+            "--pii-attestation-file",
+            str(pii_attestation_file or self.pii_attestation),
             "--base-ref",
+            self.base_ref,
+            "--trusted-source-ref",
             self.base_ref,
             "--base-tip-sha",
             self.base_sha,
@@ -454,6 +489,13 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             mock.patch.object(sys, "argv", arguments),
             mock.patch.dict(os.environ, env, clear=True),
             mock.patch.object(MODULE, "TRUSTED_CODEX_NATIVE_SHA256", trusted),
+            mock.patch.object(
+                MODULE,
+                "TRUSTED_SOURCE_PATHS",
+                {"review_harness_sha256": "AGENTS.md"}
+                if untrusted_source
+                else MODULE.TRUSTED_SOURCE_PATHS,
+            ),
             mock.patch.object(
                 MODULE,
                 "TRUSTED_GITLEAKS_NATIVE_SHA256",
@@ -496,6 +538,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
                 self.output.read_text(encoding="utf-8")
             )
         self.assertEqual(evidence["provider"], "openai")
+        self.assertEqual(evidence["schema"], "cross-ai-provider-evidence/v4")
         self.assertEqual(posted_evidence, evidence)
         self.assertEqual(evidence["actual_model"], "not-provider-attested")
         self.assertEqual(summary["requested_model"], "gpt-5.3-codex-spark")
@@ -512,6 +555,14 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             summary["cli_native_sha256"],
         )
         self.assertEqual(evidence["scope_sha256"], self.scope_sha)
+        self.assertEqual(
+            evidence["execution_provenance"]["source_trust_root"],
+            "trusted-base-cross-ai-sources-sha256-v1",
+        )
+        self.assertEqual(
+            evidence["execution_provenance"]["pii_review_status"],
+            "no-sensitive-pii",
+        )
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
         self.assertEqual(
             summary["evidence_sha256"],
@@ -527,6 +578,44 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.assertEqual(summary["review_tier"], "high-impact")
         self.assertEqual(summary["requested_model"], "gpt-5.6-sol")
         self.assertEqual(evidence["actual_model"], "not-provider-attested")
+
+    def test_rejects_missing_or_wrong_scope_pii_attestation(self) -> None:
+        missing = self.root / "missing-pii-attestation.json"
+        result = self.run_harness(pii_attestation_file=missing)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "scope_pii_review_tracked_pending",
+        )
+        wrong = self.root / "wrong-pii-attestation.json"
+        wrong.write_text(
+            json.dumps(
+                {
+                    "schema": "cross-ai-pii-review-attestation/v1",
+                    "scope_sha256": "f" * 64,
+                    "decision": "no-sensitive-pii",
+                    "reviewer_role": "local-scope-reviewer",
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        wrong.chmod(0o600)
+        result = self.run_harness(pii_attestation_file=wrong)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "scope_pii_review_tracked_pending",
+        )
+
+    def test_rejects_review_producer_not_equal_to_trusted_base(self) -> None:
+        result = self.run_harness(untrusted_source=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "untrusted_review_producer_source",
+        )
+        self.assertFalse(self.execution_marker.exists())
 
     def test_rejects_any_tool_or_repository_access_event(self) -> None:
         result = self.run_harness(tool_event=True)
@@ -624,6 +713,19 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.scope_sha = hashlib.sha256(self.scope.read_bytes()).hexdigest()
+        self.pii_attestation.write_text(
+            json.dumps(
+                {
+                    "schema": "cross-ai-pii-review-attestation/v1",
+                    "scope_sha256": self.scope_sha,
+                    "decision": "no-sensitive-pii",
+                    "reviewer_role": "local-scope-reviewer",
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        self.pii_attestation.chmod(0o600)
         result = self.run_harness()
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.output.exists())

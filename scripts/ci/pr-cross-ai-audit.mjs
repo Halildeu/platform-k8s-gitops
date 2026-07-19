@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // PR-V2.1-GOV-1 Cross-AI Peer Review Audit
-// Current explicit policy: none | isolated Codex single | optional Claude dual.
+// Current explicit policy: none | isolated Codex single.
+// Claude may challenge outside the binding receipt chain; MiniMax is retired.
 // Legacy parser fields remain rejection/immutable-history compatibility only;
 // they do not define current provider-diversity requirements.
 //
@@ -49,10 +50,19 @@ const EVIDENCE_KEYS = [
 ];
 const UNATTESTED_ACTUAL_MODEL = 'not-provider-attested';
 const CODEX_NATIVE_TRUST_ROOT = 'repo-pinned-codex-native-sha256-v1';
+const SOURCE_TRUST_ROOT = 'trusted-base-cross-ai-sources-sha256-v1';
 const CODEX_PROVENANCE_KEYS = [
-  'cli_native_sha256', 'cli_native_target', 'cli_version', 'schema',
-  'stderr_classification', 'thread_id', 'trust_root',
+  'cli_native_sha256', 'cli_native_target', 'cli_version', 'evidence_builder_sha256',
+  'pii_attestation_sha256', 'pii_attester_sha256', 'pii_review_status', 'review_harness_sha256', 'schema',
+  'scope_preparer_sha256', 'source_trust_root', 'stderr_classification', 'thread_id',
+  'trust_root', 'trusted_base_sha',
 ];
+const TRUSTED_SOURCE_SHA256 = new Map([
+  ['review_harness_sha256', sha256Utf8(readFileSync(new URL('../ai/run_isolated_codex_review.py', import.meta.url), 'utf8'))],
+  ['scope_preparer_sha256', sha256Utf8(readFileSync(new URL('../ai/prepare_cross_ai_scope.py', import.meta.url), 'utf8'))],
+  ['pii_attester_sha256', sha256Utf8(readFileSync(new URL('../ai/attest_cross_ai_scope_pii.py', import.meta.url), 'utf8'))],
+  ['evidence_builder_sha256', sha256Utf8(readFileSync(new URL('../ai/build_cross_ai_evidence.py', import.meta.url), 'utf8'))],
+]);
 const TRUSTED_CODEX_NATIVE_SHA256 = new Map([
   ['0.144.1:codex-darwin-arm64', '29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a'],
   ['0.144.1:codex-darwin-x64', 'c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c'],
@@ -73,20 +83,26 @@ const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
 ];
-const CONSULTATION_RECEIPTS = {
-  'claude receipt': {
+const EVIDENCE_PROVIDERS = {
+  anthropic: {
     provider: 'anthropic',
     models: ['claude-opus-4-8'],
     execution: 'claude-cli-no-session-persistence-exact-scope-v1',
   },
-  'codex receipt': {
+  openai: {
     provider: 'openai',
     models: ['gpt-5.3-codex-spark', 'gpt-5.6-sol'],
     execution: 'codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
   },
 };
-const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
-const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
+const CONSULTATION_RECEIPTS = {
+  'codex receipt': EVIDENCE_PROVIDERS.openai,
+};
+const FORBIDDEN_CONSULTATION_FIELDS = new Set([
+  'claude receipt',
+  'minimax receipt',
+]);
+const CONSULTATION_MODES = new Set(['none', 'single']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
@@ -97,7 +113,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   // Tombstone: deleting the retired wrapper remains a governance change, and
   // any future MiniMax-named review helper cannot be reintroduced under none.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review)\.py$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|attest_cross_ai_scope_pii|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
@@ -107,19 +123,6 @@ const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:db\/migration|migrations?)(?:\/|$)/i,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
-const DUAL_RISK_CATEGORIES = [
-  'irreversible-production',
-  'security-authz',
-  'privacy-retention',
-  'data-migration',
-  'concurrency',
-  'production-cutover',
-  'human-authority',
-];
-const DUAL_RISK_TRIGGER_RE = new RegExp(
-  `^(${DUAL_RISK_CATEGORIES.join('|')}):\\s+(.+)$`,
-  'i',
-);
 const PLACEHOLDER_WORD_RE = /\b(?:todo|tbd|fixme|placeholder|dummy|example|unknown)\b/i;
 const NON_ACTIONABLE_SENTINEL_RE = /^(?:n\/a|none)$/i;
 const EXPLICIT_MODE_LEGACY_FIELDS = [
@@ -514,11 +517,6 @@ function meaningfulStatement(value) {
     && new Set(words).size >= 3;
 }
 
-function meaningfulRiskTrigger(value) {
-  const match = (value || '').trim().match(DUAL_RISK_TRIGGER_RE);
-  return Boolean(match && meaningfulStatement(match[2]));
-}
-
 function minimumConsultationMode(prMeta) {
   const files = prMeta?.changedFiles;
   // Missing event-bound scope metadata must never silently authorize `none`.
@@ -682,18 +680,37 @@ function parseEvidenceComment(comment, expected, expectedOwner, options = {}) {
   const expectedNativeSha = expected.provider === 'openai' && provenance
     ? TRUSTED_CODEX_NATIVE_SHA256.get(`${provenance.cli_version}:${provenance.cli_native_target}`)
     : undefined;
-  const provenanceMatches = expected.provider === 'openai'
+  const currentCodexProvenanceMatches = expected.provider === 'openai'
     ? Boolean(
       provenance
       && provenanceKeys.length === CODEX_PROVENANCE_KEYS.length
       && provenanceKeys.every((key, index) => key === CODEX_PROVENANCE_KEYS[index])
-      && provenance.schema === 'codex-native-execution-provenance/v1'
+      && provenance.schema === 'codex-native-execution-provenance/v2'
       && UUID_RE.test(provenance.thread_id || '')
       && provenance.trust_root === CODEX_NATIVE_TRUST_ROOT
+      && provenance.source_trust_root === SOURCE_TRUST_ROOT
+      && provenance.trusted_base_sha === evidence.base_tip_sha?.toLowerCase()
+      && provenance.pii_review_status === 'no-sensitive-pii'
+      && SHA256_RE.test(provenance.pii_attestation_sha256 || '')
+      && [...TRUSTED_SOURCE_SHA256].every(([key, digest]) => provenance[key] === digest)
       && ['empty', 'allowlisted-model-cache-schema-warning-v1'].includes(provenance.stderr_classification)
       && provenance.cli_native_sha256 === expectedNativeSha
     )
-    : provenance === null;
+    : false;
+  const legacyProvenanceMatches = options.allowLegacyV3 === true && Boolean(
+    expected.provider === 'anthropic'
+      ? provenance === null
+      : provenance
+        && Object.keys(provenance).sort().join(',') === [
+          'cli_native_sha256', 'cli_native_target', 'cli_version', 'schema',
+          'stderr_classification', 'thread_id', 'trust_root',
+        ].join(',')
+        && provenance.schema === 'codex-native-execution-provenance/v1'
+        && UUID_RE.test(provenance.thread_id || '')
+        && provenance.trust_root === CODEX_NATIVE_TRUST_ROOT
+        && ['empty', 'allowlisted-model-cache-schema-warning-v1'].includes(provenance.stderr_classification)
+        && provenance.cli_native_sha256 === expectedNativeSha
+  );
   const responseVerdict = parseProviderResponseVerdict(evidence.response);
   const bindingMatches = !binding || Boolean(
     evidence.base_tip_sha?.toLowerCase() === binding.baseTip.toLowerCase()
@@ -702,14 +719,16 @@ function parseEvidenceComment(comment, expected, expectedOwner, options = {}) {
     && evidence.scope_sha256?.toLowerCase() === binding.scope.toLowerCase()
   );
   const valid = Boolean(
-    evidence.schema === 'cross-ai-provider-evidence/v3'
+    (
+      (evidence.schema === 'cross-ai-provider-evidence/v4' && currentCodexProvenanceMatches)
+      || (evidence.schema === 'cross-ai-provider-evidence/v3' && legacyProvenanceMatches)
+    )
     && evidence.provider === expected.provider
     && expected.models.includes(evidence.requested_model)
     && evidence.actual_model === (
       expected.provider === 'openai' ? UNATTESTED_ACTUAL_MODEL : evidence.requested_model
     )
     && evidence.execution_profile === expected.execution
-    && provenanceMatches
     && bindingMatches
     && ['AGREE', 'REVISE'].includes(evidence.verdict)
     && responseVerdict === evidence.verdict
@@ -842,13 +861,14 @@ async function appendPriorRevisionFinding(
       body = JSON.parse(comment?.body || '');
     } catch {
       const rawEvidenceSignals = [
-        'cross-ai-provider-evidence/v3', 'base_tip_sha', 'base_sha', 'head_sha',
+        'cross-ai-provider-evidence/v4', 'cross-ai-provider-evidence/v3',
+        'base_tip_sha', 'base_sha', 'head_sha',
         'scope_sha256', 'execution_profile', 'response_sha256', 'verdict',
       ].filter((signal) => comment?.body?.includes(signal)).length;
       if (rawEvidenceSignals >= 2) invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
     }
-    const expected = Object.values(CONSULTATION_RECEIPTS).find(
+    const expected = Object.values(EVIDENCE_PROVIDERS).find(
       (candidate) => candidate.provider === body?.provider,
     );
     // MiniMax v1 evidence predates the retirement policy. Preserve an
@@ -863,7 +883,7 @@ async function appendPriorRevisionFinding(
       'execution_provenance', 'requested_model', 'actual_model', 'response_sha256',
       'response', 'verdict',
     ].filter((key) => Object.hasOwn(body || {}, key)).length;
-    const evidenceCandidate = body?.schema === 'cross-ai-provider-evidence/v3'
+    const evidenceCandidate = ['cross-ai-provider-evidence/v4', 'cross-ai-provider-evidence/v3'].includes(body?.schema)
       || evidenceSignalCount >= 2;
     if (!evidenceCandidate) continue;
     if (!expected) {
@@ -873,8 +893,9 @@ async function appendPriorRevisionFinding(
     const candidateRefValid = validEvidenceRef(comment?.ref, prMeta.baseRepo);
     const parsed = candidateRefValid
       ? parseEvidenceComment(comment, expected, expectedOwner, {
-        issueNumber: prMeta.issueNumber,
-        enforceFreshness: false,
+          issueNumber: prMeta.issueNumber,
+          enforceFreshness: false,
+          allowLegacyV3: true,
       })
       : null;
     if (!parsed) {
@@ -1085,7 +1106,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     Object.hasOwn(fields, field)
   );
   const requiredFloor = minimumConsultationMode(prMeta);
-  const modeRank = { none: 0, single: 1, dual: 2 };
+  const modeRank = { none: 0, single: 1 };
   const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
     Object.hasOwn(fields, field)
   );
@@ -1095,7 +1116,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     pass: CONSULTATION_MODES.has(mode),
     detail: CONSULTATION_MODES.has(mode)
       ? `consultation mode ${mode}`
-      : 'Consultation mode yalnız none, single veya dual olabilir',
+      : 'Consultation mode yalnız none veya single olabilir',
   });
   findings.push({
     check: 'consultation_reason_present',
@@ -1114,7 +1135,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     pass: implementerAllowed,
     detail: implementerAllowed
       ? `implementer ${implementer}`
-      : 'Implementer AI canonical provider enum içinde olmalıdır; single/dual modunda belirsiz other kullanılamaz',
+      : 'Implementer AI canonical provider enum içinde olmalıdır; single modunda belirsiz other kullanılamaz',
   });
   findings.push({
     check: 'consultation_changed_files_present',
@@ -1137,16 +1158,16 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? 'explicit mode legacy control field taşımıyor'
       : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
   });
-  // Forward policy: MiniMax is retired as an accepted consultation channel.
-  // The parser still recognizes a `MiniMax receipt` field so it can be detected,
-  // but any explicit-mode PR carrying it is fail-closed rejected in every mode.
-  const minimaxRejected = !Object.hasOwn(fields, 'minimax receipt');
+  // Forward policy accepts only the verified isolated Codex receipt. Claude
+  // remains an optional non-authoritative challenger until it has an equally
+  // strict execution harness; MiniMax remains retired.
+  const challengerReceiptsRejected = forbiddenFields.length === 0;
   findings.push({
-    check: 'consultation_minimax_receipt_rejected',
-    pass: minimaxRejected,
-    detail: minimaxRejected
-      ? 'MiniMax kanalı emekliye ayrıldı; hiçbir modda receipt taşınmıyor'
-      : 'MiniMax receipt hiçbir consultation modunda kabul edilmez; fail-closed reddedildi',
+    check: 'consultation_unverified_challenger_receipts_rejected',
+    pass: challengerReceiptsRejected,
+    detail: challengerReceiptsRejected
+      ? 'Bağlayıcı receipt yalnız doğrulanmış izole Codex kanalından geliyor'
+      : `Doğrulanmış harness taşımayan receipt reddedildi: ${forbiddenFields.join(', ')}`,
   });
 
   if (mode === 'none') {
@@ -1196,11 +1217,11 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     pass: fields.verdict === 'AGREE',
     detail: fields.verdict === 'AGREE'
       ? 'consultation verdict AGREE'
-      : 'single/dual consultation yalnız AGREE ile geçer',
+      : 'single consultation yalnız AGREE ile geçer',
   });
 
   const codexReceipt = parseReceipt(fields['codex receipt']);
-  const deepCodexRequired = mode === 'dual' || requiredFloor.mode === 'single';
+  const deepCodexRequired = requiredFloor.mode === 'single';
   const codexModelTierPass = Boolean(
     codexReceipt
     && (!deepCodexRequired || codexReceipt.requested === 'gpt-5.6-sol')
@@ -1217,7 +1238,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
         : 'Codex receipt desteklenen exact model kimliği taşımalıdır',
   });
 
-  let selectedReceipts = ['codex receipt'];
+  const selectedReceipts = ['codex receipt'];
   if (mode === 'single') {
     findings.push({
       check: 'consultation_single_exact_channel_count',
@@ -1240,56 +1261,16 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       pass: !Object.hasOwn(fields, 'risk trigger'),
       detail: !Object.hasOwn(fields, 'risk trigger')
         ? 'single mode high-risk trigger iddiası taşımıyor'
-        : 'Risk trigger yalnız dual modda bulunabilir',
+        : 'Risk trigger mevcut bağlayıcı consultation modlarında bulunamaz',
     });
-  } else if (mode === 'dual') {
-    const riskTrigger = (fields['risk trigger'] || '').trim();
-    // Optional dual policy: exact Codex primary + Claude Opus 4.8 challenger.
-    const exactChannels = presentReceipts.length === 2
-      && Boolean(fields['claude receipt'])
-      && Boolean(fields['codex receipt']);
-    findings.push({
-      check: 'consultation_dual_high_risk_trigger',
-      pass: meaningfulRiskTrigger(riskTrigger),
-      detail: meaningfulRiskTrigger(riskTrigger)
-        ? `canonical high-risk trigger recorded (${riskTrigger.length}c)`
-        : 'Risk trigger canonical kategori ve somut açıklama taşımalıdır',
-    });
-    findings.push({
-      check: 'consultation_dual_exact_channel_count',
-      pass: exactChannels,
-      detail: exactChannels
-        ? 'dual mode exact Codex primary + Claude Opus 4.8 challenger taşıyor'
-        : 'dual mode yalnız Codex primary + Claude Opus 4.8 challenger receiptleri ile geçer',
-    });
-    findings.push({
-      check: 'consultation_dual_codex_primary_is_process_context_isolated',
-      pass: fields['codex receipt']?.includes(
-        'execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
-      ),
-      detail: fields['codex receipt']?.includes(
-        'execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
-      )
-        ? `Codex primary implementer ${implementer} değerinden bağımsız olarak süreç ve bağlam izolasyonlu`
-        : 'dual mode Codex primary için exact ephemeral/read-only execution binding ister',
-    });
-    // Even an invalid dual combination must still validate every present,
-    // allowlisted receipt. Retired MiniMax receipts are rejected above and are
-    // never fetched or treated as evidence.
-    selectedReceipts = ['codex receipt', 'claude receipt'].filter(
-      (field) => Boolean(fields[field]),
-    );
   }
 
   // Run strict provider/evidence checks even when a binding field is missing.
   // The missing-field finding already fails the PR; this additionally prevents
   // a malformed or fabricated receipt from escaping diagnostics on that path.
   if (
-    ['single', 'dual'].includes(mode)
-    && (
-      (mode === 'single' && selectedReceipts.length === 1)
-      || (mode === 'dual' && selectedReceipts.length > 0)
-    )
+    mode === 'single'
+    && selectedReceipts.length === 1
   ) {
     await appendConsultationFindings(
       findings,
@@ -1299,7 +1280,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       selectedReceipts,
     );
   }
-  if (['single', 'dual'].includes(mode)) {
+  if (mode === 'single') {
     const selectedEvidenceRefs = new Set(
       selectedReceipts
         .map((field) => parseReceipt(fields[field])?.ref)
@@ -1331,11 +1312,11 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
     Object.hasOwn(fields, field)
   );
   findings.push({
-    check: 'consultation_has_no_forbidden_minimax_receipt',
+    check: 'consultation_has_no_forbidden_challenger_receipt',
     pass: forbiddenFields.length === 0,
     detail: forbiddenFields.length === 0
-      ? 'MiniMax yeni istişare ve receipt zincirinde bulunmuyor'
-      : 'MiniMax receipt yeni istişarelerde yasaktır; historical evidence yalnız read-only kalır',
+      ? 'Bağlayıcı zincirde yalnız doğrulanmış provider receipt alanları bulunuyor'
+      : `Doğrulanmamış/retired receipt alanı yasaktır: ${forbiddenFields.join(', ')}`,
   });
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
@@ -1345,8 +1326,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   // Forward policy has no current legacy lane. Only the narrowly allowlisted
   // docs-only exemption may retain the old body shape; it produces no provider
   // receipt or acceptance authority. Every other PR must declare an explicit
-  // none|single|dual mode so legacy Claude+Codex fields cannot bypass the mode
-  // floor or the dual risk trigger.
+  // none|single mode so legacy challenger fields cannot bypass the mode floor.
   const exemption = docsOnlyExemption(fields, prMeta);
   if (!exemption.pass) {
     if (exemption.requested) {
@@ -1359,7 +1339,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
     findings.push({
       check: 'consultation_explicit_mode_required',
       pass: false,
-      detail: 'Yeni PR yalnız explicit Consultation mode: none|single|dual ile değerlendirilebilir; legacy receipt gövdesi acceptance üretmez',
+      detail: 'Yeni PR yalnız explicit Consultation mode: none|single ile değerlendirilebilir; legacy receipt gövdesi acceptance üretmez',
     });
     return findings;
   }

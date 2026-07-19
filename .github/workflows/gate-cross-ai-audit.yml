@@ -7,8 +7,8 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
 # - single: exact context-isolated Codex exec ephemeral/read-only + scope + AGREE;
 #   routine=Spark, governance/high-impact=SOL
-# - dual: optional exact Codex primary + direct Claude challenger; maximum two
-# - no path requires provider diversity; MiniMax remains forbidden
+# - Claude challenger is non-authoritative and cannot be a receipt
+# - no path requires provider diversity; Claude/MiniMax receipts are forbidden
 # - Fetched owner evidence, model, freshness, digest and redaction remain strict
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation

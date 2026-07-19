@@ -61,22 +61,20 @@ Critical-Fix: no
 
 > Varsayılan `none`; istişare gerekiyorsa content-addressed exact scope ile context-isolated
 > `codex exec --ephemeral --sandbox read-only` tek başına `single` Cross-AI
-> review'dur. Ek adversarial görüş yararlıysa direct Claude ile `dual` seçilebilir.
+> review'dur. Claude yalnız receipt/gate yetkisi olmayan isteğe bağlı challenger'dır.
 > Detay: `docs/context-priority-rules.md` §11.
 
 ```yaml
 # CI parser bu structured alanları ## Cross-AI altında okur.
 Implementer AI: Codex
 Consultation mode: none
-Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
-# Risk trigger: <irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority>: <en az üç farklı anlamlı kelimelik somut açıklama; yalnız dual>
-# Verdict: AGREE # yalnız single/dual
-# Consultation base tip: <single/dual exact target tip>
-# Consultation base: <single/dual exact merge-base>
-# Consultation commit: <single/dual reviewed head; current head farklıysa canonical scope byte-identical olmalı>
-# Consultation scope: <single/dual content SHA-256>
-# Codex receipt: <single ve dual için exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
-# Claude receipt: <yalnız dual için exact optional challenger receipt>
+Consultation reason: <neden none|single seçildi; en az 10 karakter>
+# Verdict: AGREE # yalnız single
+# Consultation base tip: <single exact target tip>
+# Consultation base: <single exact merge-base>
+# Consultation commit: <single reviewed head; current head farklıysa canonical scope byte-identical olmalı>
+# Consultation scope: <single content SHA-256>
+# Codex receipt: <single exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
 ```
 
 **Field semantik**:
@@ -87,8 +85,8 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
   `scripts/ai/run_isolated_codex_review.py` ile üretilir. Routine scope'ta
   exact `gpt-5.3-codex-spark` + `xhigh`, governance/yüksek etkili scope'ta
   `--review-tier high-impact` ile exact `gpt-5.6-sol` kullanılır.
-- `dual`: exact Codex primary + exact Claude challenger receipt; somut
-  `Risk trigger` zorunlu, üçüncü kanal ve MiniMax receipt yasaktır.
+- Claude ve MiniMax receipt alanları yasaktır; Claude yalnız PR acceptance
+  dışında non-authoritative challenger olarak kullanılabilir.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
   exact model ve redaction kontrolleri fail-closed kalır.
 

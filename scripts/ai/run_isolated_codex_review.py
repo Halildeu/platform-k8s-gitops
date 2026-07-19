@@ -39,6 +39,15 @@ MODELS = {
 }
 EXECUTION_PROFILE = "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2"
 CODEX_NATIVE_TRUST_ROOT = "repo-pinned-codex-native-sha256-v1"
+SOURCE_TRUST_ROOT = "trusted-base-cross-ai-sources-sha256-v1"
+PII_ATTESTATION_SCHEMA = "cross-ai-pii-review-attestation/v1"
+PII_REVIEW_STATUS = "no-sensitive-pii"
+TRUSTED_SOURCE_PATHS = {
+    "review_harness_sha256": "scripts/ai/run_isolated_codex_review.py",
+    "scope_preparer_sha256": "scripts/ai/prepare_cross_ai_scope.py",
+    "pii_attester_sha256": "scripts/ai/attest_cross_ai_scope_pii.py",
+    "evidence_builder_sha256": "scripts/ai/build_cross_ai_evidence.py",
+}
 THREAD_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -143,6 +152,32 @@ def read_scope(path: Path, expected_sha256: str) -> str:
         fail("scope_not_utf8")
 
 
+def read_pii_attestation(path: Path, expected_scope_sha256: str) -> str:
+    """Validate the deliberate exact-scope PII gate and return its digest."""
+    try:
+        attestation_stat = path.stat()
+        encoded = path.read_bytes()
+        attestation = json.loads(encoded.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        fail("scope_pii_review_tracked_pending")
+    if (
+        not path.is_file()
+        or not encoded
+        or len(encoded) > 2_000
+        or attestation_stat.st_mode & 0o077
+        or not isinstance(attestation, dict)
+        or set(attestation) != {
+            "schema", "scope_sha256", "decision", "reviewer_role"
+        }
+        or attestation.get("schema") != PII_ATTESTATION_SCHEMA
+        or attestation.get("scope_sha256") != expected_scope_sha256.lower()
+        or attestation.get("decision") != PII_REVIEW_STATUS
+        or attestation.get("reviewer_role") != "local-scope-reviewer"
+    ):
+        fail("scope_pii_review_tracked_pending")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def verify_scope_binding(
     *,
     worktree: Path,
@@ -244,6 +279,61 @@ def verify_scope_binding(
             fail("canonical_scope_rederivation_failed")
         if derived_text != supplied_scope:
             fail("canonical_scope_binding_mismatch")
+
+
+def verify_trusted_sources(
+    *,
+    worktree: Path,
+    trusted_source_ref: str,
+    expected_base_tip_sha: str,
+) -> dict[str, str]:
+    """Require the executing producer stack to be byte-equal to trusted base."""
+    if (
+        not trusted_source_ref
+        or trusted_source_ref.startswith("-")
+        or any(character.isspace() for character in trusted_source_ref)
+    ):
+        fail("invalid_trusted_source_ref")
+    try:
+        resolved_ref = subprocess.run(
+            ["git", "rev-parse", trusted_source_ref],
+            cwd=worktree,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        fail("trusted_source_unavailable")
+    if (
+        resolved_ref.returncode != 0
+        or resolved_ref.stdout.strip().lower() != expected_base_tip_sha.lower()
+    ):
+        fail("trusted_source_ref_mismatch")
+
+    source_root = Path(__file__).resolve().parents[2]
+    digests: dict[str, str] = {}
+    for evidence_key, relative_path in TRUSTED_SOURCE_PATHS.items():
+        local_path = source_root / relative_path
+        try:
+            local_bytes = local_path.read_bytes()
+            trusted = subprocess.run(
+                ["git", "show", f"{trusted_source_ref}:{relative_path}"],
+                cwd=worktree,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            fail("trusted_source_unavailable")
+        if trusted.returncode != 0 or not trusted.stdout:
+            fail("trusted_source_unavailable")
+        if local_bytes != trusted.stdout:
+            fail("untrusted_review_producer_source")
+        digests[evidence_key] = hashlib.sha256(local_bytes).hexdigest()
+    return digests
 
 
 def read_json_object(path: Path, error: str) -> dict:
@@ -506,23 +596,31 @@ def serialize_openai_evidence(
     cli_native_target: str,
     cli_native_sha256: str,
     stderr_classification: str,
+    trusted_base_sha: str,
+    trusted_source_digests: dict[str, str],
+    pii_attestation_sha256: str,
 ) -> str:
     verdict = validate_provider_response(response)
     evidence = json.dumps(
         {
-            "schema": "cross-ai-provider-evidence/v3",
+            "schema": "cross-ai-provider-evidence/v4",
             "provider": "openai",
             "requested_model": requested_model,
             "actual_model": UNATTESTED_ACTUAL_MODEL,
             "execution_profile": EXECUTION_PROFILE,
             "execution_provenance": {
-                "schema": "codex-native-execution-provenance/v1",
+                "schema": "codex-native-execution-provenance/v2",
                 "thread_id": thread_id,
                 "cli_version": cli_version,
                 "cli_native_target": cli_native_target,
                 "cli_native_sha256": cli_native_sha256,
                 "trust_root": CODEX_NATIVE_TRUST_ROOT,
                 "stderr_classification": stderr_classification,
+                "source_trust_root": SOURCE_TRUST_ROOT,
+                "trusted_base_sha": trusted_base_sha.lower(),
+                **trusted_source_digests,
+                "pii_review_status": PII_REVIEW_STATUS,
+                "pii_attestation_sha256": pii_attestation_sha256,
             },
             "base_tip_sha": base_tip_sha.lower(),
             "base_sha": base_sha.lower(),
@@ -823,7 +921,9 @@ def main() -> None:
     parser.add_argument("--worktree", type=Path, required=True)
     parser.add_argument("--scope-file", type=Path, required=True)
     parser.add_argument("--scope-sha256", required=True)
+    parser.add_argument("--pii-attestation-file", type=Path, required=True)
     parser.add_argument("--base-ref", default="origin/main")
+    parser.add_argument("--trusted-source-ref", default="origin/main")
     parser.add_argument("--base-tip-sha", required=True)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
@@ -852,6 +952,15 @@ def main() -> None:
     if args.timeout_seconds < 30 or args.timeout_seconds > 900:
         fail("timeout_out_of_range")
     scope = read_scope(args.scope_file, args.scope_sha256)
+    pii_attestation_sha256 = read_pii_attestation(
+        args.pii_attestation_file,
+        args.scope_sha256,
+    )
+    trusted_source_digests = verify_trusted_sources(
+        worktree=args.worktree.resolve(),
+        trusted_source_ref=args.trusted_source_ref,
+        expected_base_tip_sha=args.base_tip_sha,
+    )
     verify_scope_binding(
         worktree=args.worktree.resolve(),
         base_ref=args.base_ref,
@@ -894,6 +1003,9 @@ def main() -> None:
         cli_native_target=codex_native_target,
         cli_native_sha256=codex_sha256,
         stderr_classification=stderr_classification,
+        trusted_base_sha=args.base_tip_sha,
+        trusted_source_digests=trusted_source_digests,
+        pii_attestation_sha256=pii_attestation_sha256,
     )
     evidence_sha256 = write_create_once(args.evidence_output, evidence)
     print(
@@ -909,6 +1021,11 @@ def main() -> None:
                 "cli_native_target": codex_native_target,
                 "cli_native_sha256": codex_sha256,
                 "cli_trust_root": CODEX_NATIVE_TRUST_ROOT,
+                "source_trust_root": SOURCE_TRUST_ROOT,
+                "trusted_base_sha": args.base_tip_sha.lower(),
+                "trusted_source_digests": trusted_source_digests,
+                "pii_review_status": PII_REVIEW_STATUS,
+                "pii_attestation_sha256": pii_attestation_sha256,
                 "model_identity": "cli-request-accepted-no-reroute-event",
                 "stderr_classification": stderr_classification,
                 "reasoning_effort": "xhigh",

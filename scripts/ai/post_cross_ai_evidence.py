@@ -68,6 +68,7 @@ COOKIE_HEADER_RE = re.compile(
 MAX_EVIDENCE_BYTES = 60_000
 UNATTESTED_ACTUAL_MODEL = "not-provider-attested"
 CODEX_NATIVE_TRUST_ROOT = "repo-pinned-codex-native-sha256-v1"
+SOURCE_TRUST_ROOT = "trusted-base-cross-ai-sources-sha256-v1"
 TRUSTED_CODEX_NATIVE_SHA256 = {
     ("0.144.1", "codex-darwin-arm64"): "29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a",
     ("0.144.1", "codex-darwin-x64"): "c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c",
@@ -82,6 +83,14 @@ CODEX_PROVENANCE_KEYS = {
     "cli_native_sha256",
     "trust_root",
     "stderr_classification",
+    "source_trust_root",
+    "trusted_base_sha",
+    "review_harness_sha256",
+    "scope_preparer_sha256",
+    "pii_attester_sha256",
+    "evidence_builder_sha256",
+    "pii_review_status",
+    "pii_attestation_sha256",
 }
 EVIDENCE_KEYS = {
     "schema",
@@ -99,11 +108,9 @@ EVIDENCE_KEYS = {
     "response",
 }
 PROVIDER_EXECUTION_PROFILES = {
-    "anthropic": "claude-cli-no-session-persistence-exact-scope-v1",
     "openai": "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2",
 }
 PROVIDER_MODELS = {
-    "anthropic": ("claude-opus-4-8",),
     "openai": ("gpt-5.3-codex-spark", "gpt-5.6-sol"),
 }
 
@@ -123,44 +130,58 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         fail("invalid_evidence_json")
     if not isinstance(evidence, dict) or set(evidence) != EVIDENCE_KEYS:
         fail("invalid_evidence_schema")
-    if evidence.get("schema") != "cross-ai-provider-evidence/v3":
+    if evidence.get("schema") != "cross-ai-provider-evidence/v4":
         fail("invalid_evidence_schema")
     expected_execution = PROVIDER_EXECUTION_PROFILES.get(evidence.get("provider"))
     if evidence.get("execution_profile") != expected_execution:
         fail("invalid_execution_profile")
     expected_models = PROVIDER_MODELS.get(evidence.get("provider"), ())
-    actual_model_valid = (
-        evidence.get("actual_model") == UNATTESTED_ACTUAL_MODEL
-        if evidence.get("provider") == "openai"
-        else evidence.get("actual_model") == evidence.get("requested_model")
-    )
+    actual_model_valid = evidence.get("actual_model") == UNATTESTED_ACTUAL_MODEL
     if evidence.get("requested_model") not in expected_models or not actual_model_valid:
         fail("provider_model_mismatch")
     provenance = evidence.get("execution_provenance")
-    if evidence.get("provider") == "openai":
-        if not isinstance(provenance, dict) or set(provenance) != CODEX_PROVENANCE_KEYS:
-            fail("invalid_execution_provenance")
-        pin = TRUSTED_CODEX_NATIVE_SHA256.get(
-            (provenance.get("cli_version"), provenance.get("cli_native_target"))
-        )
-        native_sha256 = provenance.get("cli_native_sha256")
-        if (
-            provenance.get("schema") != "codex-native-execution-provenance/v1"
-            or provenance.get("trust_root") != CODEX_NATIVE_TRUST_ROOT
-            or provenance.get("stderr_classification") not in {
-                "empty",
-                "allowlisted-model-cache-schema-warning-v1",
-            }
-            or not isinstance(provenance.get("thread_id"), str)
-            or THREAD_ID_RE.fullmatch(provenance["thread_id"]) is None
-            or pin is None
-            or not isinstance(native_sha256, str)
-            or SHA256_RE.fullmatch(native_sha256) is None
-            or native_sha256 != pin
-        ):
-            fail("invalid_execution_provenance")
-    elif provenance is not None:
+    if not isinstance(provenance, dict) or set(provenance) != CODEX_PROVENANCE_KEYS:
         fail("invalid_execution_provenance")
+    pin = TRUSTED_CODEX_NATIVE_SHA256.get(
+        (provenance.get("cli_version"), provenance.get("cli_native_target"))
+    )
+    native_sha256 = provenance.get("cli_native_sha256")
+    if (
+        provenance.get("schema") != "codex-native-execution-provenance/v2"
+        or provenance.get("trust_root") != CODEX_NATIVE_TRUST_ROOT
+        or provenance.get("source_trust_root") != SOURCE_TRUST_ROOT
+        or provenance.get("trusted_base_sha") != evidence.get("base_tip_sha", "").lower()
+        or provenance.get("pii_review_status") != "no-sensitive-pii"
+        or not isinstance(provenance.get("pii_attestation_sha256"), str)
+        or SHA256_RE.fullmatch(provenance["pii_attestation_sha256"]) is None
+        or provenance.get("stderr_classification") not in {
+            "empty",
+            "allowlisted-model-cache-schema-warning-v1",
+        }
+        or not isinstance(provenance.get("thread_id"), str)
+        or THREAD_ID_RE.fullmatch(provenance["thread_id"]) is None
+        or pin is None
+        or not isinstance(native_sha256, str)
+        or SHA256_RE.fullmatch(native_sha256) is None
+        or native_sha256 != pin
+    ):
+        fail("invalid_execution_provenance")
+    source_root = Path(__file__).resolve().parents[2]
+    source_paths = {
+        "review_harness_sha256": "scripts/ai/run_isolated_codex_review.py",
+        "scope_preparer_sha256": "scripts/ai/prepare_cross_ai_scope.py",
+        "pii_attester_sha256": "scripts/ai/attest_cross_ai_scope_pii.py",
+        "evidence_builder_sha256": "scripts/ai/build_cross_ai_evidence.py",
+    }
+    for key, relative_path in source_paths.items():
+        try:
+            expected_digest = hashlib.sha256(
+                (source_root / relative_path).read_bytes()
+            ).hexdigest()
+        except OSError:
+            fail("invalid_execution_provenance")
+        if provenance.get(key) != expected_digest:
+            fail("invalid_execution_provenance")
     response = evidence.get("response")
     response_digest = evidence.get("response_sha256")
     if (

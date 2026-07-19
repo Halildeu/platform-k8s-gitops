@@ -23,19 +23,35 @@ SPEC.loader.exec_module(MODULE)
 def evidence() -> dict:
     response = "## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE"
     return {
-        "schema": "cross-ai-provider-evidence/v3",
+        "schema": "cross-ai-provider-evidence/v4",
         "provider": "openai",
         "requested_model": "gpt-5.6-sol",
         "actual_model": "not-provider-attested",
         "execution_profile": "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2",
         "execution_provenance": {
-            "schema": "codex-native-execution-provenance/v1",
+            "schema": "codex-native-execution-provenance/v2",
             "thread_id": "019f7785-c66d-7992-a21a-d4097d9eb3f9",
             "cli_version": "0.144.1",
             "cli_native_target": "codex-linux-x64",
             "cli_native_sha256": "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
             "trust_root": "repo-pinned-codex-native-sha256-v1",
             "stderr_classification": "empty",
+            "source_trust_root": "trusted-base-cross-ai-sources-sha256-v1",
+            "trusted_base_sha": "a" * 40,
+            "review_harness_sha256": hashlib.sha256(
+                (ROOT / "scripts/ai/run_isolated_codex_review.py").read_bytes()
+            ).hexdigest(),
+            "scope_preparer_sha256": hashlib.sha256(
+                (ROOT / "scripts/ai/prepare_cross_ai_scope.py").read_bytes()
+            ).hexdigest(),
+            "pii_attester_sha256": hashlib.sha256(
+                (ROOT / "scripts/ai/attest_cross_ai_scope_pii.py").read_bytes()
+            ).hexdigest(),
+            "evidence_builder_sha256": hashlib.sha256(
+                (ROOT / "scripts/ai/build_cross_ai_evidence.py").read_bytes()
+            ).hexdigest(),
+            "pii_review_status": "no-sensitive-pii",
+            "pii_attestation_sha256": "e" * 64,
         },
         "base_tip_sha": "a" * 40,
         "base_sha": "b" * 40,
@@ -97,6 +113,20 @@ class EvidenceValidationTests(unittest.TestCase):
         payload = evidence()
         payload["execution_provenance"]["cli_native_sha256"] = "f" * 64
         self.assert_rejected(payload)
+
+    def test_rejects_untrusted_producer_or_missing_pii_gate(self) -> None:
+        mutations = (
+            ("review_harness_sha256", "f" * 64),
+            ("pii_attester_sha256", "f" * 64),
+            ("trusted_base_sha", "f" * 40),
+            ("pii_review_status", "tracked_pending"),
+            ("pii_attestation_sha256", "not-a-digest"),
+        )
+        for key, value in mutations:
+            with self.subTest(key=key):
+                payload = evidence()
+                payload["execution_provenance"][key] = value
+                self.assert_rejected(payload)
 
     def test_rejects_null_digest_for_unknown_native_tuple(self) -> None:
         payload = evidence()
