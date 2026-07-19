@@ -101,6 +101,38 @@ preflight_existing_pg_role() {
     exit 1
   }
 
+  # pg_shdepend is cluster-shared: inspect it once and allow ownership only for
+  # the dedicated database object itself or objects whose dependency dbid is
+  # the ethics database. Basing that exception on current_database() would make
+  # a safe rerun fail while connected to postgres/template1, because those
+  # connections see the same shared dependency rows.
+  docker exec -i "$PG_CONTAINER" psql -X -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DO $$
+DECLARE
+  target_oid oid;
+  ethics_db_oid oid;
+BEGIN
+  SELECT oid INTO STRICT target_oid FROM pg_roles WHERE rolname='ethics_app';
+  SELECT oid INTO ethics_db_oid FROM pg_database WHERE datname='ethics';
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_shdepend d
+    WHERE d.refclassid='pg_authid'::regclass
+      AND d.refobjid=target_oid
+      AND d.deptype='o'
+      AND NOT (
+        (d.classid='pg_database'::regclass AND d.objid=ethics_db_oid)
+        OR d.dbid=ethics_db_oid
+      )
+  ) THEN
+    RAISE EXCEPTION 'ethics_app owns an object outside the dedicated ethics database';
+  END IF;
+END
+$$;
+SQL
+
   while IFS= read -r database_name; do
     docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
       -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
@@ -114,20 +146,6 @@ BEGIN
   SELECT oid INTO STRICT target_oid FROM pg_roles WHERE rolname='ethics_app';
   SELECT oid INTO ethics_db_oid FROM pg_database WHERE datname='ethics';
 
-  IF EXISTS (
-    SELECT 1
-    FROM pg_shdepend d
-    WHERE d.refclassid='pg_authid'::regclass
-      AND d.refobjid=target_oid
-      AND d.deptype='o'
-      AND NOT (
-        (d.classid='pg_database'::regclass AND d.objid=ethics_db_oid)
-        OR (current_database()='ethics' AND d.dbid=ethics_db_oid)
-      )
-  ) THEN
-    RAISE EXCEPTION 'ethics_app owns an object outside the dedicated ethics database';
-  END IF;
-
   IF current_database() <> 'ethics' THEN
     IF EXISTS (SELECT 1 FROM pg_default_acl WHERE defaclrole=target_oid) THEN
       RAISE EXCEPTION 'ethics_app owns an unexpected default ACL';
@@ -140,10 +158,21 @@ BEGIN
         AND table_name <> 'pg_init_privs'
       ORDER BY table_name, column_name
     LOOP
-      EXECUTE format(
-        'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
-        'WHERE x.grantee=$1)', acl_catalog.table_name, acl_catalog.column_name)
-        INTO leaked USING target_oid;
+      IF acl_catalog.table_name='pg_database' AND acl_catalog.column_name='datacl' THEN
+        -- pg_database is cluster-shared. The dedicated ethics database ACL is
+        -- expected after the first successful run and must remain rerunnable;
+        -- grants to ethics_app on every other database still fail closed.
+        EXECUTE format(
+          'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
+          'WHERE x.grantee=$1 AND c.oid <> $2)',
+          acl_catalog.table_name, acl_catalog.column_name)
+          INTO leaked USING target_oid, ethics_db_oid;
+      ELSE
+        EXECUTE format(
+          'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
+          'WHERE x.grantee=$1)', acl_catalog.table_name, acl_catalog.column_name)
+          INTO leaked USING target_oid;
+      END IF;
       IF leaked THEN
         RAISE EXCEPTION 'ethics_app has an unexpected ACL outside ethics in %.%',
           acl_catalog.table_name, acl_catalog.column_name;

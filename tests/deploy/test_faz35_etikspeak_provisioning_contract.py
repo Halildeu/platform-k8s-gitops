@@ -392,6 +392,19 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('rm -f "$KCADM_CONFIG"', self.keycloak)
         self.assertIn('--config "$KC_CONFIG"', self.keycloak)
 
+    def test_pg_preflight_preserves_only_dedicated_database_rerun_state(self):
+        self.assertIn("OR d.dbid=ethics_db_oid", self.pg_vault)
+        self.assertNotIn("current_database()='ethics' AND d.dbid=ethics_db_oid", self.pg_vault)
+        self.assertIn(
+            "acl_catalog.table_name='pg_database' AND acl_catalog.column_name='datacl'",
+            self.pg_vault,
+        )
+        self.assertIn("WHERE x.grantee=$1 AND c.oid <> $2", self.pg_vault)
+        self.assertIn(
+            "ethics_app has an unexpected ACL outside ethics",
+            self.pg_vault,
+        )
+
     def test_authority_and_persona_password_files_are_strictly_bounded(self):
         for script in (self.pg_vault, self.keycloak):
             self.assertIn("Vault init file must be a readable regular non-symlink", script)
