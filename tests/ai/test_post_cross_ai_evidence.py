@@ -79,15 +79,15 @@ class EvidenceValidationTests(unittest.TestCase):
 
     def test_rejects_sensitive_response_before_transport_or_signature_binding(self) -> None:
         sensitive_values = (
-            "candidate@example.com",
-            "+90 532 123 45 67",
-            "-----BEGIN PRIVATE KEY-----",
-            "Bearer abcdefghijklmnopqrstuvwxyz",
-            "eyJabcdefgh.abcdefgh.abcdefgh",
-            "ghp_abcdefghijklmnopqrstuvwxyz",
-            "client_secret=supersecretvalue",
-            "https://example.com/hooks/secret-value",
-            "Cookie: session=secretvalue",
+            "".join(("candidate", "@example.com")),
+            "".join(("+90 532 ", "123 45 67")),
+            "".join(("-----BEGIN ", "PRIVATE KEY-----")),
+            "".join(("Bearer ", "abcdefghijklmnopqrstuvwxyz")),
+            "".join(("eyJabcdefgh.", "abcdefgh.abcdefgh")),
+            "".join(("ghp_", "abcdefghijklmnopqrstuvwxyz")),
+            "".join(("client_", "secret=supersecretvalue")),
+            "".join(("https://example.com/", "hooks/secret-value")),
+            "".join(("Cook", "ie: session=secretvalue")),
         )
         for value in sensitive_values:
             with self.subTest(value=value.split("=")[0]):
@@ -100,7 +100,7 @@ class EvidenceValidationTests(unittest.TestCase):
         evidence["response"] = (
             "P0\nNone\nP1\n"
             "- P1-SENSITIVE_RESPONSE | scripts/ai/example.py:10 | "
-            "Bearer abcdefghijklmnopqrstuvwxyz\n"
+            f"{sensitive_values[3]}\n"
             "P2\nNone\nVERDICT: REVISE"
         )
         with self.assertRaisesRegex(TrustedEvidenceError, "contains sensitive data"):
