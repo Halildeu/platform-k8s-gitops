@@ -15,7 +15,7 @@ from view_only_pilot_authorization_common import canonical_bytes, digest_bytes
 
 
 SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
-POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v1"
+POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v2"
 REVOCATION_SCHEMA = "faz22.6-view-only-pilot-authorization-revocations-v1"
 SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
 GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
@@ -90,7 +90,7 @@ def verify(
         and isinstance(receipt["protectedEnvironmentReviewerCount"], int)
         and receipt["protectedEnvironmentReviewerCount"] >= 1
         and receipt["aiAdvisoryOnly"] is True
-        and receipt["aiAdvisoryProvenanceClass"] == "owner-attested-provider-session"
+        and receipt["aiAdvisoryProvenanceClass"] == "owner-attested-direct-codex-evidence-v2"
         and receipt["aiProviderCryptographicAttestation"] is False
         and receipt["aiConsensusVerdict"] == "AGREE"
         and receipt["legalTrackingIssueRef"] == "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
@@ -106,8 +106,16 @@ def verify(
         and receipt["revocationLedgerRef"] == "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
     ):
         raise ReceiptError("authorization bounded privacy controls are invalid")
-    if policy.get("schemaVersion") != POLICY_SCHEMA or policy.get("status") != "active":
-        raise ReceiptError("canonical owner policy is not active v1")
+    advisory = policy.get("aiAdvisory")
+    if (
+        policy.get("schemaVersion") != POLICY_SCHEMA
+        or policy.get("status") != "active"
+        or not isinstance(advisory, dict)
+        or advisory.get("providers") != ["OpenAI/gpt-5.6-sol"]
+        or advisory.get("consensusVerdict") != "AGREE"
+        or advisory.get("provenanceClass") != "owner-attested-direct-codex-evidence-v2"
+    ):
+        raise ReceiptError("canonical owner policy is not active Codex-only v2")
     if receipt["ownerPolicySha256"] != digest_bytes(canonical_bytes(policy)):
         raise ReceiptError("canonical owner policy digest mismatch")
     if revocations.get("schemaVersion") != REVOCATION_SCHEMA:

@@ -239,7 +239,7 @@ jobs:
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
           python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
             --receipt "$out/receipt/protected-authorization.json" \
-            --policy config/faz22-6-view-only-pilot-owner-policy.v1.json \
+            --policy config/faz22-6-view-only-pilot-owner-policy.v2.json \
             --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
             --expected-run-id "$ACTIVATION_RUN_ID" \
             --expected-head-sha "$GITHUB_SHA"

@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import sys
 import unittest
@@ -24,7 +25,26 @@ RECEIPT_SPEC.loader.exec_module(RECEIPT)
 
 
 OWNER_BODY = "Owner bounded-pilot directive"
-ADVISORY_BODY = "Claude Opus 4.8 and Codex 5.6 SOL AGREE"
+ADVISORY_RESPONSE = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+ADVISORY_BODY = json.dumps(
+    {
+        "schema": "cross-ai-provider-evidence/v2",
+        "provider": "openai",
+        "requested_model": "gpt-5.6-sol",
+        "actual_model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+        "sandbox": "read-only",
+        "ephemeral": True,
+        "base_tip_sha": "0" * 40,
+        "base_sha": "0" * 40,
+        "head_sha": "a" * 40,
+        "scope_sha256": "b" * 64,
+        "verdict": "AGREE",
+        "response_sha256": hashlib.sha256(ADVISORY_RESPONSE.encode()).hexdigest(),
+        "response": ADVISORY_RESPONSE,
+    },
+    separators=(",", ":"),
+)
 
 
 def policy():
@@ -46,8 +66,8 @@ def policy():
             "authorAssociation": "OWNER",
             "advisoryOnly": True,
             "consensusVerdict": "AGREE",
-            "providers": ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"],
-            "provenanceClass": "owner-attested-provider-session",
+            "providers": ["OpenAI/gpt-5.6-sol"],
+            "provenanceClass": "owner-attested-direct-codex-evidence-v2",
             "providerCryptographicAttestation": False,
         },
         "legalTracking": {
@@ -122,19 +142,20 @@ def revocations(entries=None):
 
 
 class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
-    def test_canonical_policy_uses_the_supported_advisory_pair(self):
-        policy_path = REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+    def test_canonical_v1_is_retired_and_v2_blocks_until_codex_evidence_is_bound(self):
+        legacy = json.loads((REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json").read_text(encoding="utf-8"))
+        self.assertEqual("retired", legacy["status"])
+        policy_path = REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
         canonical = json.loads(policy_path.read_text(encoding="utf-8"))
         self.assertEqual(
             AUTH.EXPECTED_ADVISORY_PROVIDERS,
             canonical["aiAdvisory"]["providers"],
         )
+        self.assertEqual(AUTH.POLICY_SCHEMA, canonical["schemaVersion"])
+        self.assertEqual("tracked_pending", canonical["status"])
+        self.assertEqual("PENDING", canonical["aiAdvisory"]["consensusVerdict"])
         self.assertNotIn("MiniMax", json.dumps(canonical, sort_keys=True))
-        self.assertEqual(5011715034, canonical["aiAdvisory"]["commentId"])
-        self.assertEqual(
-            "sha256:a5895d569cdf6343cf26872bdd92645ffcc22fdf1006eb09b6f74c1e03694d16",
-            canonical["aiAdvisory"]["bodySha256"],
-        )
+        self.assertNotIn("Anthropic", json.dumps(canonical, sort_keys=True))
 
     def build(self, **overrides):
         inputs = {
@@ -168,7 +189,7 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
     def test_revise_or_legal_clearance_claim_fails_closed(self):
         value = policy()
         value["aiAdvisory"]["consensusVerdict"] = "REVISE"
-        with self.assertRaisesRegex(AUTH.AuthorizationError, "consensus"):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "not AGREE"):
             self.build(policy=value)
 
         value = policy()
@@ -176,14 +197,30 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         with self.assertRaisesRegex(AUTH.AuthorizationError, "tracked_pending"):
             self.build(policy=value)
 
-    def test_legacy_minimax_advisory_cannot_issue_new_authorization(self):
+    def test_retired_provider_or_non_evidence_advisory_cannot_issue_new_authorization(self):
         value = policy()
         value["aiAdvisory"]["providers"] = [
-            "MiniMax/minimax-MiniMax-M3",
-            "OpenAI/Codex",
+            "Anthropic/claude-opus-4-8",
+            "OpenAI/gpt-5.6-sol",
         ]
-        with self.assertRaisesRegex(AUTH.AuthorizationError, "provider-distinct pair"):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "Codex-only SOL"):
             self.build(policy=value)
+
+        bad_comment = comment(102, "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE")
+        value = policy()
+        value["aiAdvisory"]["bodySha256"] = AUTH.digest_bytes(bad_comment["body"].encode())
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "Codex-only AI advisory evidence"):
+            self.build(policy=value, advisory_comment=bad_comment)
+
+        downgraded = json.loads(ADVISORY_BODY)
+        downgraded["requested_model"] = "gpt-5.3-codex-spark"
+        downgraded["actual_model"] = "gpt-5.3-codex-spark"
+        downgraded_body = json.dumps(downgraded, separators=(",", ":"))
+        downgraded_comment = comment(102, downgraded_body)
+        value = policy()
+        value["aiAdvisory"]["bodySha256"] = AUTH.digest_bytes(downgraded_body.encode())
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "execution identity"):
+            self.build(policy=value, advisory_comment=downgraded_comment)
 
     def test_closed_legal_ticket_or_unprotected_environment_fails_closed(self):
         issue = legal_issue()

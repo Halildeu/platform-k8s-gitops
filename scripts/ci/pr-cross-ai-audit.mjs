@@ -78,11 +78,14 @@ const CONSULTATION_CLASSES = new Set(['routine', 'high-impact']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
+  /^PLAN\.md$/,
   /^docs\/context-priority-rules\.md$/,
+  /^docs\/(?:RB-ats-39d-testai|faz-24-meeting-intelligence-plan|runbooks\/RB-faz22\.6-view-only-viewer-pilot-enable)\.md$/,
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^\.github\/workflows\/[^/]*cross-ai[^/]*\.ya?ml$/,
   /^\.github\/workflows\/(?:apply-view-only-viewer-pilot-protected|rollback-view-only-viewer-pilot-protected|faz22-6-view-only-viewer-browser-evidence-protected)\.ya?ml$/,
+  /^\.github\/workflows\/(?:apply-view-only-viewer-pilot-enable|faz22-6-view-only-viewer-[^/]+)\.ya?ml$/,
   /^\.github\/actions\/protected-(?:apply|bootstrap|browser-evidence|rollback)\//,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
   /^schema\/cross-ai-[^/]+\.json$/,
@@ -94,6 +97,9 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_test_trust_root)\.py$/,
   /^scripts\/ops\/vault-policy-reconcile\.sh$/,
   /^scripts\/faz22-remote-ops\//,
+  /^scripts\/test\/faz22-6-acceptance-package-workflows-static\.sh$/,
+  /^tests\/faz22_remote_ops\//,
+  /^config\/faz22-6-view-only-pilot-owner-policy\.v[12]\.json$/,
   /^kustomize\/overlays\/test\/activation\/cross-ai-deployment-protection-observe\//,
   // Active Full ATS acceptance/recovery/rollback executables and every local
   // script they invoke are one high-impact product/deployment surface. An
@@ -102,7 +108,16 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/ats\/(?:d29-smoke(?:-receipt-chain)?|fullats-(?:application-smoke|axe-evidence|live-browser-acceptance)|install-pinned-(?:gh-cli|kustomize)|open-fullats-test-rollback-pr|provision-test-(?:keycloak|pg-vault)|transition-test-model-governance|verify-fullats-(?:live-runtime|test-rollback-content)|verify-model-governance-ledger)\.(?:cjs|py|sh)$/,
   /^scripts\/automation\/(?:apply-test-overlay-digests\.py|backend-testai-digest-contract\.py|sync-test-overlay\.sh)$/,
   /^scripts\/deploy\/(?:ensure-argocd-cli|gate-stability-window|reconcile-testai-backend-sequential|verify-pod-digest|verify-testai-backend-runtime)\.sh$/,
-  /^scripts\/promotion\/scan-promotion-candidates\.sh$/,
+  // Promotion candidate selection, evidence policy, desired-state writing and
+  // post-merge runtime reconciliation are one high-impact chain. Blanket the
+  // promotion helper directory and enumerate the frontend chain so a helper-
+  // only PR on an ordinary branch cannot silently downgrade to none/Spark.
+  /^scripts\/promotion\//,
+  /^scripts\/automation\/(?:sync-test-overlay-frontend\.sh|test-overlay-frontend-image\.py|validate-test-overlay-frontend-diff\.sh)$/,
+  /^scripts\/deploy\/(?:check-testai-frontend-rollout-headroom\.py|preflight-testai-frontend-rollout\.sh|verify-testai-frontend-runtime\.sh)$/,
+  /^scripts\/faz22\/sync-platform-test-gitops\.sh$/,
+  /^\.github\/workflows\/(?:deploy-testai|gate-d29-evidence-required|gate-promotion-lag|gate-promotion-scanner|promotion-bot-scan-candidates|promotion-ledger-validate|verify-testai-frontend-rollout)\.yml$/,
+  /^tests\/(?:promotion\/|automation\/(?:test_frontend_diff_guard|test_frontend_promotion_contract|test_test_overlay_frontend_image)\.py$)/,
   /^\.github\/workflows\/faz25-fullats-(?:live-browser-acceptance|test-recovery)\.yml$/,
   /^kustomize\/overlays\/test\/(?:fullats-promotion-state\.txt|kustomization\.yaml)$/,
   /^docs\/adr\/0045-signed-cross-ai-custom-deployment-protection-rule\.md$/,

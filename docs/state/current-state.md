@@ -23,6 +23,16 @@ live, no signed bundle has been issued, the custom protection rule remains
 disabled, production is untouched, and the existing human required-reviewer
 rule remains authoritative.
 
+The same branch retires the Claude-bearing Faz 22.6 owner policy v1 as a source
+of new authorization. Every active authorization/receipt/product-evidence
+consumer is rebound to versioned policy v2, which accepts only an owner-bound
+canonical `cross-ai-provider-evidence/v2` comment proving direct
+`gpt-5.6-sol xhigh`, read-only, ephemeral and finding-free `AGREE`. Canonical
+v2 is deliberately `tracked_pending` with no fabricated advisory comment, so
+new protected activation remains fail-closed until a real Codex-only advisory
+is bound and the policy is deliberately activated. Existing v1 Claude evidence
+is historical only; it cannot mint a fresh grant.
+
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 
 This delta supersedes only the 2026-07-17 statements below that TEST Vault had

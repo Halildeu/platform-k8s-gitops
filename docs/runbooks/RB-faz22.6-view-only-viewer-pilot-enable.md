@@ -67,12 +67,14 @@ boundary; see OWNER-APPROVAL.md node-origin caveat).
 
 This is the owner decision. Do not flip the flag until every box holds:
 
-- [ ] Canonical owner policy is active. It binds the owner directive and the
-      direct Anthropic Claude Opus 4.8 + direct OpenAI Codex 5.6 SOL `AGREE`
-      advisory by immutable GitHub comment identity and body SHA-256. AI is
-      `advisoryOnly`; it is not a human legal/DPO signature. Pre-#2638 MiniMax
-      comments remain historical evidence only and cannot issue a new receipt
-      or authorization.
+- [ ] Canonical `faz22.6-view-only-pilot-owner-policy-v2` is `active`. It binds
+      the owner directive to a canonical `cross-ai-provider-evidence/v2`
+      GitHub comment proving direct OpenAI Codex CLI `gpt-5.6-sol xhigh`,
+      `read-only`, `ephemeral`, finding-free `AGREE`. The v1 Claude-bearing
+      policy is retired; Claude, MiniMax, Cursor, UI, wrapper ve fallback
+      records are historical only and cannot issue a new receipt or
+      authorization. AI remains `advisoryOnly`; it is not a human legal/DPO
+      signature.
 - [ ] Legal ticket #2374 is still open with `tracked_pending` and
       `legalClearanceClaimed=false`. This bounded TEST authorization does not
       emit `GATE_VIEW_ONLY_KVKK=cleared`.

@@ -12,14 +12,16 @@ from pathlib import Path
 from typing import Any
 
 from view_only_pilot_authorization_common import (
+    CodexEvidenceError,
     canonical_bytes,
     canonical_receipt_bytes,
     digest_bytes,
+    validate_codex_advisory_evidence,
 )
 
 
 SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
-POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v1"
+POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v2"
 REVOCATION_SCHEMA = "faz22.6-view-only-pilot-authorization-revocations-v1"
 SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
 GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
@@ -28,7 +30,6 @@ EXPECTED_REPOSITORY = "Halildeu/platform-k8s-gitops"
 EXPECTED_ENVIRONMENT = "faz22-view-only-pilot"
 LEGAL_ISSUE_REF = "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
 EXPECTED_ADVISORY_PROVIDERS = [
-    "Anthropic/claude-opus-4-8",
     "OpenAI/gpt-5.6-sol",
 ]
 
@@ -65,7 +66,7 @@ def require_sha256(value: Any, label: str) -> str:
     return value
 
 
-def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str) -> None:
+def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str) -> str:
     require_keys(
         contract,
         {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation"},
@@ -87,6 +88,7 @@ def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str
         raise AuthorizationError(f"{label} body digest mismatch")
     if not str(comment.get("issue_url", "")).endswith("/issues/2373"):
         raise AuthorizationError(f"{label} is not bound to #2373")
+    return body
 
 
 def canonical_reviewer_set(
@@ -151,20 +153,24 @@ def build_authorization(
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "active":
-        raise AuthorizationError("owner policy is not active v1")
+        raise AuthorizationError("owner policy is not active Codex-only v2")
     require_keys(policy["aiAdvisory"], {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation", "advisoryOnly", "consensusVerdict", "providers", "provenanceClass", "providerCryptographicAttestation"}, "policy.aiAdvisory")
     if policy["aiAdvisory"]["advisoryOnly"] is not True or policy["aiAdvisory"]["consensusVerdict"] != "AGREE":
-        raise AuthorizationError("provider-distinct AI advisory consensus is not AGREE/advisory-only")
+        raise AuthorizationError("Codex-only AI advisory is not AGREE/advisory-only")
     providers = policy["aiAdvisory"]["providers"]
     if providers != EXPECTED_ADVISORY_PROVIDERS:
-        raise AuthorizationError("AI advisory providers are not the reviewed provider-distinct pair")
+        raise AuthorizationError("AI advisory provider is not exact Codex-only SOL")
     if (
-        policy["aiAdvisory"]["provenanceClass"] != "owner-attested-provider-session"
+        policy["aiAdvisory"]["provenanceClass"] != "owner-attested-direct-codex-evidence-v2"
         or policy["aiAdvisory"]["providerCryptographicAttestation"] is not False
     ):
         raise AuthorizationError("AI advisory provenance boundary is not explicit")
     verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective")
-    verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory")
+    advisory_body = verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory")
+    try:
+        validate_codex_advisory_evidence(advisory_body)
+    except CodexEvidenceError as exc:
+        raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
 
     require_keys(policy["legalTracking"], {"ref", "status", "clearanceClaimed", "dependencyAcknowledgedBy", "dependencyRationaleCode"}, "policy.legalTracking")
     legal = policy["legalTracking"]
@@ -234,7 +240,7 @@ def build_authorization(
         "ownerDirectiveRef": policy["ownerDirective"]["ref"],
         "ownerDirectiveSha256": policy["ownerDirective"]["bodySha256"],
         "aiAdvisoryOnly": True,
-        "aiAdvisoryProvenanceClass": "owner-attested-provider-session",
+        "aiAdvisoryProvenanceClass": "owner-attested-direct-codex-evidence-v2",
         "aiProviderCryptographicAttestation": False,
         "aiAdvisoryRef": policy["aiAdvisory"]["ref"],
         "aiAdvisorySha256": policy["aiAdvisory"]["bodySha256"],

@@ -70,10 +70,20 @@ jobs:
           PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
         run: |
           set -euo pipefail
-          policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
+          policy=config/faz22-6-view-only-pilot-owner-policy.v2.json
           revocations=config/faz22-6-view-only-pilot-authorization-revocations.v1.json
           test -s "$policy"
           test -s "$revocations"
+          jq -e '
+            .schemaVersion == "faz22.6-view-only-pilot-owner-policy-v2"
+            and .status == "active"
+            and .aiAdvisory.consensusVerdict == "AGREE"
+            and .aiAdvisory.providers == ["OpenAI/gpt-5.6-sol"]
+            and .aiAdvisory.provenanceClass == "owner-attested-direct-codex-evidence-v2"
+          ' "$policy" >/dev/null || {
+            echo "::error::Codex-only v2 owner policy is not active; protected apply remains blocked"
+            exit 1
+          }
           for name in PILOT_OPERATOR_SHA256 PILOT_DEVICE_SHA256; do
             value="${!name:-}"
             printf '%s' "$value" | grep -Eq '^sha256:[a-f0-9]{64}$' || {

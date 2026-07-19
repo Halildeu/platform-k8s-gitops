@@ -65,10 +65,12 @@ Windows davranış testi PASS ve tam Faz 24 test paketi `538/538` geçse de canl
 Denetim hostu bu delta ile değiştirilmedi; parent #1864 `Needs Verify` ve altı
 Windows kontrolü açık. PR/CI, immutable paket hash'i, explicit firewall etki
 kararı, controlled Apply/Validate, rollback drill, yeniden Apply/Validate ve fresh v2
-evidence kabulü olmadan I3 veya G-OPS ilerlemiş sayılmaz. Sağlayıcı
-istişareleri yalnız doğrudan Claude Opus 4.8 ve gerektiğinde doğrudan OpenAI
-Codex 5.6 SOL CLI yollarıyla yapılır; MiniMax, UI veya simülasyon sonucu yeni
-istişare/acceptance zincirinde kabul edilmez.
+evidence kabulü olmadan I3 veya G-OPS ilerlemiş sayılmaz. Yeni sağlayıcı
+istişaresi yalnız ayrı bağlamdaki doğrudan OpenAI Codex CLI ile yapılır:
+routine iş `gpt-5.3-codex-spark xhigh`, yüksek-etkili iş `gpt-5.6-sol xhigh`;
+ikisi de `read-only` ve `ephemeral` olmak zorundadır. Claude, MiniMax, Cursor,
+UI, wrapper veya fallback yeni istişare/acceptance zincirinde kabul edilmez;
+eski kayıtlar yalnız tarihsel audit kanıtıdır.
 
 **Faz 24 testai frontend promotion durability delta (2026-07-11)**:
 `platform-k8s-gitops#2301` merged at

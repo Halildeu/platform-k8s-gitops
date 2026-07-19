@@ -342,9 +342,11 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 > ağaçlarına girmeden transcriptleri 14 gün / 1 GiB üst sınırında tutar. Kabul
 > sırası firewall kararı -> Apply -> Validate ->
 > rollback drill -> yeniden Apply/Validate -> fresh v2 evidence olarak sabittir.
-> Sağlayıcı istişaresi yalnız doğrudan Claude Opus 4.8 ve gerektiğinde doğrudan
-> OpenAI Codex 5.6 SOL CLI yoluyla kabul edilir; MiniMax, UI veya simülasyon yeni
-> istişare/acceptance kanıtı değildir.
+> Yeni sağlayıcı istişaresi yalnız ayrı bağlamdaki doğrudan OpenAI Codex CLI
+> yoluyla kabul edilir: routine iş `gpt-5.3-codex-spark xhigh`, yüksek-etkili iş
+> `gpt-5.6-sol xhigh`; `read-only` ve `ephemeral` zorunludur. Claude, MiniMax,
+> Cursor, UI, wrapper veya fallback yeni istişare/acceptance kanıtı değildir;
+> eski kayıtlar yalnız tarihsel audit kanıtıdır.
 
 ### 11.1 Kazanma Formülü
 
