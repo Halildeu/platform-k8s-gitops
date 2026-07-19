@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
+from scripts.github_apps.cross_ai_deployment_policy.dsse import decode_public_key
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.jsonutil import load_json_file
 from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
@@ -125,9 +126,13 @@ def _git(root: Path, *arguments: str) -> bytes:
         raise AuthorityUnavailable("provider-review genesis git binding is invalid") from exc
 
 
+def _git_blob(root: Path, revision: str, path: Path) -> bytes:
+    return _git(root, "show", f"{revision}:{path.as_posix()}")
+
+
 def _git_json(root: Path, revision: str, path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(_git(root, "show", f"{revision}:{path.as_posix()}"))
+        value = json.loads(_git_blob(root, revision, path))
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise AuthorityUnavailable("provider-review genesis head document is invalid") from exc
     if not isinstance(value, dict):
@@ -318,14 +323,18 @@ def validate_authority_history_transition(
         )
 
     try:
-        old_root = _git_json(root, base, Path(base_manifest["trustRootPath"]))
-        old_revocations = _git_json(
-            root, base, Path(base_manifest["revocationsPath"])
-        )
-        archived_root = _git_json(root, head, Path(archive_root_path))
-        archived_revocations = _git_json(
+        old_root_path = Path(base_manifest["trustRootPath"])
+        old_revocations_path = Path(base_manifest["revocationsPath"])
+        old_root_raw = _git_blob(root, base, old_root_path)
+        old_revocations_raw = _git_blob(root, base, old_revocations_path)
+        archived_root_raw = _git_blob(root, head, Path(archive_root_path))
+        archived_revocations_raw = _git_blob(
             root, head, Path(archive_revocations_path)
         )
+        old_root = json.loads(old_root_raw)
+        old_revocations = json.loads(old_revocations_raw)
+        archived_root = json.loads(archived_root_raw)
+        archived_revocations = json.loads(archived_revocations_raw)
         new_root = _git_json(root, head, Path(head_manifest["trustRootPath"]))
         new_revocations = _git_json(
             root, head, Path(head_manifest["revocationsPath"])
@@ -338,7 +347,12 @@ def validate_authority_history_transition(
         ) from exc
     if sha256_digest(old_root) != base_digest:
         raise AuthorityUnavailable("provider-review predecessor trust-root pin mismatch")
-    if archived_root != old_root or archived_revocations != old_revocations:
+    if (
+        archived_root_raw != old_root_raw
+        or archived_revocations_raw != old_revocations_raw
+        or archived_root != old_root
+        or archived_revocations != old_revocations
+    ):
         raise AuthorityUnavailable(
             "provider-review root rotation archive does not match the trusted predecessor"
         )
@@ -346,26 +360,52 @@ def validate_authority_history_transition(
         raise AuthorityUnavailable("provider-review replacement trust-root pin mismatch")
 
     try:
-        predecessor_roots = [old_root, *(
+        historical_roots = [
             _git_json(root, base, Path(entry["trustRootPath"]))
             for entry in base_history
-        )]
-        predecessor_public_keys = {
-            key["publicKeyBase64"]
-            for trust_root in predecessor_roots
+        ]
+
+        def identity(key: dict[str, Any]) -> tuple[Any, ...]:
+            return (
+                key["keyId"],
+                key["role"],
+                key["providerFamily"],
+                tuple(key["allowedChannels"]),
+                tuple(key["allowedModelIds"]),
+                tuple(key["allowedModelIdentityClasses"]),
+                key["directProviderCli"],
+            )
+
+        immediate_keys = {
+            decode_public_key(key["publicKeyBase64"], key["keyId"]): identity(key)
+            for key in old_root["keys"]
+        }
+        historical_keys = {
+            decode_public_key(key["publicKeyBase64"], key["keyId"])
+            for trust_root in historical_roots
             for key in trust_root["keys"]
         }
-        replacement_public_keys = {
-            key["publicKeyBase64"] for key in new_root["keys"]
-        }
-    except (KeyError, TypeError) as exc:
+        replacement_keys = [
+            (
+                decode_public_key(key["publicKeyBase64"], key["keyId"]),
+                identity(key),
+            )
+            for key in new_root["keys"]
+        ]
+    except (KeyError, TypeError, PolicyError) as exc:
         raise AuthorityUnavailable(
             "provider-review rotation public-key history is invalid"
         ) from exc
-    if predecessor_public_keys & replacement_public_keys:
-        raise AuthorityUnavailable(
-            "provider-review replacement reuses a public key from a prior generation"
-        )
+    for public_key, replacement_identity in replacement_keys:
+        if public_key in immediate_keys:
+            if replacement_identity != immediate_keys[public_key]:
+                raise AuthorityUnavailable(
+                    "provider-review replacement reassigns a predecessor public key"
+                )
+        elif public_key in historical_keys:
+            raise AuthorityUnavailable(
+                "provider-review replacement resurrects a retired public key"
+            )
 
     retired_at_text = new_root.get("issuedAt")
     if not isinstance(retired_at_text, str):
