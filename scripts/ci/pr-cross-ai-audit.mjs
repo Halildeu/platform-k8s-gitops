@@ -32,6 +32,7 @@ const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 // Exact commit timestamps where these providers stopped producing binding
 // receipts. Older immutable records remain audit history only.
 const MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-18T14:16:20Z');
+const LEGACY_V1_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T00:04:38Z');
 const CLAUDE_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
 const NO_FINDINGS_RE = /^None$/;
 const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
@@ -52,7 +53,7 @@ const EVIDENCE_KEYS = [
   'head_sha', 'provider', 'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
-const RETIRED_MINIMAX_V1_KEYS = [
+const RETIRED_V1_KEYS = [
   'actual_model', 'base_sha', 'base_tip_sha', 'head_sha', 'provider',
   'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
@@ -627,21 +628,36 @@ function containsSensitiveResponse(response) {
     || COOKIE_HEADER_RE.test(response);
 }
 
-function immutableRetiredMinimaxV1Record(comment, evidence) {
+function immutableRetiredV1Record(comment, evidence) {
   const createdAtMs = Date.parse(comment?.createdAt || '');
   const keys = evidence && typeof evidence === 'object' && !Array.isArray(evidence)
     ? Object.keys(evidence).sort()
     : [];
   const responseVerdict = parseProviderResponseVerdict(evidence?.response);
+  const provider = evidence?.provider;
+  const providerContract = {
+    anthropic: {
+      cutoffMs: LEGACY_V1_RECEIPT_RETIREMENT_CUTOFF_MS,
+      models: new Set(['claude-opus-4-8']),
+    },
+    minimax: {
+      cutoffMs: MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS,
+      models: new Set(['minimax/MiniMax-M3']),
+    },
+    openai: {
+      cutoffMs: LEGACY_V1_RECEIPT_RETIREMENT_CUTOFF_MS,
+      models: new Set(['gpt-5.3-codex-spark', 'gpt-5.6-sol']),
+    },
+  }[provider];
   return Boolean(
-    comment?.createdAt === comment?.updatedAt
+    providerContract
+    && comment?.createdAt === comment?.updatedAt
     && Number.isFinite(createdAtMs)
-    && createdAtMs < MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS
-    && keys.length === RETIRED_MINIMAX_V1_KEYS.length
-    && keys.every((key, index) => key === RETIRED_MINIMAX_V1_KEYS[index])
+    && createdAtMs < providerContract.cutoffMs
+    && keys.length === RETIRED_V1_KEYS.length
+    && keys.every((key, index) => key === RETIRED_V1_KEYS[index])
     && evidence.schema === 'cross-ai-provider-evidence/v1'
-    && evidence.provider === 'minimax'
-    && evidence.requested_model === 'minimax/MiniMax-M3'
+    && providerContract.models.has(evidence.requested_model)
     && evidence.actual_model === evidence.requested_model
     && COMMIT_SHA_RE.test(evidence.base_tip_sha || '')
     && COMMIT_SHA_RE.test(evidence.base_sha || '')
@@ -910,10 +926,10 @@ async function appendPriorRevisionFinding(
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
       (candidate) => candidate.provider === body?.provider,
     );
-    // MiniMax v1 evidence predating its exact retirement commit is immutable
-    // read-only history. A current, edited, or malformed v1/v3 record is an
-    // attempted retired-provider receipt and fails closed.
-    if (immutableRetiredMinimaxV1Record(comment, body)) continue;
+    // Strict immutable v1 evidence predating each provider's exact schema or
+    // authority retirement remains read-only history. Current, edited, or
+    // malformed v1 records cannot produce acceptance and fail closed.
+    if (immutableRetiredV1Record(comment, body)) continue;
     if (body?.provider === 'minimax' || body?.schema === 'cross-ai-provider-evidence/v1') {
       invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
@@ -960,8 +976,30 @@ async function appendPriorRevisionFinding(
         provider: parsed.evidence.provider,
         verdict: parsed.evidence.verdict,
         createdAtMs: parsed.createdAtMs,
+        evidenceSha256: sha256Utf8(comment.body),
+        threadId: parsed.evidence.execution_provenance?.thread_id || null,
+        ref: comment.ref,
         currentBindingFresh: Boolean(current) && selectedEvidenceRefs.has(comment.ref),
       });
+    }
+  }
+
+  const seenEvidenceDigests = new Map();
+  const seenThreadIds = new Map();
+  for (const record of records) {
+    const priorDigestRef = seenEvidenceDigests.get(record.evidenceSha256);
+    if (priorDigestRef && priorDigestRef !== record.ref) {
+      invalidCandidates.push(`${record.ref || 'missing-ref'} (replayed evidence from ${priorDigestRef})`);
+    } else {
+      seenEvidenceDigests.set(record.evidenceSha256, record.ref);
+    }
+    if (record.threadId) {
+      const priorThreadRef = seenThreadIds.get(record.threadId);
+      if (priorThreadRef && priorThreadRef !== record.ref) {
+        invalidCandidates.push(`${record.ref || 'missing-ref'} (replayed thread from ${priorThreadRef})`);
+      } else {
+        seenThreadIds.set(record.threadId, record.ref);
+      }
     }
   }
 

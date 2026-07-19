@@ -38,6 +38,7 @@ const SCOPE_SHA256 = 'a'.repeat(64);
 const NOW_MS = Date.now();
 const HISTORICAL_CLAUDE_MS = Date.parse('2026-07-19T00:00:00Z');
 const HISTORICAL_MINIMAX_MS = Date.parse('2026-07-18T14:00:00Z');
+const HISTORICAL_PROVIDER_V1_MS = Date.parse('2026-07-18T23:00:00Z');
 const PR_NUMBER = 2690;
 const EXECUTION_PROFILE = {
   anthropic: 'claude-cli-no-session-persistence-exact-scope-v1',
@@ -57,7 +58,9 @@ const evidenceBody = (provider, model, response) => JSON.stringify({
   execution_profile: EXECUTION_PROFILE[provider] ?? 'retired-provider-not-accepted',
   execution_provenance: provider === 'openai' ? {
     schema: 'codex-native-execution-provenance/v2',
-    thread_id: '019f7785-c66d-7992-a21a-d4097d9eb3f9',
+    thread_id: model === 'gpt-5.3-codex-spark'
+      ? '019f7785-c66d-7992-a21a-d4097d9eb3fa'
+      : '019f7785-c66d-7992-a21a-d4097d9eb3f9',
     cli_version: '0.144.1',
     cli_native_target: 'codex-linux-x64',
     cli_native_sha256: 'a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902',
@@ -140,6 +143,46 @@ const MINIMAX_V1_BODY = JSON.stringify({
 const MINIMAX_V1_EVIDENCE = {
   [MINIMAX_REF]: evidenceCommentAt(MINIMAX_V1_BODY, HISTORICAL_MINIMAX_MS),
 };
+const HISTORICAL_CLAUDE_V1_REF = evidenceRef(1010);
+const HISTORICAL_CODEX_V1_REF = evidenceRef(1011);
+const historicalV1Body = (provider, model) => JSON.stringify({
+  schema: 'cross-ai-provider-evidence/v1',
+  provider,
+  requested_model: model,
+  actual_model: model,
+  base_tip_sha: BASE_TIP_SHA,
+  base_sha: BASE_SHA,
+  head_sha: HEAD_SHA,
+  scope_sha256: SCOPE_SHA256,
+  verdict: 'AGREE',
+  response_sha256: sha256('## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'),
+  response: '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
+});
+const HISTORICAL_PROVIDER_V1_EVIDENCE = {
+  [HISTORICAL_CLAUDE_V1_REF]: evidenceCommentAt(
+    historicalV1Body('anthropic', 'claude-opus-4-8'),
+    HISTORICAL_PROVIDER_V1_MS,
+  ),
+  [HISTORICAL_CODEX_V1_REF]: evidenceCommentAt(
+    historicalV1Body('openai', 'gpt-5.6-sol'),
+    HISTORICAL_PROVIDER_V1_MS,
+  ),
+};
+const CURRENT_CODEX_V1_EVIDENCE = {
+  [HISTORICAL_CODEX_V1_REF]: evidenceComment(
+    historicalV1Body('openai', 'gpt-5.6-sol'),
+    1_000,
+  ),
+};
+const INVALID_HISTORICAL_CODEX_V1_EVIDENCE = {
+  [HISTORICAL_CODEX_V1_REF]: evidenceCommentAt(
+    JSON.stringify({
+      ...JSON.parse(historicalV1Body('openai', 'gpt-5.6-sol')),
+      response_sha256: 'f'.repeat(64),
+    }),
+    HISTORICAL_PROVIDER_V1_MS,
+  ),
+};
 const CURRENT_MINIMAX_V1_EVIDENCE = {
   [MINIMAX_REF]: evidenceComment(MINIMAX_V1_BODY, 1_000),
 };
@@ -163,6 +206,10 @@ const UNREFERENCED_CODEX_AGREE_REF = evidenceRef(1006);
 const codexReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const codexReviseBody = JSON.stringify({
   ...JSON.parse(evidenceBody('openai', 'gpt-5.6-sol', codexReviseResponse)),
+  execution_provenance: {
+    ...JSON.parse(evidenceBody('openai', 'gpt-5.6-sol', codexReviseResponse)).execution_provenance,
+    thread_id: '019f7785-c66d-7992-a21a-d4097d9eb3fb',
+  },
   verdict: 'REVISE',
 });
 const unresolvedCodexReviseEvidence = {
@@ -172,6 +219,17 @@ const unresolvedCodexReviseEvidence = {
 const resolvedCodexReviseEvidence = {
   ...unresolvedCodexReviseEvidence,
   [UNREFERENCED_CODEX_AGREE_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 4_000),
+};
+const freshCodexAgreeBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CODEX_REF].body),
+  execution_provenance: {
+    ...JSON.parse(EVIDENCE[CODEX_REF].body).execution_provenance,
+    thread_id: '019f7785-c66d-7992-a21a-d4097d9eb3fc',
+  },
+});
+const freshSelectedCodexReviseEvidence = {
+  ...unresolvedCodexReviseEvidence,
+  [UNREFERENCED_CODEX_AGREE_REF]: evidenceComment(freshCodexAgreeBody, 4_000),
 };
 const resolvedSelectedCodexReviseEvidence = {
   ...unresolvedCodexReviseEvidence,
@@ -398,6 +456,13 @@ const explicitSingleBody =
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
   `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+const replayedSelectedCodexBody = explicitSingleBody.replace(
+  CODEX_REF,
+  UNREFERENCED_CODEX_AGREE_REF,
+);
+const freshSelectedCodexBody = explicitSingleBody
+  .replace(CODEX_REF, UNREFERENCED_CODEX_AGREE_REF)
+  .replace(sha256(EVIDENCE[CODEX_REF].body), sha256(freshCodexAgreeBody));
 const explicitSparkSingleBody = explicitSingleBody.replace(
   /^Codex receipt:.*$/m,
   `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
@@ -782,6 +847,20 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: historicalClaudeReviseEvidence }, 0],
+  ['none mode ignores immutable pre-retirement Claude and OpenAI v1 audit records',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: HISTORICAL_PROVIDER_V1_EVIDENCE }, 0],
+  ['none mode rejects a post-retirement OpenAI v1 record',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: CURRENT_CODEX_V1_EVIDENCE,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['none mode rejects malformed historical OpenAI v1 audit data',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: INVALID_HISTORICAL_CODEX_V1_EVIDENCE,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['none mode rejects a new Claude v3 receipt-shaped record',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -919,6 +998,15 @@ const cases = [
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
       evidence: resolvedCodexReviseEvidence,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['a reposted selected AGREE cannot resolve a later REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: replayedSelectedCodexBody, changedFiles: [ROUTINE_PATH],
+      evidence: resolvedCodexReviseEvidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['a newly executed selected AGREE resolves a prior REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
+      evidence: freshSelectedCodexReviseEvidence }, 0],
   ['a forbidden dual mode cannot resolve a prior REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitDualBody, changedFiles: [ROUTINE_PATH],
