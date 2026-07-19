@@ -13,14 +13,14 @@ resources:
   - priority-class.yaml
   - public-api-upstream-headers.yaml
 images:
-  # Exact branch artifacts: backend source d89545ad / run 29697615386 and
+  # Exact branch artifacts: backend source c9aed25b / run 29708456959 and
   # public-web source 7206161f / run 29697854919. Their immutable identities
   # are content-bound by the Faz 35 image-set ledger and preflight.
   # Root activation remains
   # forbidden until the exact-head review and provisioning gates are satisfied.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:93c03f6c942d0154e97e990dbd012adb8b010791373d5ef0637dd7e65cdd8b03
+    digest: sha256:9683c6ce4f42f4166db486ac4c9d5a1096da8bf0dfd50bc4103d1cebb6704e73
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     digest: sha256:e362462c1f0aa62e5eb5ed198467cbe9d8a6d235ee584b7632bb11a88889059d

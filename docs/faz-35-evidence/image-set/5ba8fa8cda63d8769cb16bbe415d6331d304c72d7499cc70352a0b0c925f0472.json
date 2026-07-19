@@ -1,15 +1,15 @@
 {
   "schema_version": "faz35-test-image-set-v1",
   "source_heads": {
-    "backend": "d89545ad42665f3afbf510991d5d157484f861ab",
+    "backend": "c9aed25b3df22b9af4749b1c289aeae4c81490a0",
     "web": "7206161f08f102d9655f5c15ea6bb6f0fd88dadc"
   },
   "images": {
     "ethics_service": {
       "repository": "ghcr.io/halildeu/platform-backend-ethics-service",
-      "digest": "sha256:93c03f6c942d0154e97e990dbd012adb8b010791373d5ef0637dd7e65cdd8b03",
-      "source_head": "d89545ad42665f3afbf510991d5d157484f861ab",
-      "workflow_run": 29697615386
+      "digest": "sha256:9683c6ce4f42f4166db486ac4c9d5a1096da8bf0dfd50bc4103d1cebb6704e73",
+      "source_head": "c9aed25b3df22b9af4749b1c289aeae4c81490a0",
+      "workflow_run": 29708456959
     },
     "public_web": {
       "repository": "ghcr.io/halildeu/platform-web-etik-speak-public",
