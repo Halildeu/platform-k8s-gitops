@@ -73,7 +73,9 @@ if (review_dir / ".git").exists():
 model = sys.argv[sys.argv.index("--model") + 1]
 if model != os.environ.get("FAKE_EXPECTED_MODEL", "gpt-5.3-codex-spark"):
     raise SystemExit(9)
-if not sys.stdin.read():
+payload = sys.stdin.read()
+expected_payload = Path(os.environ["FAKE_EXPECTED_STDIN_FILE"]).read_text(encoding="utf-8")
+if payload != expected_payload:
     raise SystemExit(8)
 print(json.dumps({"type":"thread.started","thread_id":"019f7785-c66d-7992-a21a-d4097d9eb3f9"}))
 if os.environ.get("FAKE_SKIP_TURN_STARTED") != "1":
@@ -180,6 +182,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             if version == MODULE.GITLEAKS_VERSION
         }
         self.assertEqual(supported_platforms, scanner_platforms)
+
+    def test_resolves_standard_windows_npm_cmd_shim_to_package_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            launcher = root / "codex.cmd"
+            launcher.write_text("@echo off\n", encoding="utf-8")
+            expected = root / "node_modules" / "@openai" / "codex"
+            self.assertEqual(
+                MODULE.resolve_codex_package_root(str(launcher), "windows"),
+                expected,
+            )
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -299,6 +312,11 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             raise RuntimeError(prepare.stdout + prepare.stderr)
         self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
         self.output = self.root / "evidence.json"
+        self.expected_stdin = self.root / "expected-stdin.txt"
+        self.expected_stdin.write_text(
+            f"{MODULE.PROMPT}\n\n{self.scope.read_text(encoding='utf-8')}",
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -328,6 +346,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             "FAKE_EXECUTION_MARKER": str(self.execution_marker),
             "FAKE_PROTECTED_INPUT": str(self.protected_input),
             "FAKE_EXFIL_MARKER": str(self.exfil_marker),
+            "FAKE_EXPECTED_STDIN_FILE": str(self.expected_stdin),
         }
         if tool_event:
             env["FAKE_TOOL_EVENT"] = "1"
@@ -570,6 +589,19 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             "canonical_scope_binding_mismatch",
         )
 
+    def test_rejects_clean_checkout_whose_head_differs_from_evidence_head(self) -> None:
+        source = self.worktree / "unrelated.txt"
+        source.write_text("new checkout head\n", encoding="utf-8")
+        subprocess.run(["git", "add", "unrelated.txt"], cwd=self.worktree, check=True)
+        subprocess.run(["git", "commit", "-qm", "advance checkout"], cwd=self.worktree, check=True)
+
+        result = self.run_harness()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout)["error"], "worktree_head_mismatch")
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.execution_marker.exists())
+
     def test_refuses_to_overwrite_existing_evidence(self) -> None:
         self.output.write_text("existing", encoding="utf-8")
         result = self.run_harness()
@@ -649,6 +681,10 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         )
         self.assertEqual(prepare.returncode, 0, prepare.stdout + prepare.stderr)
         self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
+        self.expected_stdin.write_text(
+            f"{MODULE.PROMPT}\n\n{self.scope.read_text(encoding='utf-8')}",
+            encoding="utf-8",
+        )
 
         result = self.run_harness(trusted_gitleaks_pin=False)
 

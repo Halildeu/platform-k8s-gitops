@@ -180,6 +180,23 @@ def verify_scope_binding(
         fail("worktree_identity_unverifiable")
     if status.returncode != 0 or status.stdout:
         fail("worktree_not_clean")
+    try:
+        resolved_worktree_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=worktree,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        fail("worktree_identity_unverifiable")
+    if (
+        resolved_worktree_head.returncode != 0
+        or resolved_worktree_head.stdout.strip().lower() != head_sha.lower()
+    ):
+        fail("worktree_head_mismatch")
     preparer = Path(__file__).with_name("prepare_cross_ai_scope.py")
     with tempfile.TemporaryDirectory(prefix="codex-scope-verify-") as directory:
         derived_scope = Path(directory) / "scope.patch"
@@ -242,25 +259,36 @@ def read_json_object(path: Path, error: str) -> dict:
     return value
 
 
+def resolve_codex_package_root(launcher_name: str, system: str) -> Path:
+    launcher = Path(launcher_name)
+    if system == "windows":
+        if launcher.stem.lower() != "codex" or launcher.suffix.lower() != ".cmd":
+            fail("codex_package_invalid")
+        return launcher.parent / "node_modules" / "@openai" / "codex"
+    launcher = launcher.resolve()
+    package_root = launcher.parent.parent
+    if launcher != package_root / "bin" / "codex.js":
+        fail("codex_package_invalid")
+    return package_root
+
+
 def resolve_codex_native() -> tuple[bytes, str, str, str, str]:
     launcher_name = shutil.which("codex")
     if launcher_name is None:
         fail("codex_unavailable")
-    launcher = Path(launcher_name).resolve()
-    package_root = launcher.parent.parent
+    system = platform.system().lower()
+    package_root = resolve_codex_package_root(launcher_name, system)
     package = read_json_object(package_root / "package.json", "codex_package_invalid")
-    expected_launcher = package_root / "bin" / "codex.js"
     if (
         package.get("name") != "@openai/codex"
         or package.get("bin") != {"codex": "bin/codex.js"}
-        or launcher != expected_launcher
     ):
         fail("codex_package_invalid")
     version = package.get("version")
     if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         fail("codex_package_invalid")
     platform_spec = PLATFORM_PACKAGES.get(
-        (platform.system().lower(), platform.machine().lower())
+        (system, platform.machine().lower())
     )
     if platform_spec is None:
         fail("codex_platform_unsupported")
