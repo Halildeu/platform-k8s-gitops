@@ -7,9 +7,12 @@
     "canonical_source_ref": "openfga://pending/platform-test/etik-speak/authorization-model-v1"
   },
   "runtime_selector": {
-    "selector_kind": "vault",
-    "vault_path": "kv/platform/etik-speak",
-    "field": "ERP_OPENFGA_MODEL_ID"
+    "selector_kind": "kubernetes-configmap",
+    "namespace": "platform-test",
+    "name": "ethics-service-config",
+    "store_id_field": "ERP_OPENFGA_STORE_ID",
+    "model_id_field": "ERP_OPENFGA_MODEL_ID",
+    "binding": "kustomize/base/apps/etik-speak/ethics-service-deployment.yaml"
   },
   "promotion": {
     "test": {

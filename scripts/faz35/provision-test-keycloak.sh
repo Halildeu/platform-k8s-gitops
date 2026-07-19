@@ -104,7 +104,7 @@ if [ -n "$existing_role" ]; then
 fi
 
 preflight_existing_scope() {
-  local name=$1 include=$2 scope_id scope_json mappers bindings
+  local name=$1 include=$2 scope_id scope_json mappers bindings client_bindings
   scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
     --format csv --noquotes 2>/dev/null | awk -F, -v n="$name" '$2==n{print $1; exit}')
   [ -n "$scope_id" ] || return 0
@@ -142,6 +142,11 @@ preflight_existing_scope() {
   printf '%s' "$bindings" | jq -e \
     '[.[].name | select(. != "ethics-manager")] | length == 0' >/dev/null || {
     echo "FATAL: pre-mutation client scope role-mapping drift: $name" >&2
+    exit 1
+  }
+  client_bindings=$(kc get "client-scopes/$scope_id/scope-mappings/clients" -r "$REALM")
+  printf '%s' "$client_bindings" | jq -e 'length == 0' >/dev/null || {
+    echo "FATAL: pre-mutation client scope has unexpected client-role mappings: $name" >&2
     exit 1
   }
 }
@@ -246,7 +251,7 @@ ensure_scope() {
 }
 
 ensure_scope_role_binding() {
-  local scope_id=$1 scope_name=$2 bindings role_payload
+  local scope_id=$1 scope_name=$2 bindings role_payload client_bindings
   bindings=$(kc get "client-scopes/$scope_id/scope-mappings/realm" \
     -r "$REALM" 2>/dev/null || printf '[]')
   printf '%s' "$bindings" | jq -e '
@@ -267,6 +272,11 @@ ensure_scope_role_binding() {
       echo "FATAL: $scope_name role mapping is not the exact ethics-manager allowlist" >&2
       exit 1
     }
+  client_bindings=$(kc get "client-scopes/$scope_id/scope-mappings/clients" -r "$REALM")
+  printf '%s' "$client_bindings" | jq -e 'length == 0' >/dev/null || {
+    echo "FATAL: $scope_name has unexpected client-role scope mappings" >&2
+    exit 1
+  }
 }
 
 audience_scope_id=$(ensure_scope ethics-manager-audience false)
@@ -355,7 +365,7 @@ if ! printf '%s\n' "$optional_scopes" | grep -Fqx 'ethics:case:manage'; then
 fi
 
 assert_persona_role_boundary() {
-  local user_id=$1 username=$2 role_mappings groups
+  local user_id=$1 username=$2 role_mappings groups effective_realm client_id client_name effective_client
   role_mappings=$(kc get "users/$user_id/role-mappings" -r "$REALM")
   printf '%s' "$role_mappings" | jq -e '
     ([((.realmMappings // [])[] | .name)] | index("ethics-manager") != null) and
@@ -370,6 +380,40 @@ assert_persona_role_boundary() {
     echo "FATAL: $username must not inherit privileges from a group" >&2
     exit 1
   }
+  effective_realm=$(kc get "users/$user_id/role-mappings/realm/composite" -r "$REALM")
+  printf '%s' "$effective_realm" | jq -e '
+    ([.[].name] | index("ethics-manager") != null) and
+    (([.[].name] - ["default-roles-platform-test", "ethics-manager", "offline_access", "uma_authorization"]) | length == 0)
+  ' >/dev/null || {
+    echo "FATAL: $username has unexpected effective/composite realm roles" >&2
+    exit 1
+  }
+  while IFS=$'\t' read -r client_id client_name; do
+    [ -n "$client_id" ] || continue
+    effective_client=$(kc get "users/$user_id/role-mappings/clients/$client_id/composite" -r "$REALM")
+    case "$client_name" in
+      account)
+        printf '%s' "$effective_client" | jq -e '
+          ([.[].name] - ["manage-account", "manage-account-links", "view-profile"]) | length == 0
+        ' >/dev/null || {
+          echo "FATAL: $username has unexpected effective account client roles" >&2
+          exit 1
+        }
+        ;;
+      frontend)
+        printf '%s' "$effective_client" | jq -e 'length == 0' >/dev/null || {
+          echo "FATAL: $username has unexpected effective frontend client roles" >&2
+          exit 1
+        }
+        ;;
+      *)
+        printf '%s' "$effective_client" | jq -e 'length == 0' >/dev/null || {
+          echo "FATAL: $username has unexpected effective client roles on $client_name" >&2
+          exit 1
+        }
+        ;;
+    esac
+  done < <(kc get clients -r "$REALM" | jq -r '.[] | [.id,.clientId] | @tsv')
 }
 
 persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
@@ -382,6 +426,11 @@ if [ -z "$persona_id" ]; then
   persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
     --fields id --format csv --noquotes | head -1)
 fi
+printf '%s' "$persona_id" | grep -Eq \
+  '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
+  echo "FATAL: synthetic persona canonical UUID contract failed" >&2
+  exit 1
+}
 
 kc add-roles -r "$REALM" --uusername "$PERSONA_USERNAME" \
   --rolename ethics-manager >/dev/null
@@ -467,7 +516,7 @@ print(json.dumps({
     "scope": claims.get("scope", ""),
     "org_id": claims.get("org_id"),
     "roles": claims.get("realm_access", {}).get("roles", []),
-    "resource_clients": sorted(claims.get("resource_access", {}).keys()),
+    "resource_roles": claims.get("resource_access", {}),
     "groups": claims.get("groups", []),
     "has_authorization": "authorization" in claims,
 }, separators=(",", ":")))
@@ -509,7 +558,9 @@ printf '%s' "$token_claims" | jq -e '
       index("admin-cli") == null and
       index("security-admin-console") == null) and
   ((.roles - ["default-roles-platform-test", "ethics-manager", "offline_access", "uma_authorization"]) | length == 0) and
-  ((.resource_clients - ["account", "frontend"]) | length == 0) and
+  (((.resource_roles | keys) - ["account", "frontend"]) | length == 0) and
+  (((.resource_roles.account.roles // []) - ["manage-account", "manage-account-links", "view-profile"]) | length == 0) and
+  ((.resource_roles.frontend.roles // []) | length == 0) and
   (.groups | length == 0) and
   (.has_authorization == false)
 ' >/dev/null || {
@@ -586,7 +637,7 @@ data = json.loads(base64.urlsafe_b64decode(payload))
 print(json.dumps({"aud": data.get("aud"), "scope": data.get("scope", ""),
                   "org_id": data.get("org_id"),
                   "roles": data.get("realm_access", {}).get("roles", []),
-                  "resource_clients": sorted(data.get("resource_access", {}).keys()),
+                  "resource_roles": data.get("resource_access", {}),
                   "groups": data.get("groups", []),
                   "has_authorization": "authorization" in data}, separators=(",", ":")))
 ')
@@ -600,7 +651,9 @@ print(json.dumps({"aud": data.get("aud"), "scope": data.get("scope", ""),
       | index("realm-management") == null and index("admin-cli") == null and
         index("security-admin-console") == null) and
     ((.roles - ["default-roles-platform-test", "ethics-manager", "offline_access", "uma_authorization"]) | length == 0) and
-    ((.resource_clients - ["account", "frontend"]) | length == 0) and
+    (((.resource_roles | keys) - ["account", "frontend"]) | length == 0) and
+    (((.resource_roles.account.roles // []) - ["manage-account", "manage-account-links", "view-profile"]) | length == 0) and
+    ((.resource_roles.frontend.roles // []) | length == 0) and
     (.groups | length == 0) and
     (.has_authorization == false)
   ' >/dev/null || {
@@ -613,10 +666,13 @@ print(json.dumps({"aud": data.get("aud"), "scope": data.get("scope", ""),
 
 wrong_org_id=$(ensure_negative_persona "$WRONG_ORG_USERNAME" "$WRONG_ETHICS_ORG_ID" "$WRONG_ORG_PASSWORD_FILE")
 denied_id=$(ensure_negative_persona "$DENIED_USERNAME" "$ETHICS_ORG_ID" "$DENIED_PASSWORD_FILE")
-printf '%s' "$wrong_org_id$denied_id" | grep -Eq '^[0-9A-Fa-f-]{72}$' || {
-  echo "FATAL: negative-persona UUID output contract failed" >&2
-  exit 1
-}
+for negative_id in "$wrong_org_id" "$denied_id"; do
+  printf '%s' "$negative_id" | grep -Eq \
+    '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
+    echo "FATAL: negative-persona canonical UUID output contract failed" >&2
+    exit 1
+  }
+done
 
 echo "KC: ethics-manager audience + ethics:case:manage are optional frontend scopes bound to the ethics-manager role"
 echo "KC: synthetic access-token aud/scope/org_id/role contract OK"

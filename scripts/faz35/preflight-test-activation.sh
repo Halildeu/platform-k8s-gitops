@@ -227,7 +227,8 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
     echo "FATAL: pinned OpenFGA store/model IDs are not canonical ULIDs" >&2
     exit 1
   }
-  printf '%s' "$role_id" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
+  printf '%s' "$role_id" | grep -Eq \
+    '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
     echo "FATAL: pinned dedicated Vault role ID is not a UUID" >&2
     exit 1
   }
@@ -240,12 +241,42 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   }
 fi
 
-existing_count=$(remote \
-  'kubectl --request-timeout=10s --context k3d-test -n platform-test get deploy,svc,ingress,externalsecret -l app.kubernetes.io/part-of=etik-speak -o name 2>/dev/null | wc -l | tr -d " "')
 if grep -Fq 'activation/etik-speak' "$ROOT_OVERLAY"; then
   root_state=included
 else
   root_state=not-included
+fi
+
+# Variables in this single-quoted program intentionally expand on staging-sw.
+# shellcheck disable=SC2016
+live_activation_resources=$(remote '
+  set -eu
+  for target in \
+    deployment/ethics-service deployment/etik-speak-public \
+    service/ethics-service service/etik-speak-public \
+    serviceaccount/ethics-service serviceaccount/etik-speak-public \
+    configmap/ethics-service-config configmap/etik-speak-public-upstream-headers \
+    ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api \
+    networkpolicy/etik-speak-public networkpolicy/ethics-service \
+    externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
+    secretstore/etik-speak-vault resourcequota/etik-speak-budget; do
+    kubectl --request-timeout=10s --context k3d-test -n platform-test get "$target" \
+      --ignore-not-found -o name
+  done
+  kubectl --request-timeout=10s --context k3d-test get priorityclass/etik-speak-test \
+    --ignore-not-found -o name
+')
+existing_count=$(printf '%s\n' "$live_activation_resources" | sed '/^$/d' | wc -l | tr -d ' ')
+if [ "$PREFLIGHT_STAGE" = foundation ]; then
+  [ "$root_state" = not-included ] || {
+    echo "FATAL: foundation provisioning refuses an included Etik Speak activation root" >&2
+    exit 1
+  }
+  [ "$existing_count" -eq 0 ] || {
+    echo "FATAL: foundation provisioning refuses existing or partial Etik Speak activation resources" >&2
+    printf '%s\n' "$live_activation_resources" >&2
+    exit 1
+  }
 fi
 
 echo "Host bridge: postgres=$pg_ip keycloak=$kc_ip (Endpoint + NetworkPolicy match)"

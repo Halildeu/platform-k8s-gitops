@@ -50,7 +50,8 @@ for subject_binding in \
   "DENIED_SUBJECT=$DENIED_SUBJECT"; do
   subject_name=${subject_binding%%=*}
   subject_value=${subject_binding#*=}
-  printf '%s' "$subject_value" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
+  printf '%s' "$subject_value" | grep -Eq \
+    '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
     echo "FATAL: $subject_name must be a Keycloak UUID from provision-test-keycloak.sh" >&2
     exit 1
   }
@@ -80,10 +81,42 @@ ledger_source_sha=$(jq -r '.artifact_content_digest | sub("^sha256:"; "")' "$MOD
 
 ke() { kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" "$@"; }
 pod_get() { ke exec "$POD_DEPLOY" -- curl -fsS "$1"; }
+pod_get_page() {
+  local endpoint=$1 token=${2:-}
+  if [ -n "$token" ]; then
+    ke exec "$POD_DEPLOY" -- curl -fsSG "$endpoint" \
+      --data-urlencode page_size=100 --data-urlencode "continuation_token=$token"
+  else
+    ke exec "$POD_DEPLOY" -- curl -fsSG "$endpoint" --data-urlencode page_size=100
+  fi
+}
 pod_post() {
   local endpoint=$1
   ke exec -i "$POD_DEPLOY" -- curl -sS -w '\n%{http_code}' \
     -X POST "$endpoint" -H 'Content-Type: application/json' -d @-
+}
+
+collect_pages() {
+  local endpoint=$1 array_key=$2 token='' next page accumulated='[]' page_count=0
+  while :; do
+    page=$(pod_get_page "$endpoint" "$token")
+    accumulated=$(jq -nc --argjson accumulated "$accumulated" \
+      --argjson page "$page" --arg key "$array_key" \
+      '$accumulated + ($page[$key] // [])')
+    next=$(printf '%s' "$page" | jq -r '.continuation_token // empty')
+    [ -n "$next" ] || break
+    [ "$next" != "$token" ] || {
+      echo "FATAL: OpenFGA pagination returned a repeated continuation token" >&2
+      exit 1
+    }
+    token=$next
+    page_count=$((page_count + 1))
+    [ "$page_count" -lt 1000 ] || {
+      echo "FATAL: OpenFGA pagination exceeded the bounded page count" >&2
+      exit 1
+    }
+  done
+  printf '%s' "$accumulated"
 }
 
 ke exec "$POD_DEPLOY" -- sh -c 'command -v curl >/dev/null' || {
@@ -91,9 +124,15 @@ ke exec "$POD_DEPLOY" -- sh -c 'command -v curl >/dev/null' || {
   exit 1
 }
 
-stores=$(pod_get "$OPENFGA_BASE/stores?page_size=100")
-store_id=$(printf '%s' "$stores" | jq -r --arg n "$STORE_NAME" \
-  '.stores[]? | select(.name==$n) | .id' | head -1)
+stores=$(collect_pages "$OPENFGA_BASE/stores" stores)
+store_matches=$(printf '%s' "$stores" | jq -c --arg n "$STORE_NAME" \
+  '[.[] | select(.name==$n)]')
+store_count=$(printf '%s' "$store_matches" | jq 'length')
+[ "$store_count" -le 1 ] || {
+  echo "FATAL: multiple OpenFGA stores use the canonical Etik Speak name" >&2
+  exit 1
+}
+store_id=$(printf '%s' "$store_matches" | jq -r '.[0].id // empty')
 if [ -z "$store_id" ]; then
   response=$(jq -nc --arg name "$STORE_NAME" '{name:$name}' | pod_post "$OPENFGA_BASE/stores")
   code=${response##*$'\n'}
@@ -103,13 +142,26 @@ if [ -z "$store_id" ]; then
     exit 1
   }
   store_id=$(printf '%s' "$body" | jq -r '.id // empty')
+  stores=$(collect_pages "$OPENFGA_BASE/stores" stores)
+  store_matches=$(printf '%s' "$stores" | jq -c --arg n "$STORE_NAME" \
+    '[.[] | select(.name==$n)]')
+  [ "$(printf '%s' "$store_matches" | jq 'length')" -eq 1 ] && \
+    [ "$(printf '%s' "$store_matches" | jq -r '.[0].id')" = "$store_id" ] || {
+    echo "FATAL: OpenFGA store uniqueness postcondition failed" >&2
+    exit 1
+  }
 fi
 [ -n "$store_id" ] || { echo "FATAL: OpenFGA store id unresolved" >&2; exit 1; }
 
 desired=$(jq -cS . "$MODEL_JSON")
-models=$(pod_get "$OPENFGA_BASE/stores/$store_id/authorization-models?page_size=100")
-model_id=$(printf '%s' "$models" | jq -r --argjson desired "$desired" \
-  '.authorization_models[]? | select(del(.id) == $desired) | .id' | head -1)
+models=$(collect_pages "$OPENFGA_BASE/stores/$store_id/authorization-models" authorization_models)
+model_matches=$(printf '%s' "$models" | jq -c --argjson desired "$desired" \
+  '[.[] | select(del(.id) == $desired)]')
+[ "$(printf '%s' "$model_matches" | jq 'length')" -le 1 ] || {
+  echo "FATAL: multiple exact Etik Speak authorization models exist in the canonical store" >&2
+  exit 1
+}
+model_id=$(printf '%s' "$model_matches" | jq -r '.[0].id // empty')
 if [ -z "$model_id" ]; then
   response=$(pod_post "$OPENFGA_BASE/stores/$store_id/authorization-models" <"$MODEL_JSON")
   code=${response##*$'\n'}
@@ -119,33 +171,75 @@ if [ -z "$model_id" ]; then
     exit 1
   }
   model_id=$(printf '%s' "$body" | jq -r '.authorization_model_id // empty')
+  models=$(collect_pages "$OPENFGA_BASE/stores/$store_id/authorization-models" authorization_models)
+  model_matches=$(printf '%s' "$models" | jq -c --argjson desired "$desired" \
+    '[.[] | select(del(.id) == $desired)]')
+  [ "$(printf '%s' "$model_matches" | jq 'length')" -eq 1 ] && \
+    [ "$(printf '%s' "$model_matches" | jq -r '.[0].id')" = "$model_id" ] || {
+    echo "FATAL: OpenFGA model uniqueness postcondition failed" >&2
+    exit 1
+  }
 fi
 [ -n "$model_id" ] || { echo "FATAL: OpenFGA model id unresolved" >&2; exit 1; }
 
-assert_no_direct_allow() {
-  local subject=$1 org_id=$2 response code body
-  response=$(jq -nc --arg user "user:$subject" --arg object "ethics_product:$org_id" \
-    '{tuple_key:{user:$user,object:$object},page_size:100}' \
-    | pod_post "$OPENFGA_BASE/stores/$store_id/read")
-  code=${response##*$'\n'}
-  body=${response%$'\n'*}
-  [ "$code" = 200 ] || {
-    echo "FATAL: negative-persona direct tuple read HTTP $code" >&2
-    exit 1
-  }
-  printf '%s' "$body" | jq -e '
-    [.tuples[]?.key.relation | select(. == "viewer" or . == "triager" or . == "handler")] | length == 0
-  ' >/dev/null || {
-    echo "FATAL: negative persona has a pre-existing direct Etik Speak allow tuple" >&2
+collect_direct_relations() {
+  local subject=$1 org_id=$2 token='' next response code body relations='[]' page_count=0 payload
+  while :; do
+    payload=$(jq -nc --arg user "user:$subject" --arg object "ethics_product:$org_id" \
+      --arg token "$token" \
+      '{tuple_key:{user:$user,object:$object},page_size:100}
+       + (if $token == "" then {} else {continuation_token:$token} end)')
+    response=$(printf '%s' "$payload" | pod_post "$OPENFGA_BASE/stores/$store_id/read")
+    code=${response##*$'\n'}
+    body=${response%$'\n'*}
+    [ "$code" = 200 ] || {
+      echo "FATAL: direct tuple read HTTP $code" >&2
+      exit 1
+    }
+    relations=$(jq -nc --argjson accumulated "$relations" --argjson page "$body" \
+      '$accumulated + [$page.tuples[]?.key.relation]')
+    next=$(printf '%s' "$body" | jq -r '.continuation_token // empty')
+    [ -n "$next" ] || break
+    [ "$next" != "$token" ] || {
+      echo "FATAL: OpenFGA tuple read returned a repeated continuation token" >&2
+      exit 1
+    }
+    token=$next
+    page_count=$((page_count + 1))
+    [ "$page_count" -lt 1000 ] || {
+      echo "FATAL: OpenFGA tuple pagination exceeded the bounded page count" >&2
+      exit 1
+    }
+  done
+  printf '%s' "$relations" | jq -c 'sort'
+}
+
+assert_direct_relation_allowlist() {
+  local subject=$1 org_id=$2 expected_json=$3 label=$4 actual
+  actual=$(collect_direct_relations "$subject" "$org_id")
+  printf '%s' "$actual" | jq -e --argjson expected "$expected_json" '. == ($expected | sort)' >/dev/null || {
+    echo "FATAL: $label direct relation set differs from its exact allowlist" >&2
     exit 1
   }
 }
 
-# Fail before adding the positive manager tuples if either negative persona has
-# drifted into a direct product allow relation.
-assert_no_direct_allow "$WRONG_ORG_SUBJECT" "$WRONG_ETHICS_ORG_ID"
-assert_no_direct_allow "$WRONG_ORG_SUBJECT" "$ETHICS_ORG_ID"
-assert_no_direct_allow "$DENIED_SUBJECT" "$ETHICS_ORG_ID"
+assert_direct_relation_subset() {
+  local subject=$1 org_id=$2 allowed_json=$3 label=$4 actual
+  actual=$(collect_direct_relations "$subject" "$org_id")
+  printf '%s' "$actual" | jq -e --argjson allowed "$allowed_json" \
+    '(. - $allowed) | length == 0' >/dev/null || {
+    echo "FATAL: $label contains a direct relation outside its allowlist" >&2
+    exit 1
+  }
+}
+
+# Fail before mutation if any persona has drifted outside its exact direct
+# product relation set. Team-derived effective privileges are checked below.
+assert_direct_relation_subset "$STAFF_SUBJECT" "$ETHICS_ORG_ID" \
+  '["handler","triager"]' positive-persona-precondition
+assert_direct_relation_allowlist "$WRONG_ORG_SUBJECT" "$WRONG_ETHICS_ORG_ID" '[]' wrong-org-object
+assert_direct_relation_allowlist "$WRONG_ORG_SUBJECT" "$ETHICS_ORG_ID" '[]' wrong-org-canonical-object
+assert_direct_relation_allowlist "$DENIED_SUBJECT" "$ETHICS_ORG_ID" '[]' denied-persona
 
 write_relation() {
   local relation=$1 response code body
@@ -165,6 +259,8 @@ write_relation() {
 }
 write_relation handler
 write_relation triager
+assert_direct_relation_allowlist "$STAFF_SUBJECT" "$ETHICS_ORG_ID" \
+  '["handler","triager"]' positive-persona-postcondition
 
 for relation in case_viewer case_triager case_handler; do
   response=$(jq -nc --arg model "$model_id" --arg user "user:$STAFF_SUBJECT" \
@@ -192,10 +288,16 @@ check_expected() {
     exit 1
   }
 }
-check_expected "$WRONG_ORG_SUBJECT" case_viewer "$WRONG_ETHICS_ORG_ID" false wrong-org-deny
-check_expected "$DENIED_SUBJECT" case_viewer "$ETHICS_ORG_ID" false denied-persona-deny
+for relation in case_viewer case_triager case_handler; do
+  check_expected "$WRONG_ORG_SUBJECT" "$relation" "$WRONG_ETHICS_ORG_ID" false "wrong-org-object-$relation"
+  check_expected "$WRONG_ORG_SUBJECT" "$relation" "$ETHICS_ORG_ID" false "wrong-org-canonical-$relation"
+  check_expected "$DENIED_SUBJECT" "$relation" "$ETHICS_ORG_ID" false "denied-persona-$relation"
+done
+for relation in evidence_approver evidence_reveal_approved ethics_product_admin technical_admin content_denied; do
+  check_expected "$STAFF_SUBJECT" "$relation" "$ETHICS_ORG_ID" false "positive-least-privilege-$relation"
+done
 
-echo "OpenFGA: isolated store/model; positive allow and two negative deny postconditions OK"
+echo "OpenFGA: isolated store/model; exact positive least privilege and negative effective-deny postconditions OK"
 echo "ETHICS_OPENFGA_STORE_ID=$store_id"
 echo "ETHICS_OPENFGA_MODEL_ID=$model_id"
 echo "OpenFGA: pin these non-secret IDs plus the canonical digest in GitOps before activation"

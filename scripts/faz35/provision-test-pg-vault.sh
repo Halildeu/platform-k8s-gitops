@@ -164,14 +164,20 @@ ensure_local_secret_file() {
       echo "FATAL: secret file must be a regular non-symlink: $file" >&2
       exit 1
     }
+    owner=$(stat -c '%u' "$file")
+    mode=$(stat -c '%a' "$file")
+    [ "$owner" = "$(id -u)" ] && [ "$mode" = 600 ] || {
+      echo "FATAL: existing secret file was not invoking-user-owned mode 600; rotation required: $file" >&2
+      exit 1
+    }
   else
     umask 077
     (set -C; printf '%s' "$generated" >"$file") || {
       echo "FATAL: exclusive secret file creation failed: $file" >&2
       exit 1
     }
+    chmod 600 "$file"
   fi
-  chmod 600 "$file"
   owner=$(stat -c '%u' "$file")
   mode=$(stat -c '%a' "$file")
   [ "$owner" = "$(id -u)" ] && [ "$mode" = 600 ] || {
@@ -184,7 +190,10 @@ public_gate_candidate=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
 ensure_local_secret_file "$PUBLIC_GATE_PASSWORD_FILE" "$public_gate_candidate"
 unset public_gate_candidate
 public_gate_password=$(<"$PUBLIC_GATE_PASSWORD_FILE")
-[ ${#public_gate_password} -ge 24 ] || { echo "FATAL: public gate password too short" >&2; exit 1; }
+[[ "$public_gate_password" =~ ^[A-Za-z0-9_-]{24,128}$ ]] || {
+  echo "FATAL: public gate password fails the canonical length/format policy" >&2
+  exit 1
+}
 public_gate_hash=$(printf '%s' "$public_gate_password" | openssl passwd -apr1 -stdin)
 public_gate_htpasswd="$PUBLIC_GATE_USERNAME:$public_gate_hash"
 { printf '%s\n' "$vault_root_token"; printf '%s' "$public_gate_htpasswd"; } | \
@@ -231,7 +240,7 @@ role_id=$(printf '%s\n' "$vault_root_token" | docker exec -i \
     export VAULT_TOKEN
     exec vault read -field=role_id "auth/approle/role/$1/role-id"
   ' sh "$ESO_APPROLE_NAME")
-printf '%s' "$role_id" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
+printf '%s' "$role_id" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
   echo "FATAL: dedicated ESO AppRole role_id is not a UUID" >&2
   exit 1
 }
@@ -322,14 +331,60 @@ BEGIN
     ) THEN
       RAISE EXCEPTION 'ethics_app has unsafe role attributes';
     END IF;
-    ALTER ROLE ethics_app WITH LOGIN;
+    IF EXISTS (
+      WITH RECURSIVE inherited(roleid) AS (
+        SELECT roleid FROM pg_auth_members
+          WHERE member = (SELECT oid FROM pg_roles WHERE rolname = 'ethics_app')
+        UNION
+        SELECT member_of.roleid FROM pg_auth_members member_of
+          JOIN inherited ON member_of.member = inherited.roleid
+      )
+      SELECT 1 FROM inherited
+    ) THEN
+      RAISE EXCEPTION 'ethics_app inherits an unexpected role';
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM pg_db_role_setting
+      WHERE setrole = (SELECT oid FROM pg_roles WHERE rolname = 'ethics_app')
+    ) THEN
+      RAISE EXCEPTION 'ethics_app has unexpected role/database settings';
+    END IF;
+    ALTER ROLE ethics_app WITH LOGIN NOINHERIT;
   ELSE
-    CREATE ROLE ethics_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+    CREATE ROLE ethics_app LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
       NOREPLICATION NOBYPASSRLS;
   END IF;
 END
 $$;
 SQL
+
+# A reused login must not carry direct ACLs from another product. Ownership is
+# checked separately; PUBLIC grants are cluster defaults and are not direct
+# grants to ethics_app.
+database_acl_count=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc "
+  SELECT count(*) FROM pg_database d, LATERAL aclexplode(d.datacl) x
+  WHERE x.grantee = (SELECT oid FROM pg_roles WHERE rolname='ethics_app')
+    AND NOT (d.datname='ethics' AND d.datdba=x.grantee)")
+[ "$database_acl_count" = 0 ] || {
+  echo "FATAL: ethics_app has unexpected direct database ACLs" >&2
+  exit 1
+}
+while IFS= read -r database_name; do
+  object_acl_count=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d "$database_name" -Atc "
+    WITH target AS (SELECT oid FROM pg_roles WHERE rolname='ethics_app')
+    SELECT
+      (SELECT count(*) FROM pg_namespace n, LATERAL aclexplode(n.nspacl) x, target t WHERE x.grantee=t.oid) +
+      (SELECT count(*) FROM pg_class c, LATERAL aclexplode(c.relacl) x, target t WHERE x.grantee=t.oid) +
+      (SELECT count(*) FROM pg_attribute a, LATERAL aclexplode(a.attacl) x, target t WHERE x.grantee=t.oid) +
+      (SELECT count(*) FROM pg_proc p, LATERAL aclexplode(p.proacl) x, target t WHERE x.grantee=t.oid) +
+      (SELECT count(*) FROM pg_type y, LATERAL aclexplode(y.typacl) x, target t WHERE x.grantee=t.oid) +
+      (SELECT count(*) FROM pg_default_acl a, LATERAL aclexplode(a.defaclacl) x, target t WHERE x.grantee=t.oid)")
+  [ "$object_acl_count" = 0 ] || {
+    echo "FATAL: ethics_app has unexpected direct object/default ACLs in $database_name" >&2
+    exit 1
+  }
+done < <(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+  "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname")
 
 # psql's \password command hashes client-side and avoids cleartext password SQL
 # in server statement logs. The password itself arrives only over stdin.
@@ -342,8 +397,8 @@ printf '%s\n' "$db_password" | docker exec -i "$PG_CONTAINER" sh -c '
 '
 
 role_state=$(docker exec "$PG_CONTAINER" psql -U postgres -At -F '|' -c \
-  "SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='ethics_app'")
-[ "$role_state" = "t|f|f|f|f|f" ] || {
+  "SELECT rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='ethics_app'")
+[ "$role_state" = "t|f|f|f|f|f|f" ] || {
   echo "FATAL: ethics_app least-privilege assertion failed" >&2
   exit 1
 }

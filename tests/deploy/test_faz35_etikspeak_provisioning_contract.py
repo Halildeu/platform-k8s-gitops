@@ -37,6 +37,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.eso_policy = (
             ROOT / "bootstrap/vault-policies/test/etik-speak-eso.hcl"
         ).read_text()
+        cls.model_ledger = (
+            ROOT
+            / "runtime-artifacts/openfga-model/1a4fe00f5b169945f2672f58fbec1bff2c0332e4d1cf39b742b41c28a01a95a4.json"
+        ).read_text()
         cls.test_root = (
             ROOT / "kustomize/overlays/test/kustomization.yaml"
         ).read_text()
@@ -144,6 +148,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("must not contain protocol mappers", self.keycloak)
         self.assertIn("has unexpected realm/client role mappings", self.keycloak)
         self.assertIn("must not inherit privileges from a group", self.keycloak)
+        self.assertIn("has unexpected effective/composite realm roles", self.keycloak)
+        self.assertIn("has unexpected effective frontend client roles", self.keycloak)
+        self.assertIn("has unexpected client-role scope mappings", self.keycloak)
+        self.assertIn("resource_roles", self.keycloak)
         self.assertIn("contains a forbidden audience", self.keycloak)
         self.assertIn("kc add-roles", self.keycloak)
         self.assertNotIn("kcadm.sh set-password", self.keycloak)
@@ -174,6 +182,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.assertEqual(self.external_secret.count(f"property: {key}"), 1)
         self.assertNotIn("ERP_OPENFGA_STORE_ID", self.external_secret)
         self.assertNotIn("ERP_OPENFGA_MODEL_ID", self.external_secret)
+        self.assertIn('"selector_kind": "kubernetes-configmap"', self.model_ledger)
+        self.assertIn('"name": "ethics-service-config"', self.model_ledger)
+        self.assertIn('"store_id_field": "ERP_OPENFGA_STORE_ID"', self.model_ledger)
+        self.assertIn('"model_id_field": "ERP_OPENFGA_MODEL_ID"', self.model_ledger)
         self.assertIn("PENDING_FAZ35_OPENFGA_STORE_ID", self.service_config)
         self.assertIn("PENDING_FAZ35_OPENFGA_MODEL_ID", self.service_config)
         self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 2)
@@ -206,6 +218,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("existing AppRole credentials could not be enumerated", self.pg_vault)
         self.assertIn("post-rotation AppRole credential enumeration failed", self.pg_vault)
         self.assertIn("stale AppRole credential accessor remains", self.pg_vault)
+        self.assertIn("ethics_app inherits an unexpected role", self.pg_vault)
+        self.assertIn("ethics_app has unexpected direct database ACLs", self.pg_vault)
+        self.assertIn("ethics_app has unexpected direct object/default ACLs", self.pg_vault)
+        self.assertIn("NOINHERIT", self.pg_vault)
         self.assertIn('--from-file=secret-id="$approle_secret_file"', self.pg_vault)
 
     def test_negative_personas_are_bound_to_openfga_deny_postconditions(self):
@@ -213,10 +229,14 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("ETHICS_DENIED_SUBJECT=$denied_id", self.keycloak)
         self.assertIn("WRONG_ORG_SUBJECT", self.openfga)
         self.assertIn("DENIED_SUBJECT", self.openfga)
-        self.assertIn("assert_no_direct_allow", self.openfga)
-        self.assertIn("negative persona has a pre-existing direct Etik Speak allow tuple", self.openfga)
-        self.assertIn("wrong-org-deny", self.openfga)
-        self.assertIn("denied-persona-deny", self.openfga)
+        self.assertIn("collect_direct_relations", self.openfga)
+        self.assertIn("assert_direct_relation_allowlist", self.openfga)
+        self.assertIn("wrong-org-canonical", self.openfga)
+        self.assertIn("denied-persona", self.openfga)
+        self.assertIn("positive-least-privilege", self.openfga)
+        self.assertIn("collect_pages", self.openfga)
+        self.assertIn("multiple OpenFGA stores use the canonical", self.openfga)
+        self.assertIn("multiple exact Etik Speak authorization models", self.openfga)
 
     def test_authority_and_persona_password_files_are_strictly_bounded(self):
         for script in (self.pg_vault, self.keycloak):
@@ -224,6 +244,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.assertIn("Vault init file must be invoking-user-owned mode 600", script)
         self.assertIn("persona password fails the length/format policy", self.keycloak)
         self.assertIn("negative-persona password fails the length/format policy", self.keycloak)
+        self.assertIn("existing secret file was not invoking-user-owned mode 600", self.pg_vault)
+        self.assertIn("public gate password fails the canonical length/format policy", self.pg_vault)
 
     def test_preflight_is_read_only_and_binds_live_dependencies(self):
         self.assertIn('SSH_TARGET" = "halil@staging-sw', self.preflight)
@@ -254,6 +276,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "activation must render exactly two ExternalSecrets",
             "both public ingresses must use the synthetic test access gate",
             "one-year HSTS header",
+            "foundation provisioning refuses an included Etik Speak activation root",
+            "foundation provisioning refuses existing or partial Etik Speak activation resources",
+            "secretstore/etik-speak-vault",
+            "priorityclass/etik-speak-test",
         ):
             self.assertIn(required, self.preflight)
         self.assertNotRegex(
