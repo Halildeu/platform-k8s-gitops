@@ -163,7 +163,12 @@ jobs:
           fetch-depth: 0
 
       - name: Install JSON Schema and Ed25519 verifier dependencies
-        run: python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
+        run: |
+          python3 -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
 
       - name: Parse completion audit and verifier test
         run: |

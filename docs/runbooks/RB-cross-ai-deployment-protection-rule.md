@@ -162,6 +162,10 @@ GitHub REST ref endpoint over TLS. The returned exact commit must already exist
 in the issuer checkout; otherwise refresh the trusted checkout and retry. Never
 derive the signed `base_tip` from the caller-selected worktree's `origin/main`,
 remote URL or a supplied SHA.
+When the review workspace HEAD is that exact canonical main tip, derive the
+scope only from its exact first parent to HEAD. This is the bounded post-merge
+activation path; an arbitrary base, a second parent or an empty main scope is
+rejected.
 
 Trust-root issuance must compare every candidate public key with the retained
 history of prior trust-root manifests. Reusing the same public key under a new
@@ -172,6 +176,9 @@ its final signed revocation snapshot byte-for-byte under
 both digests and the exact retirement time in the authority manifest, and leave
 all prior entries/bytes unchanged. Trusted-base validation rejects history
 deletion, mutation, reordering and a replacement root without that archive.
+The replacement root's independently signed revocation release must also retain
+every predecessor revocation entry; rotating the revocation signer cannot
+resurrect a revoked key, review, subject, grant or lease.
 This repo-public chain gives the running verifier a bounded, content-addressed
 cross-generation record instead of asking it to infer a deleted root.
 The recorded retirement may be at most one review-leaf lifetime in the past
@@ -197,11 +204,12 @@ fresh. This path never permits an empty
 fallback, unrevocation, root/code/schema change or replay of the retired genesis.
 
 The protected VIEW_ONLY authorization artifact must keep
-`advisory-comment.json` with `protected-authorization.json`; both names and
-digests are covered by `SHA256SUMS` and the GitHub artifact digest. Downstream
-product verification uses the archived comment metadata/body and must not
-refetch the live advisory comment. Owner/directive and current environment/legal
-operational checks remain separate live gates.
+`advisory-comment.json` and `owner-comment.json` with
+`protected-authorization.json`; all three names and digests are covered by
+`SHA256SUMS` and the GitHub artifact digest. Downstream product verification
+uses both archived comment metadata/body carriers and must not refetch either
+live comment. Current environment/legal operational checks remain separate live
+gates.
 
 V1 evaluates only current, unconsumed authorizations. A matching revocation
 entry therefore takes effect immediately, even if its `effectiveAt` is in the

@@ -236,6 +236,7 @@ jobs:
             --destination "$out/receipt" \
             --expected-file SHA256SUMS \
             --expected-file advisory-comment.json \
+            --expected-file owner-comment.json \
             --expected-file protected-authorization.json
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
           python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \

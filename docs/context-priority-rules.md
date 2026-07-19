@@ -507,16 +507,21 @@ aynı trusted-base doğrulayıcıda karşılar. Bu append-only history, retireme
 retirement anı veya sonrasında eski root yeni acceptance üretemez.
 Signed review base-tip'i caller worktree'deki mutable `origin/main` değildir;
 issuer sabit GitHub main-ref API'sinden TLS ile aldığı commit'i kullanır ve bu
-exact objenin local worktree'de mevcut olmasını ister. Root retirement geleceğe
+exact objenin local worktree'de mevcut olmasını ister. Review HEAD'i canonical
+main tip'iyse scope yalnız exact birinci ebeveyn ile o tip arasındaki immutable
+commit değişimidir; başka bir base veya boş main scope kabul edilmez. Root
+retirement geleceğe
 veya bounded review-leaf penceresinden daha eskiye yazılamaz; replacement root
 ve revocation seti retirement anında değil verifier'ın güncel observation
 anında da active/fresh olmalıdır. Retired authority resolver'ı final revocation
 snapshot'ını retirement anında bir kez doğrular ve downstream carrier
 doğrulamasına aynı historical observation anını taşır; 60 dakikalık `nextUpdate`
-geçti diye immutable geçmiş kanıt tekrar stale sayılmaz.
-Protected #2373 authorization artifact'i exact advisory comment JSON byte'larını
-receipt ile birlikte SHA256SUMS ve artifact digest'e bağlar. Sonraki product
-verifier live comment'i yeniden fetch etmeden archived owner/ref/timestamp/body
+geçti diye immutable geçmiş kanıt tekrar stale sayılmaz. Root rotasyonunda yeni
+imzalı revocation seti, eski root'un son doğrulanmış setindeki bütün entry'leri
+byte-anlamında korur; yeni root altında unrevocation yapılamaz.
+Protected #2373 authorization artifact'i exact advisory ve owner comment JSON
+byte'larını receipt ile birlikte SHA256SUMS ve artifact digest'e bağlar. Sonraki
+product verifier live comment'i yeniden fetch etmeden archived owner/ref/timestamp/body
 metadata ve signed carrier'ı doğrular; comment transport silinse veya erişilemez
 olsa bile daha önce üretilmiş kanıt replay edilebilir.
 Provider-review signer tek başına da authority değildir: aynı carrier, ayrı

@@ -81,6 +81,72 @@ class OutputSafetyTests(unittest.TestCase):
 
 
 class DeterministicDiffTests(unittest.TestCase):
+    def test_canonical_main_tip_can_review_its_exact_first_parent_range(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repo,
+                check=True,
+            )
+            source = repo / "scope.txt"
+            source.write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "scope.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            base = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+            ).strip()
+            source.write_text("base\nmain activation\n", encoding="utf-8")
+            subprocess.run(["git", "commit", "-qam", "main head"], cwd=repo, check=True)
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+            ).strip()
+
+            scope, _, _ = MODULE.derive_scope(
+                repo,
+                base_tip_sha=head,
+                base_sha=base,
+                head_sha=head,
+                scan_secrets=False,
+            )
+
+            self.assertIn(b"+main activation", scope)
+
+    def test_canonical_main_tip_rejects_a_non_parent_base(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repo,
+                check=True,
+            )
+            source = repo / "scope.txt"
+            for value in ("oldest", "parent", "head"):
+                source.write_text(value + "\n", encoding="utf-8")
+                subprocess.run(["git", "add", "scope.txt"], cwd=repo, check=True)
+                subprocess.run(["git", "commit", "-qm", value], cwd=repo, check=True)
+                if value == "oldest":
+                    oldest = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+                    ).strip()
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+            ).strip()
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    MODULE.derive_scope(
+                        repo,
+                        base_tip_sha=head,
+                        base_sha=oldest,
+                        head_sha=head,
+                        scan_secrets=False,
+                    )
+
     def test_git_diff_stops_at_scope_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

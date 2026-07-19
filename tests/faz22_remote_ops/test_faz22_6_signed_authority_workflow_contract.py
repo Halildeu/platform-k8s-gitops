@@ -8,11 +8,14 @@ WORKFLOWS = {
     "operator": ROOT / ".github/workflows/faz22-6-view-only-viewer-operator-evidence.yml",
     "product": ROOT
     / ".github/workflows/faz22-6-view-only-viewer-product-evidence-verify.yml",
+    "gate": ROOT / ".github/workflows/gate-faz22-view-only-evidence-verifier.yml",
 }
 LOCK_PATH = "scripts/github_apps/cross_ai_deployment_policy/requirements.lock"
 TERMINATION_WORKFLOW = (
     ROOT / ".github/workflows/faz22-6-view-only-viewer-termination-collector.yml"
 )
+BROWSER_WORKFLOW = ROOT / ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
+MATRIX_WORKFLOW = ROOT / ".github/workflows/faz22-6-view-only-viewer-matrix-collector.yml"
 
 
 def verify_dependency_lock_contract(text: str) -> None:
@@ -50,10 +53,13 @@ def verify_runtime_advisory_contract(text: str) -> None:
 def verify_legacy_archive_contract(text: str) -> None:
     required_counts = {
         'legacy = {"SHA256SUMS", "protected-authorization.json"}': 1,
-        'current = legacy | {"advisory-comment.json"}': 1,
+        'advisory = legacy | {"advisory-comment.json"}': 1,
+        'current = advisory | {"owner-comment.json"}': 1,
         'if set(names) == current:': 1,
+        'elif set(names) == advisory:': 1,
         'elif set(names) == legacy:': 1,
-        '[ "$archive_mode" = v2 ]': 2,
+        '[[ "$archive_mode" = v2-* ]]': 1,
+        '[ "$archive_mode" = v2-current ]': 1,
         '[ "$archive_mode" = v1 ]': 1,
     }
     if any(text.count(token) != count for token, count in required_counts.items()):
@@ -61,6 +67,12 @@ def verify_legacy_archive_contract(text: str) -> None:
 
 
 class SignedAuthorityWorkflowContractTest(unittest.TestCase):
+    def test_current_collectors_require_the_durable_owner_carrier(self):
+        for path in (BROWSER_WORKFLOW, MATRIX_WORKFLOW):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(workflow=path.name):
+                self.assertEqual(1, text.count("--expected-file owner-comment.json"))
+
     def test_current_workflows_are_content_addressed_and_operator_is_unshallow(self):
         rendered = {
             name: path.read_text(encoding="utf-8") for name, path in WORKFLOWS.items()
@@ -116,8 +128,10 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
         verify_legacy_archive_contract(original)
         for token in (
             'legacy = {"SHA256SUMS", "protected-authorization.json"}',
-            'current = legacy | {"advisory-comment.json"}',
-            '[ "$archive_mode" = v2 ]',
+            'advisory = legacy | {"advisory-comment.json"}',
+            'current = advisory | {"owner-comment.json"}',
+            '[[ "$archive_mode" = v2-* ]]',
+            '[ "$archive_mode" = v2-current ]',
             '[ "$archive_mode" = v1 ]',
         ):
             with self.subTest(omitted=token):
