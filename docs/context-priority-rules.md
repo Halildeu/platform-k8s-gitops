@@ -360,7 +360,11 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    enforcement kodunun kendisi değişse de mekanik taban `single` kalır.
 2. **`single` — kesin bağımsız Cross-AI review:** Tek ve birincil kanal direct
    OpenAI Codex'tir. Çağrı ayrı bir süreçte, yalnız hazırlanmış exact scope/head
-   ile çalışır. Scope external provider'a verilmeden önce exact scope byte'ları
+   ile çalışır. PR `Consultation tier: routine|high-impact` alanını zorunlu
+   taşır. Path/branch sınıflandırıcısının `single` zorunlu tuttuğu kapsamın
+   tabanı `high-impact` olur; path adı nötr olsa bile karar authz, retention,
+   concurrency, cutover veya production etkisi taşıyorsa author `high-impact`
+   beyan eder. Scope external provider'a verilmeden önce exact scope byte'ları
    owner tarafından secret/PII açısından incelenir ve create-once attestation
    üretilir:
 
@@ -425,7 +429,11 @@ kullanılabilir; scope byte'ı değiştiğinde yeni exact-scope review zorunludu
 Bir Codex `REVISE` kaydı yalnız PR gövdesinde seçilmiş daha yeni Codex receipt
 referansındaki `AGREE` ile çözülür; `none` veya challenger yorumları çözüm
 yetkisi üretmez. Düzenlenmiş ya da yapısal olarak geçersiz
-evidence adayı geçmişten sessizce düşmez, gate'i fail-closed yapar.
+evidence adayı geçmişten sessizce düşmez, gate'i fail-closed yapar. Politika
+aktivasyonundan sonra owner-authored PR yorumları evidence silme/dönüştürme
+bypass'ını önlemek için immutable kabul edilir; herhangi bir edit gate'i
+fail-closed yapar ve yeni create-once yorum gerekir. Dar tarihsel docs-only
+muafiyeti de aynı PR'daki açık `REVISE` geçmişini atlayamaz.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
 
@@ -459,6 +467,7 @@ PR structured alanları:
 Implementer AI: Codex|Claude|Gemini|other # other yalnız none modunda
 Consultation mode: none|single
 Consultation reason: <neden bu mod seçildi>
+Consultation tier: routine|high-impact # yalnız single
 Verdict: AGREE # yalnız single
 Consultation base tip: <single exact target tip>
 Consultation base: <single exact merge-base>
@@ -474,8 +483,9 @@ süreç sözleşmesi nedeniyle kabul edilir; farklı sağlayıcı iddiası yazı
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
 risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
 `single` yalnız exact Codex execution-profile receipt'i taşır. Routine scope'ta
-Spark varsayılandır ve Spark/SOL ikisi de kabul edilir; gate'in `single` zemini
-zorunlu tuttuğu governance/yüksek etkili scope'ta exact SOL zorunludur. Claude
+`routine` tier beyan edilir; Spark varsayılandır ve Spark/SOL ikisi de kabul
+edilir. Gate'in `single` zemini zorunlu tuttuğu governance/yüksek etkili scope'ta
+veya author `high-impact` beyan ettiğinde exact SOL zorunludur. Claude
 ve MiniMax receipt alanları fail-closed reddedilir. `single` çıktısı `P0/P1/P2` ve tek terminal
 `VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
 onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
@@ -532,12 +542,14 @@ ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
 sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
 oracle'ı değildir. Authz, retention/silme, concurrency, cutover veya geri
 döndürülemez başka bir karar path adına yansımıyorsa agent doğru
-`single` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
+`single` modunu ve `high-impact` tier'ını beyan etmek zorundadır; `none` veya
+`routine` bu sorumluluğu kaldırmaz.
 
 `Consultation mode` içermeyen tarihsel PR gövdeleri GitHub'da immutable kayıt
 olarak kalabilir; güncel gate bunları yeniden doğrulamaz ve `PASS`/acceptance
 üretmez. Yalnız dar `docs-only historical` allowlist'i receiptsiz muafiyet
-olarak kalır. Güncel parser'da görülen her MiniMax receipt fail-closed reddedilir.
+olarak kalır; bu muafiyet açık Codex `REVISE` geçmişini çözmez. Güncel parser'da
+görülen her MiniMax receipt fail-closed reddedilir.
 Yeni PR şablonu yalnız açık `none|single` sözleşmesini üretir; `single` yalnız
 Codex receipt ister. Claude challenger receipt veya gate yetkisi üretmez.
 

@@ -69,6 +69,7 @@ Critical-Fix: no
 Implementer AI: Codex
 Consultation mode: none
 Consultation reason: <neden none|single seçildi; en az 10 karakter>
+# Consultation tier: routine|high-impact # yalnız single; high-impact => gpt-5.6-sol
 # Verdict: AGREE # yalnız single
 # Consultation base tip: <single exact target tip>
 # Consultation base: <single exact merge-base>
@@ -81,9 +82,10 @@ Consultation reason: <neden none|single seçildi; en az 10 karakter>
 - `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
 - `single`: exact context-isolated Codex receipt + exact base/head/scope +
-  `AGREE`; Codex implementer için de geçerlidir. Evidence yalnız
-  `scripts/ai/run_isolated_codex_review.py` ile üretilir. Routine scope'ta
-  exact `gpt-5.3-codex-spark` + `xhigh`, governance/yüksek etkili scope'ta
+  `Consultation tier: routine|high-impact` + `AGREE`; Codex implementer için de
+  geçerlidir. Evidence yalnız `scripts/ai/run_isolated_codex_review.py` ile
+  üretilir. Routine scope'ta exact `gpt-5.3-codex-spark` + `xhigh`, governance/
+  yüksek etkili scope'ta veya author `high-impact` beyan ettiğinde
   `--review-tier high-impact` ile exact `gpt-5.6-sol` kullanılır.
 - Claude ve MiniMax receipt alanları yasaktır; Claude yalnız PR acceptance
   dışında non-authoritative challenger olarak kullanılabilir.

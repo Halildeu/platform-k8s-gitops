@@ -34,6 +34,7 @@ const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-18T14:16:20Z');
 const LEGACY_V1_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T00:04:38Z');
 const CLAUDE_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
+const EVIDENCE_HISTORY_IMMUTABILITY_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
 const NO_FINDINGS_RE = /^None$/;
 const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
 const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
@@ -113,6 +114,7 @@ const FORBIDDEN_CONSULTATION_FIELDS = new Set([
   'minimax receipt',
 ]);
 const CONSULTATION_MODES = new Set(['none', 'single']);
+const CONSULTATION_TIERS = new Set(['routine', 'high-impact']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
@@ -472,7 +474,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Consultation tier|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -911,6 +913,15 @@ async function appendPriorRevisionFinding(
       || comment.author.toLowerCase() !== expectedOwner.toLowerCase()
       || comment.authorAssociation !== 'OWNER'
     ) continue;
+    const ownerCommentUpdatedAtMs = Date.parse(comment?.updatedAt || '');
+    if (
+      Number.isFinite(ownerCommentUpdatedAtMs)
+      && ownerCommentUpdatedAtMs >= EVIDENCE_HISTORY_IMMUTABILITY_CUTOFF_MS
+      && comment.createdAt !== comment.updatedAt
+    ) {
+      invalidCandidates.push(`${comment?.ref || 'missing-ref'} (edited owner history)`);
+      continue;
+    }
     let body;
     try {
       body = JSON.parse(comment?.body || '');
@@ -1186,6 +1197,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const findings = [];
   const mode = (fields['consultation mode'] || '').trim().toLowerCase();
   const reason = (fields['consultation reason'] || '').trim();
+  const tier = (fields['consultation tier'] || '').trim().toLowerCase();
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
@@ -1261,6 +1273,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     const outcomeFields = [
       'verdict',
       'risk trigger',
+      'consultation tier',
       'consultation base tip',
       'consultation base',
       'consultation commit',
@@ -1307,8 +1320,30 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       : 'single consultation yalnız AGREE ile geçer',
   });
 
+  const tierValid = CONSULTATION_TIERS.has(tier);
+  const tierMeetsScopeFloor = tierValid
+    && (requiredFloor.mode !== 'single' || tier === 'high-impact');
+  findings.push({
+    check: 'consultation_tier_valid',
+    pass: tierValid,
+    detail: tierValid
+      ? `consultation tier ${tier}`
+      : 'single mode Consultation tier alanında yalnız routine veya high-impact kabul eder',
+  });
+  findings.push({
+    check: 'consultation_tier_meets_scope_floor',
+    pass: tierMeetsScopeFloor,
+    detail: tierMeetsScopeFloor
+      ? requiredFloor.mode === 'single'
+        ? `${requiredFloor.reason}; high-impact tier beyanı mevcut`
+        : `path/branch floor routine; author-declared ${tier} tier uygulanıyor`
+      : requiredFloor.mode === 'single'
+        ? `${requiredFloor.reason}; Consultation tier high-impact zorunlu`
+        : 'Consultation tier eksik veya geçersiz',
+  });
+
   const codexReceipt = parseReceipt(fields['codex receipt']);
-  const deepCodexRequired = requiredFloor.mode === 'single';
+  const deepCodexRequired = requiredFloor.mode === 'single' || tier === 'high-impact';
   const codexModelTierPass = Boolean(
     codexReceipt
     && (!deepCodexRequired || codexReceipt.requested === 'gpt-5.6-sol')
@@ -1580,6 +1615,10 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
           : `Verdict "${verdict}" invalid ve fail-closed`,
       });
     }
+  }
+
+  if (consultationExempt) {
+    await appendPriorRevisionFinding(findings, prMeta, evidenceOverrides);
   }
 
   return findings;

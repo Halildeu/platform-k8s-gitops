@@ -134,6 +134,9 @@ fi
 if [ "$FAKE_GITLEAKS_FINDING" = "1" ]; then
     exit 1
 fi
+if [ "$FAKE_GITLEAKS_ERROR" = "1" ]; then
+    exit 2
+fi
 exit 0
 '''
 
@@ -394,6 +397,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         trusted_pin: bool = True,
         trusted_gitleaks_pin: bool = True,
         gitleaks_finding: bool = False,
+        gitleaks_error: bool = False,
         large_stdout: bool = False,
         large_stderr: bool = False,
         pii_attestation_file: Path | None = None,
@@ -433,6 +437,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             env["FAKE_EXPECTED_MODEL"] = "gpt-5.6-sol"
         if gitleaks_finding:
             env["FAKE_GITLEAKS_FINDING"] = "1"
+        if gitleaks_error:
+            env["FAKE_GITLEAKS_ERROR"] = "1"
         if large_stdout:
             env["FAKE_LARGE_STDOUT"] = "1"
         if large_stderr:
@@ -848,6 +854,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.assertEqual(
             json.loads(result.stdout)["error"],
             "gitleaks_finding_detected",
+        )
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.execution_marker.exists())
+
+    def test_distinguishes_scanner_operational_failure_from_secret_finding(self) -> None:
+        result = self.run_harness(gitleaks_error=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "gitleaks_scan_failed",
         )
         self.assertFalse(self.output.exists())
         self.assertFalse(self.execution_marker.exists())

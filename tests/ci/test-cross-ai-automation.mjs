@@ -216,6 +216,18 @@ const unresolvedCodexReviseEvidence = {
   ...EVIDENCE,
   [UNREFERENCED_CODEX_REVISE_REF]: evidenceComment(codexReviseBody, 3_000),
 };
+const ERASED_OWNER_HISTORY_REF = evidenceRef(1007);
+const erasedOwnerHistoryComment = evidenceComment(
+  'Routine status note with no remaining evidence fields.',
+  3_000,
+);
+const erasedOwnerHistoryEvidence = {
+  ...EVIDENCE,
+  [ERASED_OWNER_HISTORY_REF]: {
+    ...erasedOwnerHistoryComment,
+    updatedAt: new Date(NOW_MS + 4_000).toISOString(),
+  },
+};
 const resolvedCodexReviseEvidence = {
   ...unresolvedCodexReviseEvidence,
   [UNREFERENCED_CODEX_AGREE_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 4_000),
@@ -449,6 +461,7 @@ const explicitSingleBody =
   `## Cross-AI\n` +
   `Implementer AI: Codex\n` +
   `Consultation mode: single\n` +
+  `Consultation tier: high-impact\n` +
   `Consultation reason: One isolated Codex architecture review is sufficient for this reversible decision.\n` +
   `Verdict: AGREE\n` +
   `Consultation base tip: ${BASE_TIP_SHA}\n` +
@@ -464,6 +477,9 @@ const freshSelectedCodexBody = explicitSingleBody
   .replace(CODEX_REF, UNREFERENCED_CODEX_AGREE_REF)
   .replace(sha256(EVIDENCE[CODEX_REF].body), sha256(freshCodexAgreeBody));
 const explicitSparkSingleBody = explicitSingleBody.replace(
+  'Consultation tier: high-impact',
+  'Consultation tier: routine',
+).replace(
   /^Codex receipt:.*$/m,
   `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
 );
@@ -885,6 +901,11 @@ const cases = [
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: editedHistoricalReviseEvidence,
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an owner comment edited after evidence immutability activation fails closed even after evidence fields are erased',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: erasedOwnerHistoryEvidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['an invalid-digest historical REVISE candidate fails closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -984,6 +1005,10 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode rejects a missing consultation tier',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody.replace(/^Consultation tier:.*\n/m, ''), changedFiles: [ROUTINE_PATH],
+      expectedFailureCheck: 'consultation_tier_valid' }, 1],
   ['single mode ignores an immutable pre-retirement Claude REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
@@ -1026,6 +1051,12 @@ const cases = [
       evidence: SOL_RECEIPT_SPARK_EVIDENCE, expectedFailureCheck: 'codex_receipt' }, 1],
   ['explicit single mode accepts Spark for a routine voluntary consultation',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode rejects routine tier for a governance path floor',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [GOVERNANCE_PATH], expectedFailureCheck: 'consultation_tier_meets_scope_floor' }, 1],
+  ['explicit single mode rejects Spark when the author declares high-impact on a neutral path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSparkSingleBody.replace('Consultation tier: routine', 'Consultation tier: high-impact'),
+      changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_codex_model_tier' }, 1],
   ['explicit single mode rejects Spark for consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: ['AGENTS.md'], expectedFailureCheck: 'consultation_codex_model_tier' }, 1],
   ['explicit single mode rejects Spark for the Cross-AI gate workflow path',
@@ -1071,6 +1102,9 @@ const cases = [
   ['explicit mode rejects duplicate consultation-mode fields',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitSingleBody}Consultation mode: single\n`, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit mode rejects duplicate consultation-tier fields',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitSingleBody}Consultation tier: high-impact\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit mode rejects duplicate implementer fields',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitSingleBody}Implementer AI: Codex\n`, changedFiles: [ROUTINE_PATH] }, 1],
@@ -1268,6 +1302,12 @@ const cases = [
     { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       changedFiles: ['docs/session-handoff-2026-07-17-example.md'],
       body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: docs-only historical handoff with no code or governance delta\n' }, 0],
+  ['historical docs-only exemption cannot bypass an unresolved Codex REVISE',
+    { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      changedFiles: ['docs/session-handoff-2026-07-17-example.md'],
+      evidence: unresolvedCodexReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved',
+      body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: docs-only historical handoff with no code or governance delta\n' }, 1],
   ['archived historical doc is inside the narrow exemption allowlist',
     { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       changedFiles: ['docs/archive/2025-historical.md'],

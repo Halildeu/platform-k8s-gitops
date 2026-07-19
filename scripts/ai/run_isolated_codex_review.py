@@ -579,8 +579,10 @@ def scan_scope_with_gitleaks(gitleaks: Path, scope: str) -> None:
             )
         except (OSError, subprocess.TimeoutExpired):
             fail("gitleaks_scan_failed")
-        if result.returncode != 0:
+        if result.returncode == 1:
             fail("gitleaks_finding_detected")
+        if result.returncode != 0:
+            fail("gitleaks_scan_failed")
 
 
 def serialize_openai_evidence(

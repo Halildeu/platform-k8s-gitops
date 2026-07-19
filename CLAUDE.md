@@ -83,13 +83,15 @@ mavis communication peers
 - İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal yalnız
   `scripts/ai/run_isolated_codex_review.py` üzerinden ayrı
   `codex exec --ephemeral --sandbox read-only` sürecidir:
-  `Consultation mode: single`. Implementer Codex olsa da exact-scope süreç ve
+  `Consultation mode: single` + zorunlu `Consultation tier: routine|high-impact`.
+  Implementer Codex olsa da exact-scope süreç ve
   bağlam izolasyonu nedeniyle bu receipt tek başına Cross-AI kabul edilir;
   provider çeşitliliği aranmaz.
 - Routine scope'ta exact `gpt-5.3-codex-spark` + `xhigh`; governance,
   güvenlik/authz, production promotion, migration ve diğer yüksek etkili
   scope'ta `--review-tier high-impact` ile exact `gpt-5.6-sol` + `xhigh`
-  kullanılır. Spark yüksek etkili gate'i geçemez.
+  kullanılır. Gate'in `single` zorunlu tuttuğu scope ve author-declared
+  `high-impact` tier SOL ister; Spark yüksek etkili gate'i geçemez.
 - CI/PR acceptance yalnız `none|single` kabul eder. Claude yalnız isteğe bağlı,
   receipt/gate yetkisi olmayan challenger'dır; çıktısı Codex evidence olarak
   yeniden paketlenemez. MiniMax çağrılmaz, receipt'i üretilmez ve yeni
@@ -98,6 +100,9 @@ mavis communication peers
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse canonical isolated Codex
   kanalı değişen exact scope üzerinde yeniden inceler.
+- Politika aktivasyonundan sonra owner-authored PR yorumlarını düzenleme;
+  evidence/history yorumu edit edilirse gate fail-closed olur. Tarihsel
+  docs-only muafiyeti açık `REVISE` geçmişini atlayamaz.
 - Varsayımsal senaryoyu yalnız yol/opsiyon keşfinde ve açıkça non-authoritative
   kullan. Kesin review'da yalnız mevcut exact scope'tan somut, yeniden
   üretilebilir bulgu yaz; “ileride gevşetilirse/olabilir/potansiyel” iddiasını
