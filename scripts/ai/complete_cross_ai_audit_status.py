@@ -264,17 +264,47 @@ def protect_live_pr_generation(repo: str, current: object, url: str) -> dict | N
     return post_retry_pending(repo, head, url, generation)
 
 
-def created_comment_needs_guard(body: str) -> bool:
+def comment_body_needs_guard(body: str) -> bool:
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
         payload = None
+    if isinstance(payload, dict):
+        if payload.get("schema") in {
+            "cross-ai-provider-evidence/v1",
+            "cross-ai-provider-evidence/v3",
+            "cross-ai-provider-evidence/v4",
+        }:
+            return True
+        evidence_keys = {
+            "base_tip_sha",
+            "base_sha",
+            "head_sha",
+            "scope_sha256",
+            "execution_profile",
+            "execution_provenance",
+            "requested_model",
+            "actual_model",
+            "response_sha256",
+            "response",
+            "verdict",
+        }
+        if sum(key in payload for key in evidence_keys) >= 2:
+            return True
+    raw_signals = (
+        "cross-ai-provider-evidence/v1",
+        "cross-ai-provider-evidence/v3",
+        "cross-ai-provider-evidence/v4",
+        "base_tip_sha",
+        "base_sha",
+        "head_sha",
+        "scope_sha256",
+        "execution_profile",
+        "response_sha256",
+        "verdict",
+    )
     return bool(
-        (
-            isinstance(payload, dict)
-            and payload.get("schema") == "cross-ai-provider-evidence/v4"
-            and payload.get("provider") == "openai"
-        )
+        sum(signal in body for signal in raw_signals) >= 2
         or re.search(r"(?m)^VERDICT:[ \t]*REVISE[ \t]*$", body)
     )
 
@@ -574,6 +604,7 @@ def guard_comment_mutation(repo: str, event_path: Path) -> dict:
         comment_body = event["comment"].get("body") or ""
         comment_author = event["comment"]["user"]["login"].lower()
         comment_association = event["comment"].get("author_association")
+        changes = event.get("changes")
         issue = event["issue"]
         issue_number = issue["number"]
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
@@ -606,11 +637,20 @@ def guard_comment_mutation(repo: str, event_path: Path) -> dict:
     generation = int(markers[0][0]) if len(markers) == 1 else 0
     owner = repo.split("/", 1)[0].lower()
     fields = parse_selected_evidence_fields(body)
-    if action == "created" and (
+    previous_comment_body = ""
+    if isinstance(changes, dict):
+        body_change = changes.get("body")
+        if isinstance(body_change, dict) and isinstance(body_change.get("from"), str):
+            previous_comment_body = body_change["from"]
+    owner_evidence_mutation = (
         comment_author == owner
         and comment_association == "OWNER"
-        and created_comment_needs_guard(comment_body)
-    ):
+        and (
+            comment_body_needs_guard(comment_body)
+            or comment_body_needs_guard(previous_comment_body)
+        )
+    )
+    if action == "created" and owner_evidence_mutation:
         selected_match = re.fullmatch(
             rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
             fields.get("ref", "") if fields is not None else "",
@@ -633,10 +673,11 @@ def guard_comment_mutation(repo: str, event_path: Path) -> dict:
                 pass
             else:
                 return {"ok": True, "action": "ignored-valid-selected-created"}
+    if owner_evidence_mutation:
         created = post_retry_pending(repo, head, expected_url, generation)
         return {
             "ok": True,
-            "action": "created-cross-ai-evidence-guarded",
+            "action": "owner-evidence-comment-guarded",
             "comment_action": action,
             "generation": generation,
             "status_id": created["id"],

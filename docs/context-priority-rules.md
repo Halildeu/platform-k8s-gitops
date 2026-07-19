@@ -580,9 +580,10 @@ owner comment'i success'ten hemen önce yeniden okuyup exact body digest, OWNER
 association ve `created_at == updated_at` immutability koşulunu korur; success
 bu workflow'un son dış yazımıdır ve telafi amaçlı success-sonrası pending
 penceresi oluşturulmaz. Daha sonraki seçili-comment `edited` / `deleted`
-olayları ve owner tarafından oluşturulan yeni v4 evidence veya terminal
-`REVISE` yorumları trusted `issue_comment` guard ile güncel PR head'ini yeniden
-pending yapar.
+olayları; owner tarafından oluşturulan v1/v3/v4 veya evidence-like yorumlar ve
+seçilmemiş evidence yorumlarının sonradan düzenlenmesi/silinmesi trusted
+`issue_comment` guard ile güncel PR head'ini yeniden pending yapar. Yalnız zaten
+seçilmiş immutable v4 `AGREE` yorumunun gecikmiş `created` olayı idempotenttir.
 Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
 `Consultation commit` SHA'sında doğrular, ancak success'i güncel PR head SHA'sına
 yazar; böylece metadata-only yeni head de required status kazanır. Success

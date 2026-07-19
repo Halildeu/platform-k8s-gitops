@@ -84,9 +84,9 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         comment_id: int,
         *,
         body: str = "routine comment",
+        previous_body: str | None = None,
     ) -> None:
-        self.event_path.write_text(
-            json.dumps({
+        event = {
                 "action": action,
                 "comment": {
                     "id": comment_id,
@@ -100,9 +100,10 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                         "url": f"https://api.github.com/repos/{self.repo}/pulls/{self.issue}"
                     },
                 },
-            }),
-            encoding="utf-8",
-        )
+            }
+        if previous_body is not None:
+            event["changes"] = {"body": {"from": previous_body}}
+        self.event_path.write_text(json.dumps(event), encoding="utf-8")
 
     def current_pr(
         self,
@@ -810,7 +811,42 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             ),
         ):
             result = MODULE.guard_comment_mutation(self.repo, self.event_path)
-        self.assertEqual(result["action"], "created-cross-ai-evidence-guarded")
+        self.assertEqual(result["action"], "owner-evidence-comment-guarded")
+
+    def test_created_owner_retired_v3_evidence_restores_pending(self) -> None:
+        self.write_comment_event(
+            "created",
+            self.comment_id + 1,
+            body=(
+                '{"schema":"cross-ai-provider-evidence/v3",'
+                '"provider":"openai","verdict":"AGREE"}'
+            ),
+        )
+        retry = {
+            "id": 40,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[
+                    subprocess.CompletedProcess(
+                        ["gh"], 0, stdout=json.dumps(self.current_pr(self.body())), stderr=""
+                    ),
+                    subprocess.CompletedProcess(
+                        ["gh"], 0, stdout=json.dumps(retry), stderr=""
+                    ),
+                ],
+            ),
+        ):
+            result = MODULE.guard_comment_mutation(self.repo, self.event_path)
+        self.assertEqual(result["action"], "owner-evidence-comment-guarded")
 
     def test_delayed_created_event_for_valid_selected_agree_is_idempotent(self) -> None:
         self.write_comment_event(
@@ -860,6 +896,43 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         ):
             result = MODULE.guard_comment_mutation(self.repo, self.event_path)
         self.assertEqual(result["action"], "ignored-valid-unselected-comment")
+        self.assertEqual(len(calls), 2)
+
+    def test_unselected_owner_evidence_edit_restores_pending(self) -> None:
+        retired = (
+            '{"schema":"cross-ai-provider-evidence/v3",'
+            '"provider":"openai","verdict":"AGREE"}'
+        )
+        self.write_comment_event(
+            "edited",
+            self.comment_id + 1,
+            body="evidence fields removed",
+            previous_body=retired,
+        )
+        retry = {
+            "id": 40,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        calls: list[list[str]] = []
+        responses = [self.current_pr(self.body()), retry]
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.guard_comment_mutation(self.repo, self.event_path)
+        self.assertEqual(result["action"], "owner-evidence-comment-guarded")
+        self.assertEqual(result["comment_action"], "edited")
         self.assertEqual(len(calls), 2)
 
     def test_unselected_event_still_guards_previously_mutated_selected_comment(self) -> None:

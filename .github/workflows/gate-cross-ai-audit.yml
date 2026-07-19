@@ -69,10 +69,11 @@ on:
       # When the audit script gains genuine label-aware semantics, this
       # block should be re-added with the matching script logic in the
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
-  # Evidence comments remain mutable GitHub objects. Owner-created v4/REVISE
-  # evidence and any later edit/deletion of selected evidence restore the
-  # fail-closed status on the open PR's current head. A delayed `created` event
-  # for the already-selected immutable AGREE is idempotent.
+  # Evidence comments remain mutable GitHub objects. Any owner-created
+  # evidence-like comment (including retired schemas/REVISE) and later
+  # edit/deletion of selected or unselected evidence restore the fail-closed
+  # status on the open PR's current head. A delayed `created` event for the
+  # already-selected immutable v4 AGREE is idempotent.
   issue_comment:
     types:
       - created
