@@ -46,7 +46,10 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 ITEM_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 MAX_SCOPE_BYTES = 2_000_000
 MAX_CODEX_NATIVE_BYTES = 320_000_000
+MAX_GITLEAKS_NATIVE_BYTES = 64_000_000
+GITLEAKS_VERSION = "8.30.1"
 CODEX_VERSION_RE = re.compile(r"^codex-cli ([0-9]+\.[0-9]+\.[0-9]+)$")
+GITLEAKS_VERSION_RE = re.compile(r"^([0-9]+\.[0-9]+\.[0-9]+)$")
 BENIGN_CACHE_STDERR_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z ERROR "
     r"codex_models_manager::(?:cache|manager): "
@@ -70,6 +73,16 @@ TRUSTED_CODEX_NATIVE_SHA256 = {
     ("0.144.1", "codex-linux-x64"): "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
     ("0.144.1", "codex-win32-arm64"): "d3d92e9c10a6f3371a425214c3df67eb97ec5c2ff1b88876410fe0e61d4791da",
     ("0.144.1", "codex-win32-x64"): "cbacbb9726262ef558b4af0438a1b2a5bba9076132401d947b5b4d2bf92ab0e4",
+}
+TRUSTED_GITLEAKS_NATIVE_SHA256 = {
+    (GITLEAKS_VERSION, "darwin", "arm64"): "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302",
+    (GITLEAKS_VERSION, "darwin", "aarch64"): "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302",
+    (GITLEAKS_VERSION, "darwin", "x86_64"): "cee01fea7173f1b779dff188e1c26ecbcb4027d394acc573b23aaf0be260e291",
+    (GITLEAKS_VERSION, "linux", "arm64"): "00e91bbe655bd7c47753e8cfe61cb76ea1a5d7e7702fe161ee40102b46b3823b",
+    (GITLEAKS_VERSION, "linux", "aarch64"): "00e91bbe655bd7c47753e8cfe61cb76ea1a5d7e7702fe161ee40102b46b3823b",
+    (GITLEAKS_VERSION, "linux", "x86_64"): "88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509",
+    (GITLEAKS_VERSION, "windows", "arm64"): "200df852fdecbedb19a33960657333cba5e231740bc8968972b507b50f93b194",
+    (GITLEAKS_VERSION, "windows", "amd64"): "17157e2ee8b76fc8b1d8bee607a250e34b8a8023c8bc81822d4b5ee4d78fcb7c",
 }
 DISABLED_CODEX_FEATURES = (
     "apps",
@@ -185,6 +198,7 @@ def verify_scope_binding(
                     head_sha,
                     "--output",
                     str(derived_scope),
+                    "--derive-only",
                 ],
                 text=True,
                 stdout=subprocess.PIPE,
@@ -207,7 +221,7 @@ def verify_scope_binding(
             or receipt.get("base_sha") != base_sha.lower()
             or receipt.get("head_sha") != head_sha.lower()
             or receipt.get("scope_sha256") != supplied_scope_sha256.lower()
-            or receipt.get("secret_scan") != "gitleaks-pass"
+            or receipt.get("secret_scan") != "derive-only"
         ):
             fail("canonical_scope_binding_mismatch")
         try:
@@ -295,6 +309,40 @@ def resolve_codex_native() -> tuple[bytes, str, str, str, str]:
     return native_bytes, executable_name, version, package_suffix, native_digest
 
 
+def resolve_gitleaks_native() -> tuple[bytes, str, str]:
+    binary_name = shutil.which("gitleaks")
+    if binary_name is None:
+        fail("gitleaks_unavailable")
+    native = Path(binary_name).resolve()
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    try:
+        descriptor = os.open(native, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            native_stat = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(native_stat.st_mode)
+                or native_stat.st_size < 1
+                or native_stat.st_size > MAX_GITLEAKS_NATIVE_BYTES
+                or native_stat.st_mode & 0o111 == 0
+            ):
+                fail("gitleaks_identity_unverifiable")
+            with os.fdopen(descriptor, "rb", closefd=False) as handle:
+                native_bytes = handle.read()
+        finally:
+            os.close(descriptor)
+    except OSError:
+        fail("gitleaks_identity_unverifiable")
+    native_digest = hashlib.sha256(native_bytes).hexdigest()
+    if (
+        TRUSTED_GITLEAKS_NATIVE_SHA256.get((GITLEAKS_VERSION, system, machine))
+        != native_digest
+    ):
+        fail("gitleaks_identity_unverifiable")
+    executable_name = "gitleaks.exe" if system == "windows" else "gitleaks"
+    return native_bytes, executable_name, native_digest
+
+
 def build_codex_environment() -> dict[str, str]:
     environment = {
         key: os.environ[key]
@@ -343,6 +391,89 @@ def materialize_verified_codex(
         ):
             fail("codex_native_identity_unverifiable")
         yield executable
+
+
+@contextlib.contextmanager
+def materialize_verified_gitleaks(
+    native_bytes: bytes,
+    executable_name: str,
+) -> Iterator[Path]:
+    with tempfile.TemporaryDirectory(prefix="verified-gitleaks-native-") as directory:
+        executable = Path(directory) / executable_name
+        try:
+            descriptor = os.open(
+                executable,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o500,
+            )
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(native_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(executable, 0o500)
+            version_result = subprocess.run(
+                [str(executable), "version"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10,
+                check=False,
+                env=build_codex_environment(),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            fail("gitleaks_identity_unverifiable")
+        version_match = GITLEAKS_VERSION_RE.fullmatch(version_result.stdout.strip())
+        if (
+            version_result.returncode != 0
+            or version_result.stderr.strip()
+            or version_match is None
+            or version_match.group(1) != GITLEAKS_VERSION
+        ):
+            fail("gitleaks_identity_unverifiable")
+        yield executable
+
+
+def scan_scope_with_gitleaks(gitleaks: Path, scope: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="isolated-scope-scan-") as directory:
+        root = Path(directory)
+        source_dir = root / "source"
+        source_dir.mkdir(mode=0o700)
+        source = source_dir / "scope.patch"
+        source.write_bytes(scope.encode("utf-8"))
+        os.chmod(source, 0o600)
+        config = root / "gitleaks.toml"
+        config.write_text(
+            "[extend]\nuseDefault = true\n\n"
+            "[[allowlists]]\n"
+            'description = "Cross-AI policy vocabulary false positive"\n'
+            'regexTarget = "match"\n'
+            'regexes = ["^OAuth client secret, private/signing/HMAC ?$"]\n',
+            encoding="utf-8",
+        )
+        os.chmod(config, 0o600)
+        try:
+            result = subprocess.run(
+                [
+                    str(gitleaks),
+                    "detect",
+                    "--no-git",
+                    "--no-banner",
+                    "--redact",
+                    "--config",
+                    str(config),
+                    "--source",
+                    str(source_dir),
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+                env=build_codex_environment(),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            fail("gitleaks_scan_failed")
+        if result.returncode != 0:
+            fail("gitleaks_finding_detected")
 
 
 def serialize_openai_evidence(
@@ -488,16 +619,19 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
     return thread_id, response
 
 
-def write_create_once(path: Path, content: str) -> None:
+def write_create_once(path: Path, content: str) -> str:
+    encoded = content.encode("utf-8")
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(content)
-            handle.write("\n")
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
     except FileExistsError:
         fail("evidence_output_exists")
     except OSError:
         fail("evidence_output_write_failed")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def execute_codex_review(
@@ -578,6 +712,7 @@ def main() -> None:
         codex_native_target,
         codex_sha256,
     ) = resolve_codex_native()
+    gitleaks_bytes, gitleaks_executable_name, _ = resolve_gitleaks_native()
     if not args.worktree.is_dir() or not (args.worktree / ".git").exists():
         fail("worktree_invalid")
     if args.timeout_seconds < 30 or args.timeout_seconds > 900:
@@ -592,6 +727,11 @@ def main() -> None:
         supplied_scope=scope,
         supplied_scope_sha256=args.scope_sha256,
     )
+    with materialize_verified_gitleaks(
+        gitleaks_bytes,
+        gitleaks_executable_name,
+    ) as gitleaks:
+        scan_scope_with_gitleaks(gitleaks, scope)
     model = MODELS[args.review_tier]
     with materialize_verified_codex(
         codex_bytes,
@@ -621,7 +761,7 @@ def main() -> None:
         cli_native_sha256=codex_sha256,
         stderr_classification=stderr_classification,
     )
-    write_create_once(args.evidence_output, evidence)
+    evidence_sha256 = write_create_once(args.evidence_output, evidence)
     print(
         json.dumps(
             {
@@ -640,7 +780,7 @@ def main() -> None:
                 "reasoning_effort": "xhigh",
                 "thread_id": thread_id,
                 "scope_sha256": args.scope_sha256.lower(),
-                "evidence_sha256": hashlib.sha256(evidence.encode("utf-8")).hexdigest(),
+                "evidence_sha256": evidence_sha256,
                 "evidence_output": str(args.evidence_output),
             },
             ensure_ascii=False,

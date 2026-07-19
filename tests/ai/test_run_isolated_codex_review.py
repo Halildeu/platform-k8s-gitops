@@ -113,6 +113,10 @@ print(json.dumps({"type":"turn.completed","usage":{}}))
 '''
 
 FAKE_GITLEAKS = r'''#!/bin/sh
+if [ "$1" = "version" ]; then
+    echo "8.30.1"
+    exit 0
+fi
 if [ "$1" != "detect" ]; then
     exit 2
 fi
@@ -161,6 +165,18 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             if version == "0.144.1"
         }
         self.assertEqual(package_suffixes, pinned_suffixes)
+
+    def test_every_supported_codex_platform_has_a_gitleaks_release_pin(self) -> None:
+        supported_platforms = {
+            (system, machine)
+            for system, machine in MODULE.PLATFORM_PACKAGES
+        }
+        scanner_platforms = {
+            (system, machine)
+            for version, system, machine in MODULE.TRUSTED_GITLEAKS_NATIVE_SHA256
+            if version == MODULE.GITLEAKS_VERSION
+        }
+        self.assertEqual(supported_platforms, scanner_platforms)
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -300,6 +316,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         reasoning_unfinished: bool = False,
         review_tier: str = "routine",
         trusted_pin: bool = True,
+        trusted_gitleaks_pin: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -358,6 +375,15 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             trusted[("0.144.1", self.package_suffix)] = hashlib.sha256(
                 self.fake_codex.read_bytes()
             ).hexdigest()
+        trusted_gitleaks = dict(MODULE.TRUSTED_GITLEAKS_NATIVE_SHA256)
+        if trusted_gitleaks_pin:
+            trusted_gitleaks[
+                (
+                    MODULE.GITLEAKS_VERSION,
+                    platform.system().lower(),
+                    platform.machine().lower(),
+                )
+            ] = hashlib.sha256((self.bin_dir / "gitleaks").read_bytes()).hexdigest()
         stdout = io.StringIO()
         stderr = io.StringIO()
         returncode = 0
@@ -371,6 +397,11 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             mock.patch.object(sys, "argv", arguments),
             mock.patch.dict(os.environ, env, clear=True),
             mock.patch.object(MODULE, "TRUSTED_CODEX_NATIVE_SHA256", trusted),
+            mock.patch.object(
+                MODULE,
+                "TRUSTED_GITLEAKS_NATIVE_SHA256",
+                trusted_gitleaks,
+            ),
             mock.patch.object(MODULE, "build_codex_environment", return_value=codex_env),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
@@ -425,6 +456,10 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         )
         self.assertEqual(evidence["scope_sha256"], self.scope_sha)
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(
+            summary["evidence_sha256"],
+            hashlib.sha256(self.output.read_bytes()).hexdigest(),
+        )
         self.assertNotIn(evidence["response"], result.stdout)
 
     def test_high_impact_tier_uses_sol_model(self) -> None:
@@ -570,6 +605,54 @@ class IsolatedCodexReviewTests(unittest.TestCase):
                     "codex_platform_package_invalid",
                 )
                 self.assertFalse(self.execution_marker.exists())
+
+    def test_rejects_known_secret_scope_when_path_scanner_is_untrusted(self) -> None:
+        source = self.worktree / "scope-source.txt"
+        source.write_text(
+            "base\nhead\ncredential=ghp_abcdefghijklmnopqrstuvwxyz\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "commit", "-qam", "secret head"], cwd=self.worktree, check=True)
+        self.head_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.worktree, text=True
+        ).strip()
+        self.scope = self.root / "secret-scope.patch"
+        prepare = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/ai/prepare_cross_ai_scope.py"),
+                "--repo",
+                str(self.worktree),
+                "--base-ref",
+                self.base_ref,
+                "--base-sha",
+                self.base_sha,
+                "--head-sha",
+                self.head_sha,
+                "--output",
+                str(self.scope),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={
+                **os.environ,
+                "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            },
+            check=False,
+        )
+        self.assertEqual(prepare.returncode, 0, prepare.stdout + prepare.stderr)
+        self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
+
+        result = self.run_harness(trusted_gitleaks_pin=False)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "gitleaks_identity_unverifiable",
+        )
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.execution_marker.exists())
 
 
 if __name__ == "__main__":
