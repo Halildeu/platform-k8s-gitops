@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -24,7 +26,7 @@ from scripts.ai.trusted_cross_ai_evidence import (
 from scripts.ai.cross_ai_authority import (
     AuthorityUnavailable,
     is_exact_revocation_transition,
-    load_active_authority,
+    load_authority_for_evidence,
     load_revocation_refresh_authority,
     load_staged_activation_authority,
     validate_authority_history_transition,
@@ -47,6 +49,25 @@ def parse_github_time(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed.astimezone(timezone.utc)
+
+
+def carried_review_issued_at(evidence: dict[str, object]) -> datetime:
+    envelope = evidence.get("review_envelope")
+    if not isinstance(envelope, dict) or set(envelope) != {
+        "payloadType", "payload", "signatures",
+    }:
+        raise TrustedEvidenceError("signed review envelope is invalid")
+    try:
+        payload_bytes = base64.b64decode(envelope.get("payload"), validate=True)
+        payload = json.loads(payload_bytes)
+    except (TypeError, ValueError, binascii.Error, UnicodeError, json.JSONDecodeError) as exc:
+        raise TrustedEvidenceError("signed review payload is invalid") from exc
+    if not isinstance(payload, dict) or canonical_bytes(payload) != payload_bytes:
+        raise TrustedEvidenceError("signed review payload is not canonical")
+    issued_at = parse_github_time(payload.get("issuedAt"))
+    if issued_at is None:
+        raise TrustedEvidenceError("signed review issuedAt is invalid")
+    return issued_at
 
 
 def main() -> None:
@@ -103,13 +124,21 @@ def main() -> None:
             "head_sha": args.head_sha,
             "scope_sha256": args.scope_sha256,
         }
+        review_issued_at = carried_review_issued_at(evidence)
+        trust_root_sha256 = evidence.get("trust_root_sha256")
+        if not isinstance(trust_root_sha256, str) or re.fullmatch(
+            r"sha256:[a-f0-9]{64}", trust_root_sha256
+        ) is None:
+            raise TrustedEvidenceError("signed review trust-root binding is invalid")
         validate_authority_history_transition(
             args.repo_root,
             expected_bindings=bindings,
             now=now,
+            require_checkout_binding=False,
         )
         if is_exact_revocation_transition(
-            args.repo_root, expected_bindings=bindings
+            args.repo_root, expected_bindings=bindings,
+            require_checkout_binding=False,
         ):
             authority = load_revocation_refresh_authority(
                 args.repo_root,
@@ -117,27 +146,23 @@ def main() -> None:
                 scope_bytes=scope_bytes,
                 now=now,
                 require_stale_predecessor=False,
+                require_checkout_binding=False,
             )
         else:
             try:
-                authority = load_active_authority(args.repo_root, now=now)
-            except AuthorityUnavailable as exc:
-                if "tracked_pending" in str(exc):
-                    authority = load_staged_activation_authority(
-                        args.repo_root,
-                        expected_bindings=bindings,
-                        scope_bytes=scope_bytes,
-                        now=now,
-                    )
-                elif "REVOCATIONS_STALE" in str(exc):
-                    authority = load_revocation_refresh_authority(
-                        args.repo_root,
-                        expected_bindings=bindings,
-                        scope_bytes=scope_bytes,
-                        now=now,
-                    )
-                else:
-                    raise
+                authority = load_authority_for_evidence(
+                    args.repo_root,
+                    expected_trust_root_sha256=trust_root_sha256,
+                    observed_at=now,
+                    evidence_reference_time=review_issued_at,
+                )
+            except AuthorityUnavailable:
+                authority = load_staged_activation_authority(
+                    args.repo_root,
+                    expected_bindings=bindings,
+                    scope_bytes=scope_bytes,
+                    now=now,
+                )
         validated = validate_evidence(
             evidence,
             trust_root=authority.trust_root,

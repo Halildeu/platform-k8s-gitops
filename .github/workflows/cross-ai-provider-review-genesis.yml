@@ -35,9 +35,24 @@ jobs:
     timeout-minutes: 10
     environment: cross-ai-provider-review-genesis
     steps:
+      - name: Require GitHub App credentials for Environment inspection
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$APP_ID"
+          test -n "$APP_PRIVATE_KEY"
+
+      - name: Mint bounded GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
       - name: Require immutable default-branch workflow and protected human gate
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
           EXPECTED_ENVIRONMENT: cross-ai-provider-review-genesis
         run: |

@@ -710,6 +710,18 @@ class GenesisTransitionTests(unittest.TestCase):
             now=self.fixture.factory.now,
         )
 
+    def test_historical_scope_validates_from_a_newer_checkout_when_explicit(self) -> None:
+        base, head = self.install_rotation()
+        self.git("checkout", "-q", head)
+        (self.root / "later.txt").write_text("later checkout\n", encoding="utf-8")
+        self.commit("later unrelated checkout")
+        validate_authority_history_transition(
+            self.root,
+            expected_bindings=self.history_bindings(base, head),
+            now=self.fixture.factory.now,
+            require_checkout_binding=False,
+        )
+
     def test_root_rotation_review_uses_predecessor_from_exact_head_checkout(self) -> None:
         base, head = self.install_rotation()
         self.git("checkout", "-q", head)
@@ -1399,6 +1411,8 @@ class GenesisTransitionTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for required in (
             "environment: cross-ai-provider-review-genesis",
+            "actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547",
+            "GH_TOKEN: ${{ steps.app-token.outputs.token }}",
             'test "$GITHUB_REF" = "refs/heads/main"',
             "repos/$GH_REPO/environments/$EXPECTED_ENVIRONMENT",
             '.type == "required_reviewers"',

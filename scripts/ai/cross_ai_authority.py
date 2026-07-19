@@ -224,6 +224,7 @@ def _git_json(root: Path, revision: str, path: Path) -> dict[str, Any]:
 
 def _require_canonical_git_binding(
     root: Path, *, base_tip: str, base: str, head: str, label: str,
+    require_checkout_binding: bool = True,
 ) -> None:
     """Accept one canonical PR range or one canonical main first-parent commit."""
 
@@ -234,9 +235,8 @@ def _require_canonical_git_binding(
     if base_tip == head and base != head:
         first_parent = _git(root, "rev-parse", f"{head}^1").decode().strip().lower()
         canonical_main_commit = first_parent == base
-    if current not in {base_tip, head} or not (
-        canonical_pr_range or canonical_main_commit
-    ):
+    checkout_matches = current in {base_tip, head} or not require_checkout_binding
+    if not checkout_matches or not (canonical_pr_range or canonical_main_commit):
         raise AuthorityUnavailable(
             f"provider-review {label} requires the exact canonical base or head checkout"
         )
@@ -341,6 +341,7 @@ def validate_authority_history_transition(
     *,
     expected_bindings: dict[str, str],
     now: datetime | None = None,
+    require_checkout_binding: bool = True,
 ) -> None:
     """Keep retired authority material append-only across a root rotation.
 
@@ -361,6 +362,7 @@ def validate_authority_history_transition(
     _require_canonical_git_binding(
         root, base_tip=base_tip, base=base, head=head,
         label="history validation",
+        require_checkout_binding=require_checkout_binding,
     )
 
     changed = {
@@ -843,6 +845,7 @@ def load_revocation_refresh_authority(
     scope_bytes: bytes,
     now: datetime | None = None,
     require_stale_predecessor: bool = True,
+    require_checkout_binding: bool = True,
 ) -> PublicReviewAuthority:
     """Load only a signed, monotonic, revocations-file-only stale recovery.
 
@@ -865,6 +868,7 @@ def load_revocation_refresh_authority(
     _require_canonical_git_binding(
         root, base_tip=base_tip, base=base, head=head,
         label="revocation recovery",
+        require_checkout_binding=require_checkout_binding,
     )
     try:
         manifest_schema = _git_json(root, base, MANIFEST_SCHEMA)
@@ -960,7 +964,8 @@ def load_revocation_refresh_authority(
 
 
 def is_exact_revocation_transition(
-    repo_root: Path, *, expected_bindings: dict[str, str]
+    repo_root: Path, *, expected_bindings: dict[str, str],
+    require_checkout_binding: bool = True,
 ) -> bool:
     """Classify the sole revocation-file transition from the trusted base."""
 
@@ -974,6 +979,7 @@ def is_exact_revocation_transition(
     _require_canonical_git_binding(
         root, base_tip=base_tip, base=base, head=head,
         label="revocation classification",
+        require_checkout_binding=require_checkout_binding,
     )
     changed = sorted(
         line for line in _git(
