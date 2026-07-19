@@ -129,7 +129,6 @@ jobs:
             --git-ref "$ACTIVATION_GIT_REF" \
             --run-id "$ACTIVATION_RUN_ID" \
             --run-attempt "$ACTIVATION_RUN_ATTEMPT" \
-            --activated-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
             --output "$ACTIVATION_OUTPUT"
       - name: Persist Cross-AI source-trust activation
         if: github.event_name == 'push'

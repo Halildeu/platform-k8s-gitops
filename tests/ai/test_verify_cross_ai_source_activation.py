@@ -31,7 +31,6 @@ class SourceActivationTests(unittest.TestCase):
         "git_ref": "refs/heads/main",
         "run_id": "12345",
         "run_attempt": "1",
-        "activated_at": "2026-07-19T17:30:00Z",
     }
 
     def setUp(self) -> None:
@@ -76,6 +75,9 @@ class SourceActivationTests(unittest.TestCase):
             target = self.repo / relative_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((ROOT / relative_path).read_bytes())
+        marker = self.repo / MODULE.ACTIVATION_MARKER_PATH
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_bytes(MODULE.ACTIVATION_MARKER_BYTES)
         self.commit("activate producer stack")
 
     def assert_activation_error(self, code: str, sha: str) -> None:
@@ -83,7 +85,7 @@ class SourceActivationTests(unittest.TestCase):
             MODULE.verify_activation(self.repo, sha, sha, **self.CONTEXT)
 
     def test_bootstrap_commit_without_producer_stack_cannot_self_attest(self) -> None:
-        self.assert_activation_error("trusted_source_unavailable", self.bootstrap_sha)
+        self.assert_activation_error("activation_marker_unavailable", self.bootstrap_sha)
 
     def test_activation_commit_binds_checkout_to_all_trusted_sources(self) -> None:
         self.activate_source_stack()
@@ -98,6 +100,40 @@ class SourceActivationTests(unittest.TestCase):
         self.assertEqual(set(result["source_digests"]), set(MODULE.TRUSTED_SOURCE_PATHS))
         self.assertEqual(result["ref"], "refs/heads/main")
         self.assertEqual(result["run_id"], "12345")
+        self.assertRegex(
+            result["activated_at"],
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+        )
+
+    def test_activation_epoch_remains_stable_on_descendant_main_commits(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        activated = MODULE.verify_activation(
+            self.repo, activation_sha, activation_sha, **self.CONTEXT
+        )["activated_at"]
+
+        source_path = self.repo / next(iter(MODULE.TRUSTED_SOURCE_PATHS.values()))
+        with source_path.open("ab") as handle:
+            handle.write(b"\n# trusted producer update\n")
+        self.commit("trusted producer update on main")
+        descendant_sha = self.head_sha()
+        descendant = MODULE.verify_activation(
+            self.repo, descendant_sha, descendant_sha, **self.CONTEXT
+        )["activated_at"]
+
+        self.assertEqual(descendant, activated)
+
+    def test_marker_mutation_cannot_activate_policy(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        marker = self.repo / MODULE.ACTIVATION_MARKER_PATH
+        marker.write_text("{}\n", encoding="utf-8")
+        with self.assertRaisesRegex(
+            MODULE.ActivationError, "^activation_marker_mismatch$"
+        ):
+            MODULE.verify_activation(
+                self.repo, activation_sha, activation_sha, **self.CONTEXT
+            )
 
     def test_non_main_or_non_push_context_cannot_activate_policy(self) -> None:
         self.activate_source_stack()

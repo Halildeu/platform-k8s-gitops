@@ -26,13 +26,6 @@ import threading
 from pathlib import Path
 from typing import BinaryIO, Iterator, NoReturn
 
-from build_cross_ai_evidence import (
-    MAX_EVIDENCE_BYTES,
-    UNATTESTED_ACTUAL_MODEL,
-    validate_provider_response,
-)
-
-
 MODELS = {
     "routine": "gpt-5.3-codex-spark",
     "high-impact": "gpt-5.6-sol",
@@ -601,14 +594,17 @@ def serialize_openai_evidence(
     trusted_base_sha: str,
     trusted_source_digests: dict[str, str],
     pii_attestation_sha256: str,
+    validate_response,
+    unattested_actual_model: str,
+    max_evidence_bytes: int,
 ) -> str:
-    verdict = validate_provider_response(response)
+    verdict = validate_response(response)
     evidence = json.dumps(
         {
             "schema": "cross-ai-provider-evidence/v4",
             "provider": "openai",
             "requested_model": requested_model,
-            "actual_model": UNATTESTED_ACTUAL_MODEL,
+            "actual_model": unattested_actual_model,
             "execution_profile": EXECUTION_PROFILE,
             "execution_provenance": {
                 "schema": "codex-native-execution-provenance/v2",
@@ -635,7 +631,7 @@ def serialize_openai_evidence(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    if len(evidence.encode("utf-8")) > MAX_EVIDENCE_BYTES:
+    if len(evidence.encode("utf-8")) > max_evidence_bytes:
         fail("evidence_comment_too_large")
     return evidence
 
@@ -953,6 +949,25 @@ def main() -> None:
     parser.add_argument("--timeout-seconds", type=int, default=600)
     args = parser.parse_args()
 
+    if not args.worktree.is_dir() or not (args.worktree / ".git").exists():
+        fail("worktree_invalid")
+    if args.timeout_seconds < 30 or args.timeout_seconds > 900:
+        fail("timeout_out_of_range")
+    # Establish producer trust before touching operator-supplied scope/output
+    # paths, resolving credential-bearing CLIs, or importing the builder. A
+    # modified builder therefore cannot execute import-time code before the
+    # trusted-base byte comparison rejects it.
+    trusted_source_digests = verify_trusted_sources(
+        worktree=args.worktree.resolve(),
+        trusted_source_ref=args.trusted_source_ref,
+        expected_base_tip_sha=args.base_tip_sha,
+    )
+    from build_cross_ai_evidence import (  # pylint: disable=import-outside-toplevel
+        MAX_EVIDENCE_BYTES,
+        UNATTESTED_ACTUAL_MODEL,
+        validate_provider_response,
+    )
+
     if os.path.lexists(args.evidence_output):
         fail("evidence_output_exists")
     (
@@ -963,19 +978,10 @@ def main() -> None:
         codex_sha256,
     ) = resolve_codex_native()
     gitleaks_bytes, gitleaks_executable_name, _ = resolve_gitleaks_native()
-    if not args.worktree.is_dir() or not (args.worktree / ".git").exists():
-        fail("worktree_invalid")
-    if args.timeout_seconds < 30 or args.timeout_seconds > 900:
-        fail("timeout_out_of_range")
     scope = read_scope(args.scope_file, args.scope_sha256)
     pii_attestation_sha256 = read_pii_attestation(
         args.pii_attestation_file,
         args.scope_sha256,
-    )
-    trusted_source_digests = verify_trusted_sources(
-        worktree=args.worktree.resolve(),
-        trusted_source_ref=args.trusted_source_ref,
-        expected_base_tip_sha=args.base_tip_sha,
     )
     verify_scope_binding(
         worktree=args.worktree.resolve(),
@@ -1022,6 +1028,9 @@ def main() -> None:
         trusted_base_sha=args.base_tip_sha,
         trusted_source_digests=trusted_source_digests,
         pii_attestation_sha256=pii_attestation_sha256,
+        validate_response=validate_provider_response,
+        unattested_actual_model=UNATTESTED_ACTUAL_MODEL,
+        max_evidence_bytes=MAX_EVIDENCE_BYTES,
     )
     evidence_sha256 = write_create_once(args.evidence_output, evidence)
     print(

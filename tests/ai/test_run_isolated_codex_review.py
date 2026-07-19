@@ -144,6 +144,72 @@ exit 0
 
 
 class IsolatedCodexReviewTests(unittest.TestCase):
+    def test_untrusted_builder_cannot_execute_before_source_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trusted_repo = root / "trusted-repo"
+            execution_root = root / "execution-root"
+            trusted_repo.mkdir()
+            subprocess.run(["git", "init", "-q", str(trusted_repo)], check=True)
+            subprocess.run(
+                ["git", "-C", str(trusted_repo), "config", "user.email",
+                 "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(trusted_repo), "config", "user.name",
+                 "Cross-AI Test"],
+                check=True,
+            )
+            for relative_path in MODULE.TRUSTED_SOURCE_PATHS.values():
+                target = trusted_repo / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / relative_path).read_bytes())
+            subprocess.run(["git", "-C", str(trusted_repo), "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", str(trusted_repo), "commit", "-q", "-m",
+                 "trusted producer stack"],
+                check=True,
+            )
+            for relative_path in MODULE.TRUSTED_SOURCE_PATHS.values():
+                target = execution_root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((trusted_repo / relative_path).read_bytes())
+            marker = root / "builder-imported"
+            builder = execution_root / "scripts/ai/build_cross_ai_evidence.py"
+            builder.write_text(
+                "from pathlib import Path\n"
+                f"Path({str(marker)!r}).write_text('executed')\n",
+                encoding="utf-8",
+            )
+            head = subprocess.check_output(
+                ["git", "-C", str(trusted_repo), "rev-parse", "HEAD"], text=True
+            ).strip()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(execution_root / "scripts/ai/run_isolated_codex_review.py"),
+                    "--worktree", str(trusted_repo),
+                    "--scope-file", str(root / "missing-scope"),
+                    "--scope-sha256", "a" * 64,
+                    "--pii-attestation-file", str(root / "missing-pii"),
+                    "--base-tip-sha", head,
+                    "--base-sha", head,
+                    "--head-sha", head,
+                    "--trusted-source-ref", "HEAD",
+                    "--evidence-output", str(root / "evidence.json"),
+                    "--timeout-seconds", "30",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("untrusted_review_producer_source", result.stdout)
+            self.assertFalse(marker.exists())
+
     def test_codex_environment_excludes_unrelated_process_values(self) -> None:
         with mock.patch.dict(
             os.environ,

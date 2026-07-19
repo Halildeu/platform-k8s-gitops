@@ -784,6 +784,7 @@ const GATE_WORKFLOW_PATH = '.github/workflows/gate-cross-ai-audit.yml';
 const ACTIVATION_WORKFLOW_PATH = '.github/workflows/ci.yml';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
 const ACTIVATION_VERIFIER_PATH = 'scripts/ai/verify_cross_ai_source_activation.py';
+const ACTIVATION_MARKER_PATH = 'scripts/ai/cross_ai_source_activation_marker.json';
 const ACTIVATION_TEST_PATH = 'tests/ai/test_verify_cross_ai_source_activation.py';
 const RETIRED_MINIMAX_WRAPPER_PATH = 'scripts/ai/minimax_m3_review.py';
 const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
@@ -1376,6 +1377,9 @@ const cases = [
   ['explicit none mode rejects the Cross-AI activation verifier',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ACTIVATION_VERIFIER_PATH] }, 1],
+  ['explicit none mode rejects the Cross-AI activation marker',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ACTIVATION_MARKER_PATH] }, 1],
   ['explicit none mode rejects Cross-AI Python contract tests',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ACTIVATION_TEST_PATH] }, 1],

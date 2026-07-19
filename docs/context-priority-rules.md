@@ -376,7 +376,11 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
      --output <CREATE_ONCE_PII_ATTESTATION>
    ```
 
-   Ardından şu zorunlu profil çalışır:
+   Ardından harness, target PR worktree'sinden değil exact trusted base'ten
+   materialize edilmiş salt-okunur source root'undan şu zorunlu profille
+   çalışır. Producer dosyalarını değiştiren PR kendi harness kopyasını gate
+   otoritesi olarak çalıştıramaz; bootstrap PR'da predecessor protection ve ham
+   direct Codex review geçerlidir:
 
    ```bash
    python3 scripts/ai/run_isolated_codex_review.py \
@@ -530,7 +534,12 @@ create-once yazar. Native binary SHA-256, repo-review edilmiş
 `repo-pinned-codex-native-sha256-v1` release pinsetiyle byte-exact eşleşmeden
 çağrı başlamaz. Çalışan harness, scope preparer, PII attester ve builder
 byte'ları `trusted-base-cross-ai-sources-sha256-v1` ile exact base tip'e bağlı
-olmalıdır. Poster ve CI tarihsel v4 evidence producer digest'lerini mevcut
+olmalıdır. Harness executable'ı exact trusted base'ten materialize edilmiş
+source root'undan başlatılır; `--worktree` yalnız incelenen target checkout'u
+gösterir. Bu byte bağı operator-supplied scope/PII/output yollarına dokunmadan,
+credential-bearing CLI çözülmeden ve builder modülü import edilmeden önce
+kurulur; uyuşmazlık import-time kod çalıştırmadan fail-closed olur. Poster ve CI
+tarihsel v4 evidence producer digest'lerini mevcut
 checkout'tan değil evidence'ın kendi immutable `trusted_base_sha` commit'inden
 okur; bu commit mevcut PR base tip'inin atası değilse evidence fail-closed olur.
 Producer güncellemesi bu nedenle daha önce geçerli olan immutable kanıtı geriye
@@ -573,7 +582,12 @@ aktif kabul edilir; yalnız log'a yazılan veya tüketilmeyen çıktı aktivasyo
 yetkisi üretmez. Doğrulanmış artifact'teki `activated_at`, history immutability
 ve status-ledger otoritesinin effective başlangıcıdır; kaynakta sabitlenen politika
 tarihleri yalnız alt sınırdır. `activated_at` bu alt sınırdan önce veya izinli
-clock-skew dışında gelecekteyse artifact reddedilir. Effective aktivasyondan önce
+clock-skew dışında gelecekteyse artifact reddedilir. Bu epoch her CI run'ında
+duvar saatinden yeniden üretilmez; yalnız #2638 aktivasyon PR'ıyla ilk kez
+`main`e giren immutable `cross-ai-source-trust-activation-marker/v1` marker'ını
+ve complete trusted producer stack'ini birlikte taşıyan ilk first-parent
+commit'in committer timestamp'inden deterministik türetilir. Sonraki producer
+veya base güncellemelerinde aynı kalır. Effective aktivasyondan önce
 düzenlenmiş owner yorumları ve üretilmiş status tombstone'ları yeni otorite
 üretmez; pre-activation OpenAI v3 yalnız read-only tarihsel kayıt olarak kalır.
 Bu aktivasyondan sonraki PR'lar merged trusted producer stack'i kullanır.
