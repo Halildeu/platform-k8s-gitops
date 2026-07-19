@@ -29,6 +29,8 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
 EVIDENCE_SCHEMA = "cross-ai-provider-evidence/v3"
 SUBJECT_SCHEMA = "acik.cross-ai-consultation-subject.v1"
 PROMPT_DOMAIN = "acik.cross-ai-direct-codex-review.v1"
+GITHUB_COMMENT_MAX_CHARS = 65_536
+GITHUB_COMMENT_MAX_UTF8_BYTES = 65_536
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 SENSITIVE_RESPONSE_PATTERNS = (
@@ -95,6 +97,21 @@ def expected_execution_arguments(model: str) -> list[str]:
 
 class TrustedEvidenceError(ValueError):
     pass
+
+
+def validate_github_comment_transport(body: str) -> None:
+    """Bound canonical evidence to GitHub's actual issue-comment ceiling."""
+
+    if (
+        not isinstance(body, str)
+        or not body
+        or len(body) > GITHUB_COMMENT_MAX_CHARS
+        or len(body.encode("utf-8")) > GITHUB_COMMENT_MAX_UTF8_BYTES
+        or "\x00" in body
+    ):
+        raise TrustedEvidenceError(
+            "signed evidence exceeds the GitHub 65536-character carrier limit"
+        )
 
 
 def validate_response_hygiene(response: str) -> None:

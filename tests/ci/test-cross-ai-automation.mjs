@@ -71,6 +71,7 @@ const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
+const PR_NUMBER = 42;
 const NOW_MS = Date.now();
 
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -100,12 +101,42 @@ const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
 const SPARK_REF = evidenceRef(1004);
+const GENESIS_STAGE_RUN_REF = `https://api.github.com/repos/${REPO}/actions/runs/9001`;
+const GENESIS_ACTIVATE_RUN_REF = `https://api.github.com/repos/${REPO}/actions/runs/9002`;
 const PEER_REF = SPARK_REF;
 const EVIDENCE = {
   [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', SIGNED_AGREE_RESPONSE), 0),
   [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', SIGNED_AGREE_RESPONSE), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', SIGNED_AGREE_RESPONSE), 2_000),
   [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', SIGNED_AGREE_RESPONSE), 3_000),
+  [GENESIS_STAGE_RUN_REF]: {
+    repository: { full_name: REPO },
+    path: '.github/workflows/cross-ai-provider-review-genesis.yml',
+    event: 'workflow_dispatch',
+    status: 'completed',
+    conclusion: 'success',
+    head_branch: 'main',
+    head_sha: BASE_TIP_SHA,
+    display_title: `Cross-AI authority stage PR #${PR_NUMBER} @${HEAD_SHA}`,
+    run_attempt: 1,
+    created_at: new Date(NOW_MS - 60_000).toISOString(),
+    run_started_at: new Date(NOW_MS - 50_000).toISOString(),
+    updated_at: new Date(NOW_MS - 10_000).toISOString(),
+  },
+  [GENESIS_ACTIVATE_RUN_REF]: {
+    repository: { full_name: REPO },
+    path: '.github/workflows/cross-ai-provider-review-genesis.yml',
+    event: 'workflow_dispatch',
+    status: 'completed',
+    conclusion: 'success',
+    head_branch: 'main',
+    head_sha: BASE_TIP_SHA,
+    display_title: `Cross-AI authority activate PR #${PR_NUMBER} @${HEAD_SHA}`,
+    run_attempt: 1,
+    created_at: new Date(NOW_MS - 60_000).toISOString(),
+    run_started_at: new Date(NOW_MS - 50_000).toISOString(),
+    updated_at: new Date(NOW_MS - 10_000).toISOString(),
+  },
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -116,6 +147,7 @@ const EVIDENCE = {
 function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
   const event = {
     pull_request: {
+      number: PR_NUMBER,
       body,
       head: { ref: branch, sha: headSha, repo: { full_name: headRepo } },
       base: { sha: baseSha, repo: { full_name: REPO } },
@@ -228,6 +260,10 @@ const explicitRoutineSingleBody =
     )
     .replace('Consultation class: high-impact', 'Consultation class: routine')
     .replace(CODEX_RECEIPT_LINE, SPARK_RECEIPT_LINE);
+const genesisStageBody =
+  `${explicitNoneBody}Authority genesis run: ${GENESIS_STAGE_RUN_REF}\n`;
+const genesisActivateBody =
+  `${explicitSingleBody}Authority genesis run: ${GENESIS_ACTIVATE_RUN_REF}\n`;
 // All current acceptance/evidence tests use the explicit forward contract.
 // The old fixture remains only for explicit legacy-rejection coverage.
 const peerBody = explicitRoutineSingleBody;
@@ -332,6 +368,15 @@ const CROSS_AI_AUTHORITY_PATHS = [
   'scripts/ai/cross_ai_authority.py',
   'scripts/ai/trusted_cross_ai_evidence.py',
   'scripts/ops/build_cross_ai_provider_review_revocations.py',
+];
+const GENESIS_STAGE_PATHS = [
+  'config/github-apps/cross-ai-provider-review-genesis.v1.json',
+  'config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json',
+  'config/github-apps/cross-ai-provider-review-trust-root.v2.json',
+];
+const GENESIS_ACTIVATE_PATHS = [
+  'config/github-apps/cross-ai-provider-review-authority.v1.json',
+  'config/github-apps/cross-ai-provider-review-genesis.v1.json',
 ];
 
 const staleCodexBody = JSON.stringify({
@@ -707,6 +752,28 @@ const cases = [
   ['explicit none mode rejects consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GOVERNANCE_PATH] }, 1],
+  ['one-time public authority stage accepts only exact protected Environment run',
+    { branch: 'roadmap-2688-genesis', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: genesisStageBody, changedFiles: GENESIS_STAGE_PATHS }, 0],
+  ['one-time public authority stage rejects missing protected Environment run',
+    { branch: 'roadmap-2688-genesis', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: GENESIS_STAGE_PATHS }, 1],
+  ['one-time public authority stage rejects stale or failed protected Environment run',
+    { branch: 'roadmap-2688-genesis', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: genesisStageBody, changedFiles: GENESIS_STAGE_PATHS,
+      evidence: { ...EVIDENCE, [GENESIS_STAGE_RUN_REF]: {
+        ...EVIDENCE[GENESIS_STAGE_RUN_REF], conclusion: 'failure',
+      } } }, 1],
+  ['ordinary governance PR cannot borrow a genesis run',
+    { branch: 'roadmap-2688-genesis', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitNoneBody}Authority genesis run: ${GENESIS_STAGE_RUN_REF}\n`,
+      changedFiles: [GOVERNANCE_PATH] }, 1],
+  ['authority activation requires both staged SOL receipt and protected Environment run',
+    { branch: 'roadmap-2688-activate', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: genesisActivateBody, changedFiles: GENESIS_ACTIVATE_PATHS }, 0],
+  ['authority activation rejects missing protected Environment run',
+    { branch: 'roadmap-2688-activate', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: GENESIS_ACTIVATE_PATHS }, 1],
   ['explicit none mode rejects consultation governance contract-test changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GOVERNANCE_CONTRACT_TEST_PATH] }, 1],

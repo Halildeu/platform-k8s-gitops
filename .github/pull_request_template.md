@@ -78,6 +78,7 @@ Consultation reason: <neden none|single seçildi; en az 10 karakter>
 # Consultation commit: <single exact head>
 # Consultation scope: <single content SHA-256>
 # Codex receipt: provider=openai; requested=<scope-class exact model>; actual=<aynı exact model>; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=<sha>; base=<sha>; head=<sha>; scope=<sha256>; verdict=AGREE; ref=<owner evidence API ref>; sha256=<body sha256>
+# Authority genesis run: <exact API run URL; yalnız exact stage/activate path seti>
 ```
 
 **Field semantik**:
@@ -90,6 +91,10 @@ Consultation reason: <neden none|single seçildi; en az 10 karakter>
   read-only/ephemeral execution + exact base/head/scope + `AGREE`; bu kalite
   kapısı bağımsız-provider konsensüsü sayılmaz.
 - Claude ve MiniMax receipt her modda fail-closed reddedilir.
+- `Authority genesis run` yalnız `cross-ai-provider-review-genesis.v1.json`
+  içindeki iki exact one-time path setinde kabul edilir. Stage `none` + protected
+  human Environment run; activation `single/high-impact/SOL` receipt + protected
+  run ister. Ordinary PR'da bu alanın bulunması fail-closed'dur.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
   exact model ve redaction kontrolleri fail-closed kalır.
 

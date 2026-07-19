@@ -13,6 +13,21 @@ model with `Consultation class: routine|high-impact`: routine accepts only
 Spark, high-impact accepts only SOL, and known high-impact paths cannot claim
 the routine class.
 
+The canonical owner record is the unedited OWNER-authored #2688 API comment
+`5014836397` (`created_at == updated_at == 2026-07-19T07:17:54Z`, body SHA-256
+`4b6a269ed29c717bb826c59cb6be4b60e93a781bf989850a2361768723925f79`). It
+explicitly supersedes older Claude-primary, optional-Claude and mandatory
+three-provider instructions for this repository; those records are historical
+only and cannot authorize a current receipt.
+
+#2688 is a bounded enabler for #2373, not a free-standing governance/product
+initiative. The exact blocked customer-journey link is protected GitOps test
+activation -> signed high-impact Codex advisory and public authority -> an
+authorized browser operator renders real VIEW_ONLY frames from an approved
+pilot endpoint -> durable product evidence is consumed by the next verifier.
+Source/CI/merge of #2688 is not customer delivery; #2373 stays open until the
+attended render and durable result are proven in the working test environment.
+
 #2688 source work updates the PR audit evidence schema to v2 and narrows the
 inactive signed deployment-protection v2 trust root to OpenAI only. Historical
 Anthropic/MiniMax keys and v1 evidence remain forensic data, but the owner

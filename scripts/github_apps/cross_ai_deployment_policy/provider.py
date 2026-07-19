@@ -741,7 +741,6 @@ class DirectCodexRunner:
         prompt_bytes = prompt.encode("utf-8")
         if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
             reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
-        catalog_command = [str(self.executable), "debug", "models"]
         try:
             # The untrusted git diff is already embedded in the canonical
             # prompt. Run in a new empty root outside the repository and remove
@@ -770,8 +769,13 @@ class DirectCodexRunner:
                         "Codex signature differs from the independent authority pin",
                     )
                 dispatch = {"executable": str(pinned_executable)}
+                # Keep argv[0] and subprocess' executable override on the same
+                # verified private copy. The mutable source path is never
+                # launched after its content has been pinned.
+                version_command = [str(pinned_executable), "--version"]
+                catalog_command = [str(pinned_executable), "debug", "models"]
                 version = subprocess.run(
-                    [str(self.executable), "--version"],
+                    version_command,
                     cwd=review_root,
                     capture_output=True,
                     check=False,
@@ -818,7 +822,7 @@ class DirectCodexRunner:
                     model
                 )
                 execution_command = [
-                    str(self.executable),
+                    str(pinned_executable),
                     *canonical_codex_execution_arguments(
                         model, str(review_root.resolve())
                     ),

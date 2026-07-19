@@ -24,6 +24,7 @@ from scripts.ai.trusted_cross_ai_evidence import (
     EVIDENCE_SCHEMA,
     TrustedEvidenceError,
     canonical_bytes,
+    validate_github_comment_transport,
     validate_evidence,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
@@ -31,9 +32,6 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_MODELS
 
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-MAX_EVIDENCE_BYTES = 256_000
-
-
 def fail(code: str) -> NoReturn:
     print(json.dumps({"ok": False, "error": code}, ensure_ascii=False))
     raise SystemExit(1)
@@ -44,7 +42,9 @@ def load_canonical_evidence(path: Path) -> dict[str, Any]:
         raw = path.read_bytes()
     except OSError:
         fail("evidence_file_unreadable")
-    if not raw or len(raw) > MAX_EVIDENCE_BYTES or b"\x00" in raw:
+    try:
+        validate_github_comment_transport(raw.decode("utf-8"))
+    except (UnicodeDecodeError, TrustedEvidenceError):
         fail("invalid_evidence_size")
     try:
         value = json.loads(raw)
@@ -95,6 +95,10 @@ def main() -> None:
     except (AuthorityUnavailable, PolicyError, TrustedEvidenceError):
         fail("trusted_evidence_verification_failed")
     body = canonical_bytes(evidence).decode("utf-8")
+    try:
+        validate_github_comment_transport(body)
+    except TrustedEvidenceError:
+        fail("invalid_evidence_size")
     payload = json.dumps({"body": body}, ensure_ascii=False, separators=(",", ":"))
     try:
         result = subprocess.run(

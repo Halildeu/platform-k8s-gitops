@@ -20,6 +20,7 @@ from trusted_cross_ai_evidence import (
     TrustedEvidenceError,
     canonical_bytes as trusted_canonical_bytes,
     validate_evidence,
+    validate_github_comment_transport,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 
@@ -72,8 +73,10 @@ def validate_codex_advisory_evidence(
 ) -> dict[str, Any]:
     """Verify the comment-carried leaf against independent signed authority."""
 
-    if not body or len(body.encode("utf-8")) > 256_000:
-        raise CodexEvidenceError("Codex advisory evidence size is invalid")
+    try:
+        validate_github_comment_transport(body)
+    except TrustedEvidenceError as exc:
+        raise CodexEvidenceError("Codex advisory evidence size is invalid") from exc
     try:
         evidence = json.loads(body, object_pairs_hook=_no_duplicate_object)
     except (json.JSONDecodeError, UnicodeError) as exc:

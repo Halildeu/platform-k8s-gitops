@@ -1,0 +1,53 @@
+{
+  "expectedTrustRootSha256": null,
+  "ownerDecision": {
+    "apiRef": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/5014836397",
+    "authorAssociation": "OWNER",
+    "bodySha256": "sha256:4b6a269ed29c717bb826c59cb6be4b60e93a781bf989850a2361768723925f79",
+    "createdAt": "2026-07-19T07:17:54Z",
+    "owner": "Halildeu",
+    "updatedAt": "2026-07-19T07:17:54Z"
+  },
+  "protectedEnvironment": {
+    "maxRunAgeHours": 24,
+    "name": "cross-ai-provider-review-genesis",
+    "preventSelfReview": true,
+    "requireHumanReviewer": true,
+    "trustedRef": "refs/heads/main",
+    "workflowPath": ".github/workflows/cross-ai-provider-review-genesis.yml"
+  },
+  "revocationsPath": null,
+  "schemaVersion": "acik.cross-ai-provider-review-genesis.v1",
+  "status": "installed",
+  "tracking": {
+    "customerJourney": "protected-test-activation-to-attended-view-only-render-to-durable-product-evidence",
+    "customerJourneyIssue": "Halildeu/platform-k8s-gitops#2373",
+    "enablerIssue": "Halildeu/platform-k8s-gitops#2688"
+  },
+  "transitionContract": {
+    "activateAuthority": {
+      "authority": "staged-public-authority-plus-protected-environment",
+      "consultationClass": "high-impact",
+      "consultationMode": "single",
+      "exactChangedPaths": [
+        "config/github-apps/cross-ai-provider-review-authority.v1.json",
+        "config/github-apps/cross-ai-provider-review-genesis.v1.json"
+      ],
+      "fromStatus": "staged",
+      "model": "gpt-5.6-sol",
+      "toStatus": "retired"
+    },
+    "stagePublicAuthority": {
+      "authority": "protected-environment-human-genesis",
+      "consultationMode": "none",
+      "exactChangedPaths": [
+        "config/github-apps/cross-ai-provider-review-genesis.v1.json",
+        "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
+        "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+      ],
+      "fromStatus": "installed",
+      "toStatus": "staged"
+    }
+  },
+  "trustRootPath": null
+}
