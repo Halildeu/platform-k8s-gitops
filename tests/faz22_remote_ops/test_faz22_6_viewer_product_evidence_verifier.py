@@ -31,6 +31,9 @@ OWNER_COMMENT_ID = 900001
 ADVISORY_COMMENT_ID = 900002
 OWNER_COMMENT_BODY = "Owner authorizes the bounded attended VIEW_ONLY test pilot; legal clearance is not claimed."
 ADVISORY_RESPONSE = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+ADVISORY_BASE_TIP_SHA = "0" * 40
+ADVISORY_BASE_SHA = "9" * 40
+ADVISORY_SCOPE_SHA256 = "b" * 64
 ADVISORY_COMMENT_BODY = json.dumps(
     {
         "schema": "cross-ai-provider-evidence/v2",
@@ -40,10 +43,10 @@ ADVISORY_COMMENT_BODY = json.dumps(
         "reasoning_effort": "xhigh",
         "sandbox": "read-only",
         "ephemeral": True,
-        "base_tip_sha": "0" * 40,
-        "base_sha": "0" * 40,
+        "base_tip_sha": ADVISORY_BASE_TIP_SHA,
+        "base_sha": ADVISORY_BASE_SHA,
         "head_sha": HEAD_SHA,
-        "scope_sha256": "b" * 64,
+        "scope_sha256": ADVISORY_SCOPE_SHA256,
         "verdict": "AGREE",
         "response_sha256": hashlib.sha256(ADVISORY_RESPONSE.encode()).hexdigest(),
         "response": ADVISORY_RESPONSE,
@@ -545,6 +548,13 @@ def owner_policy_fixture():
             "providers": ["OpenAI/gpt-5.6-sol"],
             "provenanceClass": "owner-attested-direct-codex-evidence-v2",
             "providerCryptographicAttestation": False,
+            "evidenceBinding": {
+                "baseTipSha": ADVISORY_BASE_TIP_SHA,
+                "baseSha": ADVISORY_BASE_SHA,
+                "headSha": HEAD_SHA,
+                "scopeSha256": ADVISORY_SCOPE_SHA256,
+            },
+            "maxAgeHours": 168,
         },
         "legalTracking": {
             "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374",
@@ -636,9 +646,9 @@ def authorization_bytes():
     return VERIFIER.canonical_bytes(authorization_document()) + b"\n"
 
 
-def activation_archive():
+def activation_archive(raw_authorization=None):
     files = {
-        "protected-authorization.json": authorization_bytes(),
+        "protected-authorization.json": raw_authorization or authorization_bytes(),
     }
     sums = "".join(
         f"{hashlib.sha256(raw).hexdigest()}  {name}\n" for name, raw in files.items()
@@ -786,8 +796,12 @@ class FakeClient:
         self.source_run_updated_at = {name: "2026-07-14T00:06:00Z" for name in SOURCE_TYPES}
         self.artifact_expired = False
         self.source_run_missing = None
+        self.activation_created_at = "2026-07-14T00:00:00Z"
+        self.activation_updated_at = "2026-07-14T00:00:30Z"
         self.owner_comment_body = OWNER_COMMENT_BODY
         self.advisory_comment_body = ADVISORY_COMMENT_BODY
+        self.advisory_comment_created_at = "2026-07-14T00:00:00Z"
+        self.advisory_comment_updated_at = "2026-07-14T00:00:00Z"
         self.legal_issue_state = "open"
         self.environment_prevent_self_review = True
         self.environment_reviewers = [{
@@ -808,9 +822,9 @@ class FakeClient:
                 "name": VERIFIER.EXPECTED_ACTIVATION_WORKFLOW_NAME,
                 "path": VERIFIER.EXPECTED_ACTIVATION_WORKFLOW_PATH,
                 "actor": {"login": "workflow-operator"},
-                "created_at": "2026-07-14T00:00:00Z",
-                "run_started_at": "2026-07-14T00:00:00Z",
-                "updated_at": "2026-07-14T00:00:30Z",
+                "created_at": self.activation_created_at,
+                "run_started_at": self.activation_created_at,
+                "updated_at": self.activation_updated_at,
             }
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/actions/runs/{ACTIVATION_RUN_ID}/artifacts?per_page=100":
             return {
@@ -894,6 +908,8 @@ class FakeClient:
                 "author_association": "OWNER",
                 "user": {"login": "Halildeu"},
                 "body": self.owner_comment_body,
+                "created_at": "2026-07-13T00:00:00Z",
+                "updated_at": "2026-07-13T00:00:00Z",
             }
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/comments/{ADVISORY_COMMENT_ID}":
             return {
@@ -903,6 +919,8 @@ class FakeClient:
                 "author_association": "OWNER",
                 "user": {"login": "Halildeu"},
                 "body": self.advisory_comment_body,
+                "created_at": self.advisory_comment_created_at,
+                "updated_at": self.advisory_comment_updated_at,
             }
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374":
             return {
@@ -935,15 +953,15 @@ class FakeClient:
 class ViewerProductEvidenceVerifierTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.original_owner_policy = VERIFIER.OWNER_POLICY
+        self.original_owner_policy_v2 = VERIFIER.OWNER_POLICY_V2
         self.original_revocation_ledger = VERIFIER.REVOCATION_LEDGER
-        VERIFIER.OWNER_POLICY = Path(self.temp_dir.name) / "owner-policy.json"
+        VERIFIER.OWNER_POLICY_V2 = Path(self.temp_dir.name) / "owner-policy.json"
         VERIFIER.REVOCATION_LEDGER = Path(self.temp_dir.name) / "revocations.json"
-        VERIFIER.OWNER_POLICY.write_bytes(encode_json(owner_policy_fixture()))
+        VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(owner_policy_fixture()))
         VERIFIER.REVOCATION_LEDGER.write_bytes(encode_json(revocation_fixture()))
 
     def tearDown(self):
-        VERIFIER.OWNER_POLICY = self.original_owner_policy
+        VERIFIER.OWNER_POLICY_V2 = self.original_owner_policy_v2
         VERIFIER.REVOCATION_LEDGER = self.original_revocation_ledger
         self.temp_dir.cleanup()
 
@@ -951,6 +969,41 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         return VERIFIER.verify_product_evidence(
             client or FakeClient(), VERIFIER.EXPECTED_REPOSITORY, RUN_ID, now=now
         )
+
+    def client_for_policy(
+        self, policy_value, *, legacy_v1=False, authorization_updates=None,
+    ):
+        if not legacy_v1:
+            VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(policy_value))
+        authorization = authorization_document()
+        authorization["ownerPolicySha256"] = VERIFIER.digest_json(policy_value)
+        authorization["ownerDirectiveRef"] = policy_value["ownerDirective"]["ref"]
+        authorization["ownerDirectiveSha256"] = policy_value["ownerDirective"]["bodySha256"]
+        authorization["aiAdvisoryRef"] = policy_value["aiAdvisory"]["ref"]
+        authorization["aiAdvisorySha256"] = policy_value["aiAdvisory"]["bodySha256"]
+        authorization["aiAdvisoryProvenanceClass"] = policy_value["aiAdvisory"]["provenanceClass"]
+        authorization.update(authorization_updates or {})
+        raw_authorization = VERIFIER.canonical_bytes(authorization) + b"\n"
+        protected_archive = activation_archive(raw_authorization)
+        authorization_digest = VERIFIER.digest_bytes(raw_authorization)
+
+        children = child_documents()
+        operator = children["operator"]["payload"]
+        operator.update({
+            "authorizationArtifactDigest": VERIFIER.digest_bytes(protected_archive),
+            "authorizationSha256": authorization_digest,
+            "ownerPolicySha256": authorization["ownerPolicySha256"],
+            "ownerDirectiveSha256": authorization["ownerDirectiveSha256"],
+            "aiAdvisorySha256": authorization["aiAdvisorySha256"],
+        })
+        for evidence_type in ("negative", "termination"):
+            payload = children[evidence_type]["payload"]
+            payload["authorizationSha256"] = authorization_digest
+            matrix_attestation_files(evidence_type, children[evidence_type])
+        client = FakeClient(build_archive(children=children))
+        client.activation_archive = protected_archive
+        client.operator_payload = operator
+        return client
 
     def validate_matrices(self, children):
         VERIFIER.validate_negative_and_termination(
@@ -1136,6 +1189,72 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         client.environment_prevent_self_review = False
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "self-review prevention"):
             self.verify(client)
+
+    def test_advisory_expected_bindings_edit_and_freshness_fail_closed(self):
+        for policy_key, evidence_key, bad_value in (
+            ("baseTipSha", "base_tip_sha", "1" * 40),
+            ("baseSha", "base_sha", "2" * 40),
+            ("headSha", "head_sha", "3" * 40),
+            ("scopeSha256", "scope_sha256", "4" * 64),
+        ):
+            with self.subTest(binding=evidence_key):
+                policy_value = owner_policy_fixture()
+                policy_value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
+                client = self.client_for_policy(policy_value)
+                with self.assertRaisesRegex(
+                    VERIFIER.EvidenceError, f"{evidence_key} binding mismatch",
+                ):
+                    self.verify(client)
+
+        VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(owner_policy_fixture()))
+        edited = FakeClient()
+        edited.advisory_comment_updated_at = "2026-07-14T00:00:01Z"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "edited or has invalid timestamps"):
+            self.verify(edited)
+
+        stale = FakeClient()
+        stale.advisory_comment_created_at = "2026-07-06T23:59:59Z"
+        stale.advisory_comment_updated_at = stale.advisory_comment_created_at
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "comment is stale"):
+            self.verify(stale)
+
+    def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
+        legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
+        self.assertEqual(
+            VERIFIER.LEGACY_POLICY_CANONICAL_SHA256,
+            VERIFIER.digest_json(legacy_policy),
+        )
+        client = self.client_for_policy(legacy_policy, legacy_v1=True)
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "forbidden for current product"):
+            self.verify(client)
+        expires = VERIFIER.verify_activation_authorization(
+            client, client.operator_payload, HEAD_SHA, binding(),
+            datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+            datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
+            allow_legacy_v1=True,
+        )
+        self.assertEqual(
+            datetime(2026, 7, 14, 0, 20, tzinfo=timezone.utc), expires,
+        )
+
+    def test_legacy_v1_forensics_rejects_authorization_at_migration_cutoff(self):
+        legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
+        client = self.client_for_policy(
+            legacy_policy, legacy_v1=True,
+            authorization_updates={
+                "issuedAt": "2026-07-19T00:00:00Z",
+                "expiresAt": "2026-07-19T00:20:00Z",
+            },
+        )
+        client.activation_created_at = "2026-07-19T00:00:00Z"
+        client.activation_updated_at = "2026-07-19T00:00:30Z"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "migration cutoff"):
+            VERIFIER.verify_activation_authorization(
+                client, client.operator_payload, HEAD_SHA, binding(),
+                datetime(2026, 7, 19, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 19, 0, 6, tzinfo=timezone.utc),
+                allow_legacy_v1=True,
+            )
 
     def test_tampered_or_automatic_consent_evidence_fails_closed(self):
         base_archive = build_archive()

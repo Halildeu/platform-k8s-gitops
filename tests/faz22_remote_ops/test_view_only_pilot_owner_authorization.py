@@ -26,6 +26,10 @@ RECEIPT_SPEC.loader.exec_module(RECEIPT)
 
 OWNER_BODY = "Owner bounded-pilot directive"
 ADVISORY_RESPONSE = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+ADVISORY_BASE_TIP_SHA = "0" * 40
+ADVISORY_BASE_SHA = "9" * 40
+ADVISORY_HEAD_SHA = "a" * 40
+ADVISORY_SCOPE_SHA256 = "b" * 64
 ADVISORY_BODY = json.dumps(
     {
         "schema": "cross-ai-provider-evidence/v2",
@@ -35,10 +39,10 @@ ADVISORY_BODY = json.dumps(
         "reasoning_effort": "xhigh",
         "sandbox": "read-only",
         "ephemeral": True,
-        "base_tip_sha": "0" * 40,
-        "base_sha": "0" * 40,
-        "head_sha": "a" * 40,
-        "scope_sha256": "b" * 64,
+        "base_tip_sha": ADVISORY_BASE_TIP_SHA,
+        "base_sha": ADVISORY_BASE_SHA,
+        "head_sha": ADVISORY_HEAD_SHA,
+        "scope_sha256": ADVISORY_SCOPE_SHA256,
         "verdict": "AGREE",
         "response_sha256": hashlib.sha256(ADVISORY_RESPONSE.encode()).hexdigest(),
         "response": ADVISORY_RESPONSE,
@@ -69,6 +73,13 @@ def policy():
             "providers": ["OpenAI/gpt-5.6-sol"],
             "provenanceClass": "owner-attested-direct-codex-evidence-v2",
             "providerCryptographicAttestation": False,
+            "evidenceBinding": {
+                "baseTipSha": ADVISORY_BASE_TIP_SHA,
+                "baseSha": ADVISORY_BASE_SHA,
+                "headSha": ADVISORY_HEAD_SHA,
+                "scopeSha256": ADVISORY_SCOPE_SHA256,
+            },
+            "maxAgeHours": 168,
         },
         "legalTracking": {
             "ref": AUTH.LEGAL_ISSUE_REF,
@@ -105,7 +116,9 @@ def policy():
     }
 
 
-def comment(comment_id, body):
+def comment(
+    comment_id, body, created_at="2026-07-15T00:00:00Z", updated_at=None,
+):
     return {
         "id": comment_id,
         "html_url": f"https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-{comment_id}",
@@ -113,6 +126,8 @@ def comment(comment_id, body):
         "author_association": "OWNER",
         "user": {"login": "Halildeu"},
         "body": body,
+        "created_at": created_at,
+        "updated_at": created_at if updated_at is None else updated_at,
     }
 
 
@@ -142,9 +157,19 @@ def revocations(entries=None):
 
 
 class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
-    def test_canonical_v1_is_retired_and_v2_blocks_until_codex_evidence_is_bound(self):
-        legacy = json.loads((REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json").read_text(encoding="utf-8"))
-        self.assertEqual("retired", legacy["status"])
+    def test_canonical_v1_is_byte_immutable_and_v2_blocks_until_codex_evidence_is_bound(self):
+        legacy_path = REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+        legacy_raw = legacy_path.read_bytes()
+        legacy = json.loads(legacy_raw)
+        self.assertEqual("active", legacy["status"])
+        self.assertEqual(
+            "7b26a283d0af68451aaba6d9f4c39fba55bff201c4e697567f5db29206f0ae81",
+            hashlib.sha256(legacy_raw).hexdigest(),
+        )
+        self.assertEqual(
+            RECEIPT.LEGACY_POLICY_CANONICAL_SHA256,
+            AUTH.digest_bytes(AUTH.canonical_bytes(legacy)),
+        )
         policy_path = REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
         canonical = json.loads(policy_path.read_text(encoding="utf-8"))
         self.assertEqual(
@@ -154,6 +179,10 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         self.assertEqual(AUTH.POLICY_SCHEMA, canonical["schemaVersion"])
         self.assertEqual("tracked_pending", canonical["status"])
         self.assertEqual("PENDING", canonical["aiAdvisory"]["consensusVerdict"])
+        self.assertEqual(168, canonical["aiAdvisory"]["maxAgeHours"])
+        self.assertTrue(
+            all(value is None for value in canonical["aiAdvisory"]["evidenceBinding"].values())
+        )
         self.assertNotIn("MiniMax", json.dumps(canonical, sort_keys=True))
         self.assertNotIn("Anthropic", json.dumps(canonical, sort_keys=True))
 
@@ -222,6 +251,12 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         with self.assertRaisesRegex(AUTH.AuthorizationError, "execution identity"):
             self.build(policy=value, advisory_comment=downgraded_comment)
 
+        immutable_v1 = json.loads(
+            (REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json").read_bytes()
+        )
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "not active Codex-only v2"):
+            self.build(policy=immutable_v1)
+
     def test_closed_legal_ticket_or_unprotected_environment_fails_closed(self):
         issue = legal_issue()
         issue["state"] = "closed"
@@ -269,6 +304,29 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         with self.assertRaisesRegex(AUTH.AuthorizationError, "body digest"):
             self.build(owner_comment=tampered)
 
+    def test_advisory_expected_bindings_edit_and_freshness_fail_closed(self):
+        for policy_key, evidence_key, bad_value in (
+            ("baseTipSha", "base_tip_sha", "1" * 40),
+            ("baseSha", "base_sha", "2" * 40),
+            ("headSha", "head_sha", "3" * 40),
+            ("scopeSha256", "scope_sha256", "4" * 64),
+        ):
+            with self.subTest(binding=evidence_key):
+                value = policy()
+                value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
+                with self.assertRaisesRegex(AUTH.AuthorizationError, f"{evidence_key} binding mismatch"):
+                    self.build(policy=value)
+
+        edited = comment(
+            102, ADVISORY_BODY, updated_at="2026-07-15T00:00:01Z",
+        )
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "edited or has invalid timestamps"):
+            self.build(advisory_comment=edited)
+
+        stale = comment(102, ADVISORY_BODY, created_at="2026-07-07T23:59:59Z")
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "comment is stale"):
+            self.build(advisory_comment=stale)
+
     def test_single_authorization_can_be_revoked_without_a_ledger_digest_cycle(self):
         result = self.build()
         receipt_digest = AUTH.digest_bytes(AUTH.canonical_bytes(result) + b"\n")
@@ -301,6 +359,39 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             RECEIPT.verify(
                 result, raw, policy(), revocations(), 123, "a" * 40,
                 datetime(2026, 7, 15, 2, 0, 1, tzinfo=timezone.utc),
+            )
+
+    def test_immutable_v1_receipt_is_forensic_only_and_can_transition_to_termination(self):
+        legacy_policy = json.loads(
+            (REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json").read_bytes()
+        )
+        legacy = self.build()
+        legacy["ownerPolicySha256"] = AUTH.digest_bytes(AUTH.canonical_bytes(legacy_policy))
+        legacy["ownerDirectiveRef"] = legacy_policy["ownerDirective"]["ref"]
+        legacy["ownerDirectiveSha256"] = legacy_policy["ownerDirective"]["bodySha256"]
+        legacy["aiAdvisoryProvenanceClass"] = "owner-attested-provider-session"
+        legacy["aiAdvisoryRef"] = legacy_policy["aiAdvisory"]["ref"]
+        legacy["aiAdvisorySha256"] = legacy_policy["aiAdvisory"]["bodySha256"]
+        raw = AUTH.canonical_bytes(legacy) + b"\n"
+
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "forbidden"):
+            RECEIPT.verify(
+                legacy, raw, legacy_policy, revocations(), 123, "a" * 40,
+                datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc),
+            )
+        RECEIPT.verify(
+            legacy, raw, legacy_policy, revocations(), 123, "a" * 40,
+            datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc), True,
+        )
+
+        current_legacy = dict(legacy)
+        current_legacy["issuedAt"] = "2026-07-19T00:00:00Z"
+        current_legacy["expiresAt"] = "2026-07-19T00:20:00Z"
+        current_raw = AUTH.canonical_bytes(current_legacy) + b"\n"
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "migration cutoff"):
+            RECEIPT.verify(
+                current_legacy, current_raw, legacy_policy, revocations(), 123,
+                "a" * 40, datetime(2026, 7, 19, 0, 10, tzinfo=timezone.utc), True,
             )
 
 

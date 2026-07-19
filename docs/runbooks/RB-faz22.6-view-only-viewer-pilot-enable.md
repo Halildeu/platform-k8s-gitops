@@ -70,11 +70,16 @@ This is the owner decision. Do not flip the flag until every box holds:
 - [ ] Canonical `faz22.6-view-only-pilot-owner-policy-v2` is `active`. It binds
       the owner directive to a canonical `cross-ai-provider-evidence/v2`
       GitHub comment proving direct OpenAI Codex CLI `gpt-5.6-sol xhigh`,
-      `read-only`, `ephemeral`, finding-free `AGREE`. The v1 Claude-bearing
-      policy is retired; Claude, MiniMax, Cursor, UI, wrapper ve fallback
-      records are historical only and cannot issue a new receipt or
-      authorization. AI remains `advisoryOnly`; it is not a human legal/DPO
-      signature.
+      `read-only`, `ephemeral`, finding-free `AGREE`; review base-tip/base/head/
+      scope digests exactly match the policy contract, the GitHub comment is
+      unedited (`created_at == updated_at`) and no older than 168 hours at
+      authorization time. The v1 Claude-bearing policy bytes remain immutable
+      so pre-migration receipts can be terminated or forensically audited.
+      New issuance is v2-only; normal product activation rejects v1, and even
+      the explicit legacy verifier rejects V1 receipts issued at or after
+      `2026-07-19T00:00:00Z`. Claude, MiniMax, Cursor, UI, wrapper ve fallback
+      records cannot issue a new receipt or authorization. AI remains
+      `advisoryOnly`; it is not a human legal/DPO signature.
 - [ ] Legal ticket #2374 is still open with `tracked_pending` and
       `legalClearanceClaimed=false`. This bounded TEST authorization does not
       emit `GATE_VIEW_ONLY_KVKK=cleared`.

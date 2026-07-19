@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
@@ -14,8 +15,14 @@ CODEX_EVIDENCE_KEYS = {
     "base_sha", "head_sha", "scope_sha256", "verdict",
     "response_sha256", "response",
 }
+CODEX_EVIDENCE_BINDING_KEYS = {
+    "base_tip_sha", "base_sha", "head_sha", "scope_sha256",
+}
+CODEX_ADVISORY_MAX_AGE_HOURS = 168
+CODEX_ADVISORY_CLOCK_SKEW = timedelta(minutes=5)
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+GITHUB_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 VERDICT = re.compile(r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE)
 PRIORITY_HEADING = re.compile(
     r"(?m)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
@@ -47,7 +54,9 @@ def digest_bytes(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
-def validate_codex_advisory_evidence(body: str) -> dict[str, Any]:
+def validate_codex_advisory_evidence(
+    body: str, expected_bindings: dict[str, str],
+) -> dict[str, Any]:
     """Validate exact direct-Codex evidence selected by the owner policy.
 
     This deliberately duplicates the active evidence contract at the
@@ -84,6 +93,11 @@ def validate_codex_advisory_evidence(body: str) -> dict[str, Any]:
         evidence["scope_sha256"]
     ):
         raise CodexEvidenceError("Codex advisory immutable binding is invalid")
+    if set(expected_bindings) != CODEX_EVIDENCE_BINDING_KEYS:
+        raise CodexEvidenceError("Codex advisory expected binding field set is invalid")
+    for field in CODEX_EVIDENCE_BINDING_KEYS:
+        if evidence[field] != expected_bindings[field]:
+            raise CodexEvidenceError(f"Codex advisory {field} binding mismatch")
     response = evidence["response"]
     response_sha256 = evidence["response_sha256"]
     if (
@@ -112,3 +126,36 @@ def validate_codex_advisory_evidence(body: str) -> dict[str, Any]:
         if response[heading.end():end].strip() != "None":
             raise CodexEvidenceError("Codex advisory AGREE contains findings")
     return evidence
+
+
+def validate_codex_advisory_comment_timing(
+    comment: dict[str, Any], reference_time: datetime,
+    max_age_hours: int = CODEX_ADVISORY_MAX_AGE_HOURS,
+) -> datetime:
+    """Require an immutable, recent GitHub comment at the use boundary."""
+
+    if reference_time.tzinfo is None:
+        raise CodexEvidenceError("Codex advisory reference time must be timezone-aware")
+    if (
+        not isinstance(max_age_hours, int)
+        or isinstance(max_age_hours, bool)
+        or max_age_hours != CODEX_ADVISORY_MAX_AGE_HOURS
+    ):
+        raise CodexEvidenceError("Codex advisory maximum age is invalid")
+    created_at = comment.get("created_at")
+    updated_at = comment.get("updated_at")
+    if (
+        not isinstance(created_at, str)
+        or not GITHUB_UTC.fullmatch(created_at)
+        or updated_at != created_at
+    ):
+        raise CodexEvidenceError("Codex advisory comment is edited or has invalid timestamps")
+    created = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc,
+    )
+    age = reference_time.astimezone(timezone.utc) - created
+    if age < -CODEX_ADVISORY_CLOCK_SKEW:
+        raise CodexEvidenceError("Codex advisory comment is from the future")
+    if age > timedelta(hours=max_age_hours):
+        raise CodexEvidenceError("Codex advisory comment is stale")
+    return created
