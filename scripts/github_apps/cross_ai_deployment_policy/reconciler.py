@@ -26,7 +26,9 @@ from .timeutil import parse_utc, utc_now
 
 
 ROOT = Path(__file__).resolve().parents[3]
-STAGE_EVIDENCE_SCHEMA = ROOT / "schema/cross-ai-deployment-stage-evidence-v1.schema.json"
+STAGE_EVIDENCE_SCHEMA = (
+    ROOT / "schema/cross-ai-deployment-stage-evidence-v1.schema.json"
+)
 STAGE_EVIDENCE_FILE = "cross-ai-stage-evidence.json"
 MAX_STAGE_EVIDENCE_BYTES = 1024 * 1024
 MAX_ZIP_COMPRESSION_RATIO = 100
@@ -68,6 +70,7 @@ class StageArtifactSource(Protocol):
         repository: str,
         run_id: int,
         artifact_name: str,
+        expected_artifact_id: int | None = None,
     ) -> bytes: ...
 
 
@@ -88,6 +91,7 @@ class GitHubStageArtifactSource:
         repository: str,
         run_id: int,
         artifact_name: str,
+        expected_artifact_id: int | None = None,
     ) -> bytes:
         artifact = self.reader.workflow_artifact(
             installation_id,
@@ -95,6 +99,14 @@ class GitHubStageArtifactSource:
             run_id,
             artifact_name,
         )
+        if (
+            expected_artifact_id is not None
+            and artifact.artifact_id != expected_artifact_id
+        ):
+            reject(
+                "STAGE_PRODUCT_ARTIFACT_MISMATCH",
+                "live product artifact ID differs from stage evidence",
+            )
         return self.downloader.download(
             installation_id=installation_id,
             repository=repository,
@@ -128,7 +140,9 @@ def _stage_evidence_from_archive(archive: bytes) -> dict[str, Any]:
     except (zipfile.BadZipFile, KeyError, RuntimeError):
         reject("STAGE_ARTIFACT_INVALID", "stage artifact is not a safe ZIP archive")
     if len(raw) != info.file_size:
-        reject("STAGE_ARTIFACT_INVALID", "stage evidence size differs from ZIP metadata")
+        reject(
+            "STAGE_ARTIFACT_INVALID", "stage evidence size differs from ZIP metadata"
+        )
     value = loads_json_bytes(
         raw,
         max_bytes=MAX_STAGE_EVIDENCE_BYTES,
@@ -142,7 +156,9 @@ def _stage_evidence_from_archive(archive: bytes) -> dict[str, Any]:
         key=lambda item: list(item.path),
     )
     if errors:
-        reject("STAGE_EVIDENCE_SCHEMA_INVALID", "stage evidence schema validation failed")
+        reject(
+            "STAGE_EVIDENCE_SCHEMA_INVALID", "stage evidence schema validation failed"
+        )
     return value
 
 
@@ -162,7 +178,9 @@ def _critical_jobs_digest(
             or job.get("status") != "completed"
             or conclusion not in TERMINAL_CONCLUSIONS
         ):
-            reject("GITHUB_JOBS_INVALID", "critical job identity or conclusion is invalid")
+            reject(
+                "GITHUB_JOBS_INVALID", "critical job identity or conclusion is invalid"
+            )
         names.add(name)
         if require_success and conclusion != "success":
             reject("GITHUB_CRITICAL_JOB_FAILED", "a critical job did not succeed")
@@ -244,7 +262,9 @@ class GitHubOutcomeReconciler:
         ).verify_bundle(envelope)
         reservation = self.registry.get_stage(request_id, stage)
         signed_stages = [
-            item for item in verified.payload["workflowStages"] if item["stage"] == stage
+            item
+            for item in verified.payload["workflowStages"]
+            if item["stage"] == stage
         ]
         if len(signed_stages) != 1:
             reject("STAGE_OUTCOME_BINDING_MISMATCH", "signed stage is ambiguous")
@@ -272,12 +292,17 @@ class GitHubOutcomeReconciler:
             or head_repository.get("id") != record.repository_id
             or head_repository.get("full_name") != record.repository
         ):
-            reject("STAGE_OUTCOME_RUN_MISMATCH", "workflow run differs from signed reservation")
+            reject(
+                "STAGE_OUTCOME_RUN_MISMATCH",
+                "workflow run differs from signed reservation",
+            )
         if (
             run.get("status") != "completed"
             or run.get("conclusion") not in TERMINAL_CONCLUSIONS
         ):
-            reject("STAGE_OUTCOME_RUN_NOT_TERMINAL", "workflow run attempt is not terminal")
+            reject(
+                "STAGE_OUTCOME_RUN_NOT_TERMINAL", "workflow run attempt is not terminal"
+            )
         if reservation.state == "OutcomeOverdue":
             self.registry.transition_stage(
                 request_id=request_id,
@@ -313,6 +338,37 @@ class GitHubOutcomeReconciler:
         )
         archive_sha256 = f"sha256:{hashlib.sha256(archive).hexdigest()}"
         evidence = _stage_evidence_from_archive(archive)
+        if stage == "browser-evidence" and evidence["conclusion"] == "success":
+            product_artifact_id = evidence["productArtifactId"]
+            product_artifact_name = evidence["productArtifactName"]
+            product_artifact_digest = evidence["productArtifactDigest"]
+            if (
+                not isinstance(product_artifact_id, int)
+                or isinstance(product_artifact_id, bool)
+                or product_artifact_id < 1
+                or not isinstance(product_artifact_name, str)
+                or not product_artifact_name
+                or not isinstance(product_artifact_digest, str)
+            ):
+                reject(
+                    "STAGE_PRODUCT_ARTIFACT_MISMATCH",
+                    "successful browser evidence lacks product artifact binding",
+                )
+            product_archive = self.artifact_source.fetch(
+                installation_id=self.installation_id,
+                repository=record.repository,
+                run_id=reservation.run_id,
+                artifact_name=product_artifact_name,
+                expected_artifact_id=product_artifact_id,
+            )
+            live_product_digest = (
+                f"sha256:{hashlib.sha256(product_archive).hexdigest()}"
+            )
+            if live_product_digest != product_artifact_digest:
+                reject(
+                    "STAGE_PRODUCT_ARTIFACT_MISMATCH",
+                    "downloaded product artifact digest differs from stage evidence",
+                )
         outcome = dict(evidence)
         outcome["schemaVersion"] = "acik.cross-ai-deployment-stage-outcome.v1"
         outcome["runStartedAt"] = run_started_at
@@ -327,7 +383,10 @@ class GitHubOutcomeReconciler:
         if expected_conclusion not in {"success", "failure", "rolled-back"}:
             expected_conclusion = "failure"
         if outcome.get("conclusion") != expected_conclusion:
-            reject("STAGE_OUTCOME_RUN_MISMATCH", "artifact conclusion differs from live run")
+            reject(
+                "STAGE_OUTCOME_RUN_MISMATCH",
+                "artifact conclusion differs from live run",
+            )
         verified_outcome = verify_stage_outcome(
             outcome,
             bundle=verified,
@@ -430,14 +489,18 @@ class OutcomeSweeper:
     def ready(self) -> bool:
         if not self._started or not self._thread.is_alive() or self._stop.is_set():
             return False
-        return time.monotonic() - self._last_heartbeat <= self.interval_seconds * 2 + 5.0
+        return (
+            time.monotonic() - self._last_heartbeat <= self.interval_seconds * 2 + 5.0
+        )
 
     def stop(self) -> None:
         self._stop.set()
         if self._started and self._thread.is_alive():
             self._thread.join(timeout=60.0)
         if self._thread.is_alive():
-            reject("OUTCOME_SWEEPER_STOP_TIMEOUT", "sweeper did not stop before shutdown")
+            reject(
+                "OUTCOME_SWEEPER_STOP_TIMEOUT", "sweeper did not stop before shutdown"
+            )
 
 
 __all__ = [

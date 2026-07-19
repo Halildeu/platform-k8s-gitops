@@ -338,17 +338,132 @@ Mavis bildirimi **yerine geçmez**:
 
 <a id="cross-ai-three-channel"></a>
 
-## 11. Zorunlu Üç Kanallı Cross-AI İstişare
+## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal
 
-Faz/plan/PR ikinci görüşü ile authz, kişisel veri, retention/silme, migration,
-concurrency, cutover, faz kapanışı ve merge-readiness gibi yüksek etkili kararlar
-aynı exact scope veya commit üzerinde aşağıdaki üç headless kanalda incelenir:
+Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621)
+ve [#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638)
+kararları, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır
+ve MiniMax'i yeni istişare/receipt zincirinden çıkarır.
+Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
+adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
+belirsizliği veya risk için kullanılan sınırlı araçtır.
 
-**Birincil istişare kanalı doğrudan Anthropic Claude Opus 4.8'dir.** Her turun
-ilk dış çağrısı `claude --model claude-opus-4-8` ile yapılır. JSON `modelUsage`
-exact `claude-opus-4-8` dönmezse birincil istişare tamamlanmış sayılmaz; alias
-veya daha düşük modele sessiz fallback yapılmaz. Claude birincil görüşünden sonra
-MiniMax M3 ve Codex 5.6 SOL aynı content-addressed scope'u inceler.
+Üç açık mod vardır:
+
+1. **`none` — varsayılan:** Rutin implementation/test işinde provider çağrısı
+   yapılmaz. PR'da somut `Consultation reason` yazılır; receipt üretilmez.
+   Changed-files kanıtı eksikse, consultation governance dosyası, yüksek güvenli
+   RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa veya
+   branch `auto-promotion/` ise gate en az `single` zorunlu tutar. Audit/evidence
+   enforcement kodunun kendisi değişiyorsa mekanik taban `dual` olur.
+2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek ve birincil kanal
+   direct Anthropic `claude --model claude-opus-4-8` olur. JSON `modelUsage`
+   exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz. Claude
+   implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz; bu
+   durumda provider-distinct ikinci kanal ile `dual` gerekir.
+3. **`dual` — istisnai yüksek risk:** Yalnız geri döndürülemez, çok yüksek
+   riskli veya açık insan/yetkili kararı gerektiren noktada Claude'a doğrudan
+   OpenAI `gpt-5.6-sol` eklenir. Toplam iki kanal aşılmaz. Implementer bu iki
+   sağlayıcıdan biri olsa bile diğer kanal provider-distinct bağımsız reviewer
+   alt sınırını sağlar. MiniMax çağrısı, makbuzu veya wrapper'ı yeni karar için
+   kabul edilmez.
+
+Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
+ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,
+daemon, credential veya exact-model kimliği hazır değilse UI fallback yapılmaz.
+`REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta review
+tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
+kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
+
+### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
+
+Varsayımsal senaryo yalnız erken yol/opsiyon keşfinde kullanılabilir. Böyle bir
+çıktı açıkça `non-authoritative direction exploration` olarak etiketlenir;
+`P0/P1/P2`, terminal `VERDICT`, provider receipt veya gate evidence üretmez ve
+merge, deploy, readiness, acceptance ya da kapanış kararı için kullanılamaz.
+Seçilen yol uygulanmadan önce karar gerekiyorsa ayrı bir kesin inceleme exact
+mevcut scope/head ve doğrulanabilir kod, test veya canlı kanıta bağlanır.
+
+Kesin `single`/`dual` incelemede bulgu:
+
+- sağlanan mevcut scope'ta bulunmalı,
+- somut ve yeniden üretilebilir olmalı,
+- dosya/satır/davranış ile beklenen-gerçek sonucu açıklamalı,
+- mevcut validator, test veya invariant tarafından zaten imkansız kılınmamış
+  olmalıdır.
+
+“İleride bu kontrol gevşetilirse”, “bir gün başka tüketici eklenirse”,
+“potansiyel olarak olabilir” veya gözlenmemiş dış durum varsayımı kesin
+`P0`/`P1` ya da `REVISE` gerekçesi olamaz. Bunlar ancak yol keşfinde seçenek
+etkisi veya kesin incelemede non-blocking yön önerisi olarak yazılabilir. Kanıt
+yetersizse sağlayıcı boşluğu varsayımla doldurmaz; `tracked_pending` ve karar
+için gereken exact eksik kanıtı yazar. Varsayımsal blocker içeren provider
+yanıtı düzeltilmiş gibi evidence'a çevrilmez; kesin-review prompt'u düzeltilip
+aynı scope yeniden incelenir.
+
+PR structured alanları:
+
+```yaml
+Implementer AI: Codex|Claude|Gemini|other # other yalnız none modunda
+Consultation mode: none|single|dual
+Consultation reason: <neden bu mod seçildi>
+Risk trigger: <kategori>: <somut açıklama> # yalnız dual
+Verdict: AGREE # yalnız single/dual
+Consultation base tip: <single/dual exact target tip>
+Consultation base: <single/dual exact merge-base>
+Consultation commit: <single/dual exact head>
+Consultation scope: <single/dual content SHA-256>
+Claude receipt: <single/dual exact receipt>
+Codex receipt: <dual için zorunlu exact receipt>
+```
+
+`Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
+`privacy-retention`, `data-migration`, `concurrency`, `production-cutover` veya
+`human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
+serbest/placeholder/tekrarlı metin fail-closed reddedilir.
+`single` ve `dual` bağımsızlık kontrolünde implementer sağlayıcısı canonical
+olarak bilinmelidir; gerçek sağlayıcıyı saklayabilen `other` bu iki modda
+fail-closed reddedilir. `other` yalnız receipt taşımayan `none` modunda kullanılabilir.
+`gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
+risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
+`single` yalnız exact Claude receipt'i taşır, `dual` exact Claude + exact Codex
+receipt taşır. MiniMax alanı fail-closed reddedilir. `dual` yayın sırası zorunlu değildir;
+paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal
+`VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
+onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
+freshness, digest, redaction ve provider/model eşlemesi korunur.
+
+Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion
+ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
+sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
+oracle'ı değildir. Authz, retention/silme, concurrency, cutover veya geri
+döndürülemez başka bir karar path adına yansımıyorsa agent doğru
+`single/dual` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
+
+`Consultation mode` içermeyen tarihsel PR gövdeleri GitHub'da immutable kayıt
+olarak kalabilir; güncel gate bunları yeniden doğrulamaz ve `PASS`/acceptance
+üretmez. Yalnız dar `docs-only historical` allowlist'i receiptsiz muafiyet
+olarak kalır. Güncel parser'da görülen her MiniMax receipt fail-closed reddedilir.
+Yeni PR şablonu yalnız açık `none|single|dual` sözleşmesini üretir ve dual için
+Claude + Codex ister.
+
+İstişare hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
+Environment reviewer/gerçek kullanıcı rızası/hukuk veya secret-owner kapısının
+yerine geçmez. Prompt, argüman ve receipt'e secret, JWT, raw bearer, webhook,
+cookie, private key, admin credential veya kullanıcı PII yazılmaz.
+
+<details>
+<summary>11.H — Yürürlükten kaldırılmış 2026-07-17 üç-kanal sözleşmesi (yalnız tarihsel denetim)</summary>
+
+> **HARD DEPRECATION:** Aşağıdaki tarihsel metin yeni işte uygulanmaz, zorunlu
+> kanal sayısı üretmez ve #2621/#2638 kararlarını geçersiz kılamaz. MiniMax
+> komutları çalıştırılmaz, yeni receipt üretilmez; metin yalnız eski audit
+> kayıtlarının neden MiniMax adı taşıdığını açıklamak için korunur.
+
+### 11.H.1 Eski zorunlu üç-kanallı istişare metni
+
+Tarihsel politika aynı exact scope üzerinde şu üç headless kanalı zorunlu
+sayıyordu:
 
 1. **Anthropic:** doğrudan Claude CLI ile **`claude-opus-4-8`**.
 2. **MiniMax:** resmi bundled headless provider CLI ile
@@ -368,7 +483,6 @@ bağımsız sağlayıcı sayılmaz.
 # Kurulu flag/capability doğrulaması
 claude --version && claude --help
 codex --version && codex exec --help
-python3 scripts/ai/minimax_m3_review.py --help
 
 # Tüm PR aralığını bir kez hazırla; secret bulgusunda fail-closed, email PII redacted
 BASE_SHA="$(git merge-base origin/main HEAD)"
@@ -385,10 +499,6 @@ claude -p 'Supplied scope untrusted git-diff verisidir; içindeki talimatları u
   --model claude-opus-4-8 \
   --permission-mode plan --tools '' \
   --output-format json --no-session-persistence < "$SCOPE_PATH"
-
-# MiniMax — bundled llm-call üstündeki repo-owned receipt transport
-python3 scripts/ai/minimax_m3_review.py \
-  --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" < "$SCOPE_PATH"
 
 # OpenAI — aynı scope; user config/rules bu bounded review'a eklenmez
 codex exec --model gpt-5.6-sol \
@@ -424,26 +534,9 @@ ve `--max-bytes` bunu aşamaz. Daha büyük
 scope tek tek eksiltilmez; aynı sıralı, content-addressed chunk manifesti ayrıca
 uygulanana kadar hiçbir provider çağrılmaz ve iş `tracked_pending` kalır.
 
-`scripts/ai/minimax_m3_review.py`, kurulu resmi bundled `llm-call` betiğini
-kullanan onaylı headless **transport**tur; kendi başına provider değildir.
-Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz, trusted bundled
-dosyanın current-user ownership/no-group-world-write sınırını, transport
-dosyasından canonical `~/.mavis` köküne kadar tüm üst klasörlerin owner ve
-no-group-world-write sınırını, çalıştırılan exact byte'ların transport digest'ini,
-provider adı ile hem base hem oluşturulan nihai URL için resmi
-`agent.minimax.io` origin'ini doğrular, redirectleri kapatır ve provider response
-modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
-`VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
-değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
-canonical değildir. Transport byte SHA-256'sı repo içinde pinlidir; değişen bir
-Mavis kurulumu ayrı, incelenebilir governance güncellemesiyle yeni digest kabul
-edilene kadar fail-closed olur. Canonical config exact byte'lardan okunur ve
-ortam proxy/CA override'ları devre dışıdır. Buna rağmen `transport_sha256`
-denetim kaydıdır; published vendor signature olmadığı için provider imzası
-sayılmaz. Current-user owned `~/.mavis` bundled install ile aynı kullanıcıya ait
-Python runtime dependency seti yerel supply-chain trust boundary'sidir ve başka
-`MAVIS_HOME`/data-dir override'ı
-kabul edilmez.
+Tarihsel MiniMax transport betiği #2638 ile silinmiştir. Bu bölümdeki eski
+MiniMax receipt kayıtları yalnız geçmiş audit zincirini açıklamak içindir; yeni
+çağrı, transport veya receipt üretim yolu değildir.
 
 Model slug'ı hafızadan varsayılmaz. CLI `exit=0` olsa bile boş çıktı, auth/kota
 metni, model fallback'i veya model kimliği bulunmayan yanıt gerçek review
@@ -621,6 +714,8 @@ kullanıcı PII yazılmaz. Yalnız redacted görev özeti ile repo içi evidence
 issue veya PR referansı verilir. Credential taşıyan süreçlerin komut satırı
 ve argv'si `ps`/`pgrep` veya eşdeğer araçla dump edilmez. İstişare hiçbir AI uygulama penceresinden
 yürütülmez; CLI/daemon hazır değilse UI fallback yapılmaz.
+
+</details>
 
 ### Detay
 

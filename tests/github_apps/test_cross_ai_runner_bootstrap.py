@@ -57,6 +57,7 @@ def policy_payload() -> dict[str, object]:
         "schemaVersion": "acik.cross-ai-deployment-policy.v1",
         "policyId": "faz22-cross-ai-v1",
         "phase": "dual-gate",
+        "machineOnlyEnabled": False,
         "repositoryId": 123456789,
         "repository": REPOSITORY,
         "environment": ENVIRONMENT,

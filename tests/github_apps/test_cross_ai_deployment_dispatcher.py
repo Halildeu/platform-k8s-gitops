@@ -116,12 +116,12 @@ class IntentDispatchOrchestratorTest(unittest.TestCase):
         first = orchestrator.register_and_dispatch_apply(
             envelope=self.fixture.bundle_envelope,
         )
-        self.assertEqual(first.state, "Accepted")
+        self.assertEqual(first.state, "Sending")
         self.now += timedelta(seconds=30)
         second = orchestrator.register_and_dispatch_apply(
             envelope=self.fixture.bundle_envelope,
         )
-        self.assertEqual(second.state, "Accepted")
+        self.assertEqual(second.state, "Sending")
         self.assertEqual(github.dispatch_calls, 1)
         self.assertEqual(github.create_calls, 2)
 
@@ -272,6 +272,80 @@ class IntentDispatchOrchestratorTest(unittest.TestCase):
             "Uncertain",
         )
         self.assertEqual(github.dispatch_calls, 1)
+
+    def test_zero_candidates_stay_non_approving_then_become_uncertain(self) -> None:
+        github = FakeDispatchGitHub(
+            result=DispatchResult(True, False, 204, "DISPATCH_ACCEPTED_204")
+        )
+        orchestrator = self.orchestrator(github)
+        job = orchestrator.register_and_dispatch_apply(
+            envelope=self.fixture.bundle_envelope,
+        )
+        self.assertEqual(job.state, "Sending")
+        self.assertEqual(
+            orchestrator.reconcile_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+            ).state,
+            "Sending",
+        )
+        self.now += timedelta(minutes=11)
+        self.assertEqual(
+            orchestrator.reconcile_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+            ).state,
+            "Uncertain",
+        )
+
+    def test_preexisting_run_is_never_accepted_before_delayed_real_run(self) -> None:
+        github = FakeDispatchGitHub(
+            result=DispatchResult(False, True, 503, "DISPATCH_HTTP_AMBIGUOUS")
+        )
+        subject = self.verified.payload["subject"]
+        actor_id = self.verified.payload["grant"]["triggeringActorId"]
+
+        def run(run_id: int) -> dict:
+            return {
+                "id": run_id,
+                "run_attempt": 1,
+                "event": "workflow_dispatch",
+                "head_branch": subject["intentRef"].removeprefix("refs/tags/"),
+                "head_sha": subject["headSha"],
+                "path": self.verified.payload["workflowStages"][0]["workflowPath"],
+                "created_at": self.fixture.now.isoformat().replace("+00:00", "Z"),
+                "triggering_actor": {"id": actor_id},
+                "repository": {
+                    "id": subject["repositoryId"],
+                    "full_name": subject["repository"],
+                },
+                "head_repository": {
+                    "id": subject["repositoryId"],
+                    "full_name": subject["repository"],
+                },
+            }
+
+        github.runs = (run(77),)
+        orchestrator = self.orchestrator(github)
+        job = orchestrator.register_and_dispatch_apply(
+            envelope=self.fixture.bundle_envelope,
+        )
+        self.assertEqual(job.pre_dispatch_run_id_watermark, 77)
+        self.assertEqual(job.state, "Uncertain")
+        self.assertEqual(
+            orchestrator.reconcile_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+            ).state,
+            "Uncertain",
+        )
+        github.runs = (run(77), run(78))
+        accepted = orchestrator.reconcile_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+        )
+        self.assertEqual(accepted.state, "Accepted")
+        self.assertEqual(accepted.run_id, 78)
 
 
 if __name__ == "__main__":

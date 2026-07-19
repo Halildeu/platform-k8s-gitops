@@ -17,11 +17,23 @@ concurrency:
 
 jobs:
   live-browser:
-    name: Candidate to recruiter to candidate on testai
+    name: Recruiter job lifecycle to candidate application on testai
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    timeout-minutes: 25
+    # Includes the customer journey plus a bounded wait for a protected
+    # compensating rollback PR if runtime/browser acceptance fails.
+    timeout-minutes: 90
+    env:
+      EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+      EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
+      EXPECTED_FRONTEND_DIGEST: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
+      EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c
+      ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
+      PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
+      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815
+      FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225
     steps:
       - name: Validate test-only dispatch boundary
+        id: preflight
         env:
           CONFIRM_INPUT: ${{ inputs.confirm }}
         run: |
@@ -34,37 +46,128 @@ jobs:
 
       - name: Checkout canonical acceptance scripts
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
-      - name: Assert canonical test runtime is healthy
+      - name: Wait for exact GitOps auto-sync convergence
+        id: convergence
+        env:
+          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          kubectl --context=k3d-test -n platform-test rollout status \
-            deployment/ats-interview-evidence --timeout=180s
-          desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-            ats-interview-evidence -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
-          [[ "$desired" == ghcr.io/halildeu/ats-app-boot@sha256:* ]]
-          kubectl --context=k3d-test -n platform-test get pods \
-            -l app=ats-interview-evidence -o json | jq -e --arg digest "${desired##*@}" '
-              [.items[].status.containerStatuses[]? | select(.name=="app-boot")] as $statuses |
-              ($statuses | length) > 0 and
-              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
-            ' >/dev/null
-          curl -fsS https://testai.acik.com/build-info.json | jq -e \
-            '.sha | test("^[a-f0-9]{40}$")' >/dev/null
+          mkdir -p "$EVIDENCE_DIR"
+          digest_map="$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
+            --kustomization kustomize/overlays/test/kustomization.yaml)"
+          REVISION="$EXPECTED_GITOPS_SHA" \
+          DIGEST_MAP="$digest_map" \
+          FULL_SYNC_TIMEOUT=900 \
+          REPORT_PATH="$EVIDENCE_DIR/argocd-convergence.json" \
+            bash scripts/deploy/reconcile-testai-backend-sequential.sh
+
+      - name: Bind pre-journey runtime to this exact GitOps revision
+        id: runtime
+        env:
+          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          PHASE: pre
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/ats/verify-fullats-live-runtime.sh
 
       - name: Run product-path persona setup and real browser journey
+        id: browser
         env:
           CONFIRM: ${{ inputs.confirm }}
           EVIDENCE_DIR: ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
         run: bash scripts/ats/fullats-live-browser-acceptance.sh
 
+      - name: Run promoted D29 functional and authorization matrix
+        id: d29
+        run: |
+          set -euo pipefail
+          evidence_dir="${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p "$evidence_dir"
+          ATS_EXPECTED_DIGEST="$EXPECTED_ATS_DIGEST" \
+            bash scripts/ats/d29-smoke.sh | tee "$evidence_dir/d29.log"
+
+      - name: Rebind post-journey runtime to the same exact revision
+        id: final-runtime
+        env:
+          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          PHASE: post
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/ats/verify-fullats-live-runtime.sh
+
+      - name: Require rollback GitHub App credentials after acceptance failure
+        if: failure() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure')
+        id: rollback-credentials
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${APP_ID:-}" && -n "${APP_PRIVATE_KEY:-}" ]] || {
+            echo "::error::Full ATS acceptance failed, but rollback App credentials are unavailable"
+            exit 1
+          }
+
+      - name: Generate least-privilege rollback GitHub App token
+        if: failure() && steps.rollback-credentials.outcome == 'success'
+        id: rollback-app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout failed promotion with rollback App identity
+        if: failure() && steps.rollback-app-token.outcome == 'success'
+        id: rollback-checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          token: ${{ steps.rollback-app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Install pinned GitHub CLI for rollback automation
+        if: failure() && steps.rollback-checkout.outcome == 'success'
+        id: rollback-gh
+        run: bash scripts/ats/install-pinned-gh-cli.sh
+
+      - name: Install pinned kustomize for rollback rendering
+        if: failure() && steps.rollback-gh.outcome == 'success'
+        id: rollback-kustomize
+        run: bash scripts/ats/install-pinned-kustomize.sh
+
+      - name: Open atomic compensating GitOps rollback PR
+        if: failure() && steps.rollback-kustomize.outcome == 'success'
+        id: rollback
+        env:
+          GH_TOKEN: ${{ steps.rollback-app-token.outputs.token }}
+          GH_REPO: Halildeu/platform-k8s-gitops
+          PROMOTION_PR: "2636"
+          FAILED_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          ROLLBACK_EVIDENCE_DIR: ${{ runner.temp }}/fullats-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/ats/open-fullats-test-rollback-pr.sh
+
+      - name: Require compensating rollback completion after acceptance failure
+        if: always() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && steps.rollback.outcome != 'success'
+        run: |
+          echo "::error::Full ATS acceptance failed and protected compensating rollback did not complete"
+          echo "convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} d29=${{ steps.d29.outcome }} final-runtime=${{ steps.final-runtime.outcome }} rollback-gh=${{ steps.rollback-gh.outcome }} rollback-kustomize=${{ steps.rollback-kustomize.outcome }} rollback=${{ steps.rollback.outcome }}"
+          exit 1
+
       - name: Upload redacted live browser evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: faz25-fullats-live-browser-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/fullats-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
           retention-days: 7
 
@@ -76,9 +179,20 @@ jobs:
             echo ""
             echo "- environment: testai.acik.com"
             echo "- personas: synthetic candidate + synthetic recruiter"
-            echo "- journey: public job -> persistent application -> candidate status -> Keycloak recruiter login -> human status changes -> candidate observes changes"
-            echo "- recruiter module setup: user activation + role + granule + member product APIs"
+            echo "- journey: recruiter draft -> edit -> preview -> publish -> candidate real-PDF local autofill/edit/application -> recruiter inbox/status -> pause/republish/close -> new intake fail-closed -> existing receipt survives"
+            echo "- recruiter access setup: user activation + least-privilege ATS module/actions + role member product APIs"
+            echo "- promoted D29 matrix: mandatory"
+            echo "- revision fence: origin/main + Argo Synced/Healthy + pre/post runtime == workflow GitOps SHA"
             echo "- direct DB/OpenFGA acceptance seed: none"
             echo "- real PII / production mutation: none"
             echo "- secrets/JWT/candidate access token in artifact: none"
+            echo "- artifact authority: live desired image + ready pod imageID exact digest"
+            echo "- source lineage boundary: Actions build run metadata; no signed provenance attestation claimed"
+            echo "- ATS build: ${ATS_BUILD_RUN}"
+            echo "- permission build: ${PERMISSION_BUILD_RUN}"
+            echo "- frontend build: ${FRONTEND_BUILD_RUN}"
+            echo "- frontend build job: ${FRONTEND_BUILD_JOB}"
+            if [[ -n "${{ steps.rollback.outputs.rollback_pr_url }}" ]]; then
+              echo "- compensating rollback PR: ${{ steps.rollback.outputs.rollback_pr_url }}"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

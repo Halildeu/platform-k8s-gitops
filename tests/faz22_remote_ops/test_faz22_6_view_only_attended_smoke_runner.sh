@@ -31,20 +31,52 @@ trap 'rm -rf "$TMP"' EXIT
 diagnostic_source='70d8286163651805cd5ebd537d3836d02fb1692d'
 cat > "$TMP/strict-browser-diagnostic.json" <<JSON
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v2",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
   "sourceRevision": "$diagnostic_source",
   "failureCode": "browser-binding-invalid",
-  "ackTelemetry": null
+  "ackTelemetry": null,
+  "replayHttpStatus": null
 }
 JSON
 [[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
   "$TMP/strict-browser-diagnostic.json" "$diagnostic_source")" == "browser-binding-invalid" ]]
+
+jq '.failureCode = "browser-replay-not-rejected" | .replayHttpStatus = 405' \
+  "$TMP/strict-browser-diagnostic.json" > "$TMP/strict-browser-replay-diagnostic.json"
+[[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
+  "$TMP/strict-browser-replay-diagnostic.json" "$diagnostic_source")" == "browser-replay-not-rejected" ]]
+
+jq '.replayHttpStatus = 404' "$TMP/strict-browser-replay-diagnostic.json" \
+  > "$TMP/strict-browser-replay-impossible.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-replay-impossible.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted replay-not-rejected with HTTP 404" >&2
+  exit 1
+fi
+
+jq '.replayHttpStatus = 404' "$TMP/strict-browser-diagnostic.json" \
+  > "$TMP/strict-browser-diagnostic-mismatched-fields.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-diagnostic-mismatched-fields.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted replay status for a non-replay failure" >&2
+  exit 1
+fi
 
 if bash "$BROWSER_DIAGNOSTIC_READER" \
     "$TMP/strict-browser-diagnostic.json" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null 2>&1; then
   echo "browser diagnostic reader accepted the wrong source revision" >&2
   exit 1
 fi
+
+jq '.schemaVersion = "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"' \
+  "$TMP/strict-browser-diagnostic.json" > "$TMP/strict-browser-diagnostic-old-schema.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-diagnostic-old-schema.json" "$diagnostic_source" \
+    >"$TMP/old-schema.out" 2>"$TMP/old-schema.err"; then
+  echo "browser diagnostic reader accepted the old schema" >&2
+  exit 1
+fi
+grep -Fxq 'browser-diagnostic-schema-mismatch' "$TMP/old-schema.err"
 
 jq '.failureCode = "browser-not-allowlisted"' "$TMP/strict-browser-diagnostic.json" \
   > "$TMP/strict-browser-diagnostic-unknown.json"
@@ -59,6 +91,14 @@ jq '.unexpected = "must-fail-closed"' "$TMP/strict-browser-diagnostic.json" \
 if bash "$BROWSER_DIAGNOSTIC_READER" \
     "$TMP/strict-browser-diagnostic-extra.json" "$diagnostic_source" >/dev/null 2>&1; then
   echo "browser diagnostic reader accepted an extended schema" >&2
+  exit 1
+fi
+
+jq '.replayHttpStatus = 99' "$TMP/strict-browser-diagnostic.json" \
+  > "$TMP/strict-browser-diagnostic-invalid-status.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-diagnostic-invalid-status.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted an out-of-range replay status" >&2
   exit 1
 fi
 
@@ -94,6 +134,15 @@ grep -q 'name: Verify attended endpoint target before approval' <<<"$browser_wor
 grep -q 'needs: target-preflight' <<<"$browser_workflow_text"
 grep -q 'verify-view-only-viewer-target.sh' <<<"$browser_workflow_text"
 grep -q 'name: Re-verify live target after protected approval' <<<"$browser_workflow_text"
+# Every job checks out the workflow event revision, and all producer/reader
+# bindings use that same immutable revision. Schema upgrades cannot mix within
+# an already-running evidence job.
+[[ "$(grep -Fc 'uses: actions/checkout@' <<<"$browser_workflow_text")" == "3" ]]
+[[ "$(grep -Fc 'SOURCE_REVISION: ${{ github.sha }}' <<<"$browser_workflow_text")" == "3" ]]
+# VIEWER_URL is assembled inside the trusted runner from a fixed test origin;
+# workflow inputs cannot provide an alternate origin, path, or query key.
+grep -Fq 'VIEWER_PRODUCT_BASE_URL: https://testai.acik.com' <<<"$browser_workflow_text"
+grep -Fq 'VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}"' "$SCRIPT"
 # shellcheck disable=SC2016 # Assert the workflow expression literally.
 if [[ "$(grep -A3 'name: Stage redacted collector diagnostic' "$BROWSER_WORKFLOW" \
     | grep -Fc 'if: ${{ always() }}')" != "1" ]]; then
@@ -113,7 +162,7 @@ if grep -Fq -- '--argjson operation "$operation"' <<<"$browser_workflow_text"; t
   echo "browser collector diagnostic must not expose raw operation response in process arguments" >&2
   exit 1
 fi
-grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v4' "$DIAGNOSTIC_SCRIPT"
+grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v5' "$DIAGNOSTIC_SCRIPT"
 grep -q 'failureReasonCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'browserFailureCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'openSessionHttp' "$DIAGNOSTIC_SCRIPT"

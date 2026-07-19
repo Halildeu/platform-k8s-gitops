@@ -79,6 +79,10 @@ class EvaluationResult:
     provider_families: tuple[str, ...]
 
 
+ZERO_TRUST_ROOT_SHA256 = "sha256:" + ("0" * 64)
+INERT_POLICY_IDS = frozenset({900000001, 900000002, 900000003, 900000004})
+
+
 class DeploymentEvaluator:
     def __init__(
         self,
@@ -100,6 +104,27 @@ class DeploymentEvaluator:
             reject(
                 "ENFORCE_PHASE_INVALID",
                 "observe policy cannot authorize an enforcement callback",
+            )
+        if mode == "enforce" and expected_trust_root_sha256 == ZERO_TRUST_ROOT_SHA256:
+            reject(
+                "TRUST_ROOT_PIN_SENTINEL",
+                "all-zero trust-root pin cannot authorize enforcement",
+            )
+        policy_authority_ids = (
+            set(policy.allowed_installation_ids)
+            | set(policy.allowed_dispatcher_installation_ids)
+            | set(policy.allowed_dispatcher_actor_ids)
+            | set(policy.required_custom_rule_app_ids)
+        )
+        if mode == "enforce" and policy_authority_ids & INERT_POLICY_IDS:
+            reject(
+                "POLICY_AUTHORITY_SENTINEL",
+                "placeholder GitHub authority IDs cannot authorize enforcement",
+            )
+        if policy.phase == "machine-only-nonprod" and not policy.machine_only_enabled:
+            reject(
+                "MACHINE_ONLY_DISABLED",
+                "v1 policy hard-disables machine-only deployment authorization",
             )
         self.policy = policy
         self.registry = registry
@@ -373,6 +398,14 @@ class DeploymentEvaluator:
             expected_policy_sha256=self.policy.digest,
             expected_trust_root_sha256=self.expected_trust_root_sha256,
         ).verify_bundle(envelope)
+        if self.policy.phase == "machine-only-nonprod" and any(
+            identity_class != "provider-reported"
+            for _, identity_class in verified.provider_identity_classes
+        ):
+            reject(
+                "MACHINE_ONLY_IDENTITY_UNTRUSTED",
+                "machine-only mode rejects launch-attested provider leaves",
+            )
         if (
             verified.bundle_digest != record.bundle_digest
             or verified.subject_digest != record.subject_digest
@@ -440,6 +473,25 @@ class DeploymentEvaluator:
         stage_policy = self.policy.stages.get(stage_name)
         if stage_policy is None or stage_policy.workflow_path != workflow_path:
             reject("HEAD_OR_WORKFLOW_MISMATCH", "workflow path differs from policy")
+        dispatch = self.registry.get_dispatch(request.request_id, stage_name)
+        if (
+            dispatch.state != "Accepted"
+            or dispatch.run_id != request.run_id
+            or dispatch.installation_id
+            not in self.policy.allowed_dispatcher_installation_ids
+            or dispatch.repository_id != self.policy.repository_id
+            or dispatch.repository != self.policy.repository
+            or dispatch.workflow_path != workflow_path
+            or dispatch.intent_ref != request.intent_ref
+            or dispatch.head_sha != request.head_sha
+            or dispatch.expected_actor_id != grant["triggeringActorId"]
+            or dispatch.pre_dispatch_run_id_watermark is None
+            or dispatch.run_id <= dispatch.pre_dispatch_run_id_watermark
+        ):
+            reject(
+                "DISPATCH_CORRELATION_MISMATCH",
+                "callback is not bound to one accepted dispatcher run",
+            )
         if tuple(signed_stage["runsOnLabels"]) != stage_policy.required_runs_on_labels:
             reject(
                 "RUNNER_POLICY_OR_INPUT_AUTHORITY_MISMATCH",
@@ -472,6 +524,8 @@ class DeploymentEvaluator:
         if (
             inspection.workflow_sha256 != signed_stage["workflowBlobSha256"]
             or inspection.dependency_lock_sha256 != signed_stage["dependencyLockSha256"]
+            or inspection.concurrency_group_sha256
+            != signed_stage["concurrencyGroupSha256"]
         ):
             reject(
                 "INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH",

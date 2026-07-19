@@ -12,15 +12,15 @@
 #   - KC platform-test: ats-api client + 14 client-role + 15 default-scope
 #     scope'ları (Codex 019f50b7 verdict A: default scope + rol-kapısı ats#96)
 #
-# Güncel Faz 25 #2526 imaj pini. Numerik UID (10001:10001) ve deployment
+# Güncel Faz 25 #2615 branch-acceptance imaj pini. Numerik UID (10001:10001) ve deployment
 # securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:
-#   source  ats main f34a761494938e8e634699a3864dc38af3c215fd (ats#181)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-f34a761
-#   digest  sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515
-#   build   https://github.com/Halildeu/ats/actions/runs/29549967637
+#   source  ats#183 f4d2b4f79b10fa879e610a102acf1eb54eba9964
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-f4d2b4f
+#   digest  sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+#   build   https://github.com/Halildeu/ats/actions/runs/29629811674
 # Son canlı D29 kanıtlı baseline: sha-e6b7409 /
 #   sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
-# Yeni dce33483 pini için canlı D29, #2526 recovery koşumunda üretilecektir.
+# Yeni 8812ab4e pini için canlı D29, #2615 recovery + acceptance koşumunda üretilecektir.
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
@@ -40,7 +40,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515
+    digest: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).

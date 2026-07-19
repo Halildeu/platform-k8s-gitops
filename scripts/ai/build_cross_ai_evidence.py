@@ -69,7 +69,6 @@ COOKIE_HEADER_RE = re.compile(
 )
 PROVIDER_MODELS = {
     "anthropic": "claude-opus-4-8",
-    "minimax": "minimax/MiniMax-M3",
     "openai": "gpt-5.6-sol",
 }
 MAX_RESPONSE_BYTES = 48_000

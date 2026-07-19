@@ -61,6 +61,9 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
+        # k3d-test service CIDR is 10.45.0.0/16; this is the fixed
+        # kubernetes.default.svc ClusterIP. The watchdog pins curl --resolve to
+        # this injected service IP, so no DNS egress is required.
         - ipBlock:
             cidr: 10.45.0.1/32
       ports:
@@ -128,17 +131,22 @@ spec:
               ca_file=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
               namespace="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
               token="$(cat "$token_file")"
+              test "$KUBERNETES_SERVICE_HOST" = "10.45.0.1"
+              test "${KUBERNETES_SERVICE_PORT_HTTPS:-443}" = "443"
               api=https://kubernetes.default.svc
+              api_resolve="kubernetes.default.svc:${KUBERNETES_SERVICE_PORT_HTTPS:-443}:${KUBERNETES_SERVICE_HOST}"
               auth="Authorization: Bearer $token"
 
               request() {
                 method="$1"; path="$2"; content_type="$3"; body="$4"; expected="$5"
                 if [ -n "$body" ]; then
                   code="$(curl -sS -o /tmp/response -w '%{http_code}' --cacert "$ca_file" \
+                    --resolve "$api_resolve" \
                     -H "$auth" -H "Content-Type: $content_type" -X "$method" \
                     --data "$body" --max-time 20 "$api$path" || true)"
                 else
                   code="$(curl -sS -o /tmp/response -w '%{http_code}' --cacert "$ca_file" \
+                    --resolve "$api_resolve" \
                     -H "$auth" -H "Content-Type: $content_type" -X "$method" \
                     --max-time 20 "$api$path" || true)"
                 fi
@@ -152,7 +160,7 @@ spec:
               request PATCH "/api/v1/namespaces/$namespace/configmaps/endpoint-admin-remote-bridge-config-device-key" \
                 application/merge-patch+json '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false","REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null,"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null}}' 200
               request PATCH "/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
-                application/merge-patch+json '{"data":{"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_URI":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0":null}}' 200
+                application/merge-patch+json '{"data":{"__GATEWAY_ROUTE_PREFIX__ID":null,"__GATEWAY_ROUTE_PREFIX__URI":null,"__GATEWAY_ROUTE_PREFIX__ORDER":null,"__GATEWAY_ROUTE_PREFIX__PREDICATES_0":null,"__GATEWAY_ROUTE_PREFIX__PREDICATES_1":null,"__GATEWAY_ROUTE_PREFIX__FILTERS_0":null}}' 200
               request DELETE "/api/v1/namespaces/$namespace/services/endpoint-admin-remote-bridge-viewer" \
                 application/json '' 200,202,404
               request DELETE "/apis/networking.k8s.io/v1/namespaces/$namespace/networkpolicies/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
@@ -180,6 +188,30 @@ spec:
               type: RuntimeDefault
             capabilities:
               drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  token_file=/var/run/secrets/kubernetes.io/serviceaccount/token
+                  ca_file=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                  namespace_file=/var/run/secrets/kubernetes.io/serviceaccount/namespace
+                  test -r "$token_file" -a -r "$ca_file" -a -r "$namespace_file"
+                  namespace="$(cat "$namespace_file")"
+                  token="$(cat "$token_file")"
+                  test "$KUBERNETES_SERVICE_HOST" = "10.45.0.1"
+                  test "${KUBERNETES_SERVICE_PORT_HTTPS:-443}" = "443"
+                  api_resolve="kubernetes.default.svc:${KUBERNETES_SERVICE_PORT_HTTPS:-443}:${KUBERNETES_SERVICE_HOST}"
+                  curl -fsS --cacert "$ca_file" \
+                    --resolve "$api_resolve" \
+                    -H "Authorization: Bearer $token" --max-time 5 \
+                    "https://kubernetes.default.svc/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
+                    >/dev/null
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 6
+            failureThreshold: 2
           volumeMounts:
             - name: tmp
               mountPath: /tmp

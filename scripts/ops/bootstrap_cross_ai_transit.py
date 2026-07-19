@@ -30,12 +30,14 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MOUNT = "cross-ai"
 KEY_NAMES = (
     "anthropic",
-    "provider-secondary",
+    "openai",
     "coordinator",
     "revocation",
     "runner-management",
 )
 RECONCILER_POLICY_NAME = "vault-config-reconciler"
+LEGACY_MINIMAX_APPROLE = "cross-ai-issuer-minimax-test"
+LEGACY_MINIMAX_POLICY = "cross-ai-issuer-minimax-test"
 
 
 class BootstrapError(RuntimeError):
@@ -200,23 +202,48 @@ def _public_key_record(key_name: str, data: dict[str, Any]) -> dict[str, Any]:
     keys = data.get("keys")
     if not isinstance(version, int) or version < 1 or not isinstance(keys, dict):
         raise BootstrapError(f"Transit key {key_name} version data is invalid")
-    version_data = keys.get(str(version))
-    if not isinstance(version_data, dict):
-        raise BootstrapError(f"Transit key {key_name} public version is missing")
-    public_key = version_data.get("public_key")
-    if not isinstance(public_key, str):
-        raise BootstrapError(f"Transit key {key_name} public key is missing")
-    try:
-        decoded = base64.b64decode(public_key, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise BootstrapError(f"Transit key {key_name} public key is invalid") from exc
-    if len(decoded) != 32:
-        raise BootstrapError(f"Transit key {key_name} is not an Ed25519 public key")
+    expected_versions = {str(item) for item in range(1, version + 1)}
+    if set(keys) != expected_versions:
+        raise BootstrapError(f"Transit key {key_name} public history is incomplete")
+    version_history: list[dict[str, Any]] = []
+    for historical_version in range(1, version + 1):
+        version_data = keys.get(str(historical_version))
+        if not isinstance(version_data, dict):
+            raise BootstrapError(
+                f"Transit key {key_name} public version is missing"
+            )
+        public_key = version_data.get("public_key")
+        if not isinstance(public_key, str):
+            raise BootstrapError(f"Transit key {key_name} public key is missing")
+        try:
+            decoded = base64.b64decode(public_key, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise BootstrapError(
+                f"Transit key {key_name} public key is invalid"
+            ) from exc
+        if len(decoded) != 32:
+            raise BootstrapError(
+                f"Transit key {key_name} is not an Ed25519 public key"
+            )
+        version_history.append(
+            {
+                "version": historical_version,
+                "publicKeyBase64": public_key,
+            }
+        )
+    public_key = version_history[-1]["publicKeyBase64"]
     return {
         "keyId": f"vault-transit://{MOUNT}/{key_name}#v{version}",
         "keyName": key_name,
         "keyVersion": version,
         "publicKeyBase64": public_key,
+        "keyType": "ed25519",
+        "derived": False,
+        "exportable": False,
+        "allowPlaintextBackup": False,
+        "deletionAllowed": False,
+        "supportsSigning": True,
+        "versionHistory": version_history,
     }
 
 
@@ -282,6 +309,33 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
     elif not isinstance(mount, dict) or mount.get("type") != "transit":
         raise BootstrapError("cross-ai mount exists with a non-Transit type")
 
+    # Remove signing authority without deleting the Transit key. Public-key
+    # history remains verifiable, while existing AppRole tokens lose policy
+    # capabilities as soon as the ACL policy is deleted.
+    decommission_statuses = frozenset({200, 204, 404})
+    client.request(
+        "DELETE",
+        f"auth/approle/role/{LEGACY_MINIMAX_APPROLE}",
+        expected=decommission_statuses,
+    )
+    client.request(
+        "DELETE",
+        f"sys/policies/acl/{LEGACY_MINIMAX_POLICY}",
+        expected=decommission_statuses,
+    )
+    if client.request(
+        "GET",
+        f"auth/approle/role/{LEGACY_MINIMAX_APPROLE}",
+        expected=frozenset({404}),
+    ).status != 404:
+        raise BootstrapError("legacy MiniMax AppRole still exists after decommission")
+    if client.request(
+        "GET",
+        f"sys/policies/acl/{LEGACY_MINIMAX_POLICY}",
+        expected=frozenset({404}),
+    ).status != 404:
+        raise BootstrapError("legacy MiniMax ACL policy still exists after decommission")
+
     key_records: list[dict[str, Any]] = []
     for key_name in KEY_NAMES:
         current = client.request(
@@ -346,7 +400,7 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     receipt = {
-        "schemaVersion": "acik.cross-ai-transit-bootstrap-receipt.v1",
+        "schemaVersion": "acik.cross-ai-transit-bootstrap-receipt.v2",
         "scope": "test-only",
         "vaultOrigin": origin,
         "vaultClusterId": args.expected_cluster_id,
@@ -357,6 +411,10 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         "reconcilerPolicySha256": f"sha256:{hashlib.sha256(policy_bytes).hexdigest()}",
         "createdResources": sorted(created),
         "updatedResources": sorted(updated),
+        "verifiedAbsentResources": [
+            f"approle:{LEGACY_MINIMAX_APPROLE}",
+            f"policy:{LEGACY_MINIMAX_POLICY}",
+        ],
         "verifiedAt": datetime.now(timezone.utc)
         .replace(microsecond=0)
         .isoformat()

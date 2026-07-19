@@ -68,7 +68,8 @@ def verify_stage_outcome(
     subject = bundle.payload["subject"]
     grant = bundle.payload["grant"]
     stages = [
-        item for item in bundle.payload["workflowStages"]
+        item
+        for item in bundle.payload["workflowStages"]
         if item["stage"] == expected_stage
     ]
     if len(stages) != 1:
@@ -114,36 +115,75 @@ def verify_stage_outcome(
     run_started_at = parse_utc(payload["runStartedAt"], "stageOutcome.runStartedAt")
     grant_start = parse_utc(grant["notBefore"], "grant.notBefore")
     grant_end = parse_utc(grant["expiresAt"], "grant.expiresAt")
-    if created_at < grant_start - MAX_CLOCK_SKEW or created_at > grant_end + MAX_CLOCK_SKEW:
-        reject("STAGE_OUTCOME_TIME_INVALID", "stage outcome is outside the signed grant")
+    if (
+        created_at < grant_start - MAX_CLOCK_SKEW
+        or created_at > grant_end + MAX_CLOCK_SKEW
+    ):
+        reject(
+            "STAGE_OUTCOME_TIME_INVALID", "stage outcome is outside the signed grant"
+        )
     if created_at > current + MAX_CLOCK_SKEW:
-        reject("STAGE_OUTCOME_TIME_INVALID", "stage outcome creation time is in the future")
+        reject(
+            "STAGE_OUTCOME_TIME_INVALID", "stage outcome creation time is in the future"
+        )
     if (
         run_started_at < grant_start - MAX_CLOCK_SKEW
         or run_started_at > created_at
         or run_started_at > current + MAX_CLOCK_SKEW
     ):
-        reject("STAGE_OUTCOME_TIME_INVALID", "run start time is outside the signed outcome")
+        reject(
+            "STAGE_OUTCOME_TIME_INVALID", "run start time is outside the signed outcome"
+        )
 
     conclusion = payload["conclusion"]
     watchdog_value = payload["watchdogExpiresAt"]
+    product_artifact = (
+        payload["productArtifactId"],
+        payload["productArtifactName"],
+        payload["productArtifactDigest"],
+    )
     if expected_stage == "apply":
-        if conclusion not in {"success", "failure"} or watchdog_value is None:
+        if conclusion not in {"success", "failure"}:
             reject(
                 "STAGE_OUTCOME_STATE_INVALID",
-                "apply outcome requires success/failure and a watchdog expiry",
+                "apply outcome has an invalid conclusion",
             )
-        watchdog_end = parse_utc(watchdog_value, "stageOutcome.watchdogExpiresAt")
-        if watchdog_end <= created_at or watchdog_end > grant_end:
+        if conclusion == "success" and watchdog_value is None:
             reject(
-                "STAGE_OUTCOME_WATCHDOG_INVALID",
-                "apply watchdog expiry is not bounded by the signed grant",
+                "STAGE_OUTCOME_STATE_INVALID",
+                "successful apply outcome requires a watchdog expiry",
             )
+        if watchdog_value is not None:
+            watchdog_end = parse_utc(watchdog_value, "stageOutcome.watchdogExpiresAt")
+            if watchdog_end <= created_at or watchdog_end > grant_end:
+                reject(
+                    "STAGE_OUTCOME_WATCHDOG_INVALID",
+                    "apply watchdog expiry is not bounded by the signed grant",
+                )
     elif expected_stage == "browser-evidence":
         if conclusion not in {"success", "failure"} or watchdog_value is not None:
             reject(
                 "STAGE_OUTCOME_STATE_INVALID",
                 "browser outcome has an invalid conclusion or watchdog field",
+            )
+        expected_product_name = (
+            f"faz22-6-view-only-viewer-browser-evidence-{expected_run_id}"
+        )
+        if conclusion == "success" and (
+            not isinstance(product_artifact[0], int)
+            or isinstance(product_artifact[0], bool)
+            or product_artifact[0] < 1
+            or product_artifact[1] != expected_product_name
+            or not isinstance(product_artifact[2], str)
+        ):
+            reject(
+                "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
+                "successful browser outcome lacks the uploaded product artifact binding",
+            )
+        if conclusion == "failure" and product_artifact != (None, None, None):
+            reject(
+                "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
+                "failed browser outcome must not assert a product artifact",
             )
     else:
         if conclusion not in {"rolled-back", "failure"} or watchdog_value is not None:
@@ -151,6 +191,11 @@ def verify_stage_outcome(
                 "STAGE_OUTCOME_STATE_INVALID",
                 "rollback outcome has an invalid conclusion or watchdog field",
             )
+    if expected_stage != "browser-evidence" and product_artifact != (None, None, None):
+        reject(
+            "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
+            "non-browser outcome must not assert a product artifact",
+        )
 
     target_state = {
         "success": "Succeeded",

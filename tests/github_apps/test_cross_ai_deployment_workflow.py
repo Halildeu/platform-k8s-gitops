@@ -25,6 +25,9 @@ on:
 permissions:
   contents: read
   id-token: write
+concurrency:
+  group: faz22-view-only-protected-lanes
+  cancel-in-progress: false
 jobs:
   apply:
     environment:
@@ -37,13 +40,17 @@ jobs:
     steps:
       - uses: actions/checkout@{ACTION_SHA}
       - name: Verify signed runner bootstrap
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@{ACTION_SHA}
         env:
           CROSS_AI_BOOTSTRAP_TOKEN: ${{{{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}}}
           CROSS_AI_ENDPOINT_ID: ${{{{ secrets.CROSS_AI_ENDPOINT_ID }}}}
           CROSS_AI_OPERATOR_ID: ${{{{ secrets.CROSS_AI_OPERATOR_ID }}}}
           CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
           CROSS_AI_BOOTSTRAP_OUTPUT: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
-        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage apply --workflow-path .github/workflows/apply.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:{'2' * 64} --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+        with:
+          stage: apply
+          workflow-path: .github/workflows/apply.yml
+          expected-trust-root-sha256: sha256:{'2' * 64}
       - name: Execute reviewed stage
         uses: Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{ACTION_SHA}
         env:
@@ -76,11 +83,47 @@ class WorkflowInspectionTest(unittest.TestCase):
             result.external_uses,
             (
                 f"Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{ACTION_SHA}",
+                f"Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@{ACTION_SHA}",
                 f"actions/checkout@{ACTION_SHA}",
             ),
         )
         self.assertRegex(result.workflow_sha256, r"^sha256:[a-f0-9]{64}$")
         self.assertRegex(result.dependency_lock_sha256, r"^sha256:[a-f0-9]{64}$")
+        self.assertRegex(
+            result.concurrency_group_sha256,
+            r"^sha256:[a-f0-9]{64}$",
+        )
+
+    def test_rejects_dynamic_or_cancelling_concurrency(self) -> None:
+        dynamic = workflow().replace(
+            b"group: faz22-view-only-protected-lanes",
+            b"group: ${{ github.ref }}",
+        )
+        self.assert_rejected(dynamic, "WORKFLOW_CONCURRENCY_INVALID")
+        cancelling = workflow().replace(
+            b"cancel-in-progress: false",
+            b"cancel-in-progress: true",
+        )
+        self.assert_rejected(cancelling, "WORKFLOW_CONCURRENCY_INVALID")
+
+    def test_rejects_job_level_concurrency_override(self) -> None:
+        job_concurrency = workflow().replace(
+            b"    steps:\n",
+            (
+                b"    concurrency:\n"
+                b"      group: ${{ github.ref }}\n"
+                b"      cancel-in-progress: true\n"
+                b"    steps:\n"
+            ),
+        )
+        self.assert_rejected(job_concurrency, "WORKFLOW_JOB_CONTROL_INVALID")
+
+    def test_rejects_job_level_permissions_override(self) -> None:
+        job_permissions = workflow().replace(
+            b"    steps:\n",
+            b"    permissions:\n      contents: write\n    steps:\n",
+        )
+        self.assert_rejected(job_permissions, "WORKFLOW_JOB_CONTROL_INVALID")
 
     def test_rejects_dispatch_inputs_and_input_reads(self) -> None:
         self.assert_rejected(
@@ -179,8 +222,8 @@ class WorkflowInspectionTest(unittest.TestCase):
 
     def test_rejects_bootstrap_secret_in_argv_or_missing_protected_env(self) -> None:
         argv = workflow().replace(
-            b"--workflow-path .github/workflows/apply.yml",
-            b"--workflow-path .github/workflows/apply.yml --token $CROSS_AI_BOOTSTRAP_TOKEN",
+            b"workflow-path: .github/workflows/apply.yml",
+            b"workflow-path: .github/workflows/apply.yml\n          token: $CROSS_AI_BOOTSTRAP_TOKEN",
         )
         self.assert_rejected(argv, "WORKFLOW_BOOTSTRAP_INVALID")
         missing = workflow().replace(

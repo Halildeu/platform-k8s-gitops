@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import json
 import tempfile
 import unittest
@@ -36,20 +37,27 @@ on:
 permissions:
   contents: read
   id-token: write
+concurrency:
+  group: faz22-view-only-protected-lanes
+  cancel-in-progress: false
 jobs:
   apply:
     environment: {ENVIRONMENT}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, staging-sw, testai-deploy]
     steps:
       - uses: actions/checkout@{'1' * 40}
       - name: Verify signed runner bootstrap
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@{'1' * 40}
         env:
           CROSS_AI_BOOTSTRAP_TOKEN: ${{{{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}}}
           CROSS_AI_ENDPOINT_ID: ${{{{ secrets.CROSS_AI_ENDPOINT_ID }}}}
           CROSS_AI_OPERATOR_ID: ${{{{ secrets.CROSS_AI_OPERATOR_ID }}}}
           CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
           CROSS_AI_BOOTSTRAP_OUTPUT: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
-        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage apply --workflow-path .github/workflows/apply-view-only-viewer-pilot-enable.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:{'2' * 64} --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+        with:
+          stage: apply
+          workflow-path: .github/workflows/apply-view-only-viewer-pilot-protected.yml
+          expected-trust-root-sha256: sha256:{'2' * 64}
       - name: Execute reviewed stage
         uses: Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{'1' * 40}
         env:
@@ -62,6 +70,7 @@ def policy_payload() -> dict[str, object]:
         "schemaVersion": "acik.cross-ai-deployment-policy.v1",
         "policyId": "faz22-cross-ai-v1",
         "phase": "dual-gate",
+        "machineOnlyEnabled": False,
         "repositoryId": 123456789,
         "repository": REPOSITORY,
         "environment": ENVIRONMENT,
@@ -76,20 +85,28 @@ def policy_payload() -> dict[str, object]:
         "workflowStages": [
             {
                 "stage": "apply",
-                "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
-                "requiredRunsOnLabels": ["ubuntu-latest"],
+                "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
+                "requiredRunsOnLabels": [
+                    "self-hosted",
+                    "staging-sw",
+                    "testai-deploy",
+                ],
                 "requireRunnerGroup": False,
             },
             {
                 "stage": "browser-evidence",
-                "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml",
+                "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
                 "requiredRunsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
-                "requireRunnerGroup": True,
+                "requireRunnerGroup": False,
             },
             {
                 "stage": "compensating-rollback",
-                "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot.yml",
-                "requiredRunsOnLabels": ["ubuntu-latest"],
+                "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
+                "requiredRunsOnLabels": [
+                    "self-hosted",
+                    "staging-sw",
+                    "testai-deploy",
+                ],
                 "requireRunnerGroup": False,
             },
         ],
@@ -122,7 +139,7 @@ class FakeGitHub:
             "triggering_actor": {"id": 424242, "login": "platform-automation[bot]"},
             "run_attempt": 1,
             "status": "queued",
-            "path": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
+            "path": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
             "created_at": "2026-07-16T20:02:00Z",
         }
         self.environment_value = {
@@ -157,6 +174,20 @@ class FakeGitHub:
         self, installation_id: int, repository: str, workflow_path: str, head_sha: str
     ):
         return self.workflow_value
+
+    def repository_runners(self, installation_id: int, repository: str):
+        return (
+            {
+                "id": 98765,
+                "name": "testai-deploy-runner",
+                "status": "online",
+                "busy": False,
+                "labels": [
+                    {"name": label, "type": "custom"}
+                    for label in ("self-hosted", "staging-sw", "testai-deploy")
+                ],
+            },
+        )
 
     def environment(self, installation_id: int, repository: str, environment: str):
         return copy.deepcopy(self.environment_value)
@@ -207,6 +238,30 @@ class DeploymentEvaluatorTest(unittest.TestCase):
             resolved_head_sha=HEAD,
             finalized_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
         )
+        self.registry.queue_dispatch(
+            request_id=REQUEST_ID,
+            stage="apply",
+            installation_id=3333,
+            repository=REPOSITORY,
+            queued_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
+        )
+        self.registry.claim_dispatch(
+            request_id=REQUEST_ID,
+            stage="apply",
+            claimed_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
+        )
+        self.registry.record_dispatch_watermark(
+            request_id=REQUEST_ID,
+            stage="apply",
+            watermark=987654320,
+            snapshot_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
+        )
+        self.registry.reconcile_dispatch(
+            request_id=REQUEST_ID,
+            stage="apply",
+            run_id=987654321,
+            reconciled_at=datetime(2026, 7, 16, 20, 2, tzinfo=timezone.utc),
+        )
         self.github = FakeGitHub()
         self.evaluator = DeploymentEvaluator(
             policy=self.policy,
@@ -248,8 +303,18 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         result = self.evaluator.evaluate(self.request)
         self.assertTrue(result.approval_candidate)
         self.assertEqual(result.stage, "apply")
-        self.assertEqual(result.provider_families, ("anthropic", "xai"))
+        self.assertEqual(
+            result.provider_families,
+            ("anthropic", "minimax", "openai"),
+        )
         self.assertEqual(result.app_rule_id, 555)
+
+    def test_rejects_callback_without_exact_dispatch_correlation(self) -> None:
+        self.registry._connection.execute(
+            "UPDATE intent_dispatches SET run_id = ? WHERE request_id = ? AND stage = ?",
+            (987654322, REQUEST_ID, "apply"),
+        )
+        self.assert_rejected("DISPATCH_CORRELATION_MISMATCH")
 
     def test_rejects_workflow_dependency_or_actor_drift(self) -> None:
         self.github.workflow_value = WORKFLOW.replace(
@@ -259,6 +324,13 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         self.github.workflow_value = WORKFLOW
         self.github.run_value["triggering_actor"] = {"id": 999999}
         self.assert_rejected("RUN_ACTOR_MISMATCH")
+
+    def test_rejects_workflow_concurrency_group_drift(self) -> None:
+        self.github.workflow_value = WORKFLOW.replace(
+            b"faz22-view-only-protected-lanes",
+            b"faz22-view-only-protected-lanes-forked",
+        )
+        self.assert_rejected("INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH")
 
     def test_rejects_environment_rule_drift_and_moved_ref(self) -> None:
         self.github.environment_value["protection_rules"].append(
@@ -289,6 +361,98 @@ class DeploymentEvaluatorTest(unittest.TestCase):
                 mode="enforce",
                 now=lambda: NOW,
             )
+
+    def test_enforcement_rejects_zero_trust_pin_and_placeholder_authority_ids(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_PIN_SENTINEL"):
+            DeploymentEvaluator(
+                policy=self.policy,
+                registry=self.registry,
+                github=self.github,
+                trust_root=self.fixture.trust_root,
+                expected_trust_root_sha256="sha256:" + ("0" * 64),
+                revocations_loader=lambda: self.fixture.revocations_envelope,
+                mode="enforce",
+                now=lambda: NOW,
+            )
+        with self.assertRaisesRegex(PolicyError, "POLICY_AUTHORITY_SENTINEL"):
+            DeploymentEvaluator(
+                policy=replace(
+                    self.policy,
+                    required_custom_rule_app_ids=frozenset({900000001}),
+                ),
+                registry=self.registry,
+                github=self.github,
+                trust_root=self.fixture.trust_root,
+                expected_trust_root_sha256=sha256_digest(self.fixture.trust_root),
+                revocations_loader=lambda: self.fixture.revocations_envelope,
+                mode="enforce",
+                now=lambda: NOW,
+            )
+
+    def test_machine_only_kill_switch_and_launch_attestation_are_fail_closed(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(PolicyError, "MACHINE_ONLY_DISABLED"):
+            DeploymentEvaluator(
+                policy=replace(self.policy, phase="machine-only-nonprod"),
+                registry=self.registry,
+                github=self.github,
+                trust_root=self.fixture.trust_root,
+                expected_trust_root_sha256=sha256_digest(self.fixture.trust_root),
+                revocations_loader=lambda: self.fixture.revocations_envelope,
+                mode="enforce",
+                now=lambda: NOW,
+            )
+        v2_factory = FixtureFactory("v2")
+        v2_fixture = v2_factory.build(policy_digest=self.policy.digest)
+        v2_verified = EvidenceVerifier(
+            trust_root=v2_fixture.trust_root,
+            revocations_envelope=v2_fixture.revocations_envelope,
+            now=v2_fixture.now,
+            expected_policy_sha256=self.policy.digest,
+        ).verify_bundle(v2_fixture.bundle_envelope)
+        v2_registry = IntentRegistry(
+            Path(self.directory.name) / "machine-only-registry.sqlite3",
+            ContentAddressedStore(Path(self.directory.name) / "machine-only-cas"),
+        )
+        v2_registry.register(
+            envelope=v2_fixture.bundle_envelope,
+            verified=v2_verified,
+            registration_principal="spiffe://acik/platform/trusted-dispatcher",
+            registered_at=v2_fixture.now,
+        )
+        v2_registry.finalize_ref(
+            request_id=REQUEST_ID,
+            ref_object_id=HEAD,
+            resolved_head_sha=HEAD,
+            finalized_at=v2_fixture.now,
+        )
+        evaluator = DeploymentEvaluator(
+            policy=replace(
+                self.policy,
+                phase="machine-only-nonprod",
+                machine_only_enabled=True,
+            ),
+            registry=v2_registry,
+            github=self.github,
+            trust_root=v2_fixture.trust_root,
+            expected_trust_root_sha256=sha256_digest(v2_fixture.trust_root),
+            revocations_loader=lambda: v2_fixture.revocations_envelope,
+            mode="enforce",
+            now=lambda: v2_fixture.now,
+        )
+        self.github.environment_value["protection_rules"] = [
+            {"id": 2, "type": "custom", "app": {"id": 555}}
+        ]
+        try:
+            with self.assertRaisesRegex(
+                PolicyError, "MACHINE_ONLY_IDENTITY_UNTRUSTED"
+            ):
+                evaluator.evaluate(self.request)
+        finally:
+            v2_registry.close()
 
     def test_reloads_revocations_for_every_decision(self) -> None:
         self.evaluator.evaluate(self.request)

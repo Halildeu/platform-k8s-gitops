@@ -49,6 +49,16 @@ const EVIDENCE_KEYS = [
   'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
+const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
+  'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
+  'promotion_base_sha', 'promotion_head_sha', 'promotion_merge_sha',
+  'promotion_pr', 'promotion_scope_sha256', 'schema', 'source', 'valid',
+];
+const FULLATS_ROLLBACK_PATHS = [
+  'kustomize/overlays/test/fullats-promotion-state.txt',
+  'kustomize/overlays/test/kustomization.yaml',
+];
+const FULLATS_PROMOTION_BASE_SHA = 'aa93f4743dc8254ce8e22a0317f92db1f5819268';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -58,15 +68,66 @@ const CONSULTATION_RECEIPTS = {
     provider: 'anthropic',
     model: 'claude-opus-4-8',
   },
-  'minimax receipt': {
-    provider: 'minimax',
-    model: 'minimax/MiniMax-M3',
-  },
   'codex receipt': {
     provider: 'openai',
     model: 'gpt-5.6-sol',
   },
 };
+const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
+const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
+const CONSULTATION_GOVERNANCE_PATHS = [
+  /^AGENTS\.md$/,
+  /^CLAUDE\.md$/,
+  /^docs\/context-priority-rules\.md$/,
+  /^\.github\/pull_request_template\.md$/,
+  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
+  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
+  // Tombstone: deleting the retired wrapper remains a governance change, and
+  // any future MiniMax-named review helper cannot be reintroduced under none.
+  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
+  /^tests\/ci\/test-cross-ai-automation\.mjs$/,
+  /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
+];
+const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
+  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
+  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
+  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
+];
+const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
+  /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
+  /(?:^|\/)vault\/polic(?:y|ies)\/[^/]+\.hcl$/i,
+  /(?:^|\/)(?:db\/migration|migrations?)(?:\/|$)/i,
+];
+const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
+const DUAL_RISK_CATEGORIES = [
+  'irreversible-production',
+  'security-authz',
+  'privacy-retention',
+  'data-migration',
+  'concurrency',
+  'production-cutover',
+  'human-authority',
+];
+const DUAL_RISK_TRIGGER_RE = new RegExp(
+  `^(${DUAL_RISK_CATEGORIES.join('|')}):\\s+(.+)$`,
+  'i',
+);
+const PLACEHOLDER_WORD_RE = /\b(?:todo|tbd|fixme|placeholder|dummy|example|unknown)\b/i;
+const NON_ACTIONABLE_SENTINEL_RE = /^(?:n\/a|none)$/i;
+const EXPLICIT_MODE_LEGACY_FIELDS = [
+  'reviewer ai',
+  'codex thread',
+  'verdict reason',
+  'same-provider exception',
+  'exception reason',
+  'cross-ai exempt reason',
+  'absorb edilen düzeltmeler',
+  'automation source',
+  'automation evidence',
+];
+const DUPLICATE_FIELDS = Symbol('duplicate-fields');
 
 // Codex `019e2693` MED-3 absorb: known-provider canonicalizer (R2 question response)
 const PROVIDER_ALIASES = {
@@ -108,6 +169,7 @@ const PROVIDER_ALIASES = {
 const AUTOMATION_BRANCH_CONTRACT = {
   'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
   'auto-test-frontend/': '.github/workflows/deploy-testai.yml',
+  'auto-fullats-rollback/': '.github/workflows/faz25-fullats-live-browser-acceptance.yml',
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
 };
 // Per-prefix actor contract (#827 PR-B, Codex `019e4048` Q2 REVISE). Each
@@ -125,7 +187,7 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
 //
 // Production `auto-promotion/` is intentionally absent: it changes prod
-// desired state and therefore must pass the normal three-channel path.
+// desired state and therefore must pass the normal explicit consultation-mode path.
 // `auto-verified/` keeps `github-actions[bot]` from #827 PR-A:
 // ledger-mark-verified.sh runs on a staging-sw host (not GitHub Actions), so
 // migrating it to a host-minted App token is a separate follow-up
@@ -133,6 +195,7 @@ const AUTOMATION_BRANCH_CONTRACT = {
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-gitops-automation[bot]']),
   'auto-test-frontend/': new Set(['platform-gitops-automation[bot]']),
+  'auto-fullats-rollback/': new Set(['platform-gitops-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 
@@ -148,6 +211,14 @@ const AUTOMATION_DIFF_ALLOWLIST = {
     /^kustomize\/overlays\/test\/activation\/endpoint-admin-remote-bridge-device-key\/kustomization\.yaml$/,
   ],
   'auto-test-frontend/': [
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+  ],
+  // Faz 25 #2615: failure compensator can restore only the frontend pin in
+  // the test overlay and the explicit promotion marker. ATS and permission
+  // artifacts stay on the already-validated current baseline.
+  // It cannot carry workflow/governance/application changes in its bot PR.
+  'auto-fullats-rollback/': [
+    /^kustomize\/overlays\/test\/fullats-promotion-state\.txt$/,
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
   ],
   'auto-verified/': [
@@ -213,6 +284,16 @@ function readChangedFiles(args) {
     .filter(Boolean);
 }
 
+function readAutomationContentAttestation(args) {
+  if (!args['automation-content-attestation-file']) return null;
+  const parsed = JSON.parse(
+    readFileSync(args['automation-content-attestation-file'], 'utf8'),
+  );
+  return parsed && !Array.isArray(parsed) && typeof parsed === 'object'
+    ? parsed
+    : null;
+}
+
 function readEvidenceOverrides(args) {
   if (!args['evidence-file']) return {};
   if (args['allow-local-evidence-override'] !== 'true') {
@@ -245,6 +326,7 @@ function loadInput(args) {
         actor: '',
         sender: '',
         changedFiles: readChangedFiles(args),
+        automationContentAttestation: readAutomationContentAttestation(args),
       },
     };
   }
@@ -272,6 +354,7 @@ function loadInput(args) {
         // `pull_request_target` permission expansion and giving the script
         // direct GitHub API access.
         changedFiles: readChangedFiles(args),
+        automationContentAttestation: readAutomationContentAttestation(args),
       },
     };
   }
@@ -325,6 +408,15 @@ function sectionHasRequiredFields(section) {
   // not `.includes()` heuristic — audit table column headers da "Implementer AI" içerebilir
   // ama gerçek YAML key:value değildir. Field-aware selection parser semantik uyumlu olmalı.
   const fields = extractFields(section);
+  // Presence is authoritative even when the value is empty. Otherwise an
+  // explicitly declared but empty mode could fall through to the legacy
+  // three-receipt contract and bypass the invalid-mode fail-closed check.
+  if (Object.hasOwn(fields, 'consultation mode')) {
+    return Boolean(
+      fields['implementer ai']
+      && fields['consultation reason']
+    );
+  }
   return REQUIRED_FIELD_KEYS.every((k) => fields[k]);
 }
 
@@ -355,26 +447,41 @@ function extractCrossAiSection(body) {
 // Inline YAML comment strip + key/value extract from Cross-AI section
 function extractFields(section) {
   const fields = {};
+  const duplicateFields = new Set();
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
       const key = m[1].toLowerCase();
+      if (Object.hasOwn(fields, key)) duplicateFields.add(key);
       let val = m[2];
       // Strip inline YAML comments (e.g. "Claude # one of [...]")
       const commentIdx = val.indexOf('#');
       if (commentIdx >= 0) val = val.slice(0, commentIdx);
       // Strip surrounding quotes/backticks
       val = val.replace(/^[`"']|[`"']$/g, '').trim();
-      if (val.length > 0) {
-        fields[key] = val;
-      }
+      // Presence itself matters for incompatible legacy controls. Preserve an
+      // explicit empty value so `Consultation mode` cannot hide `Reviewer AI:`
+      // or another deprecated key by leaving only its value blank.
+      fields[key] = val;
     }
   }
+  fields[DUPLICATE_FIELDS] = [...duplicateFields];
   return fields;
+}
+
+function appendDuplicateFieldFinding(findings, fields) {
+  const duplicates = fields[DUPLICATE_FIELDS] ?? [];
+  findings.push({
+    check: 'cross_ai_structured_fields_unique',
+    pass: duplicates.length === 0,
+    detail: duplicates.length === 0
+      ? 'structured Cross-AI field keys are unique'
+      : `Yinelenen structured Cross-AI field reddedildi: ${duplicates.join(', ')}`,
+  });
 }
 
 function normalizeProvider(s) {
@@ -386,6 +493,56 @@ function normalizeProvider(s) {
     .toLowerCase();
   // Look up alias table
   return PROVIDER_ALIASES[cleaned] ?? cleaned;
+}
+
+function meaningfulStatement(value) {
+  const clean = (value || '').trim();
+  const words = clean.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu) ?? [];
+  return clean.length >= 10
+    && !/[<>]/.test(clean)
+    && !PLACEHOLDER_WORD_RE.test(clean)
+    && !NON_ACTIONABLE_SENTINEL_RE.test(clean)
+    && words.length >= 3
+    && new Set(words).size >= 3;
+}
+
+function meaningfulRiskTrigger(value) {
+  const match = (value || '').trim().match(DUAL_RISK_TRIGGER_RE);
+  return Boolean(match && meaningfulStatement(match[2]));
+}
+
+function minimumConsultationMode(prMeta) {
+  const files = prMeta?.changedFiles;
+  // Missing event-bound scope metadata must never silently authorize `none`.
+  // Raising the floor to `single` is the intentional fail-closed fallback.
+  if (!Array.isArray(files) || files.length === 0) {
+    return { mode: 'single', reason: 'changed-files metadata missing' };
+  }
+  const dualGovernancePath = files.find((path) =>
+    CONSULTATION_DUAL_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
+  );
+  if (dualGovernancePath) {
+    return { mode: 'dual', reason: `consultation enforcement path: ${dualGovernancePath}` };
+  }
+  const governancePath = files.find((path) =>
+    CONSULTATION_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
+  );
+  if (governancePath) {
+    return { mode: 'single', reason: `consultation governance path: ${governancePath}` };
+  }
+  const branchPrefix = CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES.find((prefix) =>
+    (prMeta?.headRef || '').startsWith(prefix)
+  );
+  if (branchPrefix) {
+    return { mode: 'single', reason: `production promotion branch: ${branchPrefix}` };
+  }
+  const highRiskPath = files.find((path) =>
+    CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS.some((pattern) => pattern.test(path))
+  );
+  if (highRiskPath) {
+    return { mode: 'single', reason: `high-confidence risk path: ${highRiskPath}` };
+  }
+  return { mode: 'none', reason: 'routine scope' };
 }
 
 function parseReceipt(value) {
@@ -557,7 +714,13 @@ function docsOnlyExemption(fields, prMeta) {
   };
 }
 
-async function appendConsultationFindings(findings, fields, prMeta, evidenceOverrides) {
+async function appendConsultationFindings(
+  findings,
+  fields,
+  prMeta,
+  evidenceOverrides,
+  receiptFields = Object.keys(CONSULTATION_RECEIPTS),
+) {
   const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
   const baseTip = fields['consultation base tip'] || '';
   const base = fields['consultation base'] || '';
@@ -629,8 +792,8 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
   });
 
   const refs = [];
-  const evidenceCreatedAt = [];
-  for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
+  for (const field of receiptFields) {
+    const expected = CONSULTATION_RECEIPTS[field];
     const receipt = parseReceipt(fields[field]);
     if (receipt?.ref) refs.push(receipt.ref);
     const shapePass = Boolean(
@@ -653,7 +816,6 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
       evidenceComment, receipt, expected, expectedOwner,
       baseTip, base, commit, scope,
     );
-    if (pass) evidenceCreatedAt.push(Date.parse(evidenceComment.createdAt));
     findings.push({
       check: field.replaceAll(' ', '_'),
       pass,
@@ -664,19 +826,215 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
   }
   findings.push({
     check: 'consultation_evidence_refs_unique',
-    pass: refs.length === 3 && new Set(refs).size === 3,
-    detail: "Üç provider receipt ref'i birbirinden farklı olmalıdır",
+    pass: refs.length === receiptFields.length && new Set(refs).size === receiptFields.length,
+    detail: 'Seçilen provider receipt referansları birbirinden farklı olmalıdır',
   });
-  const publicationOrderPass = evidenceCreatedAt.length === 3
-    && evidenceCreatedAt[0] < evidenceCreatedAt[1]
-    && evidenceCreatedAt[1] < evidenceCreatedAt[2];
+}
+
+async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) {
+  const findings = [];
+  const mode = (fields['consultation mode'] || '').trim().toLowerCase();
+  const reason = (fields['consultation reason'] || '').trim();
+  const implementer = normalizeProvider(fields['implementer ai']);
+  const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
+  const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
+  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
+    Object.hasOwn(fields, field)
+  );
+  const requiredFloor = minimumConsultationMode(prMeta);
+  const modeRank = { none: 0, single: 1, dual: 2 };
+  const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
+    Object.hasOwn(fields, field)
+  );
+
   findings.push({
-    check: 'consultation_publication_order_claude_minimax_codex',
-    pass: publicationOrderPass,
-    detail: publicationOrderPass
-      ? 'owner evidence publication order is strictly Claude -> MiniMax -> Codex'
-      : 'owner evidence comments must have strictly increasing Claude -> MiniMax -> Codex timestamps',
+    check: 'consultation_mode_valid',
+    pass: CONSULTATION_MODES.has(mode),
+    detail: CONSULTATION_MODES.has(mode)
+      ? `consultation mode ${mode}`
+      : 'Consultation mode yalnız none, single veya dual olabilir',
   });
+  findings.push({
+    check: 'consultation_reason_present',
+    pass: meaningfulStatement(reason),
+    detail: meaningfulStatement(reason)
+      ? `consultation reason recorded (${reason.length}c)`
+      : 'Consultation reason somut olmalı; placeholder/tekrarlı metin olamaz ve en az 10 karakter olmalıdır',
+  });
+  const implementerAllowed = Boolean(
+    implementer
+    && VALID_PROVIDERS.has(implementer)
+    && (mode === 'none' || implementer !== 'other')
+  );
+  findings.push({
+    check: 'implementer_provider_enum',
+    pass: implementerAllowed,
+    detail: implementerAllowed
+      ? `implementer ${implementer}`
+      : 'Implementer AI canonical provider enum içinde olmalıdır; single/dual modunda belirsiz other kullanılamaz',
+  });
+  findings.push({
+    check: 'consultation_changed_files_present',
+    pass: Array.isArray(prMeta?.changedFiles) && prMeta.changedFiles.length > 0,
+    detail: Array.isArray(prMeta?.changedFiles) && prMeta.changedFiles.length > 0
+      ? `${prMeta.changedFiles.length} changed file(s) classified`
+      : 'changed-files metadata eksik; explicit mode fail-closed',
+  });
+  findings.push({
+    check: 'consultation_mode_meets_scope_floor',
+    pass: CONSULTATION_MODES.has(mode) && modeRank[mode] >= modeRank[requiredFloor.mode],
+    detail: CONSULTATION_MODES.has(mode) && modeRank[mode] >= modeRank[requiredFloor.mode]
+      ? `${requiredFloor.reason}; ${mode} floor'u karşılıyor`
+      : `${requiredFloor.reason}; en az ${requiredFloor.mode} zorunlu`,
+  });
+  findings.push({
+    check: 'consultation_explicit_mode_has_no_legacy_controls',
+    pass: legacyFields.length === 0,
+    detail: legacyFields.length === 0
+      ? 'explicit mode legacy control field taşımıyor'
+      : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
+  });
+  // Forward policy: MiniMax is retired as an accepted consultation channel.
+  // The parser still recognizes a `MiniMax receipt` field so it can be detected,
+  // but any explicit-mode PR carrying it is fail-closed rejected in every mode.
+  const minimaxRejected = !Object.hasOwn(fields, 'minimax receipt');
+  findings.push({
+    check: 'consultation_minimax_receipt_rejected',
+    pass: minimaxRejected,
+    detail: minimaxRejected
+      ? 'MiniMax kanalı emekliye ayrıldı; hiçbir modda receipt taşınmıyor'
+      : 'MiniMax receipt hiçbir consultation modunda kabul edilmez; fail-closed reddedildi',
+  });
+
+  if (mode === 'none') {
+    const outcomeFields = [
+      'verdict',
+      'risk trigger',
+      'consultation base tip',
+      'consultation base',
+      'consultation commit',
+      'consultation scope',
+    ];
+    const presentOutcomeFields = outcomeFields.filter((field) => Object.hasOwn(fields, field));
+    findings.push({
+      check: 'consultation_none_has_no_receipts',
+      pass: presentReceipts.length === 0,
+      detail: presentReceipts.length === 0
+        ? 'routine work carries no fabricated provider receipt'
+        : 'Consultation mode none iken provider receipt bulunamaz',
+    });
+    findings.push({
+      check: 'consultation_none_has_no_consultation_outcome_fields',
+      pass: presentOutcomeFields.length === 0,
+      detail: presentOutcomeFields.length === 0
+        ? 'none mode binding, verdict veya risk trigger taşımıyor'
+        : `none mode outcome/binding field taşıyamaz: ${presentOutcomeFields.join(', ')}`,
+    });
+    return findings;
+  }
+
+  const baseFields = [
+    'consultation base tip',
+    'consultation base',
+    'consultation commit',
+    'consultation scope',
+  ];
+  const missingBaseFields = baseFields.filter((field) => !fields[field]);
+  findings.push({
+    check: 'consultation_binding_fields_present',
+    pass: missingBaseFields.length === 0,
+    detail: missingBaseFields.length === 0
+      ? 'exact consultation binding fields present'
+      : `Eksik consultation binding field: ${missingBaseFields.join(', ')}`,
+  });
+  findings.push({
+    check: 'consultation_verdict_agree',
+    pass: fields.verdict === 'AGREE',
+    detail: fields.verdict === 'AGREE'
+      ? 'consultation verdict AGREE'
+      : 'single/dual consultation yalnız AGREE ile geçer',
+  });
+
+  let selectedReceipts = ['claude receipt'];
+  if (mode === 'single') {
+    findings.push({
+      check: 'consultation_single_exact_channel_count',
+      pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
+      detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
+    });
+    findings.push({
+      check: 'consultation_single_is_provider_distinct',
+      pass: implementer !== 'claude',
+      detail: implementer !== 'claude'
+        ? 'direct Claude reviewer implementer providerından farklı'
+        : 'Claude implementer kendi Claude receiptini bağımsız single görüş sayamaz; dual gerekir',
+    });
+    findings.push({
+      check: 'consultation_single_has_no_risk_trigger',
+      pass: !Object.hasOwn(fields, 'risk trigger'),
+      detail: !Object.hasOwn(fields, 'risk trigger')
+        ? 'single mode high-risk trigger iddiası taşımıyor'
+        : 'Risk trigger yalnız dual modda bulunabilir',
+    });
+  } else if (mode === 'dual') {
+    const riskTrigger = (fields['risk trigger'] || '').trim();
+    // Forward policy: dual = exactly Claude Opus 4.8 + Codex gpt-5.6-sol.
+    // The only accepted secondary channel is Codex; no third channel exists.
+    const exactChannels = presentReceipts.length === 2
+      && Boolean(fields['claude receipt'])
+      && Boolean(fields['codex receipt']);
+    // Because the two channels are fixed (Claude + Codex), at least one provider
+    // always differs from the implementer regardless of whether the implementer
+    // is Claude or Codex. This preserves provider-distinct review.
+    const providerDistinct = ['claude', 'codex'].some((provider) => provider !== implementer);
+    findings.push({
+      check: 'consultation_dual_high_risk_trigger',
+      pass: meaningfulRiskTrigger(riskTrigger),
+      detail: meaningfulRiskTrigger(riskTrigger)
+        ? `canonical high-risk trigger recorded (${riskTrigger.length}c)`
+        : 'Risk trigger canonical kategori ve somut açıklama taşımalıdır',
+    });
+    findings.push({
+      check: 'consultation_dual_exact_channel_count',
+      pass: exactChannels,
+      detail: exactChannels
+        ? 'dual mode exact Claude Opus 4.8 + Codex gpt-5.6-sol iki kanal taşıyor'
+        : 'dual mode yalnız Claude Opus 4.8 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
+    });
+    findings.push({
+      check: 'consultation_dual_provider_distinct_from_implementer',
+      pass: providerDistinct,
+      detail: providerDistinct
+        ? `dual kanallardan en az biri implementer ${implementer} providerından farklı`
+        : 'dual kanalların en az biri implementer sağlayıcısıyla farklı olmalıdır',
+    });
+    // Even an invalid dual combination must still validate every present,
+    // allowlisted receipt. Retired MiniMax receipts are rejected above and are
+    // never fetched or treated as evidence.
+    selectedReceipts = ['claude receipt', 'codex receipt'].filter(
+      (field) => Boolean(fields[field]),
+    );
+  }
+
+  // Run strict provider/evidence checks even when a binding field is missing.
+  // The missing-field finding already fails the PR; this additionally prevents
+  // a malformed or fabricated receipt from escaping diagnostics on that path.
+  if (
+    ['single', 'dual'].includes(mode)
+    && (
+      (mode === 'single' && selectedReceipts.length === 1)
+      || (mode === 'dual' && selectedReceipts.length > 0)
+    )
+  ) {
+    await appendConsultationFindings(
+      findings,
+      fields,
+      prMeta,
+      evidenceOverrides,
+      selectedReceipts,
+    );
+  }
+  return findings;
 }
 
 async function audit(body, prMeta = null, evidenceOverrides = {}) {
@@ -693,9 +1051,45 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   findings.push({ check: 'cross_ai_section_present', pass: true });
 
   const fields = extractFields(section);
+  appendDuplicateFieldFinding(findings, fields);
+  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
+    Object.hasOwn(fields, field)
+  );
+  findings.push({
+    check: 'consultation_has_no_forbidden_minimax_receipt',
+    pass: forbiddenFields.length === 0,
+    detail: forbiddenFields.length === 0
+      ? 'MiniMax yeni istişare ve receipt zincirinde bulunmuyor'
+      : 'MiniMax receipt yeni istişarelerde yasaktır; historical evidence yalnız read-only kalır',
+  });
+  if (Object.hasOwn(fields, 'consultation mode')) {
+    findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
+    return findings;
+  }
 
-  // Check 1: required fields present
+  // Forward policy has no current legacy lane. Only the narrowly allowlisted
+  // docs-only exemption may retain the old body shape; it produces no provider
+  // receipt or acceptance authority. Every other PR must declare an explicit
+  // none|single|dual mode so legacy Claude+Codex fields cannot bypass the mode
+  // floor or the dual risk trigger.
   const exemption = docsOnlyExemption(fields, prMeta);
+  if (!exemption.pass) {
+    if (exemption.requested) {
+      findings.push({
+        check: 'cross_ai_docs_only_exemption',
+        pass: false,
+        detail: exemption.detail,
+      });
+    }
+    findings.push({
+      check: 'consultation_explicit_mode_required',
+      pass: false,
+      detail: 'Yeni PR yalnız explicit Consultation mode: none|single|dual ile değerlendirilebilir; legacy receipt gövdesi acceptance üretmez',
+    });
+    return findings;
+  }
+
+  // Narrow historical-docs exemption only; no provider evidence is accepted.
   const consultationExempt = exemption.pass;
   if (exemption.requested) {
     findings.push({
@@ -924,9 +1318,47 @@ function auditAutomation(body, prMeta) {
     });
   }
 
+  if (prefix === 'auto-fullats-rollback/') {
+    const attestation = prMeta.automationContentAttestation;
+    const keys = attestation && typeof attestation === 'object'
+      ? Object.keys(attestation).sort()
+      : [];
+    const expectedPaths = Array.isArray(attestation?.expected_paths)
+      ? [...attestation.expected_paths].sort()
+      : [];
+    const actualChangedFiles = Array.isArray(prMeta.changedFiles)
+      ? [...prMeta.changedFiles].sort()
+      : [];
+    const attestationPass =
+      keys.join(',') === [...FULLATS_ROLLBACK_ATTESTATION_KEYS].sort().join(',')
+      && attestation.schema === 'fullats-rollback-content-attestation/v1'
+      && attestation.valid === true
+      && attestation.source === expectedSource
+      && /^auto-fullats-rollback\/faz25-fullats-[0-9]+-[0-9]+$/u.test(prMeta.headRef)
+      && attestation.branch === prMeta.headRef
+      && attestation.base_sha === prMeta.baseSha
+      && attestation.head_sha === prMeta.headSha
+      && attestation.promotion_pr === 2636
+      && attestation.promotion_merge_sha === prMeta.baseSha
+      && COMMIT_SHA_RE.test(attestation.promotion_head_sha || '')
+      && attestation.promotion_base_sha === FULLATS_PROMOTION_BASE_SHA
+      && SHA256_RE.test(attestation.promotion_scope_sha256 || '')
+      && SHA256_RE.test(attestation.changed_diff_sha256 || '')
+      && actualChangedFiles.join(',') === [...FULLATS_ROLLBACK_PATHS].sort().join(',')
+      && expectedPaths.join(',') === [...FULLATS_ROLLBACK_PATHS].sort().join(',');
+    findings.push({
+      check: 'automation_fullats_content_attestation',
+      pass: attestationPass,
+      detail: attestationPass
+        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and four expected file blobs'
+        : 'trusted-base Full ATS rollback content attestation missing or does not match PR base/head/source/exact paths',
+    });
+  }
+
   // PR-body ## Cross-AI section fields
   const section = extractCrossAiSection(body);
   const fields = section ? extractFields(section) : {};
+  appendDuplicateFieldFinding(findings, fields);
 
   // 4. Automation source field present AND 1:1-consistent with the branch prefix
   const src = fields['automation source'] || '';

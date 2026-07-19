@@ -8,6 +8,7 @@
     "schemaVersion",
     "policyId",
     "phase",
+    "machineOnlyEnabled",
     "repositoryId",
     "repository",
     "environment",
@@ -32,6 +33,9 @@
     },
     "phase": {
       "enum": ["observe", "dual-gate", "machine-only-nonprod"]
+    },
+    "machineOnlyEnabled": {
+      "const": false
     },
     "repositoryId": {
       "type": "integer",

@@ -87,12 +87,18 @@ class DispatchJob:
     request_id: str
     stage: str
     installation_id: int
+    repository_id: int | None
     repository: str
     workflow_path: str
+    intent_ref: str | None
+    head_sha: str | None
     expected_actor_id: int
+    correlation_key: str | None
     state: str
     queued_at: str
     claimed_at: str | None
+    snapshot_at: str | None
+    pre_dispatch_run_id_watermark: int | None
     resolved_at: str | None
     http_status: int | None
     reason_code: str | None
@@ -275,14 +281,20 @@ class IntentRegistry:
                     request_id TEXT NOT NULL,
                     stage TEXT NOT NULL,
                     installation_id INTEGER NOT NULL,
+                    repository_id INTEGER NOT NULL,
                     repository TEXT NOT NULL,
                     workflow_path TEXT NOT NULL,
+                    intent_ref TEXT NOT NULL,
+                    head_sha TEXT NOT NULL,
                     expected_actor_id INTEGER NOT NULL,
+                    correlation_key TEXT NOT NULL,
                     state TEXT NOT NULL CHECK (state IN (
                         'Pending', 'Sending', 'Accepted', 'Uncertain', 'Rejected'
                     )),
                     queued_at TEXT NOT NULL,
                     claimed_at TEXT,
+                    snapshot_at TEXT,
+                    pre_dispatch_run_id_watermark INTEGER,
                     resolved_at TEXT,
                     http_status INTEGER,
                     reason_code TEXT,
@@ -384,6 +396,33 @@ class IntentRegistry:
                 self._connection.execute(
                     "ALTER TABLE intents ADD COLUMN triggering_actor_id INTEGER"
                 )
+            dispatch_columns = {
+                row["name"]
+                for row in self._connection.execute("PRAGMA table_info(intent_dispatches)")
+            }
+            for column, definition in (
+                ("repository_id", "INTEGER"),
+                ("intent_ref", "TEXT"),
+                ("head_sha", "TEXT"),
+                ("correlation_key", "TEXT"),
+                ("snapshot_at", "TEXT"),
+                ("pre_dispatch_run_id_watermark", "INTEGER"),
+            ):
+                if column not in dispatch_columns:
+                    self._connection.execute(
+                        f"ALTER TABLE intent_dispatches ADD COLUMN {column} {definition}"
+                    )
+            self._connection.executescript(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS unique_dispatch_repository_run
+                ON intent_dispatches(repository_id, run_id)
+                WHERE repository_id IS NOT NULL AND run_id IS NOT NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS unique_active_dispatch_correlation
+                ON intent_dispatches(correlation_key)
+                WHERE correlation_key IS NOT NULL
+                  AND state IN ('Sending', 'Uncertain');
+                """
+            )
             self._connection.executescript(
                 """
                 CREATE TRIGGER IF NOT EXISTS intent_stage_workflow_path_insert_guard
@@ -602,12 +641,18 @@ class IntentRegistry:
             request_id=row["request_id"],
             stage=row["stage"],
             installation_id=row["installation_id"],
+            repository_id=row["repository_id"],
             repository=row["repository"],
             workflow_path=row["workflow_path"],
+            intent_ref=row["intent_ref"],
+            head_sha=row["head_sha"],
             expected_actor_id=row["expected_actor_id"],
+            correlation_key=row["correlation_key"],
             state=row["state"],
             queued_at=row["queued_at"],
             claimed_at=row["claimed_at"],
+            snapshot_at=row["snapshot_at"],
+            pre_dispatch_run_id_watermark=row["pre_dispatch_run_id_watermark"],
             resolved_at=row["resolved_at"],
             http_status=row["http_status"],
             reason_code=row["reason_code"],
@@ -670,6 +715,17 @@ class IntentRegistry:
                         "STAGE_WORKFLOW_UNAVAILABLE",
                         "legacy stage has no signed workflow path and cannot be dispatched",
                     )
+                correlation_key = sha256_digest(
+                    {
+                        "domain": "acik.cross-ai-dispatch-correlation.v1",
+                        "installationId": installation_id,
+                        "repositoryId": intent["repository_id"],
+                        "workflowPath": workflow_path,
+                        "intentRef": intent["intent_ref"],
+                        "headSha": intent["head_sha"],
+                        "expectedActorId": expected_actor_id,
+                    }
+                )
                 existing = self._connection.execute(
                     "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
                     (request_id, stage),
@@ -677,17 +733,25 @@ class IntentRegistry:
                 if existing is not None:
                     immutable = (
                         installation_id,
+                        intent["repository_id"],
                         repository,
                         workflow_path,
+                        intent["intent_ref"],
+                        intent["head_sha"],
                         expected_actor_id,
+                        correlation_key,
                     )
                     if immutable != tuple(
                         existing[key]
                         for key in (
                             "installation_id",
+                            "repository_id",
                             "repository",
                             "workflow_path",
+                            "intent_ref",
+                            "head_sha",
                             "expected_actor_id",
+                            "correlation_key",
                         )
                     ):
                         reject(
@@ -706,17 +770,22 @@ class IntentRegistry:
                 self._connection.execute(
                     """
                     INSERT INTO intent_dispatches (
-                        request_id, stage, installation_id, repository, workflow_path,
-                        expected_actor_id, state, queued_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)
+                        request_id, stage, installation_id, repository_id, repository,
+                        workflow_path, intent_ref, head_sha, expected_actor_id,
+                        correlation_key, state, queued_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?)
                     """,
                     (
                         request_id,
                         stage,
                         installation_id,
+                        intent["repository_id"],
                         repository,
                         workflow_path,
+                        intent["intent_ref"],
+                        intent["head_sha"],
                         expected_actor_id,
+                        correlation_key,
                         timestamp,
                     ),
                 )
@@ -815,7 +884,7 @@ class IntentRegistry:
         http_status: int | None,
         resolved_at: datetime | None = None,
     ) -> DispatchJob:
-        if state not in {"Accepted", "Uncertain", "Rejected"}:
+        if state not in {"Uncertain", "Rejected"}:
             reject("DISPATCH_STATE_INVALID", "dispatch result state is invalid")
         if not reason_code or len(reason_code) > 100:
             reject("DISPATCH_REASON_INVALID", "dispatch reason code is invalid")
@@ -876,6 +945,127 @@ class IntentRegistry:
                     self._connection.execute("ROLLBACK")
                 raise
 
+    def record_dispatch_watermark(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        watermark: int,
+        snapshot_at: datetime | None = None,
+    ) -> DispatchJob:
+        if (
+            not isinstance(watermark, int)
+            or isinstance(watermark, bool)
+            or watermark < 0
+        ):
+            reject("DISPATCH_WATERMARK_INVALID", "dispatch watermark cannot be negative")
+        timestamp = utc_seconds(snapshot_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if row is None:
+                    reject("DISPATCH_NOT_FOUND", "stage dispatch does not exist")
+                if row["state"] != "Sending":
+                    reject("DISPATCH_STATE_INVALID", "dispatch is not in Sending state")
+                existing = row["pre_dispatch_run_id_watermark"]
+                if existing is not None:
+                    if existing != watermark or row["snapshot_at"] != timestamp:
+                        reject("DISPATCH_WATERMARK_IMMUTABLE", "dispatch watermark cannot change")
+                    self._connection.execute("COMMIT")
+                    return self._dispatch_from_row(row)
+                cursor = self._connection.execute(
+                    """
+                    UPDATE intent_dispatches
+                    SET snapshot_at = ?, pre_dispatch_run_id_watermark = ?
+                    WHERE request_id = ? AND stage = ? AND state = 'Sending'
+                      AND pre_dispatch_run_id_watermark IS NULL
+                    """,
+                    (timestamp, watermark, request_id, stage),
+                )
+                if cursor.rowcount != 1:
+                    reject("DISPATCH_WATERMARK_INVALID", "dispatch watermark CAS failed")
+                updated = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert updated is not None
+                return self._dispatch_from_row(updated)
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
+    def mark_dispatch_posted(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        reason_code: str,
+        http_status: int,
+        recorded_at: datetime | None = None,
+    ) -> DispatchJob:
+        if not reason_code or len(reason_code) > 100 or not 100 <= http_status <= 599:
+            reject("DISPATCH_RESULT_INVALID", "dispatch POST result is invalid")
+        timestamp = utc_seconds(recorded_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if row is not None and row["state"] == "Accepted":
+                    self._connection.execute("COMMIT")
+                    return self._dispatch_from_row(row)
+                if row is None or row["state"] != "Sending":
+                    reject(
+                        "DISPATCH_STATE_INVALID",
+                        "dispatch POST result cannot rewrite the current state",
+                    )
+                if (
+                    row["pre_dispatch_run_id_watermark"] is None
+                    or row["snapshot_at"] is None
+                ):
+                    reject(
+                        "DISPATCH_WATERMARK_MISSING",
+                        "dispatch POST requires a durable pre-dispatch watermark",
+                    )
+                if row["http_status"] is not None or row["reason_code"] is not None:
+                    if (
+                        row["http_status"] == http_status
+                        and row["reason_code"] == reason_code
+                    ):
+                        self._connection.execute("COMMIT")
+                        return self._dispatch_from_row(row)
+                    reject(
+                        "DISPATCH_RESULT_IMMUTABLE",
+                        "dispatch POST result cannot be rewritten",
+                    )
+                self._connection.execute(
+                    """
+                    UPDATE intent_dispatches
+                    SET http_status = ?, reason_code = ?, resolved_at = ?
+                    WHERE request_id = ? AND stage = ? AND state = 'Sending'
+                    """,
+                    (http_status, reason_code, timestamp, request_id, stage),
+                )
+                updated = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert updated is not None
+                return self._dispatch_from_row(updated)
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
     def reconcile_dispatch(
         self,
         *,
@@ -904,6 +1094,19 @@ class IntentRegistry:
                 if row["state"] not in {"Sending", "Uncertain"}:
                     reject(
                         "DISPATCH_STATE_INVALID", "dispatch cannot be live-reconciled"
+                    )
+                if (
+                    row["repository_id"] is None
+                    or row["intent_ref"] is None
+                    or row["head_sha"] is None
+                    or row["correlation_key"] is None
+                    or row["snapshot_at"] is None
+                    or row["pre_dispatch_run_id_watermark"] is None
+                    or run_id <= row["pre_dispatch_run_id_watermark"]
+                ):
+                    reject(
+                        "DISPATCH_CORRELATION_INVALID",
+                        "dispatch lacks a valid pre-dispatch correlation snapshot",
                     )
                 cursor = self._connection.execute(
                     """
@@ -935,6 +1138,13 @@ class IntentRegistry:
                 self._connection.execute("COMMIT")
                 assert updated is not None
                 return self._dispatch_from_row(updated)
+            except sqlite3.IntegrityError:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                reject(
+                    "DISPATCH_RUN_REUSED",
+                    "one GitHub workflow run cannot correlate to two dispatches",
+                )
             except Exception:
                 if self._connection.in_transaction:
                     self._connection.execute("ROLLBACK")

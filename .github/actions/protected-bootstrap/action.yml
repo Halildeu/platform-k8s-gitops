@@ -1,0 +1,45 @@
+name: Cross-AI protected runner bootstrap
+description: Verify one fixed signed stage authorization from the immutable action package.
+inputs:
+  stage:
+    description: Fixed protected stage.
+    required: true
+  workflow-path:
+    description: Fixed governed workflow path.
+    required: true
+  expected-trust-root-sha256:
+    description: Content-addressed trust-root release pin.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify signed runner bootstrap from pinned source
+      shell: bash
+      env:
+        CROSS_AI_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
+        CROSS_AI_BOOTSTRAP_OUTPUT: ${{ runner.temp }}/cross-ai-bootstrap.json
+        PROTECTED_STAGE: ${{ inputs.stage }}
+        PROTECTED_WORKFLOW_PATH: ${{ inputs.workflow-path }}
+        EXPECTED_TRUST_ROOT_SHA256: ${{ inputs.expected-trust-root-sha256 }}
+      run: |
+        set -euo pipefail
+        case "$PROTECTED_STAGE:$PROTECTED_WORKFLOW_PATH" in
+          apply:.github/workflows/apply-view-only-viewer-pilot-protected.yml | \
+          browser-evidence:.github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml | \
+          compensating-rollback:.github/workflows/rollback-view-only-viewer-pilot-protected.yml) ;;
+          *) echo "protected-bootstrap: stage/workflow binding is invalid" >&2; exit 2 ;;
+        esac
+        [[ "$EXPECTED_TRUST_ROOT_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+          echo "protected-bootstrap: trust-root pin is invalid" >&2
+          exit 2
+        }
+        cd -- "$CROSS_AI_SOURCE_ROOT"
+        python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py \
+          --stage "$PROTECTED_STAGE" \
+          --workflow-path "$PROTECTED_WORKFLOW_PATH" \
+          --policy-file config/github-apps/cross-ai-deployment-policy.json \
+          --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json \
+          --expected-trust-root-sha256 "$EXPECTED_TRUST_ROOT_SHA256" \
+          --revocations-file config/github-apps/cross-ai-deployment-revocations.json \
+          --output "$CROSS_AI_BOOTSTRAP_OUTPUT"

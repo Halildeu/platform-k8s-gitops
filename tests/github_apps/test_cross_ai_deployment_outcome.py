@@ -77,6 +77,9 @@ class StageOutcomeTest(unittest.TestCase):
             "artifactSetSha256": subject["artifactSetSha256"],
             "rollbackPlanSha256": subject["rollbackPlanSha256"],
             "postDeployVerifierSha256": subject["postDeployVerifierSha256"],
+            "productArtifactId": None,
+            "productArtifactName": None,
+            "productArtifactDigest": None,
             "watchdogExpiresAt": "2026-07-16T21:00:00Z",
             "conclusion": "success",
             "createdAt": "2026-07-16T20:30:00Z",
@@ -148,7 +151,9 @@ class StageOutcomeTest(unittest.TestCase):
                 now=self.fixture.now,
             )
 
-    def test_rejects_self_asserted_jobs_wrong_binding_and_unbounded_watchdog(self) -> None:
+    def test_rejects_self_asserted_jobs_wrong_binding_and_unbounded_watchdog(
+        self,
+    ) -> None:
         with self.assertRaisesRegex(PolicyError, "STAGE_OUTCOME_BINDING_MISMATCH"):
             verify_stage_outcome(
                 self.payload,
@@ -183,6 +188,13 @@ class StageOutcomeTest(unittest.TestCase):
         changed["watchdogExpiresAt"] = "2026-07-16T22:00:00Z"
         with self.assertRaisesRegex(PolicyError, "STAGE_OUTCOME_WATCHDOG_INVALID"):
             self.verify(changed)
+
+    def test_accepts_failed_apply_before_watchdog_creation(self) -> None:
+        changed = copy.deepcopy(self.payload)
+        changed["conclusion"] = "failure"
+        changed["watchdogExpiresAt"] = None
+        outcome = self.verify(changed)
+        self.assertEqual(outcome.target_state, "Failed")
 
     def test_rejects_conflicting_second_outcome(self) -> None:
         outcome = self.verify()

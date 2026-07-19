@@ -3,16 +3,16 @@
     "advisoryOnly": true,
     "authorAssociation": "OWNER",
     "authorLogin": "Halildeu",
-    "bodySha256": "sha256:2c30ab59f05085b31e282551269d9aa8f7b6cf680e3b0fa4eae9f45bf4a87b9d",
-    "commentId": 4978013233,
+    "bodySha256": "sha256:a5895d569cdf6343cf26872bdd92645ffcc22fdf1006eb09b6f74c1e03694d16",
+    "commentId": 5011715034,
     "consensusVerdict": "AGREE",
     "provenanceClass": "owner-attested-provider-session",
     "providerCryptographicAttestation": false,
     "providers": [
-      "MiniMax/minimax-MiniMax-M3",
-      "OpenAI/Codex"
+      "Anthropic/claude-opus-4-8",
+      "OpenAI/gpt-5.6-sol"
     ],
-    "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-4978013233"
+    "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-5011715034"
   },
   "authorization": {
     "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",

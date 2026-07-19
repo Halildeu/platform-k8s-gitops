@@ -1,0 +1,512 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-bundle-v2.schema.json",
+  "title": "Signed Cross-AI deployment authorization bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bundleId",
+    "subject",
+    "workflowStages",
+    "runnerAdmissionLeaseEnvelope",
+    "reviewEnvelopes",
+    "closure",
+    "consensus",
+    "grant"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-deployment-bundle.v2"
+    },
+    "bundleId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "workflowStages": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/workflow_stage"
+      }
+    },
+    "runnerAdmissionLeaseEnvelope": {
+      "$ref": "#/$defs/runner_lease_envelope"
+    },
+    "reviewEnvelopes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/dsse_envelope"
+      }
+    },
+    "closure": {
+      "$ref": "#/$defs/closure"
+    },
+    "consensus": {
+      "$ref": "#/$defs/consensus"
+    },
+    "grant": {
+      "$ref": "#/$defs/grant"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryId",
+        "repository",
+        "headSha",
+        "intentRef",
+        "environment",
+        "deploymentClass",
+        "productSlice",
+        "policySha256",
+        "artifactSetSha256",
+        "rollbackPlanSha256",
+        "postDeployVerifierSha256",
+        "runnerPolicySha256",
+        "runnerAdmissionLeaseSha256",
+        "bootstrapCredentialSha256",
+        "sessionSha256",
+        "endpointIdSha256",
+        "operatorIdSha256",
+        "attendedConsentPolicySha256"
+      ],
+      "properties": {
+        "repositoryId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "intentRef": {
+          "type": "string",
+          "pattern": "^refs/tags/cross-ai-intent/[0-9a-f-]{36}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,120}$"
+        },
+        "deploymentClass": {
+          "enum": [
+            "reversible-test",
+            "reversible-nonprod"
+          ]
+        },
+        "productSlice": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"
+        },
+        "policySha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "artifactSetSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "rollbackPlanSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "postDeployVerifierSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runnerPolicySha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runnerAdmissionLeaseSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "bootstrapCredentialSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sessionSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "endpointIdSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "operatorIdSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "attendedConsentPolicySha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "workflow_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "order",
+        "workflowPath",
+        "workflowBlobSha256",
+        "dependencyLockSha256",
+        "runtimeBundleSha256",
+        "concurrencyGroupSha256",
+        "runsOnLabels",
+        "maxUses"
+      ],
+      "properties": {
+        "stage": {
+          "enum": [
+            "apply",
+            "browser-evidence",
+            "compensating-rollback"
+          ]
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "dependsOn": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependsOnFailure": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "workflowPath": {
+          "type": "string",
+          "pattern": "^[.]github/workflows/[A-Za-z0-9_.-]+[.]ya?ml$"
+        },
+        "workflowBlobSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "dependencyLockSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runtimeBundleSha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/digest"
+            }
+          ]
+        },
+        "concurrencyGroupSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "priorStageOutcomeSchemaSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runsOnLabels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "runnerGroupId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runnerAttestationClass": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{2,63}$"
+        },
+        "maxUses": {
+          "const": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "stage": {
+                "const": "browser-evidence"
+              }
+            },
+            "required": [
+              "stage"
+            ]
+          },
+          "then": {
+            "properties": {
+              "runtimeBundleSha256": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "runtimeBundleSha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "dsse_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyid",
+        "sig"
+      ],
+      "properties": {
+        "keyid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sig": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88
+        }
+      }
+    },
+    "dsse_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payloadType",
+        "payload",
+        "signatures"
+      ],
+      "properties": {
+        "payloadType": {
+          "const": "application/vnd.acik.cross-ai-deployment-review.v2+json"
+        },
+        "payload": {
+          "type": "string",
+          "minLength": 4
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/dsse_signature"
+          }
+        }
+      }
+    },
+    "runner_lease_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payloadType",
+        "payload",
+        "signatures"
+      ],
+      "properties": {
+        "payloadType": {
+          "const": "application/vnd.acik.cross-ai-runner-admission-lease.v1+json"
+        },
+        "payload": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 1048576
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/dsse_signature"
+          }
+        }
+      }
+    },
+    "closure_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findingId",
+        "raisedByReviewSha256",
+        "fixSha256",
+        "acknowledgedByReviewSha256"
+      ],
+      "properties": {
+        "findingId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_-]{1,63}$"
+        },
+        "raisedByReviewSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "fixSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "acknowledgedByReviewSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries",
+        "closureRootSha256"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/closure_entry"
+          }
+        },
+        "closureRootSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "consensus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providerFamilies",
+        "finalAgreeReviewSha256",
+        "closureRootSha256",
+        "openMustFixFindingCount"
+      ],
+      "properties": {
+        "providerFamilies": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "anthropic",
+              "openai"
+            ]
+          }
+        },
+        "finalAgreeReviewSha256": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "closureRootSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "openMustFixFindingCount": {
+          "const": 0
+        }
+      }
+    },
+    "stage_nonce_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apply",
+        "browser-evidence",
+        "compensating-rollback"
+      ],
+      "properties": {
+        "apply": {
+          "$ref": "#/$defs/digest"
+        },
+        "browser-evidence": {
+          "$ref": "#/$defs/digest"
+        },
+        "compensating-rollback": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "deploymentSessionId",
+        "stageNonceSha256",
+        "triggeringActorId",
+        "triggeringActorLogin",
+        "registrationPrincipal",
+        "workflowEvent",
+        "notBefore",
+        "expiresAt",
+        "sequence",
+        "failureTransition"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "deploymentSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "stageNonceSha256": {
+          "$ref": "#/$defs/stage_nonce_map"
+        },
+        "triggeringActorId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "triggeringActorLogin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "registrationPrincipal": {
+          "type": "string",
+          "pattern": "^spiffe://[A-Za-z0-9._/-]+$"
+        },
+        "workflowEvent": {
+          "const": "workflow_dispatch"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sequence": {
+          "const": [
+            "apply",
+            "browser-evidence"
+          ]
+        },
+        "failureTransition": {
+          "const": "apply->compensating-rollback"
+        }
+      }
+    }
+  }
+}

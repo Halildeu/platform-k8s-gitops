@@ -3,12 +3,12 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (three-channel governance):
-# - Implementer AI ≠ Reviewer AI (case-insensitive provider name match)
-# - Codex thread UUID format veya N/A
-# - Verdict tam olarak AGREE
-# - Exact base tip / merge-base / head / deterministic scope binding
-# - Three provider receipt + fetched, unedited owner evidence declaration
+# Required check (durumsal az-kanal governance, #2621):
+# - none: routine work + reason + zero receipt; governance/auto-promotion blocked
+# - single: exact direct Claude Opus 4.8 + exact scope + AGREE + provider-distinct
+# - dual: irreversible/high-risk/human-authority trigger + exact Claude + Codex;
+#   maximum two, MiniMax forbidden, parallel publication allowed
+# - Fetched owner evidence, model, freshness, digest and redaction remain strict
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
 # prefix (auto-test-overlay/ · auto-test-frontend/ · auto-verified/) is audited in
@@ -32,7 +32,7 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #   * `ready_for_review` is deliberately omitted because it changes no content;
 #     the audit already ran on `opened` / `edited` / `synchronize`. Production
 #     `auto-promotion/` candidates are NOT automation-exempt and must acquire
-#     normal three-channel receipts before merge.
+#     normal explicit consultation-mode contract before merge.
 
 on:
   # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
@@ -89,19 +89,36 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout base ref (trusted main, not PR head)
-        # #842 Codex 019e42c7 Q8: `base.ref` (not `base.sha`) — track the latest
-        # commit on the base branch so a freshly-hardened audit script runs
-        # against PRs opened before the hardening landed. `base.sha` would
-        # pin to the SHA at PR-open time and miss subsequent fixes.
+        # Pull-request-target must execute only the immutable trusted base tree.
+        # Binding to the event's exact base SHA prevents a mutable-ref TOCTOU
+        # window after this privileged event starts. A later base hardening
+        # naturally appears on the next edited/synchronize/reopened event.
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 20
+
+      # Run the trusted-base verifier before importing any PR-head git object
+      # into the job. The verifier opens from the immutable base checkout and
+      # fetches the exact rollback head internally only for content inspection;
+      # it never checks out or executes a file from that head.
+      - name: Verify exact Full ATS rollback content from trusted base
+        if: startsWith(github.event.pull_request.head.ref, 'auto-fullats-rollback/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PROMOTION_PR: "2636"
+          ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: bash scripts/ats/verify-fullats-test-rollback-content.sh
 
       - name: Derive trusted merge-base and scope digest
         id: scope
@@ -139,13 +156,23 @@ jobs:
         # actor, sender, labels) — the audit reads PR metadata from there, not
         # from the checked-out tree. So the base-ref checkout above does not
         # restrict what the audit can inspect about the PR (Codex Q3 onay).
-        # #898: `--changed-files-file` feeds the Dependabot exemption diff
-        # allowlist gate; ignored for non-Dependabot PRs.
+        # `--changed-files-file` feeds both the Dependabot exemption allowlist
+        # and normal explicit consultation-mode scope floor. Missing/empty
+        # metadata intentionally rejects `none` instead of silently bypassing it.
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: |
-          node scripts/ci/pr-cross-ai-audit.mjs \
-            --event-path "$GITHUB_EVENT_PATH" \
-            --changed-files-file /tmp/changed-files.txt \
-            --derived-base-sha "${{ steps.scope.outputs.merge_base }}" \
+          args=(
+            --event-path "$GITHUB_EVENT_PATH"
+            --changed-files-file /tmp/changed-files.txt
+            --derived-base-sha "${{ steps.scope.outputs.merge_base }}"
             --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
+          )
+          if [[ -f "$ATTESTATION_OUTPUT" ]]; then
+            args+=(
+              --automation-content-attestation-file
+              "$ATTESTATION_OUTPUT"
+            )
+          fi
+          node scripts/ci/pr-cross-ai-audit.mjs "${args[@]}"

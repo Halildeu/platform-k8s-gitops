@@ -43,7 +43,7 @@ POLICIES=(
   "test/eso-runtime-extras.hcl|eso-runtime-test-extras"
   "test/audio-gateway-mtls-seeder.hcl|audio-gateway-mtls-seeder"
   "test/cross-ai-issuer-anthropic.hcl|cross-ai-issuer-anthropic-test"
-  "test/cross-ai-issuer-secondary.hcl|cross-ai-issuer-secondary-test"
+  "test/cross-ai-issuer-openai.hcl|cross-ai-issuer-openai-test"
   "test/cross-ai-coordinator.hcl|cross-ai-coordinator-test"
   "test/cross-ai-revocation.hcl|cross-ai-revocation-test"
   "test/cross-ai-runner-management.hcl|cross-ai-runner-management-test"
@@ -59,7 +59,7 @@ lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
   local expected_sign_path=""
   case "$name" in
     cross-ai-issuer-anthropic-test) expected_sign_path="cross-ai/sign/anthropic" ;;
-    cross-ai-issuer-secondary-test) expected_sign_path="cross-ai/sign/provider-secondary" ;;
+    cross-ai-issuer-openai-test) expected_sign_path="cross-ai/sign/openai" ;;
     cross-ai-coordinator-test) expected_sign_path="cross-ai/sign/coordinator" ;;
     cross-ai-revocation-test) expected_sign_path="cross-ai/sign/revocation" ;;
     cross-ai-runner-management-test) expected_sign_path="cross-ai/sign/runner-management" ;;
@@ -91,9 +91,9 @@ APPROLES=(
   "eso-runtime|eso-runtime,eso-runtime-test-extras|token_ttl=1h token_max_ttl=24h secret_id_ttl=0"
   "platform-bootstrap-writer-test|platform-bootstrap-writer|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
   "audio-gateway-mtls-seeder-test|audio-gateway-mtls-seeder|token_ttl=15m token_max_ttl=15m token_num_uses=0 secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true"
-  "cross-ai-issuer-anthropic-test|cross-ai-issuer-anthropic-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-issuer-secondary-test|cross-ai-issuer-secondary-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-coordinator-test|cross-ai-coordinator-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  # Issuer/coordinator AppRole definitions are intentionally owner-managed.
+  # This routine reconciler applies their sign-only ACL policies but cannot
+  # create, rewrite, inspect or mint credentials for those identities.
   "cross-ai-revocation-test|cross-ai-revocation-test|token_ttl=5m token_max_ttl=5m token_explicit_max_ttl=5m token_num_uses=0 secret_id_ttl=5m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
   "cross-ai-runner-management-test|cross-ai-runner-management-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
 )
@@ -101,9 +101,6 @@ APPROLES=(
 EMITTABLE_APPROLES=(
   "platform-bootstrap-writer-test"
   "audio-gateway-mtls-seeder-test"
-  "cross-ai-issuer-anthropic-test"
-  "cross-ai-issuer-secondary-test"
-  "cross-ai-coordinator-test"
   "cross-ai-runner-management-test"
 )
 
@@ -150,16 +147,29 @@ echo "=== reconcile @ $VAULT_ADDR (dry-run=$DRY_RUN) ==="
 
 # ── apply ACL policies (git content → sys/policies/acl/<name>) ───────────────
 LINT_FAIL=0
+APPLY_FAIL=0
 for row in "${POLICIES[@]}"; do
   f="${row%%|*}"; name="${row##*|}"; path="$POLDIR/$f"
-  [[ -f "$path" ]] || { echo "  SKIP  $name (file yok: $f)"; continue; }
+  [[ -f "$path" ]] || {
+    echo "  REJECT $name (manifest policy file missing: $f)" >&2
+    LINT_FAIL=1
+    continue
+  }
   lint=$(lint_policy "$name" "$path")
   if [[ "$lint" != "OK" ]]; then echo "  REJECT $name — $lint" >&2; LINT_FAIL=1; continue; fi
   body=$(python3 -c 'import json,sys; print(json.dumps({"policy": open(sys.argv[1]).read()}))' "$path")
   if [[ "$DRY_RUN" == "1" ]]; then echo "  DRY   policy $name <- $f (lint OK)"; continue; fi
-  if api PUT "sys/policies/acl/$name" "$body" >/dev/null; then echo "  OK    policy $name"; else echo "  FAIL  policy $name" >&2; fi
+  if api PUT "sys/policies/acl/$name" "$body" >/dev/null; then
+    echo "  OK    policy $name"
+  else
+    echo "  FAIL  policy $name" >&2
+    APPLY_FAIL=1
+  fi
 done
-[[ "$LINT_FAIL" == "1" ]] && { echo "ABORT: bir policy escalation-linter'a takıldı (yukarı bak)." >&2; exit 4; }
+[[ "$LINT_FAIL" == "1" ]] && {
+  echo "ABORT: policy manifest or escalation-lint validation failed." >&2
+  exit 4
+}
 
 # ── ensure scoped AppRoles ───────────────────────────────────────────────────
 for row in "${APPROLES[@]}"; do
@@ -167,8 +177,18 @@ for row in "${APPROLES[@]}"; do
   read -ra argpairs <<<"token_policies=$rpol $rargs"
   if [[ "$DRY_RUN" == "1" ]]; then echo "  DRY   approle $rname (${argpairs[*]})"; continue; fi
   body=$(python3 -c 'import json,sys; d={}; [d.update({k:v}) for k,v in (a.split("=",1) for a in sys.argv[1:])]; print(json.dumps(d))' "${argpairs[@]}")
-  if api POST "auth/approle/role/$rname" "$body" >/dev/null; then echo "  OK    approle $rname"; else echo "  FAIL  approle $rname" >&2; fi
+  if api POST "auth/approle/role/$rname" "$body" >/dev/null; then
+    echo "  OK    approle $rname"
+  else
+    echo "  FAIL  approle $rname" >&2
+    APPLY_FAIL=1
+  fi
 done
+
+[[ "$APPLY_FAIL" == "1" ]] && {
+  echo "ABORT: one or more Vault policy/AppRole writes failed." >&2
+  exit 6
+}
 
 # ── optionally emit a fresh secret-id for one seed AppRole (for the agent) ────
 if [[ -n "$EMIT_SEED" && "$DRY_RUN" != "1" ]]; then
@@ -180,8 +200,20 @@ if [[ -n "$EMIT_SEED" && "$DRY_RUN" != "1" ]]; then
     echo "ERROR: secret-id emission is not permitted for $EMIT_SEED" >&2
     exit 5
   }
-  RID=$(api GET "auth/approle/role/$EMIT_SEED/role-id" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["role_id"])' 2>/dev/null)
-  SID=$(api POST "auth/approle/role/$EMIT_SEED/secret-id" '' | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["secret_id"])' 2>/dev/null)
+  RID=$(api GET "auth/approle/role/$EMIT_SEED/role-id" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["role_id"])' 2>/dev/null) || {
+      echo "ERROR: AppRole role-id retrieval failed for $EMIT_SEED" >&2
+      exit 7
+    }
+  SID=$(api POST "auth/approle/role/$EMIT_SEED/secret-id" '' \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["secret_id"])' 2>/dev/null) || {
+      echo "ERROR: AppRole secret-id emission failed for $EMIT_SEED" >&2
+      exit 7
+    }
+  [[ -n "$RID" && -n "$SID" ]] || {
+    echo "ERROR: Vault returned an empty AppRole credential for $EMIT_SEED" >&2
+    exit 7
+  }
   umask 077
   printf '%s' "$RID" > "/tmp/${EMIT_SEED}-role-id.txt"
   printf '%s' "$SID" > "/tmp/${EMIT_SEED}-secret-id.txt"

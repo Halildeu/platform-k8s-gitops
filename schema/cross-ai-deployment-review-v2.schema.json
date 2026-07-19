@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-review-v2.schema.json",
+  "title": "Signed Cross-AI deployment review leaf v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reviewId",
+    "reviewChainId",
+    "providerFamily",
+    "channel",
+    "directProviderCli",
+    "modelId",
+    "modelIdentityClass",
+    "capabilitySnapshotSha256",
+    "subjectSha256",
+    "round",
+    "verdict",
+    "inputSha256",
+    "outputSha256",
+    "findingsSha256",
+    "previousRoundSha256",
+    "findingIds",
+    "resolvedFindingIds",
+    "acknowledgedFindingIds",
+    "closureRootSha256",
+    "issuedAt",
+    "expiresAt",
+    "issuer",
+    "keyId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-deployment-review.v2"
+    },
+    "reviewId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reviewChainId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "providerFamily": {
+      "enum": [
+        "anthropic",
+        "openai"
+      ]
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$"
+    },
+    "directProviderCli": {
+      "type": "boolean"
+    },
+    "modelId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "modelIdentityClass": {
+      "enum": [
+        "provider-reported",
+        "trusted-launch-attested"
+      ]
+    },
+    "capabilitySnapshotSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "subjectSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "verdict": {
+      "enum": [
+        "AGREE",
+        "REVISE",
+        "RED",
+        "PARTIAL"
+      ]
+    },
+    "inputSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "outputSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "findingsSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "previousRoundSha256": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/digest"
+        }
+      ]
+    },
+    "findingIds": {
+      "$ref": "#/$defs/finding_ids"
+    },
+    "resolvedFindingIds": {
+      "$ref": "#/$defs/finding_ids"
+    },
+    "acknowledgedFindingIds": {
+      "$ref": "#/$defs/finding_ids"
+    },
+    "closureRootSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "issuer": {
+      "type": "string",
+      "pattern": "^cross-ai-issuer-[a-z0-9-]{2,64}$"
+    },
+    "keyId": {
+      "type": "string",
+      "pattern": "^vault-transit://[a-z0-9/_-]+#v[1-9][0-9]*$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "AGREE"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "findingIds": {
+            "maxItems": 0
+          },
+          "resolvedFindingIds": {
+            "maxItems": 0
+          },
+          "acknowledgedFindingIds": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "enum": [
+              "REVISE",
+              "RED"
+            ]
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "findingIds": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "PARTIAL"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "findingIds": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "resolvedFindingIds": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "acknowledgedFindingIds": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "finding_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 200,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_-]{1,63}$"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@
   "schemaVersion": "acik.cross-ai-deployment-policy.v1",
   "policyId": "faz22-view-only-cross-ai-v1",
   "phase": "observe",
+  "machineOnlyEnabled": false,
   "repositoryId": 1211415632,
   "repository": "Halildeu/platform-k8s-gitops",
   "environment": "faz22-view-only-pilot",

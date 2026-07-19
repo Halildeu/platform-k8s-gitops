@@ -10,6 +10,7 @@
     "issuedAt",
     "expiresAt",
     "maxClockSkewSeconds",
+    "requiredProviderFamilies",
     "minimumProviderFamilies",
     "minimumDirectProviderRoutes",
     "keys"
@@ -35,19 +36,18 @@
       "minimum": 0,
       "maximum": 300
     },
+    "requiredProviderFamilies": {
+      "const": ["anthropic", "minimax", "openai"]
+    },
     "minimumProviderFamilies": {
-      "type": "integer",
-      "minimum": 2,
-      "maximum": 8
+      "const": 3
     },
     "minimumDirectProviderRoutes": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 8
+      "const": 3
     },
     "keys": {
       "type": "array",
-      "minItems": 5,
+      "minItems": 6,
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/key"
@@ -66,6 +66,7 @@
         "notAfter",
         "providerFamily",
         "allowedChannels",
+        "allowedModelIds",
         "allowedModelIdentityClasses",
         "directProviderCli"
       ],
@@ -104,16 +105,25 @@
         "allowedChannels": {
           "type": "array",
           "uniqueItems": true,
-          "maxItems": 20,
+          "maxItems": 1,
           "items": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{1,63}$"
           }
         },
+        "allowedModelIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,159}$"
+          }
+        },
         "allowedModelIdentityClasses": {
           "type": "array",
           "uniqueItems": true,
-          "maxItems": 2,
+          "maxItems": 1,
           "items": {
             "enum": ["provider-reported", "trusted-launch-attested"]
           }
@@ -124,7 +134,92 @@
             {"type": "null"}
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"role": {"const": "provider-review"}},
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {
+                "enum": ["anthropic", "minimax", "openai"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {"const": "provider-review"},
+              "providerFamily": {"const": "anthropic"}
+            },
+            "required": ["role", "providerFamily"]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {"const": ["direct-anthropic-cli"]},
+              "allowedModelIds": {"const": ["claude-opus-4-8"]},
+              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "directProviderCli": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {"const": "provider-review"},
+              "providerFamily": {"const": "minimax"}
+            },
+            "required": ["role", "providerFamily"]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {"const": ["direct-minimax-cli"]},
+              "allowedModelIds": {"const": ["minimax/MiniMax-M3"]},
+              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "directProviderCli": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {"const": "provider-review"},
+              "providerFamily": {"const": "openai"}
+            },
+            "required": ["role", "providerFamily"]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {"const": ["openai-codex"]},
+              "allowedModelIds": {"const": ["gpt-5.6-sol"]},
+              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "directProviderCli": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": ["coordinator", "revocation", "runner-management"]
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {"type": "null"},
+              "allowedChannels": {"maxItems": 0},
+              "allowedModelIds": {"maxItems": 0},
+              "allowedModelIdentityClasses": {"maxItems": 0},
+              "directProviderCli": {"type": "null"}
+            }
+          }
+        }
+      ]
     }
   }
 }

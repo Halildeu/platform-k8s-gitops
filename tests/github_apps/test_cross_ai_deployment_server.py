@@ -139,7 +139,7 @@ class FakeEvaluator:
             app_rule_id=555,
             evidence_digest="sha256:" + ("a" * 64),
             policy_digest="sha256:" + ("b" * 64),
-            provider_families=("anthropic", "xai"),
+            provider_families=("anthropic", "minimax", "openai"),
         )
 
 

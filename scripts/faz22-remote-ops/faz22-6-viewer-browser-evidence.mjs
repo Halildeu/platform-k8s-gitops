@@ -10,6 +10,9 @@ import { pathToFileURL } from 'node:url';
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const GIT_SHA = /^[a-f0-9]{40}$/;
 const VIEWER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
+const VIEWER_ORIGIN = 'https://testai.acik.com';
+const VIEWER_PRODUCT_PATH =
+  /^\/endpoint-admin\/remote-access\/sessions\/[A-Za-z0-9._:-]{1,160}\/view$/;
 const TEST_USERNAME = /^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
@@ -69,6 +72,7 @@ export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-preflight-api-status-unexpected-success',
   'browser-replay-not-rejected',
   'browser-replay-probe-failed',
+  'browser-replay-token-missing',
   'browser-route-navigation-failed',
   'browser-route-unauthorized',
   'browser-runtime-start-failed',
@@ -362,19 +366,71 @@ function validateBinding(value) {
 function validateViewerUrl(raw) {
   const url = new URL(raw);
   if (
-    url.protocol !== 'https:' ||
-    url.hostname !== 'testai.acik.com' ||
+    url.origin !== VIEWER_ORIGIN ||
     url.username ||
     url.password ||
-    !/^\/endpoint-admin\/remote-access\/sessions\/[A-Za-z0-9._:-]{1,160}\/view$/.test(
-      url.pathname,
-    ) ||
+    !VIEWER_PRODUCT_PATH.test(url.pathname) ||
+    url.searchParams.getAll('streamId').length !== 1 ||
     !/^[A-Za-z0-9_-]{1,128}$/.test(url.searchParams.get('streamId') ?? '') ||
     [...url.searchParams.keys()].some((key) => key !== 'streamId')
   ) {
     throw new Error('VIEWER_URL is outside the bounded test VIEW_ONLY product route');
   }
   return url.toString();
+}
+
+export function deriveViewerAckUrl(raw) {
+  // The workflow constructs VIEWER_URL from its fixed testai base plus server-issued IDs.
+  // Revalidation here remains the authority boundary before the API prefix is added.
+  const url = new URL(validateViewerUrl(raw));
+  const streamId = url.searchParams.get('streamId');
+  if (!streamId) throw new Error('VIEWER_URL streamId invariant failed');
+  if (url.origin !== VIEWER_ORIGIN || !VIEWER_PRODUCT_PATH.test(url.pathname)) {
+    throw new Error('VIEWER_URL product route invariant failed');
+  }
+  url.pathname = `/api/v1${url.pathname}`;
+  url.search = '';
+  url.searchParams.set('streamId', streamId);
+  return url.toString();
+}
+
+export function classifyReplayProbeStatus(status) {
+  if (status === null) return 'browser-replay-token-missing';
+  if (!Number.isSafeInteger(status) || status < 100 || status > 599) {
+    return 'browser-replay-probe-failed';
+  }
+  return status === 404 ? null : 'browser-replay-not-rejected';
+}
+
+export async function runReplayProbe({ viewerAckUrl, viewerId, frameSeq, readBearer, request = fetch }) {
+  const url = new URL(viewerAckUrl);
+  if (
+    url.origin !== VIEWER_ORIGIN ||
+    !/^\/api\/v1\/endpoint-admin\/remote-access\/sessions\/[A-Za-z0-9._:-]{1,160}\/view$/.test(
+      url.pathname,
+    ) ||
+    url.searchParams.getAll('streamId').length !== 1 ||
+    !/^[A-Za-z0-9_-]{1,128}$/.test(url.searchParams.get('streamId') ?? '') ||
+    [...url.searchParams.keys()].some((key) => key !== 'streamId') ||
+    !VIEWER_ID.test(viewerId) ||
+    !Number.isSafeInteger(frameSeq) ||
+    frameSeq < 0
+  ) {
+    throw new Error('replay probe is outside the bounded test VIEW_ONLY ACK route');
+  }
+  const bearer = await readBearer();
+  if (typeof bearer !== 'string' || bearer.length < 32) return null;
+  const response = await request(url.toString(), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearer}`,
+    },
+    body: JSON.stringify({ viewerId, frameSeq }),
+    redirect: 'manual',
+  });
+  return response?.status;
 }
 
 function validateMaskRect(raw) {
@@ -397,6 +453,7 @@ function validateMaskRect(raw) {
 
 async function main() {
   const viewerUrl = validateViewerUrl(required('VIEWER_URL'));
+  const viewerAckUrl = deriveViewerAckUrl(viewerUrl);
   const output = required('EVIDENCE_OUTPUT');
   const sourceRevision = required('SOURCE_REVISION');
   if (!GIT_SHA.test(sourceRevision)) throw new Error('SOURCE_REVISION must be a full Git SHA');
@@ -798,27 +855,22 @@ async function main() {
         ackDiagnostic(telemetry, samples.length),
       );
     }
-    const replayStatus = await evidenceStep('browser-replay-probe-failed', async () => page.evaluate(
-      async ({ url, replayViewerId, replaySeq }) => {
-        const bearer = window.localStorage.getItem('token');
-        if (!bearer) return 0;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${bearer}`,
-          },
-          cache: 'no-store',
-          body: JSON.stringify({ viewerId: replayViewerId, frameSeq: replaySeq }),
-        });
-        return response.status;
-      },
-      { url: viewerUrl, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
-    ));
-    if (replayStatus !== 404) {
-      throw evidenceFailure('browser-replay-not-rejected');
+    // Keep the intentional 404 replay rejection out of the product page's
+    // console. The bearer remains process-memory-only and the exact browser
+    // session identity still drives the server-side negative probe.
+    const replayStatus = await evidenceStep('browser-replay-probe-failed', async () =>
+      runReplayProbe({
+        viewerAckUrl,
+        viewerId,
+        frameSeq: samples.at(-1).seq,
+        readBearer: () => page.evaluate(() => window.localStorage.getItem('token')),
+      }),
+    );
+    const replayFailureCode = classifyReplayProbeStatus(replayStatus);
+    if (replayFailureCode === 'browser-replay-not-rejected') {
+      throw evidenceFailure('browser-replay-not-rejected', { replayHttpStatus: replayStatus });
     }
+    if (replayFailureCode !== null) throw evidenceFailure(replayFailureCode);
     const ages = samples.map((sample) => Math.max(0, sample.sampledAt - sample.observedAt));
 
     const child = {
@@ -879,13 +931,21 @@ async function writeFailureDiagnostic(code, error) {
   const output = process.env.BROWSER_DIAGNOSTIC_OUTPUT?.trim();
   if (!output) return;
   const sourceRevision = process.env.SOURCE_REVISION?.trim() ?? '';
-  const ackTelemetry =
+  const rawDiagnostic =
     error instanceof BrowserEvidenceError && error.diagnostic !== null ? error.diagnostic : null;
+  const isReplayDiagnostic = code === 'browser-replay-not-rejected';
+  const replayHttpStatus =
+    isReplayDiagnostic && rawDiagnostic && Number.isSafeInteger(rawDiagnostic.replayHttpStatus)
+      && rawDiagnostic.replayHttpStatus >= 100 && rawDiagnostic.replayHttpStatus <= 599
+      ? rawDiagnostic.replayHttpStatus
+      : null;
+  const ackTelemetry = isReplayDiagnostic ? null : rawDiagnostic;
   const diagnostic = {
-    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v2',
+    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v3',
     sourceRevision: GIT_SHA.test(sourceRevision) ? sourceRevision : null,
     failureCode: code,
     ackTelemetry,
+    replayHttpStatus,
   };
   await writeFile(output, `${JSON.stringify(diagnostic, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
 }

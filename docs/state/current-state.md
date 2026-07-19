@@ -1,5 +1,46 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
+
+This delta supersedes only the 2026-07-17 statements below that TEST Vault had
+no Transit mount and that a second direct provider route was absent. It does
+not supersede the fail-closed callback, dispatcher, Environment or human-gate
+boundaries.
+
+Live/source evidence:
+
+- TEST Vault is healthy, unsealed and audited. The `cross-ai/` Transit mount and
+  six distinct Ed25519 v1 keys (`anthropic`, `minimax`, `openai`,
+  `coordinator`, `revocation`, `runner-management`) exist with non-derived,
+  non-exportable, no-plaintext-backup settings. Private keys remain inside
+  Transit;
+- the owner-local public bootstrap receipt has canonical digest
+  `sha256:81e629fe61b2cb81578861d7c82b61802a05b4aa2fa4b720706330e6b642c8ac`.
+  The root credential was not copied into Git, GitHub, chat, argv, environment
+  or evidence;
+- root-free sign policies and the routine AppRole subset are reconciled.
+  Provider issuer/coordinator AppRole definitions and their SecretIDs are not
+  live; no signed deployment bundle has been issued. The #2638 source now
+  removes legacy MiniMax AppRole/policy authority, but its live absence and a
+  fresh five-key public v2 receipt still require the attended owner bootstrap;
+- the evaluator App/observer facts below remain unchanged. A dedicated
+  dispatcher App is not live, no Environment custom rule is attached, and the
+  existing human required-reviewer rule remains authoritative;
+- direct Claude Opus 4.8 and honest Codex `gpt-5.6-sol` launch-attestation
+  adapters, accepted-dispatch correlation and the deterministic five-key v2
+  public trust-root builder are source changes under #2502. MiniMax is excluded
+  from new evidence. These changes are not live until exact-head review, CI,
+  merge and a separate TEST rollout prove them;
+- OpenAI is deliberately `trusted-launch-attested`, not provider-reported.
+  Therefore the source kill switch rejects machine-only authorization; Phase 2
+  must retain the required reviewer.
+
+Current semantics: Transit `Up` does not mean signed issuance, evaluator
+`Functional`, GitHub callback, deployment or product acceptance. Production is
+untouched. Activation remains fail-closed on the public trust-root/revocation
+release, dedicated dispatcher identity, signed intent, exact accepted run
+correlation, real callback/deny/replay proof and rollback evidence.
+
 ## Live Delta — #2502 Cross-AI deployment protection remains fail-closed (2026-07-17)
 
 This delta supersedes the 2026-07-15 statement below that
@@ -86,9 +127,13 @@ Source ve karar zinciri:
 
 - GitOps PR #2433 `main` üzerine
   `a8d643ab9d56697f3e13bd24499920e324339d77` olarak squash-merge edildi.
-- Owner directive #2373 issue comment `4977782172` ve provider-distinct
-  MiniMax M3 + Codex dört adversarial tur sonucu `AGREE` kaydı issue comment
-  `4978013233` ile canonical policy'ye bağlandı.
+- Owner directive #2373 issue comment `4977782172` ile canonical policy'ye
+  bağlıdır. Pre-#2638 MiniMax + Codex advisory comment `4978013233` yalnız
+  tarihsel audit girdisi olarak korunur; yeni authorization üretemez.
+- Forward owner-advisory migration direct Anthropic Claude Opus 4.8 + direct
+  OpenAI Codex 5.6 SOL `AGREE` kaydını issue comment `5011715034` ve exact body
+  SHA-256 ile canonical policy'ye bağlar. Bu kayıt da `advisoryOnly=true` ve
+  human approval/legal clearance yerine geçmez.
 - AI mutabakatı yalnız bounded, attended, recording-off TEST VIEW_ONLY
   engineering/risk authority'sidir. İnsan DPO/legal imzası olarak sunulmaz,
   `GATE_VIEW_ONLY_KVKK=cleared` veya `F22_6_VIEW_ONLY_KVKK:v1` marker üretmez.

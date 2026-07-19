@@ -1,0 +1,49 @@
+name: Cross-AI protected VIEW_ONLY apply
+description: Execute the fixed signed-intent apply stage and publish canonical outcome evidence.
+runs:
+  using: composite
+  steps:
+    - name: Execute fixed apply stage
+      id: execute
+      shell: bash
+      env:
+        CROSS_AI_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
+      run: |
+        cd -- "$CROSS_AI_SOURCE_ROOT"
+        bash scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh apply
+
+    - name: Build canonical apply outcome evidence
+      id: evidence
+      if: ${{ always() }}
+      shell: bash
+      env:
+        STAGE_CONCLUSION: ${{ steps.execute.outcome == 'success' && 'success' || 'failure' }}
+        CROSS_AI_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
+      run: |
+        cd -- "$CROSS_AI_SOURCE_ROOT"
+        python3 scripts/github_apps/build_cross_ai_stage_evidence.py \
+          --bootstrap-file "$CROSS_AI_BOOTSTRAP_FILE" \
+          --stage apply \
+          --conclusion "$STAGE_CONCLUSION" \
+          --watchdog-expires-file "$RUNNER_TEMP/cross-ai-watchdog-expires-at" \
+          --output-dir "$RUNNER_TEMP/cross-ai-stage-outcome" \
+          --github-output "$GITHUB_OUTPUT"
+
+    - name: Remove private bootstrap response
+      id: cleanup
+      if: ${{ always() }}
+      shell: bash
+      run: rm -f -- "$RUNNER_TEMP/cross-ai-bootstrap.json"
+
+    - name: Upload canonical apply outcome evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.cleanup.outcome == 'success' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: ${{ steps.evidence.outputs.artifact-name }}
+        path: ${{ steps.evidence.outputs.evidence-file }}
+        if-no-files-found: error
+        include-hidden-files: false
+        compression-level: 0
+        retention-days: 30

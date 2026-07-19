@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RESPONSE_SCHEMA = ROOT / "schema/cross-ai-runner-bootstrap-response-v1.schema.json"
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 STAGES = {"apply", "browser-evidence", "compensating-rollback"}
+ZERO_TRUST_ROOT_SHA256 = "sha256:" + ("0" * 64)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -243,6 +244,11 @@ def _request(
 def execute(args: argparse.Namespace) -> dict[str, Any]:
     if args.stage not in STAGES:
         reject("BOOTSTRAP_STAGE_INVALID", "bootstrap stage is invalid")
+    if args.expected_trust_root_sha256 == ZERO_TRUST_ROOT_SHA256:
+        reject(
+            "TRUST_ROOT_PIN_SENTINEL",
+            "all-zero trust-root pin cannot authorize a protected stage",
+        )
     policy = load_policy(args.policy_file)
     stage_policy = policy.stages.get(args.stage)
     if stage_policy is None or stage_policy.workflow_path != args.workflow_path:
