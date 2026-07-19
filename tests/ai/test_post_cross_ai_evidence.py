@@ -100,6 +100,8 @@ class EvidenceValidationTests(unittest.TestCase):
             "P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE",
             "P0: Critical finding is present\nNone\nP1\nNone\nP2\nNone\n"
             "VERDICT: AGREE",
+            "Critical finding outside priority sections\n"
+            "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
         ):
             payload = evidence()
             payload["response"] = response

@@ -213,6 +213,12 @@ const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
 const CROSS_AI_PROTECTION_WF = '.github/workflows/gate-cross-ai-deployment-protection.yml';
 const PROTECTED_VIEWER_WF = '.github/workflows/apply-view-only-viewer-pilot-protected.yml';
 const CROSS_AI_POLICY_BUILDER = 'scripts/github_apps/build_cross_ai_deployment_policy_bundle.py';
+const PROTECTED_ACTION = '.github/actions/protected-apply/action.yml';
+const CROSS_AI_POLICY_CONFIG = 'config/github-apps/cross-ai-deployment-policy.example.json';
+const CROSS_AI_POLICY_SCHEMA = 'schema/cross-ai-deployment-policy-v1.schema.json';
+const CROSS_AI_REMOTE_OP = 'scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh';
+const FULLATS_PROMOTION_MARKER = 'kustomize/overlays/test/fullats-promotion-state.txt';
+const TEST_OVERLAY_KUSTOMIZATION = 'kustomize/overlays/test/kustomization.yaml';
 const RETIRED_MINIMAX_WRAPPER_PATH = 'scripts/ai/minimax_m3_review.py';
 const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
 const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__grant.sql';
@@ -364,6 +370,20 @@ const duplicateResponseEvidence = {
 const duplicateResponsePeerBody = peerBody.replace(
   sha256(EVIDENCE[PEER_REF].body),
   sha256(duplicateResponseBody),
+);
+const prefixedFindingResponse = 'Critical finding outside priority sections\nP0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE';
+const prefixedFindingBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
+  response_sha256: sha256(prefixedFindingResponse),
+  response: prefixedFindingResponse,
+});
+const prefixedFindingEvidence = {
+  ...EVIDENCE,
+  [PEER_REF]: evidenceComment(prefixedFindingBody),
+};
+const prefixedFindingPeerBody = peerBody.replace(
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(prefixedFindingBody),
 );
 const sensitiveResponse = 'P0\nNone\nP1\nNone\nP2\nperson@example.com\nVERDICT: AGREE';
 const sensitiveBody = JSON.stringify({
@@ -582,6 +602,26 @@ const cases = [
   ['explicit none mode rejects Cross-AI signed-policy builder changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [CROSS_AI_POLICY_BUILDER] }, 1],
+  ...[
+    PROTECTED_ACTION,
+    CROSS_AI_POLICY_CONFIG,
+    CROSS_AI_POLICY_SCHEMA,
+    CROSS_AI_REMOTE_OP,
+  ].map((path) => [
+    `explicit none mode rejects active signed-deployment surface ${path}`,
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [path] },
+    1,
+  ]),
+  ...[
+    FULLATS_PROMOTION_MARKER,
+    TEST_OVERLAY_KUSTOMIZATION,
+  ].map((path) => [
+    `explicit none mode rejects Full ATS promotion or rollback content ${path}`,
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [path] },
+    1,
+  ]),
   ['signed deployment policy rejects routine class and Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, changedFiles: ['scripts/github_apps/cross_ai_deployment_policy/contract.py'] }, 1],
@@ -785,6 +825,9 @@ const cases = [
   ['provider evidence contains a duplicate response key -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: duplicateResponsePeerBody, evidence: duplicateResponseEvidence }, 1],
+  ['provider response contains text before P0 -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: prefixedFindingPeerBody, evidence: prefixedFindingEvidence }, 1],
   ['provider response contains PII -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: sensitivePeerBody, evidence: sensitiveEvidence }, 1],

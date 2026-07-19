@@ -83,16 +83,22 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^\.github\/workflows\/[^/]*cross-ai[^/]*\.ya?ml$/,
   /^\.github\/workflows\/(?:apply-view-only-viewer-pilot-protected|rollback-view-only-viewer-pilot-protected|faz22-6-view-only-viewer-browser-evidence-protected)\.ya?ml$/,
+  /^\.github\/actions\/protected-(?:apply|bootstrap|browser-evidence|rollback)\//,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  /^schema\/cross-ai-deployment-(?:trust-root|review|bundle)-v2\.schema\.json$/,
-  /^scripts\/github_apps\/cross_ai_deployment_policy\//,
-  /^scripts\/github_apps\/(?:build|run)_cross_ai[^/]*\.py$/,
+  /^schema\/cross-ai-[^/]+\.json$/,
+  /^scripts\/github_apps\//,
+  /^tests\/github_apps\//,
+  /^config\/github-apps\//,
+  /^bootstrap\/vault-policies\/common\/eso-runtime\.hcl$/,
+  /^bootstrap\/vault-policies\/test\/(?:cross-ai-[^/]+|vault-config-reconciler)\.hcl$/,
   /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_test_trust_root)\.py$/,
   /^scripts\/ops\/vault-policy-reconcile\.sh$/,
+  /^scripts\/faz22-remote-ops\//,
+  /^kustomize\/overlays\/test\/activation\/cross-ai-deployment-protection-observe\//,
   /^scripts\/ats\/(?:open-fullats-test-rollback-pr|verify-fullats-test-rollback-content)\.sh$/,
   /^scripts\/promotion\/scan-promotion-candidates\.sh$/,
   /^\.github\/workflows\/faz25-fullats-(?:live-browser-acceptance|test-recovery)\.yml$/,
-  /^tests\/github_apps\/(?:cross_ai_policy_fixtures|test_cross_ai_[^/]+)\.py$/,
+  /^kustomize\/overlays\/test\/(?:fullats-promotion-state\.txt|kustomization\.yaml)$/,
   /^docs\/adr\/0045-signed-cross-ai-custom-deployment-protection-rule\.md$/,
   /^docs\/runbooks\/RB-cross-ai-deployment-protection-rule\.md$/,
   // Tombstone: deleting the retired wrapper remains a governance change, and
@@ -594,6 +600,7 @@ function parseProviderResponseVerdict(response) {
   if (headings.map((match) => match[1].toUpperCase()).join(',') !== 'P0,P1,P2') {
     return null;
   }
+  if (response.slice(0, headings[0].index).trim()) return null;
   const sectionContents = headings.map((heading, index) => {
     const start = heading.index + heading[0].length;
     const end = index < 2 ? headings[index + 1].index : matches[0].index;
