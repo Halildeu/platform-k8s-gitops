@@ -250,9 +250,22 @@ old_accessors=$(printf '%s\n' "$vault_root_token" | docker exec -i \
     set -eu
     IFS= read -r VAULT_TOKEN
     export VAULT_TOKEN
+    output_file=$(mktemp)
     error_file=$(mktemp)
-    trap '\''rm -f "$error_file"'\'' EXIT
-    if vault list -format=json "auth/approle/role/$1/secret-id" 2>"$error_file"; then
+    trap '\''rm -f "$output_file" "$error_file"'\'' EXIT
+    if vault list -format=json "auth/approle/role/$1/secret-id" \
+        >"$output_file" 2>"$error_file"; then
+      cat "$output_file"
+      exit 0
+    else
+      status=$?
+    fi
+    # Vault CLI 1.20 returns exit 2 plus an exact empty JSON object when the
+    # AppRole exists but has no secret-id accessors. Accept only that fully
+    # bounded no-data shape; other exit-2 results remain fatal.
+    compact_output=$(tr -d '\''[:space:]'\'' <"$output_file")
+    if [ "$status" -eq 2 ] && [ "$compact_output" = "{}" ] && [ ! -s "$error_file" ]; then
+      printf "[]"
       exit 0
     fi
     if grep -Eqi "no value found|not found" "$error_file"; then
