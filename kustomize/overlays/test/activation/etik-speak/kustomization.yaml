@@ -11,15 +11,15 @@ resources:
   - resource-quota.yaml
   - priority-class.yaml
 images:
-  # Exact branch artifacts: backend source 69a1e672 / run 29672392833 and
-  # public-web source 49eb6424 / run 29672789348. Root activation remains
-  # forbidden until the exact-head review gate is satisfied.
+  # Exact branch artifacts: backend source 5193a006 / run 29678300281 and
+  # public-web source 86b45350 / run 29678377817. Root activation remains
+  # forbidden until the exact-head review and provisioning gates are satisfied.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:1acca0d7c7edf900521b4418bb4fe8385d30086646e611c2081a85e10206ed8c
+    digest: sha256:968d97e29fab5400d87c0b71062ab243d96dbf3a59a42a42b8ae56bec4ee325a
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
-    digest: sha256:c109e478afb6d297eb8cb6842cff6d30ece0532e12a3967ba2db1ab54cbd57ed
+    digest: sha256:8e4497d887ddf01607172b0216bcbe5fb5b998b0eff628a7cec48a5cfde729d0
 patches:
   - target: {kind: Deployment, name: ethics-service}
     patch: |-
