@@ -28,6 +28,7 @@ class FakeDispatchGitHub:
         self.dispatch_calls = 0
         self.runs: tuple[dict, ...] = ()
         self.live_ref: GitHubIntentRef | None = None
+        self.inputs: dict | None = None
 
     def create_intent_ref(
         self,
@@ -48,8 +49,10 @@ class FakeDispatchGitHub:
         repository: str,
         workflow_path: str,
         request_id: str,
+        inputs: dict | None = None,
     ) -> DispatchResult:
         self.dispatch_calls += 1
+        self.inputs = inputs
         return self.result
 
     def workflow_runs_for_dispatch(
@@ -346,6 +349,94 @@ class IntentDispatchOrchestratorTest(unittest.TestCase):
         )
         self.assertEqual(accepted.state, "Accepted")
         self.assertEqual(accepted.run_id, 78)
+
+    def test_v3_transaction_inputs_are_subject_bound_and_never_reposted(self) -> None:
+        factory = FixtureFactory("v3")
+        fixture = factory.build()
+        github = FakeDispatchGitHub(
+            result=DispatchResult(True, False, 204, "DISPATCH_ACCEPTED_204")
+        )
+        orchestrator = IntentDispatchOrchestrator(
+            registry=self.registry,
+            dispatcher=github,
+            reader=github,
+            installation_id=2222,
+            registration_principal="spiffe://acik/platform/trusted-dispatcher",
+            verify_envelope=lambda envelope: EvidenceVerifier(
+                trust_root=fixture.trust_root,
+                revocations_envelope=fixture.revocations_envelope,
+                now=fixture.now,
+                expected_bundle_contract="v3",
+            ).verify_bundle(envelope),
+            now=lambda: fixture.now,
+        )
+        values = {
+            "confirm": "RUN_FAZ22_6_VIEW_ONLY_TRANSACTION",
+            "device_id": factory.TRANSACTION_DEVICE_ID,
+            "device_hostname": factory.TRANSACTION_DEVICE_HOSTNAME,
+            "pilot_seconds": 300,
+            "mask_rect_bps": factory.TRANSACTION_MASK_RECT_BPS,
+            "preflight_only": False,
+        }
+        first = orchestrator.register_and_dispatch_transaction(
+            envelope=fixture.bundle_envelope,
+            transaction_inputs=values,
+        )
+        second = orchestrator.register_and_dispatch_transaction(
+            envelope=fixture.bundle_envelope,
+            transaction_inputs=values,
+        )
+        self.assertEqual((first.state, second.state), ("Sending", "Sending"))
+        self.assertEqual(github.dispatch_calls, 1)
+        self.assertEqual(github.inputs["pilot_seconds"], "300")
+        self.assertIs(github.inputs["preflight_only"], False)
+
+    def test_v3_transaction_input_tamper_is_denied_before_registration(self) -> None:
+        factory = FixtureFactory("v3")
+        fixture = factory.build()
+        github = FakeDispatchGitHub(
+            result=DispatchResult(True, False, 204, "DISPATCH_ACCEPTED_204")
+        )
+        orchestrator = IntentDispatchOrchestrator(
+            registry=self.registry,
+            dispatcher=github,
+            reader=github,
+            installation_id=2222,
+            registration_principal="spiffe://acik/platform/trusted-dispatcher",
+            verify_envelope=lambda envelope: EvidenceVerifier(
+                trust_root=fixture.trust_root,
+                revocations_envelope=fixture.revocations_envelope,
+                now=fixture.now,
+                expected_bundle_contract="v3",
+            ).verify_bundle(envelope),
+            now=lambda: fixture.now,
+        )
+        with self.assertRaisesRegex(PolicyError, "TRANSACTION_INPUT_BINDING_MISMATCH"):
+            orchestrator.register_and_dispatch_transaction(
+                envelope=fixture.bundle_envelope,
+                transaction_inputs={
+                    "confirm": "RUN_FAZ22_6_VIEW_ONLY_TRANSACTION",
+                    "device_id": factory.TRANSACTION_DEVICE_ID,
+                    "device_hostname": "wrong-host",
+                    "pilot_seconds": 300,
+                    "mask_rect_bps": factory.TRANSACTION_MASK_RECT_BPS,
+                    "preflight_only": False,
+                },
+            )
+        with self.assertRaisesRegex(PolicyError, "TRANSACTION_INPUTS_INVALID"):
+            orchestrator.register_and_dispatch_transaction(
+                envelope=fixture.bundle_envelope,
+                transaction_inputs={
+                    "confirm": "RUN_FAZ22_6_VIEW_ONLY_TRANSACTION",
+                    "device_id": factory.TRANSACTION_DEVICE_ID,
+                    "device_hostname": factory.TRANSACTION_DEVICE_HOSTNAME,
+                    "pilot_seconds": 300,
+                    "mask_rect_bps": "9000,9000,2000,2000",
+                    "preflight_only": False,
+                },
+            )
+        self.assertEqual(github.create_calls, 0)
+        self.assertEqual(github.dispatch_calls, 0)
 
 
 if __name__ == "__main__":

@@ -1011,6 +1011,7 @@ class GitHubDispatcherClient:
         repository: str,
         workflow_path: str,
         request_id: str,
+        inputs: dict[str, Any] | None = None,
     ) -> DispatchResult:
         if (
             REPOSITORY_NAME.fullmatch(repository) is None
@@ -1024,12 +1025,32 @@ class GitHubDispatcherClient:
                 "GITHUB_WORKFLOW_DISPATCH_INVALID",
                 "workflow dispatch target is invalid",
             )
+        if inputs is not None and (
+            not isinstance(inputs, dict)
+            or set(inputs)
+            != {
+                "confirm",
+                "device_id",
+                "device_hostname",
+                "pilot_seconds",
+                "mask_rect_bps",
+                "preflight_only",
+            }
+            or any(not isinstance(key, str) for key in inputs)
+        ):
+            reject(
+                "GITHUB_WORKFLOW_DISPATCH_INVALID",
+                "workflow dispatch inputs are not the exact transaction contract",
+            )
         workflow = quote(workflow_path, safe="")
         try:
             response = self._post(
                 installation_id=installation_id,
                 path=f"/repos/{repository}/actions/workflows/{workflow}/dispatches",
-                payload={"ref": f"cross-ai-intent/{request_id}"},
+                payload={
+                    "ref": f"cross-ai-intent/{request_id}",
+                    **({"inputs": inputs} if inputs is not None else {}),
+                },
             )
         except PolicyError as exc:
             if exc.code == "GITHUB_API_UNAVAILABLE":

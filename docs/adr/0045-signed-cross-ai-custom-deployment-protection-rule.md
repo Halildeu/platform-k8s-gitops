@@ -5,17 +5,18 @@
 > açıklaması için korunur; cutoff sonrası aktif verifier MiniMax taşıyan trust
 > root veya bundle'ı doğrulamaz. #2638'in optional-Claude kararı da superseded'dır
 > ve yeni review, trust root, deployment grant veya activation yetkisi üretmez.
-> Aktif v2 yalnız ayrı read-only/ephemeral bağlamda exact `gpt-5.6-sol xhigh`
-> direct OpenAI Codex review leaf'i kabul eder; Claude, MiniMax, Cursor, UI,
-> wrapper ve fallback leaf'leri schema/trust-root seviyesinde reddedilir.
+> Aktif v2 ve versioned v3 makine-deployment authority yalnız ayrı
+> read-only/ephemeral bağlamda exact `gpt-5.6-sol xhigh` direct OpenAI Codex
+> review leaf'i kabul eder; Claude, MiniMax, Cursor, UI, wrapper ve fallback
+> leaf'leri schema/trust-root seviyesinde reddedilir.
 
-> **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
-> registration, the Phase-1 receive-only test observer, outbound failed-delivery
-> recovery and test-Vault App private-key provisioning exist. The owner-gated
-> TEST Transit bootstrap, retired-provider decommission contract and three protected
-> workflow lanes are source-ready but have not been activated. Direct
-> OpenAI adapter activation, dispatcher App, Environment
-> configuration and live enforcement do not exist yet.
+> **Status:** PROPOSED — evaluator App registration, the Phase-1 receive-only
+> TEST observer, failed-delivery recovery and the public five-key TEST trust
+> plane exist. New authorization is now the v3 single-transaction contract in
+> section 0. Its source implementation is under #2502; the transaction runtime
+> is owned by #2644. No dispatcher App, signed v3 grant, Environment custom
+> rule, callback decision or live transaction canary exists yet. The human
+> required reviewer remains authoritative.
 > **Date:** 2026-07-16
 > **Owner issue:** [#2502](https://github.com/Halildeu/platform-k8s-gitops/issues/2502)
 > **Customer slice:** [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373)
@@ -23,9 +24,133 @@
 > **Scope:** reversible test/non-prod deployment authorization. Production and
 > named-human gates remain outside autonomous approval.
 
+## 0. Forward authority contract — v3 single transaction
+
+This section supersedes the v1/v2 issuance and workflow topology described in
+the historical sections below. The older material remains useful for forensic
+interpretation and rollback compatibility, but it cannot authorize a new
+VIEW_ONLY transaction.
+
+| Generation | Forward authority |
+|---|---|
+| v1 trust root/bundle with MiniMax | None. Active verification and new issuance are retired; forensic records remain immutable. |
+| v2 three-stage bundle (`apply`, `browser-evidence`, `compensating-rollback`) | Historical audit and rollback-compatibility boundary only. A v2 dispatcher cannot register or dispatch a new v3 transaction. |
+| v2 trust root + policy schema v2 + bundle schema v3 | The only forward VIEW_ONLY authority contract. The machine-deployment bundle requires exactly one signed OpenAI Codex 5.6 SOL authority leaf pinned by its trust root. |
+
+Exact OpenAI Codex 5.6 SOL is the only active deployment-evidence issuer route
+in this versioned machine contract. A new v3 bundle requires one signed,
+finding-free Codex `AGREE` authority leaf bound to the exact scope/head.
+Claude, MiniMax, Cursor, wrappers and UI paths are rejected both by the active
+trust root and the source-review policy.
+
+The v3 bundle authorizes exactly one stage named `transaction` and exactly one
+workflow:
+
+```text
+.github/workflows/faz22-6-view-only-viewer-transaction.yml
+```
+
+The policy and signed stage bind the complete #2644 authority-file inventory,
+each file's SHA-256, the exact workflow blob, dependency lock, concurrency
+contract, head SHA and a content-addressed transaction-scope digest. The
+forward workflow has three jobs and four non-interchangeable OIDC profiles:
+
+1. a GitHub-hosted, unprotected `binding` call asks this App to derive a
+   coordinator-signed transaction binding from the finalized v3 bundle,
+   immutable intent tag, accepted dispatch watermark/correlation and live run;
+2. a GitHub-hosted, unprotected `preflight` call presents that handoff to a
+   fixed-function TEST attestor which proves live auth/route/runtime/browser/
+   port/console/replay readiness with zero configuration or target mutation;
+3. one GitHub-hosted `authorization` job is the only job carrying the protected
+   Environment. After the human wait it automatically revalidates the same
+   twelve read-only checks and redeems the signed bundle once into a bounded
+   checkpoint lease;
+4. the self-hosted `executor` job has no Environment and can mutate only under
+   that signed lease, publishing a signed external checkpoint chain and an
+   in-run compensating rollback result.
+
+All four profiles bind the immutable intent tag, head, workflow, actor, run and
+attempt; none receives a long-lived target credential. One grant has one
+transaction nonce, one run attempt and one Environment gate. Separate apply/
+browser grants, cross-run resume and automatic repost are rejected. A bounded
+same-job supervisor may restart a failed child process twice after verifying
+the latest external receipt; runner-host or GitHub-job loss is not resumable
+and falls to watchdog cleanup plus a new intent/consent.
+
+The evaluator independently re-fetches every authority file at the signed head,
+recomputes the workflow/dependency/concurrency/authority-set digests, inspects
+the workflow shape and verifies the same-run signed preflight artifact. The
+binding is never caller authority: this App derives bundle fields from its
+verified registry, run fields from an accepted post-watermark GitHub dispatch,
+and tenant/persona pins from the exact-head authority file already hash-bound
+by the signed stage. The preflight receipt repeats that binding and must prove
+the exact run, attempt, actor, head, endpoint, tenant, pre-provisioned persona,
+device, operator, mask policy and pilot duration; it reports zero mutation, no
+consent, all live checks successful and no stale watchdog. Network retries of
+binding, preflight, authorization redemption and checkpoints return the stored
+byte-identical DSSE response for the same authenticated identity and canonical
+request; key/body/identity collisions reject.
+
+The terminal result is not inferred from a green workflow. The reconciler
+downloads the bounded exact-name final and runtime-evidence artifacts. It
+verifies the local hash-chained transaction ledger, binding history, monotonic
+timestamps, authorization/consent/watchdog TTL, pre-rollback upload receipt,
+independent artifact digest and rollback stdout digest. It then verifies the
+coordinator-signed binding handoff, evaluation and redemption preflight
+receipts, one-use lease and the complete externally signed checkpoint suffix
+from `DECISION_AUTHORIZED` through `COMPLETED` or `FAILED_CLEAN`. Every external
+state, reason, local checkpoint digest and local payload digest must equal the
+already-verified final ledger. Only then does it map `COMPLETED` to `Succeeded`
+or `FAILED_CLEAN` to `RolledBack`. The coordinator-signed terminal outcome binds
+the runtime artifact, lease envelope and terminal checkpoint receipt digests
+and is stored atomically in immutable CAS/SQL records. Missing, stale, replayed,
+ambiguous or tampered final evidence never frees the grant or produces approval
+truth.
+
+The current rollout mode is deliberately `dual-gate`: the Custom Deployment
+Protection Rule may add a machine deny/permit decision, but the existing human
+required-reviewer rule remains. The #2644 transaction reduces the prior two
+Environment waits to one; it does not silently remove that final human gate.
+Machine-only non-production mode remains disabled while the OpenAI route is
+honestly `trusted-launch-attested` rather than provider-reported and until the
+full live permit/deny/replay/crash/rollback canary is accepted. Attended
+endpoint consent, Legal/DPO/named-authority, production-secret-owner,
+production, irreversible and break-glass classes are unconditionally human.
+
+The #2688-stacked #2644 candidate absorbs those earlier revisions at exact head
+`708846651bbc99f1995bca470e7a5012fd2dd486`, base
+`0176d37289274c3165adba4c137876c49edb0ec6`, canonical scope
+`sha256:c8ae3c5fe6a7483d13fea84f204f8efe1847bee366820acd3711f2774ece3dd7`.
+It defines the four OIDC profiles, coordinator handoff, fixed twelve-check
+preflight, zero-mutation refresh, one-use lease, 64-write external CAS and
+bounded same-job supervisor. This exact contract is still `PROPOSED` and its
+workflow has not yet been rewired to those APIs; it is not live acceptance.
+
+The historical runner-bootstrap path is not the repair. Its GitHub OIDC profile
+is deliberately bound to the bootstrap audience, protected Environment,
+self-hosted runner and Environment subject, while the bootstrap authorizer
+explicitly rejects v3 with `BOOTSTRAP_NOT_APPLICABLE`. The existing CAS is only
+a durable canonical-JSON primitive; it has no authenticated checkpoint API,
+monotonic sequence/lease/replay registry or signed checkpoint receipt.
+
+#2644 owns the constrained read-only workflow and cross-repository transaction
+contract. `platform-backend` owns the fixed-function attestor, redemption and
+external checkpoint CAS. #2502 owns the binding-handoff endpoint,
+accepted-dispatch correlation, exact receipt verification and Custom Rule
+decision. #2502 now implements the coordinator-signed binding endpoint,
+byte-identical idempotency registry, strict runtime DSSE/trust-root verifier and
+final runtime-chain reconciliation; the focused GitHub App suite is `294/294`
+PASS. The runtime attestor/checkpoint signing trust root remains fail-closed and
+unprovisioned, so no placeholder key or digest is accepted. Merge-readiness is
+held until #2688's Codex-only consultation policy is canonical on `main`, the exact
+#2502 scope passes its isolated Codex high-impact review, #2644 integrates the
+runtime artifact/supervisor, backend APIs are deployed and the live TEST canary
+passes. No final v3 grant or live rule is claimed.
+
 ## 1. Context
 
-Faz 22.6 VIEW_ONLY product acceptance uses two protected GitHub Actions paths:
+Before the v3 migration, Faz 22.6 VIEW_ONLY product acceptance used two
+protected GitHub Actions paths:
 
 1. `.github/workflows/apply-view-only-viewer-pilot-enable.yml` activates a
    bounded test-only viewer surface and installs an absolute-expiry watchdog.
@@ -1072,17 +1197,17 @@ Minimum automated and live acceptance:
 | Webhook | valid signature; bad/missing signature; body mutation; wrong event/action; duplicate delivery |
 | Callback | wrong origin/path/repo/run; SSRF URL; GitHub 401/403/404/5xx; crash after reserve; timeout after POST; identical-decision retry; no contradictory state |
 | Schema | unknown/missing/wrong-type fields; non-canonical bytes; digest mismatch |
-| Signatures | valid exact three-family quorum; one signer; missing required family; same family via two channels; same key with two family labels; channel/direct-route mismatch; bad key; revoked/expired key; coordinator-only signature |
-| Review chain | AGREE/AGREE/AGREE; open REVISE; unacknowledged must-fix; mismatched closure root; final AGREE on old head/fix graph; model identity mismatch |
+| Signatures | active exact Anthropic+OpenAI quorum; one signer; missing required family; same family via two channels; same key with two family labels; channel/direct-route mismatch; bad key; revoked/expired key; coordinator-only signature; v1 MiniMax forensic-only rejection |
+| Review chain | AGREE/AGREE; open REVISE; unacknowledged must-fix; mismatched closure root; final AGREE on old head/fix graph; model identity mismatch |
 | Binding | missing run inputs in official fixture; governed input/vars/mutable-control read; colliding display title; moved/deleted intent ref; wrong repo/environment/ref/head/workflow/dependency lock/artifact/numeric actor/session/stage/target/runner inventory or admission lease |
 | Runner bootstrap | valid GitHub OIDC plus subject-bound credential; wrong audience/repo/Environment/ref/SHA/workflow/run/attempt/actor; bad/unknown key; expired token; missing `id-token: write`; wrong assigned runner; stale approval; credential replay; response tamper |
 | Replay | same grant/same delivery; same grant/new run; rerun attempt; concurrent workers; expired nonce |
 | Policy | workflow_dispatch only; test reversible pass; missing rollback/watchdog/D29 reject; trust-root self-update reject; stale revocation/environment snapshot reject; production/human/legal/secret-owner/irreversible reject |
-| Stage flow | browser before apply; apply approval but run failure; artifact mismatch; dedicated rollback success; unsigned/input-selected rollback reject; rollback uncertainty/quarantine; incomplete Drained reject; reissue before terminal verifier reject |
+| Stage flow | same-run preflight mismatch; pre-gate live-check omission; transaction failure; artifact mismatch; in-run rollback success; unsigned/input-selected rollback reject; rollback uncertainty/quarantine; incomplete drained state reject; reissue before terminal verifier reject |
 | Privacy | secret/JWT/cookie/webhook URL/email/phone/raw device ID/prompt leakage scanner |
 | Availability | evidence store down; Vault verification unavailable; GitHub API degraded; App restart during evaluation/reservation; webhook dual-secret rotation |
 | Environment | secrets inaccessible before approval; admin bypass disabled; rule-set drift; max-rule capacity; trust-root overlap expiry; runner join-after-approval race; concurrency-group conflict/headroom recheck; public-to-private/plan transition; feature-preview canary |
-| Live canary | one normal two-stage test flow; forced reject before mutation; forced post-approval failure with watchdog/rollback proof |
+| Live canary | one normal single-transaction test flow; forced reject before mutation; replay/crash; forced post-approval failure with watchdog/rollback proof |
 
 No success criterion is merely "workflow green". The canary separates source,
 desired state, runtime Up/Functional and product/browser evidence.
@@ -1095,9 +1220,9 @@ This ADR authorizes no live mutation. Proposed PR sequence:
    canonicalization/signature/quorum fixtures and OpenAPI/webhook fixtures.
 2. **PR-B — App receive-only:** HMAC validation, queue, GitHub re-fetch,
    callback URL hardening, idempotent ledger; no approval mode.
-3. **PR-C — issuer/coordinator:** exact direct Anthropic, MiniMax and OpenAI
-   issuer routes, six-key Vault Transit signing, bundle verifier and intent
-   registration.
+3. **PR-C — issuer/coordinator:** exact direct Anthropic and OpenAI issuer
+   routes, five-key active Vault Transit trust plane, bundle verifier and intent
+   registration; retained MiniMax public history is forensic-only.
 4. **PR-D — workflow correlation:** immutable intent tags, numeric dispatcher
    identity, exact workflow/dependency lock/stage policy, input-authority
    refactor, runner OIDC/one-use bootstrap, tag cleanup and offline evaluation.

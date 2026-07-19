@@ -33,46 +33,112 @@ new protected activation remains fail-closed until a real Codex-only advisory
 is bound and the policy is deliberately activated. Existing v1 Claude evidence
 is historical only; it cannot mint a fresh grant.
 
-## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
+## Live Delta — #2502 v3 authority source under test; live rule remains disabled (2026-07-18)
 
-This delta supersedes only the 2026-07-17 statements below that TEST Vault had
-no Transit mount and that a second direct provider route was absent. It does
-not supersede the fail-closed callback, dispatcher, Environment or human-gate
-boundaries.
+This delta supersedes the earlier 2026-07-18 statements that a five-key v2
+bootstrap receipt/public trust root and live MiniMax authority absence were
+still pending. It does not supersede the fail-closed callback, dispatcher,
+Environment, #2644 transaction or human-gate boundaries.
 
-Live/source evidence:
+Live TEST trust-plane evidence:
 
-- TEST Vault is healthy, unsealed and audited. The `cross-ai/` Transit mount and
-  six distinct Ed25519 v1 keys (`anthropic`, `minimax`, `openai`,
-  `coordinator`, `revocation`, `runner-management`) exist with non-derived,
-  non-exportable, no-plaintext-backup settings. Private keys remain inside
-  Transit;
-- the owner-local public bootstrap receipt has canonical digest
-  `sha256:81e629fe61b2cb81578861d7c82b61802a05b4aa2fa4b720706330e6b642c8ac`.
-  The root credential was not copied into Git, GitHub, chat, argv, environment
-  or evidence;
-- root-free sign policies and the routine AppRole subset are reconciled.
-  Provider issuer/coordinator AppRole definitions and their SecretIDs are not
-  live; no signed deployment bundle has been issued. The #2638 source now
-  removes legacy MiniMax AppRole/policy authority, but its live absence and a
-  fresh five-key public v2 receipt still require the attended owner bootstrap;
-- the evaluator App/observer facts below remain unchanged. A dedicated
-  dispatcher App is not live, no Environment custom rule is attached, and the
-  existing human required-reviewer rule remains authoritative;
-- direct Claude Opus 4.8 and honest Codex `gpt-5.6-sol` launch-attestation
-  adapters, accepted-dispatch correlation and the deterministic five-key v2
-  public trust-root builder are source changes under #2502. MiniMax is excluded
-  from new evidence. These changes are not live until exact-head review, CI,
-  merge and a separate TEST rollout prove them;
-- OpenAI is deliberately `trusted-launch-attested`, not provider-reported.
-  Therefore the source kill switch rejects machine-only authorization; Phase 2
-  must retain the required reviewer.
+- TEST Vault is healthy, unsealed, audited and served through reviewed loopback
+  HTTPS at `https://127.0.0.1:8202`. The `cross-ai/` Transit mount retains six
+  non-exportable Ed25519 public histories, but only `anthropic`, `openai`,
+  `coordinator`, `revocation` and `runner-management` are active v2 authority
+  keys. The historical MiniMax public key remains forensic-only;
+- the owner-local v2 bootstrap receipt canonical digest is
+  `sha256:5cef5ffb8727fb2621b29f08a6808386a266ac7bbe1d704c3dbd5cf456d855e2`.
+  The reconciler-policy digest is
+  `sha256:e99eba2dbfcf97ba8c4515942ba38f19c5ae40f1d2c4ec40afbf2a13d8da8de5`;
+- the public v2 trust root ID is
+  `65a05e15-6668-468a-888a-b125de333e41`, valid from
+  `2026-07-18T18:47:49Z` through `2026-07-21T18:47:49Z`. Its canonical digest is
+  `sha256:7023f16283e380da3b831f624451b522f327e2c3d247bf5bd3a0a36efec3b925`
+  and source public-keyset digest is
+  `sha256:79f78eca474d63b95314ea403ada7b9b151d007c4857a171cd745a5f892c56d4`;
+- root-free reconciliation passed. Negative capability tests prove the routine
+  reconciler cannot read or mutate issuer/coordinator role definitions, role
+  IDs or SecretIDs and cannot downgrade `bind_secret_id`. Legacy MiniMax
+  AppRole and ACL policy are absent;
+- raw root/AppRole/token/private-key material was not copied into Git, GitHub,
+  chat, argv, environment or evidence. The owner-local bootstrap store remains
+  outside the repository with owner-only mode.
 
-Current semantics: Transit `Up` does not mean signed issuance, evaluator
-`Functional`, GitHub callback, deployment or product acceptance. Production is
-untouched. Activation remains fail-closed on the public trust-root/revocation
-release, dedicated dispatcher identity, signed intent, exact accepted run
-correlation, real callback/deny/replay proof and rollback evidence.
+Source truth in the isolated #2502 worktree:
+
+- policy schema v2 plus bundle schema v3 define exactly one
+  `transaction` stage for
+  `.github/workflows/faz22-6-view-only-viewer-transaction.yml`;
+- v2 three-stage issuance cannot authorize or dispatch v3. It remains only an
+  immutable historical audit/rollback compatibility boundary;
+- the evaluator binds the exact #2644 authority-file inventory, workflow blob,
+  dependency lock, concurrency contract, same-run preflight, run/attempt/head,
+  endpoint/device/operator/mask/pilot values and zero-mutation preflight result;
+- the dispatcher accepts a private `0600` transaction-input file, signs its
+  transient subject binding, registers at most once and never automatically
+  reposts an ambiguous/failed dispatch;
+- terminal reconciliation verifies the bounded state ledger, content-addressed
+  pre-rollback artifact and rollback proof plus a second exact-name runtime
+  artifact. The latter must contain a valid coordinator binding handoff,
+  evaluation/refresh preflight, one-use lease and the complete signed external
+  checkpoint suffix. The synthesized coordinator-signed outcome binds the
+  runtime artifact, lease and terminal checkpoint receipt digests;
+- the direct OpenAI deployment-evidence issuer and v3 evidence coordinator now have
+  create-once owner-only CLI surfaces. They pin the public trust-root digest,
+  active provider/role/key route and signing time before provider execution or
+  Vault signing; prompts, requests and tokens remain file-only;
+- JSON/schema/compile/diff checks and Ruff pass; the current GitHub App policy
+  suite passes `293/293` locally. This is source evidence, not live runtime.
+
+The #2688-stacked #2644 candidate is at exact head
+`708846651bbc99f1995bca470e7a5012fd2dd486`, base
+`0176d37289274c3165adba4c137876c49edb0ec6`, canonical scope
+`sha256:c8ae3c5fe6a7483d13fea84f204f8efe1847bee366820acd3711f2774ece3dd7`.
+It separates four OIDC profiles: a #2502 coordinator-signed `binding` handoff
+derived from finalized registry plus accepted/live dispatch truth; a
+zero-mutation fixed-function `preflight`; the sole protected `authorization`
+job, which automatically revalidates all twelve checks after the human wait and
+redeems one bounded lease; and an unprotected self-hosted `executor` that writes
+signed monotonic external checkpoints. Caller-authored binding/PASS values are
+not authority. The binding pins actor, tenant and pre-provisioned persona;
+identical POST retries return the stored byte-identical envelope without a
+second consumption. Same-job child-process restart is bounded; host/job loss is
+cleaned by the watchdog and requires a new intent/consent rather than claiming
+resume.
+
+The stabilized contract remains `PROPOSED` and fail-closed. The current #2644
+workflow does not call the four APIs, does not upload the required
+`faz22-view-only-transaction-runtime-<run>-<attempt>` package and does not invoke
+the supervisor. The runtime trust root deliberately has no active signer keys;
+tenant/persona pins are null. `platform-backend` attestor, redemption and CAS
+endpoints are not deployed. #2502 therefore rejects binding or terminal
+reconciliation rather than accepting the old local-only path. The
+optional-Claude #2638 policy and closed PR #2690 are superseded and must not be
+merged. #2688 owns the current Codex-only consultation migration at exact head
+`0176d37289274c3165adba4c137876c49edb0ec6`. Its broad source/static suites pass
+and the branch is published, but its required isolated `gpt-5.6-sol xhigh`
+primary call returned the provider usage limit and produced no response,
+evidence, receipt or `AGREE`; reset is 2026-07-25 06:24. #2688 remains
+`tracked_pending`, has no PR and is not canonical on `main`. No final v3 grant
+has been minted.
+
+Live GitHub boundary remains unchanged: evaluator App `4322193` and the
+receive-only observer exist; the separate dispatcher App does not. Environment
+`faz22-view-only-pilot` retains required reviewer `gladyatore-lab` with
+prevent-self-review enabled and has no custom rule. No issuer/coordinator
+credentials, signed v3 bundle, dispatch, callback, decision or transaction
+canary exists. OpenAI remains honestly `trusted-launch-attested`, so
+machine-only mode is disabled and the single protected Environment approval is
+retained. Production is untouched.
+
+Current semantics: trust plane `Up` plus source tests do not mean evaluator
+`Functional`, deployment or VIEW_ONLY product acceptance. Next authority
+requires #2688 merged to `main`, an exact-scope isolated Codex high-impact
+`single` review for #2502, reviewed PR/CI, #2644 runtime-artifact integration,
+separate dispatcher identity, issuer/coordinator one-use
+credentials, signed v3 intent, real callback and the permit/deny/replay/crash/
+rollback canary. #2502 remains open and in progress.
 
 ## Live Delta — #2502 Cross-AI deployment protection remains fail-closed (2026-07-17)
 

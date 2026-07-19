@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,11 +34,13 @@ from scripts.github_apps.cross_ai_deployment_policy.jsonutil import load_json_fi
 from scripts.github_apps.cross_ai_deployment_policy.policy import (
     DeploymentPolicy,
     load_policy,
+    resolve_authority_contract,
 )
 from scripts.github_apps.cross_ai_deployment_policy.timeutil import utc_now
 
 
-STAGES = ("apply", "browser-evidence", "compensating-rollback")
+LEGACY_STAGES = ("apply", "browser-evidence", "compensating-rollback")
+STAGES = (*LEGACY_STAGES, "transaction")
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,9 +62,12 @@ def parse_args() -> argparse.Namespace:
     commands = parser.add_subparsers(dest="command", required=True)
     register = commands.add_parser("register-and-dispatch-apply")
     register.add_argument("--bundle-file", type=Path, required=True)
+    transaction = commands.add_parser("register-and-dispatch-transaction")
+    transaction.add_argument("--bundle-file", type=Path, required=True)
+    transaction.add_argument("--transaction-input-file", type=Path, required=True)
     dispatch = commands.add_parser("dispatch-stage")
     dispatch.add_argument("--request-id", required=True)
-    dispatch.add_argument("--stage", choices=STAGES, required=True)
+    dispatch.add_argument("--stage", choices=LEGACY_STAGES, required=True)
     reconcile = commands.add_parser("reconcile-dispatch")
     reconcile.add_argument("--request-id", required=True)
     reconcile.add_argument("--stage", choices=STAGES, required=True)
@@ -80,6 +88,7 @@ def _policy_verifier(
             now=utc_now(),
             expected_policy_sha256=policy.digest,
             expected_trust_root_sha256=expected_trust_root_sha256,
+            expected_bundle_contract=resolve_authority_contract(policy, trust_root),
         ).verify_bundle(envelope)
         subject = verified.payload["subject"]
         grant = verified.payload["grant"]
@@ -103,6 +112,50 @@ def _policy_verifier(
         return verified
 
     return verify
+
+
+def _load_private_transaction_inputs(path: Path) -> dict[str, Any]:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        reject(
+            "TRANSACTION_INPUT_FILE_INVALID",
+            "transaction input file cannot be opened safely",
+        )
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_mode & 0o077
+            or metadata.st_size < 2
+            or metadata.st_size > 64 * 1024
+        ):
+            reject(
+                "TRANSACTION_INPUT_FILE_INVALID",
+                "transaction input file must be a private bounded regular file",
+            )
+        raw = os.read(descriptor, metadata.st_size + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) != metadata.st_size:
+        reject(
+            "TRANSACTION_INPUT_FILE_INVALID",
+            "transaction input file changed while reading",
+        )
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        reject(
+            "TRANSACTION_INPUT_FILE_INVALID",
+            "transaction input file is not valid JSON",
+        )
+    if not isinstance(value, dict):
+        reject(
+            "TRANSACTION_INPUT_FILE_INVALID",
+            "transaction input file must contain one JSON object",
+        )
+    return value
 
 
 def _result(job: DispatchJob) -> dict[str, Any]:
@@ -163,6 +216,13 @@ def main() -> int:
         if args.command == "register-and-dispatch-apply":
             job = orchestrator.register_and_dispatch_apply(
                 envelope=load_json_file(args.bundle_file),
+            )
+        elif args.command == "register-and-dispatch-transaction":
+            job = orchestrator.register_and_dispatch_transaction(
+                envelope=load_json_file(args.bundle_file),
+                transaction_inputs=_load_private_transaction_inputs(
+                    args.transaction_input_file
+                ),
             )
         elif args.command == "dispatch-stage":
             job = orchestrator.dispatch_stage(

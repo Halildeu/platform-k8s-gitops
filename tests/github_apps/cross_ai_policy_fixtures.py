@@ -20,13 +20,16 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import (
 from scripts.github_apps.cross_ai_deployment_policy.contract import (
     BUNDLE_PAYLOAD_TYPE,
     BUNDLE_PAYLOAD_TYPE_V2,
+    BUNDLE_PAYLOAD_TYPE_V3,
     CLOSURE_DOMAIN,
     CLOSURE_DOMAIN_V2,
+    CLOSURE_DOMAIN_V3,
     REVIEW_PAYLOAD_TYPE,
     REVIEW_PAYLOAD_TYPE_V2,
     REVOCATIONS_PAYLOAD_TYPE,
     SESSION_DOMAIN,
     SESSION_DOMAIN_V2,
+    SESSION_DOMAIN_V3,
 )
 from scripts.github_apps.cross_ai_deployment_policy.dsse import pae
 
@@ -67,23 +70,131 @@ class FixtureFactory:
     COORDINATOR_KEY_ID = "vault-transit://cross-ai/coordinator#v1"
     REVOCATION_KEY_ID = "vault-transit://cross-ai/revocation#v1"
     RUNNER_MANAGEMENT_KEY_ID = "vault-transit://cross-ai/runner-management#v1"
+    TRANSACTION_DEVICE_ID = "123e4567-e89b-42d3-a456-426614174000"
+    TRANSACTION_DEVICE_HOSTNAME = "denetim-pc"
+    TRANSACTION_MASK_RECT_BPS = "7500,7500,2500,2500"
+    TRANSACTION_REVIEWED_HEAD_SHA = "708846651bbc99f1995bca470e7a5012fd2dd486"
+
+    TRANSACTION_AUTHORITY_PATHS = (
+        ".github/workflows/faz22-6-view-only-viewer-transaction.yml",
+        "config/faz22-6-view-only-live-preflight-authority.v1.json",
+        "config/faz22-6-view-only-runtime-trust-root.v1.json",
+        "docs/adr/0046-faz22-6-view-only-pre-gate-attestor-and-external-checkpoints.md",
+        "schema/faz22-6-dsse-envelope-v1.schema.json",
+        "schema/faz22-6-view-only-checkpoint-lease-redeem-v1.schema.json",
+        "schema/faz22-6-view-only-checkpoint-lease-v1.schema.json",
+        "schema/faz22-6-view-only-external-checkpoint-create-v1.schema.json",
+        "schema/faz22-6-view-only-external-checkpoint-receipt-v1.schema.json",
+        "schema/faz22-6-view-only-live-preflight-attestation-v1.schema.json",
+        "schema/faz22-6-view-only-live-preflight-request-v1.schema.json",
+        "schema/faz22-6-view-only-preflight-error-v1.schema.json",
+        "schema/faz22-6-view-only-runtime-trust-root-v1.schema.json",
+        "schema/faz22-6-view-only-transaction-binding-handoff-v1.schema.json",
+        "schema/faz22-6-view-only-transaction-binding-request-v1.schema.json",
+        "schema/faz22-6-view-only-transaction-binding-v1.schema.json",
+        "scripts/faz22-remote-ops/run-view-only-same-job-supervisor.sh",
+        "scripts/test/faz22-6-view-only-transaction-static.sh",
+        "tests/faz22_remote_ops/test_view_only_preflight_contract.py",
+        "tests/faz22_remote_ops/test_view_only_same_job_supervisor.sh",
+    )
+    TRANSACTION_AUTHORITY_SHA256 = {
+        ".github/workflows/faz22-6-view-only-viewer-transaction.yml": (
+            "sha256:e44eefb61bee288525fd1f2068c420a7fd10b82958b1a503c9f410cb148a65c4"
+        ),
+        "config/faz22-6-view-only-live-preflight-authority.v1.json": (
+            "sha256:e3db632eff11abedcc18393304ac65ae20cdc5fe9cf00c3def71e3ab91793703"
+        ),
+        "config/faz22-6-view-only-runtime-trust-root.v1.json": (
+            "sha256:4d95852b02de299e9b51e966a2c9ee614ab81c9f12f5d45904803b6e67d68720"
+        ),
+        "docs/adr/0046-faz22-6-view-only-pre-gate-attestor-and-external-checkpoints.md": (
+            "sha256:9bed97306ff78d79aa1a5414ff5d8358b32b6484895a3a2aad8a879c1cec1784"
+        ),
+        "schema/faz22-6-dsse-envelope-v1.schema.json": (
+            "sha256:c4522b277d451f204b3f5cee0cb423f97193129475b7521db3e7a5eef32324ee"
+        ),
+        "schema/faz22-6-view-only-checkpoint-lease-redeem-v1.schema.json": (
+            "sha256:924bb03d4d2cfa1f9427d050bd83f2764d508df00e251e7c62ca4e216a78122e"
+        ),
+        "schema/faz22-6-view-only-checkpoint-lease-v1.schema.json": (
+            "sha256:a9771f265d22c1b339ee4ca94b611de1dfbfd69f3e683c0a565cfc39cc8ea0b7"
+        ),
+        "schema/faz22-6-view-only-external-checkpoint-create-v1.schema.json": (
+            "sha256:0fde68e2d26fe2b3c9bbfbd26024acdf7fb992e85f3aee13a5ff2344d110f0ef"
+        ),
+        "schema/faz22-6-view-only-external-checkpoint-receipt-v1.schema.json": (
+            "sha256:0ea1e79e886cfbeb4b761e9a678516c879b557a7f2bc9043fe3182d8917015be"
+        ),
+        "schema/faz22-6-view-only-live-preflight-attestation-v1.schema.json": (
+            "sha256:3162ecfecdc4d7d6dc1f40936cfefd5d0dbcec1e93489ca87d682c6179ab5cf2"
+        ),
+        "schema/faz22-6-view-only-live-preflight-request-v1.schema.json": (
+            "sha256:2d7fc35b9eb09735f8d250f7027638e1469eb2d7e8889e97a782d72a6b93c79d"
+        ),
+        "schema/faz22-6-view-only-preflight-error-v1.schema.json": (
+            "sha256:024351c2c2c61c34b2ebaf1c71323fcb6c2466c3af4272a110c18efaeb1f7572"
+        ),
+        "schema/faz22-6-view-only-runtime-trust-root-v1.schema.json": (
+            "sha256:d5ca2cb08c8b062d6e0241da63b0c6ec6beeed78180ef1d253de519efc23cec5"
+        ),
+        "schema/faz22-6-view-only-transaction-binding-handoff-v1.schema.json": (
+            "sha256:6cb297d980d9284c696fe6587ce6645e341c71beb9889995e3496b9f1b985aaa"
+        ),
+        "schema/faz22-6-view-only-transaction-binding-request-v1.schema.json": (
+            "sha256:7549c187881909eadfdc6c43fdef874e5c6820b1f7fdf9390c26884de16af624"
+        ),
+        "schema/faz22-6-view-only-transaction-binding-v1.schema.json": (
+            "sha256:1db5ebce2867a2bd003eef4b7480ce3b63f76eb5a405071a3b7d25b84a50cfed"
+        ),
+        "scripts/faz22-remote-ops/run-view-only-same-job-supervisor.sh": (
+            "sha256:84a7e853bd88af0ae4f25005ae0c775766d91a0777fdbb9d4d7555f7cfa32aa3"
+        ),
+        "scripts/test/faz22-6-view-only-transaction-static.sh": (
+            "sha256:bc8ca06242fb3de1a7389ed1e50c21fb3d49843099fe0a4338f0ddc404331fe7"
+        ),
+        "tests/faz22_remote_ops/test_view_only_preflight_contract.py": (
+            "sha256:b15e1babe08e9679340981ee63cca966cdfdf5b22389224d2d93f8b8b72f595d"
+        ),
+        "tests/faz22_remote_ops/test_view_only_same_job_supervisor.sh": (
+            "sha256:e1f672bab42cad0ebc2b3b0fb17bf9f11d4382f4c672a95d60174e6827b7e5bb"
+        ),
+    }
+    TRANSACTION_WORKFLOW_SHA256 = (
+        "sha256:e44eefb61bee288525fd1f2068c420a7fd10b82958b1a503c9f410cb148a65c4"
+    )
+    TRANSACTION_DEPENDENCY_LOCK_SHA256 = (
+        "sha256:5ae355c5da79f3ff87f239b9ff2153e27e50b30272a3689390eb996ab51b8642"
+    )
+    TRANSACTION_CONCURRENCY_SHA256 = (
+        "sha256:aaa716b30f77f1d920df5e436196e8f5582f505fe95e6844c27ef9bb7998564d"
+    )
 
     def __init__(self, contract_version: str = "v1") -> None:
-        if contract_version not in {"v1", "v2"}:
+        if contract_version not in {"v1", "v2", "v3"}:
             raise ValueError("unsupported fixture contract version")
         self.contract_version = contract_version
         self.day = "2026-07-16" if contract_version == "v1" else "2026-07-18"
-        self.bundle_payload_type = (
-            BUNDLE_PAYLOAD_TYPE if contract_version == "v1" else BUNDLE_PAYLOAD_TYPE_V2
-        )
+        self.bundle_payload_type = {
+            "v1": BUNDLE_PAYLOAD_TYPE,
+            "v2": BUNDLE_PAYLOAD_TYPE_V2,
+            "v3": BUNDLE_PAYLOAD_TYPE_V3,
+        }[contract_version]
         self.review_payload_type = (
             REVIEW_PAYLOAD_TYPE if contract_version == "v1" else REVIEW_PAYLOAD_TYPE_V2
         )
         self.session_domain = (
-            SESSION_DOMAIN if contract_version == "v1" else SESSION_DOMAIN_V2
+            {
+                "v1": SESSION_DOMAIN,
+                "v2": SESSION_DOMAIN_V2,
+                "v3": SESSION_DOMAIN_V3,
+            }[contract_version]
         )
         self.closure_domain = (
-            CLOSURE_DOMAIN if contract_version == "v1" else CLOSURE_DOMAIN_V2
+            {
+                "v1": CLOSURE_DOMAIN,
+                "v2": CLOSURE_DOMAIN_V2,
+                "v3": CLOSURE_DOMAIN_V3,
+            }[contract_version]
         )
         self.keys = {
             self.ANTHROPIC_KEY_ID: _key(1),
@@ -217,7 +328,7 @@ class FixtureFactory:
                 ),
             ],
         }
-        if self.contract_version == "v2":
+        if self.contract_version in {"v2", "v3"}:
             trust_root["sourcePublicKeysetSha256"] = digest("public-keyset-v2")
         return trust_root
 
@@ -261,7 +372,11 @@ class FixtureFactory:
         else:
             raise ValueError(f"unsupported provider key {key_id}")
         payload = {
-            "schemaVersion": f"acik.cross-ai-deployment-review.{self.contract_version}",
+            "schemaVersion": (
+                "acik.cross-ai-deployment-review.v1"
+                if self.contract_version == "v1"
+                else "acik.cross-ai-deployment-review.v2"
+            ),
             "reviewId": review_id,
             "reviewChainId": chain_id,
             "providerFamily": family,
@@ -270,7 +385,7 @@ class FixtureFactory:
             "modelId": model,
             "modelIdentityClass": (
                 "trusted-launch-attested"
-                if key_id == self.OPENAI_KEY_ID and self.contract_version == "v2"
+                if key_id == self.OPENAI_KEY_ID and self.contract_version != "v1"
                 else "provider-reported"
             ),
             "capabilitySnapshotSha256": digest(f"capability-{review_id}"),
@@ -290,7 +405,7 @@ class FixtureFactory:
             "issuer": f"cross-ai-issuer-{family}",
             "keyId": key_id,
         }
-        if self.contract_version == "v2":
+        if self.contract_version != "v1":
             payload.update(
                 {
                     "reasoningEffort": "xhigh",
@@ -306,9 +421,33 @@ class FixtureFactory:
         stage_overrides: dict[str, dict[str, Any]] | None = None,
         policy_digest: str | None = None,
         bootstrap_credential: bytes = b"B" * 64,
+        authority_contents: dict[str, bytes] | None = None,
     ) -> SignedFixture:
         request_id = "30000000-0000-4000-8000-000000000001"
         session_id = "30000000-0000-4000-8000-000000000002"
+        if authority_contents is None:
+            authority_files = [
+                {"path": path, "sha256": self.TRANSACTION_AUTHORITY_SHA256[path]}
+                for path in sorted(self.TRANSACTION_AUTHORITY_PATHS)
+            ]
+        else:
+            if set(authority_contents) != set(self.TRANSACTION_AUTHORITY_PATHS):
+                raise ValueError("authority contents must cover the exact v3 inventory")
+            authority_files = [
+                {
+                    "path": path,
+                    "sha256": (
+                        "sha256:" + hashlib.sha256(authority_contents[path]).hexdigest()
+                    ),
+                }
+                for path in sorted(self.TRANSACTION_AUTHORITY_PATHS)
+            ]
+        transaction_scope_sha256 = sha256_digest(
+            {
+                "domain": "acik.cross-ai-transaction-authority-set.v1",
+                "files": authority_files,
+            }
+        )
         subject: dict[str, Any] = {
             "repositoryId": 123456789,
             "repository": "Halildeu/platform-k8s-gitops",
@@ -331,23 +470,55 @@ class FixtureFactory:
             "operatorIdSha256": digest("operator"),
             "attendedConsentPolicySha256": digest("consent-policy"),
         }
-        grant = {
-            "requestId": request_id,
-            "deploymentSessionId": session_id,
-            "stageNonceSha256": {
-                "apply": digest("apply-nonce"),
-                "browser-evidence": digest("browser-nonce"),
-                "compensating-rollback": digest("rollback-nonce"),
-            },
-            "triggeringActorId": 424242,
-            "triggeringActorLogin": "platform-automation[bot]",
-            "registrationPrincipal": "spiffe://acik/platform/trusted-dispatcher",
-            "workflowEvent": "workflow_dispatch",
-            "notBefore": f"{self.day}T20:00:00Z",
-            "expiresAt": f"{self.day}T21:30:00Z",
-            "sequence": ["apply", "browser-evidence"],
-            "failureTransition": "apply->compensating-rollback",
-        }
+        if self.contract_version == "v3":
+            subject.update(
+                {
+                    "repositoryId": 1211415632,
+                    "headSha": self.TRANSACTION_REVIEWED_HEAD_SHA,
+                    "endpointIdSha256": digest(self.TRANSACTION_DEVICE_ID),
+                    "deviceHostnameSha256": digest(
+                        self.TRANSACTION_DEVICE_HOSTNAME.lower()
+                    ),
+                    "pilotOwnerPolicySha256": digest("pilot-owner-policy"),
+                    "maskPolicySha256": digest(self.TRANSACTION_MASK_RECT_BPS),
+                    "runtimeImageDigest": digest("runtime-image"),
+                    "pilotSeconds": 300,
+                    "transactionScopeSha256": transaction_scope_sha256,
+                }
+            )
+            grant = {
+                "requestId": request_id,
+                "deploymentSessionId": session_id,
+                "transactionNonceSha256": digest("transaction-nonce"),
+                "triggeringActorId": 424242,
+                "triggeringActorLogin": "platform-automation[bot]",
+                "registrationPrincipal": "spiffe://acik/platform/trusted-dispatcher",
+                "workflowEvent": "workflow_dispatch",
+                "notBefore": f"{self.day}T20:00:00Z",
+                "expiresAt": f"{self.day}T21:30:00Z",
+                "sequence": ["transaction"],
+                "failureTransition": "transaction->compensating-rollback-in-run",
+                "authorizationMode": "dual-gate",
+                "maxRunAttempts": 1,
+            }
+        else:
+            grant = {
+                "requestId": request_id,
+                "deploymentSessionId": session_id,
+                "stageNonceSha256": {
+                    "apply": digest("apply-nonce"),
+                    "browser-evidence": digest("browser-nonce"),
+                    "compensating-rollback": digest("rollback-nonce"),
+                },
+                "triggeringActorId": 424242,
+                "triggeringActorLogin": "platform-automation[bot]",
+                "registrationPrincipal": "spiffe://acik/platform/trusted-dispatcher",
+                "workflowEvent": "workflow_dispatch",
+                "notBefore": f"{self.day}T20:00:00Z",
+                "expiresAt": f"{self.day}T21:30:00Z",
+                "sequence": ["apply", "browser-evidence"],
+                "failureTransition": "apply->compensating-rollback",
+            }
         runner_lease = self.sign(
             "application/vnd.acik.cross-ai-runner-admission-lease.v1+json",
             {
@@ -402,6 +573,20 @@ class FixtureFactory:
                 "bootstrapCredentialSha256": subject["bootstrapCredentialSha256"],
                 "endpointIdSha256": subject["endpointIdSha256"],
                 "operatorIdSha256": subject["operatorIdSha256"],
+                **(
+                    {
+                        "deviceHostnameSha256": subject["deviceHostnameSha256"],
+                        "pilotOwnerPolicySha256": subject["pilotOwnerPolicySha256"],
+                        "maskPolicySha256": subject["maskPolicySha256"],
+                        "runtimeImageDigest": subject["runtimeImageDigest"],
+                        "pilotSeconds": subject["pilotSeconds"],
+                        "transactionScopeSha256": subject[
+                            "transactionScopeSha256"
+                        ],
+                    }
+                    if self.contract_version == "v3"
+                    else {}
+                ),
             }
         )
         concurrency_group_sha256 = sha256_digest(
@@ -410,7 +595,7 @@ class FixtureFactory:
                 "group": "faz22-view-only-protected-lanes",
             }
         )
-        stages = [
+        legacy_stages = [
             {
                 "stage": "apply",
                 "order": 1,
@@ -451,6 +636,35 @@ class FixtureFactory:
                 "maxUses": 1,
             },
         ]
+        stages = (
+            [
+                {
+                    "stage": "transaction",
+                    "order": 1,
+                    "workflowPath": ".github/workflows/faz22-6-view-only-viewer-transaction.yml",
+                    "workflowBlobSha256": next(
+                        entry["sha256"]
+                        for entry in authority_files
+                        if entry["path"]
+                        == ".github/workflows/faz22-6-view-only-viewer-transaction.yml"
+                    ),
+                    "dependencyLockSha256": self.TRANSACTION_DEPENDENCY_LOCK_SHA256,
+                    "concurrencyGroupSha256": self.TRANSACTION_CONCURRENCY_SHA256,
+                    "authorityFiles": authority_files,
+                    "preflightRunsOnLabels": ["ubuntu-24.04"],
+                    "runsOnLabels": [
+                        "self-hosted",
+                        "staging-sw",
+                        "testai-deploy",
+                    ],
+                    "maxUses": 1,
+                    "requiresSameRunPreflight": True,
+                    "requiresOneProtectedEnvironmentGate": True,
+                }
+            ]
+            if self.contract_version == "v3"
+            else legacy_stages
+        )
         for stage in stages:
             stage.update((stage_overrides or {}).get(stage["stage"], {}))
         subject_digest = sha256_digest(

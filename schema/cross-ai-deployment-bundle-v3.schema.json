@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-bundle-v3.schema.json",
+  "title": "Signed Cross-AI single-transaction deployment authorization bundle v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "bundleId", "subject", "workflowStages",
+    "runnerAdmissionLeaseEnvelope", "reviewEnvelopes", "closure", "consensus", "grant"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "acik.cross-ai-deployment-bundle.v3"},
+    "bundleId": {"type": "string", "format": "uuid"},
+    "subject": {"$ref": "#/$defs/subject"},
+    "workflowStages": {
+      "type": "array", "minItems": 1, "maxItems": 1,
+      "prefixItems": [{"$ref": "#/$defs/transaction"}], "items": false
+    },
+    "runnerAdmissionLeaseEnvelope": {"$ref": "#/$defs/dsse"},
+    "reviewEnvelopes": {
+      "type": "array", "minItems": 2, "maxItems": 100,
+      "items": {"$ref": "#/$defs/dsse"}
+    },
+    "closure": {"$ref": "#/$defs/closure"},
+    "consensus": {"$ref": "#/$defs/consensus"},
+    "grant": {"$ref": "#/$defs/grant"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "subject": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "repositoryId", "repository", "headSha", "intentRef", "environment",
+        "deploymentClass", "productSlice", "policySha256", "artifactSetSha256",
+        "rollbackPlanSha256", "postDeployVerifierSha256", "runnerPolicySha256",
+        "runnerAdmissionLeaseSha256", "bootstrapCredentialSha256", "sessionSha256",
+        "endpointIdSha256", "deviceHostnameSha256", "operatorIdSha256",
+        "attendedConsentPolicySha256", "pilotOwnerPolicySha256", "maskPolicySha256",
+        "runtimeImageDigest", "pilotSeconds", "transactionScopeSha256"
+      ],
+      "properties": {
+        "repositoryId": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+        "headSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "intentRef": {"type": "string", "pattern": "^refs/tags/cross-ai-intent/[0-9a-f-]{36}$"},
+        "environment": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,120}$"},
+        "deploymentClass": {"enum": ["reversible-test", "reversible-nonprod"]},
+        "productSlice": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"},
+        "policySha256": {"$ref": "#/$defs/digest"},
+        "artifactSetSha256": {"$ref": "#/$defs/digest"},
+        "rollbackPlanSha256": {"$ref": "#/$defs/digest"},
+        "postDeployVerifierSha256": {"$ref": "#/$defs/digest"},
+        "runnerPolicySha256": {"$ref": "#/$defs/digest"},
+        "runnerAdmissionLeaseSha256": {"$ref": "#/$defs/digest"},
+        "bootstrapCredentialSha256": {"$ref": "#/$defs/digest"},
+        "sessionSha256": {"$ref": "#/$defs/digest"},
+        "endpointIdSha256": {"$ref": "#/$defs/digest"},
+        "deviceHostnameSha256": {"$ref": "#/$defs/digest"},
+        "operatorIdSha256": {"$ref": "#/$defs/digest"},
+        "attendedConsentPolicySha256": {"$ref": "#/$defs/digest"},
+        "pilotOwnerPolicySha256": {"$ref": "#/$defs/digest"},
+        "maskPolicySha256": {"$ref": "#/$defs/digest"},
+        "runtimeImageDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "pilotSeconds": {"enum": [300, 600, 900, 1200, 1800]},
+        "transactionScopeSha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "authorityFile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(?:[.]github/workflows|config|docs|schema|scripts|tests)/[A-Za-z0-9_./-]+$"},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "transaction": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "stage", "order", "workflowPath", "workflowBlobSha256", "dependencyLockSha256",
+        "concurrencyGroupSha256", "authorityFiles", "preflightRunsOnLabels",
+        "runsOnLabels", "maxUses",
+        "requiresSameRunPreflight", "requiresOneProtectedEnvironmentGate"
+      ],
+      "properties": {
+        "stage": {"const": "transaction"},
+        "order": {"const": 1},
+        "workflowPath": {"const": ".github/workflows/faz22-6-view-only-viewer-transaction.yml"},
+        "workflowBlobSha256": {"$ref": "#/$defs/digest"},
+        "dependencyLockSha256": {"$ref": "#/$defs/digest"},
+        "concurrencyGroupSha256": {"$ref": "#/$defs/digest"},
+        "authorityFiles": {
+          "type": "array", "minItems": 10, "maxItems": 64, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/authorityFile"}
+        },
+        "preflightRunsOnLabels": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 100}
+        },
+        "runsOnLabels": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 100}
+        },
+        "runnerGroupId": {"type": "integer", "minimum": 1},
+        "runnerAttestationClass": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{2,63}$"},
+        "maxUses": {"const": 1},
+        "requiresSameRunPreflight": {"const": true},
+        "requiresOneProtectedEnvironmentGate": {"const": true}
+      }
+    },
+    "grant": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "requestId", "deploymentSessionId", "transactionNonceSha256",
+        "triggeringActorId", "triggeringActorLogin", "registrationPrincipal",
+        "workflowEvent", "notBefore", "expiresAt", "sequence",
+        "failureTransition", "authorizationMode", "maxRunAttempts"
+      ],
+      "properties": {
+        "requestId": {"type": "string", "format": "uuid"},
+        "deploymentSessionId": {"type": "string", "format": "uuid"},
+        "transactionNonceSha256": {"$ref": "#/$defs/digest"},
+        "triggeringActorId": {"type": "integer", "minimum": 1},
+        "triggeringActorLogin": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+(?:\\[bot\\])?$"},
+        "registrationPrincipal": {"type": "string", "pattern": "^spiffe://[A-Za-z0-9./_-]+$"},
+        "workflowEvent": {"const": "workflow_dispatch"},
+        "notBefore": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": "string", "format": "date-time"},
+        "sequence": {"const": ["transaction"]},
+        "failureTransition": {"const": "transaction->compensating-rollback-in-run"},
+        "authorizationMode": {"const": "dual-gate"},
+        "maxRunAttempts": {"const": 1}
+      }
+    },
+    "closure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entries", "closureRootSha256"],
+      "properties": {
+        "entries": {
+          "type": "array", "maxItems": 1000,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["findingId", "raisedByReviewSha256", "fixSha256", "acknowledgedByReviewSha256"],
+            "properties": {
+              "findingId": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"},
+              "raisedByReviewSha256": {"$ref": "#/$defs/digest"},
+              "fixSha256": {"$ref": "#/$defs/digest"},
+              "acknowledgedByReviewSha256": {"$ref": "#/$defs/digest"}
+            }
+          }
+        },
+        "closureRootSha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "consensus": {
+      "type": "object", "additionalProperties": false,
+      "required": ["providerFamilies", "finalAgreeReviewSha256", "closureRootSha256", "openMustFixFindingCount"],
+      "properties": {
+        "providerFamilies": {"const": ["openai"]},
+        "finalAgreeReviewSha256": {
+          "type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/digest"}
+        },
+        "closureRootSha256": {"$ref": "#/$defs/digest"},
+        "openMustFixFindingCount": {"const": 0}
+      }
+    },
+    "dsse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["payloadType", "payload", "signatures"],
+      "properties": {
+        "payloadType": {"type": "string", "minLength": 1, "maxLength": 200},
+        "payload": {"type": "string", "minLength": 1},
+        "signatures": {
+          "type": "array", "minItems": 1, "maxItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["keyid", "sig"],
+            "properties": {
+              "keyid": {"type": "string", "minLength": 1, "maxLength": 240},
+              "sig": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}

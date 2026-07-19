@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "acik.cross-ai-deployment-policy.v2",
+  "authorityContractVersion": "v3",
+  "policyId": "faz22-view-only-cross-ai-transaction-v2",
+  "phase": "observe",
+  "machineOnlyEnabled": false,
+  "repositoryId": 1211415632,
+  "repository": "Halildeu/platform-k8s-gitops",
+  "environment": "faz22-view-only-pilot",
+  "allowedApiOrigins": [
+    "https://api.github.com"
+  ],
+  "allowedInstallationIds": [
+    147158710
+  ],
+  "allowedDispatcherInstallationIds": [
+    900000004
+  ],
+  "allowedDispatcherActorIds": [
+    900000003
+  ],
+  "allowedDeploymentClasses": [
+    "reversible-test"
+  ],
+  "maxGrantTtlMinutes": 120,
+  "maxRunAttempts": 1,
+  "requiredCustomRuleAppIds": [
+    4322193
+  ],
+  "preflightArtifactPrefix": "faz22-view-only-transaction-preflight",
+  "workflowTransaction": {
+    "stage": "transaction",
+    "workflowPath": ".github/workflows/faz22-6-view-only-viewer-transaction.yml",
+    "requiredPreflightRunsOnLabels": [
+      "ubuntu-24.04"
+    ],
+    "requiredRunsOnLabels": [
+      "self-hosted",
+      "staging-sw",
+      "testai-deploy"
+    ],
+    "requireRunnerGroup": false,
+    "requiresSameRunPreflight": true,
+    "requiresOneProtectedEnvironmentGate": true,
+    "requiredAuthorityPaths": [
+      ".github/workflows/faz22-6-view-only-viewer-transaction.yml",
+      "config/faz22-6-view-only-live-preflight-authority.v1.json",
+      "config/faz22-6-view-only-runtime-trust-root.v1.json",
+      "docs/adr/0046-faz22-6-view-only-pre-gate-attestor-and-external-checkpoints.md",
+      "schema/faz22-6-dsse-envelope-v1.schema.json",
+      "schema/faz22-6-view-only-checkpoint-lease-redeem-v1.schema.json",
+      "schema/faz22-6-view-only-checkpoint-lease-v1.schema.json",
+      "schema/faz22-6-view-only-external-checkpoint-create-v1.schema.json",
+      "schema/faz22-6-view-only-external-checkpoint-receipt-v1.schema.json",
+      "schema/faz22-6-view-only-live-preflight-attestation-v1.schema.json",
+      "schema/faz22-6-view-only-live-preflight-request-v1.schema.json",
+      "schema/faz22-6-view-only-preflight-error-v1.schema.json",
+      "schema/faz22-6-view-only-runtime-trust-root-v1.schema.json",
+      "schema/faz22-6-view-only-transaction-binding-handoff-v1.schema.json",
+      "schema/faz22-6-view-only-transaction-binding-request-v1.schema.json",
+      "schema/faz22-6-view-only-transaction-binding-v1.schema.json",
+      "scripts/faz22-remote-ops/run-view-only-same-job-supervisor.sh",
+      "scripts/test/faz22-6-view-only-transaction-static.sh",
+      "tests/faz22_remote_ops/test_view_only_preflight_contract.py",
+      "tests/faz22_remote_ops/test_view_only_same_job_supervisor.sh"
+    ]
+  },
+  "humanRequiredClasses": [
+    "attended-consent",
+    "legal-dpo",
+    "named-authority",
+    "production-secret-owner",
+    "irreversible-production",
+    "production",
+    "break-glass"
+  ]
+}

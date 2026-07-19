@@ -9,6 +9,7 @@ import stat
 import threading
 import time
 import zipfile
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -17,12 +18,23 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from .canonical import canonical_bytes, sha256_digest
 from .contract import EvidenceVerifier
+from .dsse import decode_public_key, verify_json_envelope
 from .errors import PolicyError, reject
 from .github import GitHubArtifactDownloader, GitHubReader
 from .intent_store import IntentRegistry
 from .jsonutil import load_json_file, loads_json_bytes
-from .outcome import VerifiedStageOutcome, verify_stage_outcome
+from .outcome import (
+    OUTCOME_PAYLOAD_TYPE,
+    VerifiedStageOutcome,
+    verify_stage_outcome,
+)
+from .provider import EnvelopeSigner
+from .runtime_receipts import (
+    RuntimeReceiptVerifier,
+    runtime_evidence_from_archive,
+)
 from .timeutil import parse_utc, utc_now
+from .transaction import verify_transaction_final, verify_transaction_preflight
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -60,6 +72,14 @@ class OutcomeGitHubReader(Protocol):
         run_id: int,
         run_attempt: int,
     ) -> tuple[dict[str, Any], ...]: ...
+
+    def workflow_bytes(
+        self,
+        installation_id: int,
+        repository: str,
+        workflow_path: str,
+        head_sha: str,
+    ) -> bytes: ...
 
 
 class StageArtifactSource(Protocol):
@@ -238,6 +258,12 @@ class GitHubOutcomeReconciler:
         trust_root: dict[str, Any],
         expected_trust_root_sha256: str,
         revocations_loader: Callable[[], dict[str, Any]],
+        bundle_contract_version: str = "v1",
+        outcome_signer: EnvelopeSigner | None = None,
+        runtime_verifier_loader: Callable[
+            [Any, dict[str, Any], datetime], RuntimeReceiptVerifier
+        ]
+        | None = None,
         now: Callable[[], datetime] = utc_now,
     ) -> None:
         if installation_id < 1:
@@ -249,7 +275,307 @@ class GitHubOutcomeReconciler:
         self.trust_root = trust_root
         self.expected_trust_root_sha256 = expected_trust_root_sha256
         self.revocations_loader = revocations_loader
+        if bundle_contract_version not in {"v1", "v2", "v3"}:
+            reject(
+                "BUNDLE_CONTRACT_INVALID",
+                "outcome reconciler contract version is unsupported",
+            )
+        self.bundle_contract_version = bundle_contract_version
+        if bundle_contract_version == "v3" and outcome_signer is None:
+            reject(
+                "STAGE_OUTCOME_SIGNER_REQUIRED",
+                "v3 reconciler requires a Vault-backed coordinator signer",
+            )
+        self.outcome_signer = outcome_signer
+        self.runtime_verifier_loader = runtime_verifier_loader
+        self.coordinator_public_keys = {
+            entry["keyId"]: decode_public_key(
+                entry["publicKeyBase64"], entry["keyId"]
+            )
+            for entry in trust_root.get("keys", [])
+            if isinstance(entry, dict)
+            and entry.get("role") == "coordinator"
+            and isinstance(entry.get("keyId"), str)
+        }
+        if bundle_contract_version == "v3" and (
+            outcome_signer is None
+            or outcome_signer.key_id not in self.coordinator_public_keys
+        ):
+            reject(
+                "STAGE_OUTCOME_SIGNER_INVALID",
+                "v3 outcome signer is not a trust-root coordinator key",
+            )
         self._now = now
+
+    def _runtime_verifier(
+        self,
+        *,
+        record: Any,
+        signed_stage: dict[str, Any],
+        current: datetime,
+    ) -> RuntimeReceiptVerifier:
+        if self.runtime_verifier_loader is not None:
+            return self.runtime_verifier_loader(record, signed_stage, current)
+        signed_files = {
+            entry["path"]: entry["sha256"]
+            for entry in signed_stage.get("authorityFiles", [])
+            if isinstance(entry, dict)
+            and isinstance(entry.get("path"), str)
+            and isinstance(entry.get("sha256"), str)
+        }
+        authority_path = "config/faz22-6-view-only-live-preflight-authority.v1.json"
+        trust_root_path = "config/faz22-6-view-only-runtime-trust-root.v1.json"
+        if authority_path not in signed_files or trust_root_path not in signed_files:
+            reject(
+                "RUNTIME_AUTHORITY_FILE_MISSING",
+                "signed transaction scope omits runtime authority files",
+            )
+        values: dict[str, dict[str, Any]] = {}
+        for path in (authority_path, trust_root_path):
+            raw = self.github.workflow_bytes(
+                self.installation_id,
+                record.repository,
+                path,
+                record.head_sha,
+            )
+            if f"sha256:{hashlib.sha256(raw).hexdigest()}" != signed_files[path]:
+                reject(
+                    "RUNTIME_AUTHORITY_FILE_MISMATCH",
+                    "exact-head runtime authority differs from signed transaction scope",
+                )
+            values[path] = loads_json_bytes(
+                raw,
+                max_bytes=256 * 1024,
+                label=f"runtime authority {path}",
+            )
+        return RuntimeReceiptVerifier(
+            authority=values[authority_path],
+            runtime_trust_root=values[trust_root_path],
+            now=current,
+            max_clock_skew_seconds=self.trust_root["maxClockSkewSeconds"],
+        )
+
+    def _reconcile_transaction(
+        self,
+        *,
+        current: datetime,
+        record: Any,
+        verified: Any,
+        authorization_envelope: dict[str, Any],
+        reservation: Any,
+        signed_stage: dict[str, Any],
+        run: dict[str, Any],
+        run_started_at: str,
+        critical_jobs_sha256: str,
+    ) -> VerifiedStageOutcome:
+        preflight_name = (
+            "faz22-view-only-transaction-preflight-"
+            f"{reservation.run_id}-{reservation.run_attempt}"
+        )
+        preflight_archive = self.artifact_source.fetch(
+            installation_id=self.installation_id,
+            repository=record.repository,
+            run_id=reservation.run_id,
+            artifact_name=preflight_name,
+        )
+        preflight = verify_transaction_preflight(
+            preflight_archive,
+            repository=record.repository,
+            workflow_path=signed_stage["workflowPath"],
+            intent_ref=record.intent_ref,
+            head_sha=record.head_sha,
+            run_id=reservation.run_id,
+            run_attempt=reservation.run_attempt,
+            subject=verified.payload["subject"],
+            grant=verified.payload["grant"],
+            observed_at=current,
+            max_clock_skew_seconds=self.trust_root["maxClockSkewSeconds"],
+        )
+        final_name = (
+            "faz22-view-only-transaction-final-"
+            f"{reservation.run_id}-{reservation.run_attempt}"
+        )
+        final_archive = self.artifact_source.fetch(
+            installation_id=self.installation_id,
+            repository=record.repository,
+            run_id=reservation.run_id,
+            artifact_name=final_name,
+        )
+        final = verify_transaction_final(
+            final_archive,
+            repository=record.repository,
+            workflow_path=signed_stage["workflowPath"],
+            intent_ref=record.intent_ref,
+            head_sha=record.head_sha,
+            run_id=reservation.run_id,
+            run_attempt=reservation.run_attempt,
+            subject=verified.payload["subject"],
+            grant=verified.payload["grant"],
+            preflight_sha256=preflight.preflight_sha256,
+            observed_at=current,
+            max_clock_skew_seconds=self.trust_root["maxClockSkewSeconds"],
+        )
+        runtime_name = (
+            "faz22-view-only-transaction-runtime-"
+            f"{reservation.run_id}-{reservation.run_attempt}"
+        )
+        runtime_archive = self.artifact_source.fetch(
+            installation_id=self.installation_id,
+            repository=record.repository,
+            run_id=reservation.run_id,
+            artifact_name=runtime_name,
+        )
+        runtime_package = runtime_evidence_from_archive(runtime_archive)
+        runtime_chain = self._runtime_verifier(
+            record=record,
+            signed_stage=signed_stage,
+            current=current,
+        ).verify_chain(
+            binding_handoff_envelope=runtime_package.binding_handoff_envelope,
+            coordinator_public_keys=self.coordinator_public_keys,
+            coordinator_key_id=verified.coordinator_key_id,
+            evaluation_preflight_envelope=(
+                runtime_package.evaluation_preflight_envelope
+            ),
+            redemption_preflight_envelope=(
+                runtime_package.redemption_preflight_envelope
+            ),
+            lease_envelope=runtime_package.lease_envelope,
+            authorization_envelope=authorization_envelope,
+            authorization_bundle=verified,
+            checkpoint_envelopes=runtime_package.checkpoint_envelopes,
+            final_state=final.state,
+            observed_at=current,
+        )
+        expected_run_conclusion = (
+            "success" if final.conclusion == "success" else "failure"
+        )
+        if run.get("conclusion") != expected_run_conclusion:
+            reject(
+                "TRANSACTION_FINAL_RUN_MISMATCH",
+                "terminal transaction state differs from the live run conclusion",
+            )
+        if final.pre_rollback_artifact_id is not None:
+            pre_rollback_name = (
+                "faz22-view-only-transaction-pre-rollback-"
+                f"{reservation.run_id}-{reservation.run_attempt}"
+            )
+            pre_rollback_archive = self.artifact_source.fetch(
+                installation_id=self.installation_id,
+                repository=record.repository,
+                run_id=reservation.run_id,
+                artifact_name=pre_rollback_name,
+                expected_artifact_id=final.pre_rollback_artifact_id,
+            )
+            live_digest = (
+                f"sha256:{hashlib.sha256(pre_rollback_archive).hexdigest()}"
+            )
+            if live_digest != final.pre_rollback_artifact_digest:
+                reject(
+                    "TRANSACTION_PRE_ROLLBACK_ARTIFACT_MISMATCH",
+                    "pre-rollback artifact differs from the terminal upload receipt",
+                )
+        subject = verified.payload["subject"]
+        outcome = {
+            "schemaVersion": "acik.cross-ai-deployment-stage-outcome.v1",
+            "requestId": verified.request_id,
+            "stage": "transaction",
+            "runId": reservation.run_id,
+            "runAttempt": reservation.run_attempt,
+            "runStartedAt": run_started_at,
+            "repositoryId": subject["repositoryId"],
+            "repository": subject["repository"],
+            "environment": subject["environment"],
+            "headSha": subject["headSha"],
+            "intentRef": subject["intentRef"],
+            "sessionSha256": subject["sessionSha256"],
+            "workflowBlobSha256": signed_stage["workflowBlobSha256"],
+            "criticalJobsSha256": critical_jobs_sha256,
+            "sourceArtifactName": final_name,
+            "sourceArchiveSha256": final.archive_sha256,
+            "runtimeEvidenceArtifactName": runtime_name,
+            "runtimeEvidenceArchiveSha256": runtime_package.archive_sha256,
+            "runtimeLeaseEnvelopeSha256": runtime_chain.lease.envelope_sha256,
+            "runtimeTerminalReceiptSha256": (
+                runtime_chain.terminal.envelope_sha256
+            ),
+            "artifactSetSha256": subject["artifactSetSha256"],
+            "rollbackPlanSha256": subject["rollbackPlanSha256"],
+            "postDeployVerifierSha256": subject["postDeployVerifierSha256"],
+            "productArtifactId": None,
+            "productArtifactName": None,
+            "productArtifactDigest": None,
+            "watchdogExpiresAt": None,
+            "conclusion": final.conclusion,
+            "createdAt": final.state["checkpoints"][-1]["observedAt"],
+        }
+        verified_outcome = verify_stage_outcome(
+            outcome,
+            bundle=verified,
+            expected_stage="transaction",
+            expected_run_id=reservation.run_id,
+            expected_run_attempt=reservation.run_attempt,
+            expected_run_started_at=run_started_at,
+            expected_critical_jobs_sha256=critical_jobs_sha256,
+            expected_source_artifact_name=final_name,
+            expected_source_archive_sha256=final.archive_sha256,
+            expected_runtime_evidence_artifact_name=runtime_name,
+            expected_runtime_evidence_archive_sha256=(
+                runtime_package.archive_sha256
+            ),
+            expected_runtime_lease_envelope_sha256=(
+                runtime_chain.lease.envelope_sha256
+            ),
+            expected_runtime_terminal_receipt_sha256=(
+                runtime_chain.terminal.envelope_sha256
+            ),
+            now=current,
+        )
+        assert self.outcome_signer is not None
+        if self.outcome_signer.key_id != verified.coordinator_key_id:
+            reject(
+                "STAGE_OUTCOME_SIGNER_MISMATCH",
+                "outcome signer differs from the signed intent coordinator",
+            )
+        envelope = self.outcome_signer.sign_json_envelope(
+            payload_type=OUTCOME_PAYLOAD_TYPE,
+            payload=verified_outcome.payload,
+        )
+        receipt = verify_json_envelope(
+            envelope,
+            expected_payload_type=OUTCOME_PAYLOAD_TYPE,
+            allowed_keys={
+                self.outcome_signer.key_id: self.coordinator_public_keys[
+                    self.outcome_signer.key_id
+                ]
+            },
+            required_key_ids={self.outcome_signer.key_id},
+            exactly_one_signature=True,
+        )
+        if receipt.payload != verified_outcome.payload:
+            reject(
+                "STAGE_OUTCOME_SIGNATURE_INVALID",
+                "signed outcome receipt payload changed after verification",
+            )
+        verified_outcome = replace(
+            verified_outcome,
+            receipt_digest=receipt.envelope_digest,
+            receipt_signer_key_id=self.outcome_signer.key_id,
+        )
+        self.registry.record_stage_outcome(
+            request_id=verified_outcome.request_id,
+            stage=verified_outcome.stage,
+            run_id=verified_outcome.run_id,
+            run_attempt=verified_outcome.run_attempt,
+            outcome=verified_outcome.payload,
+            outcome_digest=verified_outcome.outcome_digest,
+            target_state=verified_outcome.target_state,
+            outcome_envelope=envelope,
+            outcome_envelope_digest=receipt.envelope_digest,
+            outcome_signer_key_id=self.outcome_signer.key_id,
+            recorded_at=current,
+        )
+        return verified_outcome
 
     def reconcile(self, *, request_id: str, stage: str) -> VerifiedStageOutcome:
         current = self._now()
@@ -259,6 +585,7 @@ class GitHubOutcomeReconciler:
             revocations_envelope=self.revocations_loader(),
             now=current,
             expected_trust_root_sha256=self.expected_trust_root_sha256,
+            expected_bundle_contract=self.bundle_contract_version,
         ).verify_bundle(envelope)
         reservation = self.registry.get_stage(request_id, stage)
         signed_stages = [
@@ -326,6 +653,18 @@ class GitHubOutcomeReconciler:
             run_attempt=reservation.run_attempt,
             require_success=run["conclusion"] == "success",
         )
+        if stage == "transaction":
+            return self._reconcile_transaction(
+                current=current,
+                record=record,
+                verified=verified,
+                authorization_envelope=envelope,
+                reservation=reservation,
+                signed_stage=signed_stage,
+                run=run,
+                run_started_at=run_started_at,
+                critical_jobs_sha256=critical_jobs_sha256,
+            )
         artifact_name = (
             f"cross-ai-stage-outcome-{request_id}-{stage}-"
             f"{reservation.run_id}-{reservation.run_attempt}"

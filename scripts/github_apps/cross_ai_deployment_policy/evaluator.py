@@ -12,10 +12,11 @@ from .contract import EvidenceVerifier
 from .errors import reject
 from .github import GitHubIntentRef
 from .intent_store import IntentRegistry
-from .policy import DeploymentPolicy
+from .policy import DeploymentPolicy, resolve_authority_contract
 from .timeutil import parse_utc, utc_now
 from .webhook import DeploymentProtectionRequest
-from .workflow import inspect_workflow
+from .transaction import transaction_evidence_digest, verify_transaction_preflight
+from .workflow import inspect_transaction_workflow, inspect_workflow
 
 
 MAX_DISPATCH_DELAY = timedelta(minutes=10)
@@ -47,6 +48,18 @@ class GitHubTruthReader(Protocol):
     def repository_runners(
         self, installation_id: int, repository: str
     ) -> tuple[dict[str, Any], ...]: ...
+
+
+class TransactionArtifactSource(Protocol):
+    def fetch(
+        self,
+        *,
+        installation_id: int,
+        repository: str,
+        run_id: int,
+        artifact_name: str,
+        expected_artifact_id: int | None = None,
+    ) -> bytes: ...
 
     def workflow_run_attempt(
         self,
@@ -93,6 +106,7 @@ class DeploymentEvaluator:
         trust_root: dict[str, Any],
         expected_trust_root_sha256: str,
         revocations_loader: Callable[[], dict[str, Any]],
+        artifact_source: TransactionArtifactSource | None = None,
         mode: str = "observe",
         now: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -130,8 +144,10 @@ class DeploymentEvaluator:
         self.registry = registry
         self.github = github
         self.trust_root = trust_root
+        self.bundle_contract_version = resolve_authority_contract(policy, trust_root)
         self.expected_trust_root_sha256 = expected_trust_root_sha256
         self.revocations_loader = revocations_loader
+        self.artifact_source = artifact_source
         self.mode = mode
         self._now = now
 
@@ -194,7 +210,7 @@ class DeploymentEvaluator:
         if len(custom_apps) != 1:
             reject(
                 "ENVIRONMENT_CUSTOM_RULE_DRIFT",
-                "v1 requires exactly one custom rule App",
+                "policy requires exactly one custom rule App",
             )
         if self.mode == "enforce" and value.get("can_admins_bypass") is not False:
             reject(
@@ -397,6 +413,7 @@ class DeploymentEvaluator:
             now=now,
             expected_policy_sha256=self.policy.digest,
             expected_trust_root_sha256=self.expected_trust_root_sha256,
+            expected_bundle_contract=self.bundle_contract_version,
         ).verify_bundle(envelope)
         if self.policy.phase == "machine-only-nonprod" and any(
             identity_class != "provider-reported"
@@ -449,6 +466,11 @@ class DeploymentEvaluator:
             record_registered_at=record.registered_at,
             record_finalized_at=record.finalized_at,
         )
+        if run_attempt > self.policy.max_run_attempts:
+            reject(
+                "RUN_ATTEMPT_REPLAY_FORBIDDEN",
+                "workflow rerun exceeds the signed single-attempt authority",
+            )
         live_ref = self.github.intent_ref(
             request.installation_id, request.repository, request.request_id
         )
@@ -497,10 +519,34 @@ class DeploymentEvaluator:
                 "RUNNER_POLICY_OR_INPUT_AUTHORITY_MISMATCH",
                 "signed runner labels differ",
             )
+        if verified.contract_version == "v3" and tuple(
+            signed_stage["preflightRunsOnLabels"]
+        ) != stage_policy.required_preflight_runs_on_labels:
+            reject(
+                "RUNNER_POLICY_OR_INPUT_AUTHORITY_MISMATCH",
+                "signed preflight runner labels differ",
+            )
         if stage_policy.require_runner_group != ("runnerGroupId" in signed_stage):
             reject(
                 "RUNNER_POLICY_OR_INPUT_AUTHORITY_MISMATCH",
                 "signed runner group differs",
+            )
+        if (
+            stage_policy.requires_same_run_preflight
+            != signed_stage.get("requiresSameRunPreflight", False)
+            or stage_policy.requires_one_protected_environment_gate
+            != signed_stage.get("requiresOneProtectedEnvironmentGate", False)
+        ):
+            reject(
+                "TRANSACTION_AUTHORITY_MISMATCH",
+                "signed transaction gates differ from deployment policy",
+            )
+        if verified.contract_version == "v3" and tuple(
+            entry["path"] for entry in signed_stage["authorityFiles"]
+        ) != stage_policy.required_authority_paths:
+            reject(
+                "TRANSACTION_AUTHORITY_MISMATCH",
+                "signed transaction authority paths differ from deployment policy",
             )
         self._verify_live_runner_inventory(
             installation_id=request.installation_id,
@@ -515,12 +561,19 @@ class DeploymentEvaluator:
             workflow_path,
             request.head_sha,
         )
-        inspection = inspect_workflow(
-            workflow_raw,
-            stage_policy=stage_policy,
-            environment=request.environment,
-            expected_bootstrap_url=self.policy.runner_bootstrap_url,
-        )
+        if verified.contract_version == "v3":
+            inspection = inspect_transaction_workflow(
+                workflow_raw,
+                stage_policy=stage_policy,
+                environment=request.environment,
+            )
+        else:
+            inspection = inspect_workflow(
+                workflow_raw,
+                stage_policy=stage_policy,
+                environment=request.environment,
+                expected_bootstrap_url=self.policy.runner_bootstrap_url,
+            )
         if (
             inspection.workflow_sha256 != signed_stage["workflowBlobSha256"]
             or inspection.dependency_lock_sha256 != signed_stage["dependencyLockSha256"]
@@ -537,6 +590,58 @@ class DeploymentEvaluator:
         ):
             reject("RUN_ACTOR_MISMATCH", "run actor differs from signed grant")
 
+        evidence_digest = verified.bundle_digest
+        if verified.contract_version == "v3":
+            for entry in signed_stage["authorityFiles"]:
+                authority_raw = (
+                    workflow_raw
+                    if entry["path"] == workflow_path
+                    else self.github.workflow_bytes(
+                        request.installation_id,
+                        request.repository,
+                        entry["path"],
+                        request.head_sha,
+                    )
+                )
+                actual = f"sha256:{hashlib.sha256(authority_raw).hexdigest()}"
+                if actual != entry["sha256"]:
+                    reject(
+                        "TRANSACTION_AUTHORITY_FILE_MISMATCH",
+                        "exact-head transaction authority file differs from signed evidence",
+                    )
+            if self.artifact_source is None or self.policy.preflight_artifact_prefix is None:
+                reject(
+                    "TRANSACTION_PREFLIGHT_SOURCE_UNAVAILABLE",
+                    "v3 approval requires the same-run preflight artifact source",
+                )
+            artifact_name = (
+                f"{self.policy.preflight_artifact_prefix}-"
+                f"{request.run_id}-{run_attempt}"
+            )
+            preflight_archive = self.artifact_source.fetch(
+                installation_id=request.installation_id,
+                repository=request.repository,
+                run_id=request.run_id,
+                artifact_name=artifact_name,
+            )
+            preflight = verify_transaction_preflight(
+                preflight_archive,
+                repository=request.repository,
+                workflow_path=workflow_path,
+                intent_ref=request.intent_ref,
+                head_sha=request.head_sha,
+                run_id=request.run_id,
+                run_attempt=run_attempt,
+                subject=subject,
+                grant=grant,
+                observed_at=now,
+                max_clock_skew_seconds=self.trust_root["maxClockSkewSeconds"],
+            )
+            evidence_digest = transaction_evidence_digest(
+                bundle_sha256=verified.bundle_digest,
+                preflight=preflight,
+            )
+
         return EvaluationResult(
             approval_candidate=True,
             reason_code="SIGNED_EVIDENCE_AND_GITHUB_TRUTH_VALID",
@@ -545,10 +650,15 @@ class DeploymentEvaluator:
             run_id=request.run_id,
             run_attempt=run_attempt,
             app_rule_id=app_rule_id,
-            evidence_digest=verified.bundle_digest,
+            evidence_digest=evidence_digest,
             policy_digest=self.policy.digest,
             provider_families=verified.provider_families,
         )
 
 
-__all__ = ["DeploymentEvaluator", "EvaluationResult", "GitHubTruthReader"]
+__all__ = [
+    "DeploymentEvaluator",
+    "EvaluationResult",
+    "GitHubTruthReader",
+    "TransactionArtifactSource",
+]

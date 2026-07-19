@@ -67,20 +67,18 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             workflow_source,
         )
 
-    def test_canonical_adr_uses_exact_three_provider_contract(self) -> None:
+    def test_canonical_adr_uses_forward_codex_only_v3_contract(self) -> None:
         adr = (
             ROOT / "docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md"
         ).read_text(encoding="utf-8")
-        for stale_contract in (
-            "five-key TEST Transit bootstrap",
-            "two real provider issuer",
-            "valid two-family quorum",
-            "| Review chain | AGREE/AGREE; open REVISE",
-            '"schemaVersion": "acik.cross-ai-deployment-evidence.v1"',
-        ):
-            self.assertNotIn(stale_contract, adr)
-        self.assertIn("six-key TEST Transit bootstrap", adr)
-        self.assertIn("AGREE/AGREE/AGREE", adr)
+        forward = adr.split("## 1. Context", maxsplit=1)[0]
+        self.assertIn("public five-key TEST trust", forward)
+        self.assertIn("Exact OpenAI Codex 5.6 SOL", forward)
+        self.assertIn("v1 trust root/bundle with MiniMax | None", forward)
+        self.assertIn("one signed,\nfinding-free Codex `AGREE`", forward)
+        self.assertNotIn("signed Anthropic+OpenAI authority", forward)
+        self.assertNotIn("requiredProviderFamilies: [anthropic, minimax, openai]", forward)
+        self.assertNotIn("AGREE/AGREE/AGREE", forward)
         self.assertIn("acik.cross-ai-deployment-bundle.v1", adr)
         self.assertIn(
             "tests/github_apps/cross_ai_policy_fixtures.py",

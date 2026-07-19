@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -28,6 +29,7 @@ from .timeutil import parse_utc
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
 REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
+CLAUDE_MODEL = "claude-opus-4-8"
 CODEX_MODEL = "gpt-5.6-sol"
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -118,73 +120,6 @@ class DirectClaudeRunner:
         reject(
             "PROVIDER_ROUTE_RETIRED",
             "Claude execution is retired; active review accepts direct Codex only",
-        )
-        # Historical implementation remains below only for forensic source
-        # archaeology and is unreachable by construction.
-        prompt_bytes = prompt.encode("utf-8")
-        if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
-            reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
-        version = subprocess.run(
-            [str(self.executable), "--version"],
-            cwd=workspace,
-            capture_output=True,
-            check=False,
-            timeout=30,
-        )
-        if version.returncode != 0 or not version.stdout:
-            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Claude CLI version is unavailable")
-        result = subprocess.run(
-            [
-                str(self.executable),
-                "-p",
-                "--output-format",
-                "json",
-                "--model",
-                model,
-                "--permission-mode",
-                "plan",
-                "--tools",
-                "",
-                "--no-session-persistence",
-            ],
-            cwd=workspace,
-            input=prompt_bytes,
-            capture_output=True,
-            check=False,
-            timeout=timeout_seconds,
-        )
-        if result.returncode != 0:
-            reject("PROVIDER_EXECUTION_FAILED", "direct Claude execution failed")
-        payload = _provider_json(result.stdout, "Claude")
-        if payload.get("type") != "result" or payload.get("subtype") != "success" or payload.get("is_error") is not False:
-            reject("PROVIDER_EXECUTION_FAILED", "direct Claude did not return success")
-        model_usage = payload.get("modelUsage")
-        if not isinstance(model_usage, dict) or len(model_usage) != 1:
-            reject("PROVIDER_MODEL_IDENTITY_MISSING", "Claude modelUsage is not singular")
-        reported_model = next(iter(model_usage))
-        if reported_model != model:
-            reject("PROVIDER_MODEL_IDENTITY_MISMATCH", "Claude reported a different model")
-        text = payload.get("result")
-        if not isinstance(text, str) or not text or len(text.encode("utf-8")) > MAX_PROVIDER_OUTPUT_BYTES:
-            reject("PROVIDER_OUTPUT_INVALID", "Claude result text is invalid")
-        capability = sha256_digest(
-            {
-                "channel": "direct-anthropic-cli",
-                "cliVersionSha256": _bytes_digest(version.stdout.strip()),
-                "requestedModel": model,
-                "reportedModels": sorted(model_usage),
-            }
-        )
-        return ProviderExecutionReceipt(
-            provider_family="anthropic",
-            channel="direct-anthropic-cli",
-            direct_provider_cli=True,
-            model_id=reported_model,
-            model_identity_class="provider-reported",
-            capability_snapshot_sha256=capability,
-            input_sha256=_bytes_digest(prompt_bytes),
-            output_sha256=_bytes_digest(text.encode("utf-8")),
-            result_text=text,
         )
 
 
@@ -388,87 +323,6 @@ class CursorRunner:
             "PROVIDER_ROUTE_RETIRED",
             "Cursor execution is retired; active review accepts direct Codex only",
         )
-        # Historical implementation remains below only for forensic source
-        # archaeology and is unreachable by construction.
-        prompt_bytes = prompt.encode("utf-8")
-        if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
-            reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
-        version = subprocess.run(
-            [str(self.executable), "--version"],
-            cwd=workspace,
-            capture_output=True,
-            check=False,
-            timeout=30,
-        )
-        models = subprocess.run(
-            [str(self.executable), "--list-models"],
-            cwd=workspace,
-            capture_output=True,
-            check=False,
-            timeout=60,
-        )
-        if version.returncode != 0 or models.returncode != 0:
-            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Cursor capability list is unavailable")
-        try:
-            model_lines = models.stdout.decode("utf-8").splitlines()
-        except UnicodeDecodeError:
-            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Cursor model list is not UTF-8")
-        model_ids = {
-            line.split(" - ", 1)[0].strip()
-            for line in model_lines
-            if " - " in line
-        }
-        if model not in model_ids:
-            reject("PROVIDER_MODEL_UNAVAILABLE", "requested Cursor model is not live-listed")
-        result = subprocess.run(
-            [
-                str(self.executable),
-                "-p",
-                "--output-format",
-                "json",
-                "--mode",
-                "ask",
-                "--trust",
-                "--sandbox",
-                "enabled",
-                "--workspace",
-                str(workspace),
-                "--model",
-                model,
-            ],
-            cwd=workspace,
-            input=prompt_bytes,
-            capture_output=True,
-            check=False,
-            timeout=timeout_seconds,
-        )
-        if result.returncode != 0:
-            reject("PROVIDER_EXECUTION_FAILED", "Cursor execution failed")
-        payload = _provider_json(result.stdout, "Cursor")
-        if payload.get("type") != "result" or payload.get("subtype") != "success" or payload.get("is_error") is not False:
-            reject("PROVIDER_EXECUTION_FAILED", "Cursor did not return success")
-        text = payload.get("result")
-        if not isinstance(text, str) or not text or len(text.encode("utf-8")) > MAX_PROVIDER_OUTPUT_BYTES:
-            reject("PROVIDER_OUTPUT_INVALID", "Cursor result text is invalid")
-        capability = sha256_digest(
-            {
-                "channel": "cursor-cli",
-                "cliVersionSha256": _bytes_digest(version.stdout.strip()),
-                "liveModelListSha256": _bytes_digest(models.stdout),
-                "launchedModel": model,
-            }
-        )
-        return ProviderExecutionReceipt(
-            provider_family=provider_family,
-            channel="cursor-cli",
-            direct_provider_cli=False,
-            model_id=model,
-            model_identity_class="trusted-launch-attested",
-            capability_snapshot_sha256=capability,
-            input_sha256=_bytes_digest(prompt_bytes),
-            output_sha256=_bytes_digest(text.encode("utf-8")),
-            result_text=text,
-        )
 
 
 class ProviderReviewIssuer:
@@ -505,6 +359,63 @@ class ProviderReviewIssuer:
                 "PROVIDER_CONTRACT_VERSION_INVALID",
                 "provider issuer contract version is unsupported",
             )
+
+    @staticmethod
+    def validate_coordinates(coordinates: ReviewCoordinates) -> None:
+        for label, value in (
+            ("reviewId", coordinates.review_id),
+            ("reviewChainId", coordinates.review_chain_id),
+        ):
+            try:
+                parsed = uuid.UUID(value)
+            except (AttributeError, ValueError):
+                reject("PROVIDER_REVIEW_COORDINATES_INVALID", f"{label} is not a UUID")
+            if str(parsed) != value:
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    f"{label} is not a canonical UUID",
+                )
+        digest_fields = (
+            ("subjectSha256", coordinates.subject_sha256),
+            ("closureRootSha256", coordinates.closure_root_sha256),
+        )
+        for label, value in digest_fields:
+            if (
+                not isinstance(value, str)
+                or len(value) != 71
+                or not value.startswith("sha256:")
+                or any(character not in "0123456789abcdef" for character in value[7:])
+            ):
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    f"{label} is not a canonical SHA-256 digest",
+                )
+        if not isinstance(coordinates.round, int) or not 1 <= coordinates.round <= 100:
+            reject("PROVIDER_REVIEW_COORDINATES_INVALID", "round is invalid")
+        previous = coordinates.previous_round_sha256
+        if coordinates.round == 1 and previous is not None:
+            reject(
+                "PROVIDER_REVIEW_COORDINATES_INVALID",
+                "round one cannot reference a previous review",
+            )
+        if coordinates.round > 1:
+            if (
+                not isinstance(previous, str)
+                or len(previous) != 71
+                or not previous.startswith("sha256:")
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in previous[7:]
+                )
+            ):
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    "later rounds require a canonical previous-review digest",
+                )
+        issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
+        expires_at = parse_utc(coordinates.expires_at, "review.expiresAt")
+        if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=120):
+            reject("REVIEW_LIFETIME_INVALID", "review lifetime must be within 120 minutes")
 
     @staticmethod
     def _review_result(text: str) -> dict[str, Any]:
@@ -554,10 +465,7 @@ class ProviderReviewIssuer:
             or execution.ephemeral is not True
         ):
             reject("PROVIDER_ISSUER_POLICY_MISMATCH", "execution receipt differs from issuer policy")
-        issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
-        expires_at = parse_utc(coordinates.expires_at, "review.expiresAt")
-        if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=120):
-            reject("REVIEW_LIFETIME_INVALID", "review lifetime must be within 120 minutes")
+        self.validate_coordinates(coordinates)
         result = self._review_result(execution.result_text)
         findings_projection = {
             "verdict": result["verdict"],
@@ -608,6 +516,7 @@ class ProviderReviewIssuer:
 
 
 __all__ = [
+    "CLAUDE_MODEL",
     "CODEX_MODEL",
     "DirectCodexRunner",
     "ProviderExecutionReceipt",
