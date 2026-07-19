@@ -175,6 +175,7 @@ class EvidenceVerifier:
         expected_trust_root_sha256: str | None = None,
         verification_mode: Literal["active", "forensic"] = "active",
         forensic_reference_time: datetime | None = None,
+        review_reference_time: datetime | None = None,
     ) -> None:
         self.observed_at = now or utc_now()
         if verification_mode not in {"active", "forensic"}:
@@ -183,6 +184,11 @@ class EvidenceVerifier:
             reject(
                 "FORENSIC_REFERENCE_INVALID",
                 "active verification cannot use a forensic reference time",
+            )
+        if verification_mode == "forensic" and review_reference_time is not None:
+            reject(
+                "REVIEW_REFERENCE_INVALID",
+                "forensic verification derives review time from its forensic reference",
             )
         if verification_mode == "forensic" and forensic_reference_time is None:
             reject(
@@ -199,6 +205,18 @@ class EvidenceVerifier:
             )
         self.verification_mode = verification_mode
         self.now = forensic_reference_time or self.observed_at
+        if (
+            review_reference_time is not None
+            and review_reference_time > self.observed_at
+        ):
+            reject(
+                "REVIEW_REFERENCE_INVALID",
+                "review reference time cannot be after authority observation",
+            )
+        self.review_reference_time = (
+            self.now if verification_mode == "forensic"
+            else review_reference_time or self.observed_at
+        )
         self.expected_policy_sha256 = expected_policy_sha256
         self.trust_root = trust_root
         schema_version = trust_root.get("schemaVersion")
@@ -868,9 +886,9 @@ class EvidenceVerifier:
                         "MINIMAX_REVIEW_DEPRECATED",
                         "MiniMax reviews issued on or after the forward-policy cutoff are forbidden",
                     )
-            if issued_at > self.now + self.max_skew:
+            if issued_at > self.review_reference_time + self.max_skew:
                 reject("REVIEW_NOT_YET_VALID", "review issue time is in the future")
-            if expires_at < self.now - self.max_skew:
+            if expires_at < self.review_reference_time - self.max_skew:
                 reject("REVIEW_EXPIRED", "review is expired")
             if expires_at <= issued_at:
                 reject("REVIEW_LIFETIME_INVALID", "review lifetime is invalid")

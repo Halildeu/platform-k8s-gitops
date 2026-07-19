@@ -14,6 +14,10 @@ from unittest.mock import patch
 MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py"
 sys.path.insert(0, str(MODULE_PATH.parents[2]))
 from tests.ai.signed_evidence_fixture import make_signed_evidence
+from scripts.github_apps.cross_ai_deployment_policy.contract import (
+    REVOCATIONS_PAYLOAD_TYPE,
+)
+from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory
 
 SPEC = importlib.util.spec_from_file_location("viewer_product_verifier", MODULE_PATH)
 VERIFIER = importlib.util.module_from_spec(SPEC)
@@ -968,6 +972,7 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
     def verify(
         self, client=None, now=NOW,
         advisory_scope_bytes=ADVISORY_FIXTURE.scope_bytes,
+        cross_ai_revocations=None,
     ):
         return VERIFIER.verify_product_evidence(
             client or FakeClient(),
@@ -976,7 +981,10 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             now=now,
             advisory_scope_bytes=advisory_scope_bytes,
             cross_ai_trust_root=ADVISORY_FIXTURE.authority.trust_root,
-            cross_ai_revocations=ADVISORY_FIXTURE.authority.revocations_envelope,
+            cross_ai_revocations=(
+                cross_ai_revocations
+                or ADVISORY_FIXTURE.authority.revocations_envelope
+            ),
             expected_cross_ai_trust_root_sha256=(
                 ADVISORY_FIXTURE.authority.expected_trust_root_sha256
             ),
@@ -1268,6 +1276,23 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         stale.advisory_comment_updated_at = stale.advisory_comment_created_at
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "comment is stale"):
             self.verify(stale)
+
+    def test_current_revocations_can_refresh_after_pilot_review_reference(self):
+        factory = FixtureFactory("v2")
+        refreshed = factory.sign(
+            REVOCATIONS_PAYLOAD_TYPE,
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000002",
+                "issuedAt": "2026-07-14T00:05:00Z",
+                "nextUpdate": "2026-07-14T00:55:00Z",
+                "entries": [],
+            },
+            factory.REVOCATION_KEY_ID,
+        )
+        self.assertEqual(
+            "pass", self.verify(cross_ai_revocations=refreshed)["status"]
+        )
 
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())

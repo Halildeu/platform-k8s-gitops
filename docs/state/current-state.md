@@ -35,7 +35,11 @@ fetches the immutable comment, independently derives its exact git scope, and
 binds the verified signed leaf into the authorization receipt. Until that real
 Codex-only advisory and the public TEST authority exist, activation remains
 fail-closed. Existing v1 Claude evidence is historical only; it cannot mint a
-fresh grant.
+fresh grant. The direct reviewer receives only the canonical redacted scope in
+an empty scratch root with shell, app, browser, computer, memory and other data
+tools disabled before inference. Product verification checks the current
+revocation authority at observation time while testing the signed review's
+validity at the verified pilot-start reference time.
 
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 

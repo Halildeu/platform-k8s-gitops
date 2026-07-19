@@ -287,7 +287,8 @@ def build_authorization(
             revocations_envelope=cross_ai_revocations,
             expected_trust_root_sha256=expected_cross_ai_trust_root_sha256,
             codex_executable_policy=codex_executable_policy,
-            reference_time=issued,
+            authority_observed_at=issued,
+            review_reference_time=issued,
         )
     except CodexEvidenceError as exc:
         raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc

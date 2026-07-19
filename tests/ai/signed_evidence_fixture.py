@@ -83,6 +83,7 @@ def capability_snapshot(
         "reasoningEffort": "xhigh",
         "sandbox": "read-only",
         "ephemeral": True,
+        "toolPolicy": "none-pre-execution",
         "launchConfiguration": {
             "catalogArguments": ["debug", "models"],
             "executionArguments": expected_execution_arguments(model),

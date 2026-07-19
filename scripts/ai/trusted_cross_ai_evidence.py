@@ -18,9 +18,9 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_dige
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
-    CODEX_HIGH_IMPACT_MODEL,
     CODEX_MODEL,
     CODEX_MODELS,
+    canonical_codex_execution_arguments,
     parse_canonical_review_response,
     validate_codex_executable_policy,
 )
@@ -82,32 +82,15 @@ CAPABILITY_KEYS = {
     "reasoningEffort",
     "sandbox",
     "ephemeral",
+    "toolPolicy",
     "launchConfiguration",
 }
-EXPECTED_EXECUTION_ARGUMENTS = [
-    "exec",
-    "--ignore-user-config",
-    "--ignore-rules",
-    "-c",
-    'model_reasoning_effort="xhigh"',
-    "--model",
-    CODEX_MODEL,
-    "--sandbox",
-    "read-only",
-    "--ephemeral",
-    "--json",
-    "-C",
-    "<BOUND_WORKSPACE>",
-    "-",
-]
 
 
 def expected_execution_arguments(model: str) -> list[str]:
     if model not in CODEX_MODELS:
         raise TrustedEvidenceError("expected Codex model is outside the fixed routes")
-    value = list(EXPECTED_EXECUTION_ARGUMENTS)
-    value[value.index(CODEX_HIGH_IMPACT_MODEL)] = model
-    return value
+    return canonical_codex_execution_arguments(model)
 
 
 class TrustedEvidenceError(ValueError):
@@ -200,6 +183,7 @@ def _validate_capability(
         and value["reasoningEffort"] == "xhigh"
         and value["sandbox"] == "read-only"
         and value["ephemeral"] is True
+        and value["toolPolicy"] == "none-pre-execution"
         and launch["catalogArguments"] == ["debug", "models"]
         and launch["executionArguments"] == expected_execution_arguments(expected_model)
     ):
@@ -237,6 +221,7 @@ def validate_evidence(
     expected_bindings: dict[str, str],
     scope_bytes: bytes,
     now: datetime,
+    review_reference_time: datetime | None = None,
     require_agree: bool,
     expected_model: str = CODEX_MODEL,
 ) -> dict[str, Any]:
@@ -327,6 +312,7 @@ def validate_evidence(
         trust_root=trust_root,
         revocations_envelope=revocations_envelope,
         now=now,
+        review_reference_time=review_reference_time,
         expected_trust_root_sha256=expected_trust_root_sha256,
     )
     verified = verifier.verify_provider_review(envelope, sha256_digest(subject))

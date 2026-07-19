@@ -675,6 +675,42 @@ class EvidenceContractV2Test(unittest.TestCase):
         ).verify_bundle(self.fixture.bundle_envelope)
         self.assertEqual(result.provider_families, ("openai",))
 
+    def test_review_time_is_separate_from_current_revocation_freshness(self) -> None:
+        refreshed_revocations = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-revocations.v1+json",
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000008",
+                "issuedAt": "2026-07-18T20:20:00Z",
+                "nextUpdate": "2026-07-18T21:00:00Z",
+                "entries": [],
+            },
+            self.factory.REVOCATION_KEY_ID,
+        )
+        verifier = EvidenceVerifier(
+            trust_root=self.fixture.trust_root,
+            revocations_envelope=refreshed_revocations,
+            now=self.fixture.now,
+            review_reference_time=datetime(
+                2026, 7, 18, 20, 15, tzinfo=timezone.utc
+            ),
+        )
+        self.assertEqual(
+            ("openai",),
+            verifier.verify_bundle(self.fixture.bundle_envelope).provider_families,
+        )
+
+    def test_rejects_review_reference_after_authority_observation(self) -> None:
+        with self.assertRaisesRegex(PolicyError, "REVIEW_REFERENCE_INVALID"):
+            EvidenceVerifier(
+                trust_root=self.fixture.trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+                review_reference_time=datetime(
+                    2026, 7, 18, 20, 31, tzinfo=timezone.utc
+                ),
+            )
+
     def test_active_verification_rejects_expired_key_with_backdated_leaf(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         provider = next(
