@@ -267,12 +267,21 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         for status, stdout, stderr in (
             (2, b"{}", b"warning"),
             (2, b'{"errors":[]}', b""),
+            (2, b'["accessor-a"]', b""),
             (1, b"", b"not found"),
+            (1, b"{}", b""),
             (0, b"{}", b""),
+            (0, b'["accessor-a"]', b"warning"),
+            (0, b'[""]', b""),
+            (0, b"[null]", b""),
+            (0, b'{}\n["accessor-a"]\n', b""),
+            (0, b'[""]\n["accessor-a"]\n', b""),
+            (0, b'[null]\n["accessor-a"]\n', b""),
+            (0, b'["accessor-a"]\n["accessor-b"]\n', b""),
         ):
             with self.subTest(status=status, stdout=stdout, stderr=stderr):
                 result = classify(status, stdout, stderr)
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 45)
                 self.assertEqual(result.stdout, b"")
 
     def test_negative_personas_are_bound_to_openfga_deny_postconditions(self):

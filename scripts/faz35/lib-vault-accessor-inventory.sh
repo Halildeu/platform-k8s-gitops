@@ -7,8 +7,9 @@ vault_accessor_inventory_classify() {
   local status=$1 output_file=$2 error_file=$3 compact_output
 
   if [ "$status" -eq 0 ]; then
-    [ ! -s "$error_file" ] && jq -e '
-      type == "array" and all(.[]; type == "string" and length > 0)
+    [ ! -s "$error_file" ] && jq -e -s '
+      length == 1 and
+      (.[0] | type == "array" and all(.[]; type == "string" and length > 0))
     ' "$output_file" >/dev/null || return 45
     cat "$output_file"
     return 0
