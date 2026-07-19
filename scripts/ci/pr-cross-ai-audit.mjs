@@ -86,6 +86,9 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/github_apps\/cross_ai_deployment_policy\//,
   /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_test_trust_root)\.py$/,
   /^scripts\/ops\/vault-policy-reconcile\.sh$/,
+  /^scripts\/ats\/(?:open-fullats-test-rollback-pr|verify-fullats-test-rollback-content)\.sh$/,
+  /^scripts\/promotion\/scan-promotion-candidates\.sh$/,
+  /^\.github\/workflows\/faz25-fullats-(?:live-browser-acceptance|test-recovery)\.yml$/,
   /^tests\/github_apps\/(?:cross_ai_policy_fixtures|test_cross_ai_[^/]+)\.py$/,
   /^docs\/adr\/0045-signed-cross-ai-custom-deployment-protection-rule\.md$/,
   /^docs\/runbooks\/RB-cross-ai-deployment-protection-rule\.md$/,
@@ -596,7 +599,7 @@ function parseProviderResponseVerdict(response) {
   if (sectionContents.some((content) => content.length === 0)) return null;
   const verdict = matches[0][1].toUpperCase();
   if (verdict === 'AGREE' && (
-    !NO_FINDINGS_RE.test(sectionContents[0]) || !NO_FINDINGS_RE.test(sectionContents[1])
+    sectionContents.some((content) => !NO_FINDINGS_RE.test(content))
   )) return null;
   return verdict;
 }

@@ -116,17 +116,18 @@ class EvidenceBuilderTests(unittest.TestCase):
             with self.subTest(removable=removable):
                 self.assertNotEqual(result.returncode, 0)
 
-    def test_rejects_agree_when_p0_or_p1_contains_a_finding(self) -> None:
+    def test_rejects_agree_when_any_priority_contains_a_finding(self) -> None:
         for response in (
             "P0\nCritical finding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
             "P0\nNone\nP1\nHigh finding\nP2\nNone\nVERDICT: AGREE",
+            "P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE",
         ):
             with self.subTest(response=response):
                 result = self.run_builder(response)
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(
                     json.loads(result.stdout)["error"],
-                    "provider_agree_contains_p0_or_p1_findings",
+                    "provider_agree_contains_priority_findings",
                 )
 
     def test_rejects_sensitive_provider_response_before_comment_build(self) -> None:
@@ -166,7 +167,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(
                     json.loads(result.stdout)["error"],
-                    "provider_agree_contains_p0_or_p1_findings",
+                    "provider_agree_contains_priority_findings",
                 )
 
     def test_rejects_nonterminal_verdict(self) -> None:
@@ -200,7 +201,7 @@ class EvidenceBuilderTests(unittest.TestCase):
         response = (
             "P0\nNone\nP1\nNone\nP2\n"
             "None\u0001 and None\u2028 plus literal \\\\n remains escaped text\n"
-            "VERDICT: AGREE"
+            "VERDICT: REVISE"
         )
         result = self.run_builder(response)
         self.assertEqual(result.returncode, 0)
@@ -215,7 +216,7 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
 
     def test_rejects_json_escape_expansion_beyond_comment_limit(self) -> None:
-        response = "P0\nNone\nP1\nNone\nP2\n" + ('"' * 35_000) + "\nVERDICT: AGREE"
+        response = "P0\nNone\nP1\nNone\nP2\n" + ('"' * 35_000) + "\nVERDICT: REVISE"
         result = self.run_builder(response)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(

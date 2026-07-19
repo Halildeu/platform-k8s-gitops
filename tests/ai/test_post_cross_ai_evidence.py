@@ -77,6 +77,7 @@ class EvidenceValidationTests(unittest.TestCase):
             "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE\nextra",
             "P0\nNone\nP1\nNone\nVERDICT: AGREE",
             "P0\nFinding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+            "P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE",
         ):
             payload = evidence()
             payload["response"] = response

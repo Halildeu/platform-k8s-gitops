@@ -155,13 +155,14 @@ def main() -> None:
     if sections is None:
         fail("provider_findings_sections_missing_empty_duplicate_or_out_of_order")
     verdict = verdicts[0]
+    if contains_sensitive_response(response):
+        fail("provider_response_contains_sensitive_data")
     if verdict == "AGREE" and (
         not NO_FINDINGS_RE.fullmatch(sections["P0"])
         or not NO_FINDINGS_RE.fullmatch(sections["P1"])
+        or not NO_FINDINGS_RE.fullmatch(sections["P2"])
     ):
-        fail("provider_agree_contains_p0_or_p1_findings")
-    if contains_sensitive_response(response):
-        fail("provider_response_contains_sensitive_data")
+        fail("provider_agree_contains_priority_findings")
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
     evidence = json.dumps(
         {
