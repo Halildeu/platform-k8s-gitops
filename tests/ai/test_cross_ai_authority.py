@@ -251,16 +251,17 @@ class PublicReviewAuthorityTests(unittest.TestCase):
         )
         self.write_json(history_root, self.fixture.authority.trust_root)
         self.write_json(history_revocations, stale_snapshot)
-        with self.assertRaisesRegex(
-            AuthorityUnavailable,
-            "public authority is not active: REVOCATIONS_STALE",
-        ):
-            load_authority_for_evidence(
-                self.root,
-                expected_trust_root_sha256=digest,
-                observed_at=self.fixture.factory.now + timedelta(hours=1),
-                evidence_reference_time=self.fixture.factory.now + timedelta(minutes=25),
-            )
+        replayed = load_authority_for_evidence(
+            self.root,
+            expected_trust_root_sha256=digest,
+            observed_at=self.fixture.factory.now + timedelta(days=30),
+            evidence_reference_time=self.fixture.factory.now + timedelta(minutes=25),
+        )
+        self.assertEqual(digest, replayed.expected_trust_root_sha256)
+        self.assertEqual(
+            self.fixture.factory.now + timedelta(minutes=30),
+            replayed.observed_at,
+        )
 
 
 class GenesisTransitionTests(unittest.TestCase):

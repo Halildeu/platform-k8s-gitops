@@ -210,7 +210,12 @@ def load_authority_for_evidence(
     return _load_public_authority(
         root,
         historical,
-        now=observed_at,
+        # The archived envelope is the final signed revocation view for this
+        # authority generation.  Rotation validation already proved that the
+        # replacement authority and its revocations were fresh at observation;
+        # replay must therefore validate the predecessor snapshot at its
+        # immutable retirement boundary, not against the current wall clock.
+        now=retired_at,
         review_reference_time=evidence_reference_time,
     )
 
