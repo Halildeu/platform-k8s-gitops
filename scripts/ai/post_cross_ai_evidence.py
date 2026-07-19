@@ -22,8 +22,7 @@ REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 VERDICT_RE = re.compile(r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE)
 PRIORITY_HEADING_RE = re.compile(
-    r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
-    r"(?:[ \t]*[—:-].*)?[ \t]*$"
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
 )
 NO_FINDINGS_RE = re.compile(r"^None$")
 EMAIL_RE = re.compile(
@@ -130,6 +129,8 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         fail("invalid_evidence_json")
     if not isinstance(evidence, dict) or set(evidence) != EVIDENCE_KEYS:
         fail("invalid_evidence_schema")
+    if json.dumps(evidence, ensure_ascii=False, separators=(",", ":")) != text:
+        fail("noncanonical_or_duplicate_evidence_json")
     if evidence.get("schema") != "cross-ai-provider-evidence/v2":
         fail("invalid_evidence_schema")
     if (

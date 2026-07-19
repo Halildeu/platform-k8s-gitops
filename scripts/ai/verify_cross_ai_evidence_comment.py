@@ -13,12 +13,25 @@ import hashlib
 import json
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 from post_cross_ai_evidence import validate_evidence_text
 
 
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+MAX_EVIDENCE_AGE = timedelta(days=7)
+MAX_FUTURE_SKEW = timedelta(minutes=5)
+
+
+def parse_github_time(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def main() -> None:
@@ -49,14 +62,18 @@ def main() -> None:
 
     body = comment.get("body") if isinstance(comment, dict) else None
     user = comment.get("user") if isinstance(comment, dict) else None
+    created_at = parse_github_time(comment.get("created_at")) if isinstance(comment, dict) else None
+    now = datetime.now(timezone.utc)
     if (
         not isinstance(body, str)
         or not body
         or not isinstance(user, dict)
         or user.get("login") != args.owner
         or comment.get("author_association") != "OWNER"
-        or not comment.get("created_at")
+        or created_at is None
         or comment.get("created_at") != comment.get("updated_at")
+        or created_at < now - MAX_EVIDENCE_AGE
+        or created_at > now + MAX_FUTURE_SKEW
         or hashlib.sha256(body.encode("utf-8")).hexdigest() != args.body_sha256
     ):
         raise SystemExit(1)

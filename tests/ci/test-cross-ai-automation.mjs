@@ -210,6 +210,9 @@ const explicitSingleClaudeBody =
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'AGENTS.md';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
+const CROSS_AI_PROTECTION_WF = '.github/workflows/gate-cross-ai-deployment-protection.yml';
+const PROTECTED_VIEWER_WF = '.github/workflows/apply-view-only-viewer-pilot-protected.yml';
+const CROSS_AI_POLICY_BUILDER = 'scripts/github_apps/build_cross_ai_deployment_policy_bundle.py';
 const RETIRED_MINIMAX_WRAPPER_PATH = 'scripts/ai/minimax_m3_review.py';
 const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
 const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__grant.sql';
@@ -335,6 +338,32 @@ const agreeWithP2FindingEvidence = {
 const agreeWithP2FindingPeerBody = peerBody.replace(
   sha256(EVIDENCE[PEER_REF].body),
   sha256(agreeWithP2FindingBody),
+);
+const suffixedHeadingResponse = 'P0: Critical finding is present\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE';
+const suffixedHeadingBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
+  response_sha256: sha256(suffixedHeadingResponse),
+  response: suffixedHeadingResponse,
+});
+const suffixedHeadingEvidence = {
+  ...EVIDENCE,
+  [PEER_REF]: evidenceComment(suffixedHeadingBody),
+};
+const suffixedHeadingPeerBody = peerBody.replace(
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(suffixedHeadingBody),
+);
+const duplicateResponseBody = EVIDENCE[PEER_REF].body.replace(
+  '"response":',
+  `"response":${JSON.stringify(reviseResponse)},"response":`,
+);
+const duplicateResponseEvidence = {
+  ...EVIDENCE,
+  [PEER_REF]: evidenceComment(duplicateResponseBody),
+};
+const duplicateResponsePeerBody = peerBody.replace(
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(duplicateResponseBody),
 );
 const sensitiveResponse = 'P0\nNone\nP1\nNone\nP2\nperson@example.com\nVERDICT: AGREE';
 const sensitiveBody = JSON.stringify({
@@ -541,6 +570,18 @@ const cases = [
   ['explicit none mode rejects signed deployment schema changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: ['schema/cross-ai-deployment-bundle-v2.schema.json'] }, 1],
+  ['explicit none mode rejects active Cross-AI deployment protection workflow changes',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [CROSS_AI_PROTECTION_WF] }, 1],
+  ['active Cross-AI deployment protection workflow accepts high-impact SOL evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [CROSS_AI_PROTECTION_WF] }, 0],
+  ['explicit none mode rejects protected viewer workflow changes',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [PROTECTED_VIEWER_WF] }, 1],
+  ['explicit none mode rejects Cross-AI signed-policy builder changes',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [CROSS_AI_POLICY_BUILDER] }, 1],
   ['signed deployment policy rejects routine class and Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, changedFiles: ['scripts/github_apps/cross_ai_deployment_policy/contract.py'] }, 1],
@@ -738,6 +779,12 @@ const cases = [
   ['provider response says AGREE while P2 contains a finding -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: agreeWithP2FindingPeerBody, evidence: agreeWithP2FindingEvidence }, 1],
+  ['provider response priority heading carries a finding suffix -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: suffixedHeadingPeerBody, evidence: suffixedHeadingEvidence }, 1],
+  ['provider evidence contains a duplicate response key -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: duplicateResponsePeerBody, evidence: duplicateResponseEvidence }, 1],
   ['provider response contains PII -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: sensitivePeerBody, evidence: sensitiveEvidence }, 1],

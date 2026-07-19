@@ -81,9 +81,12 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^docs\/context-priority-rules\.md$/,
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
+  /^\.github\/workflows\/[^/]*cross-ai[^/]*\.ya?ml$/,
+  /^\.github\/workflows\/(?:apply-view-only-viewer-pilot-protected|rollback-view-only-viewer-pilot-protected|faz22-6-view-only-viewer-browser-evidence-protected)\.ya?ml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
   /^schema\/cross-ai-deployment-(?:trust-root|review|bundle)-v2\.schema\.json$/,
   /^scripts\/github_apps\/cross_ai_deployment_policy\//,
+  /^scripts\/github_apps\/(?:build|run)_cross_ai[^/]*\.py$/,
   /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_test_trust_root)\.py$/,
   /^scripts\/ops\/vault-policy-reconcile\.sh$/,
   /^scripts\/ats\/(?:open-fullats-test-rollback-pr|verify-fullats-test-rollback-content)\.sh$/,
@@ -586,7 +589,7 @@ function parseProviderResponseVerdict(response) {
   if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/.test(lines.at(-1))) {
     return null;
   }
-  const headingRe = /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?(?:[ \t]*[—:-].*)?[ \t]*$/gim;
+  const headingRe = /^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$/gim;
   const headings = [...response.matchAll(headingRe)];
   if (headings.map((match) => match[1].toUpperCase()).join(',') !== 'P0,P1,P2') {
     return null;
@@ -669,6 +672,7 @@ function evidenceMatches(
     return false;
   }
   if (!evidence || Array.isArray(evidence) || typeof evidence !== 'object') return false;
+  if (JSON.stringify(evidence) !== comment.body) return false;
   const keys = Object.keys(evidence).sort();
   if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
     return false;

@@ -130,6 +130,17 @@ class EvidenceBuilderTests(unittest.TestCase):
                     "provider_agree_contains_priority_findings",
                 )
 
+    def test_rejects_priority_heading_with_finding_suffix(self) -> None:
+        result = self.run_builder(
+            "P0: Critical finding is present\nNone\nP1\nNone\nP2\nNone\n"
+            "VERDICT: AGREE"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "provider_findings_sections_missing_empty_duplicate_or_out_of_order",
+        )
+
     def test_rejects_sensitive_provider_response_before_comment_build(self) -> None:
         values = (
             "person@example.com",
