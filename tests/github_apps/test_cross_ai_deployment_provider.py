@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.contract import REVIEW_PAYLOAD_TYPE_V2
 from scripts.github_apps.cross_ai_deployment_policy.dsse import verify_json_envelope
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
@@ -80,7 +82,10 @@ class ProviderExecutionTest(unittest.TestCase):
     @staticmethod
     def codex_events(message: str, *, extra_item: dict | None = None) -> bytes:
         events = [
-            {"type": "thread.started", "thread_id": "one"},
+            {
+                "type": "thread.started",
+                "thread_id": "10000000-0000-4000-8000-000000000001",
+            },
             {"type": "turn.started"},
             {
                 "type": "item.completed",
@@ -122,6 +127,15 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(receipt.reasoning_effort, "xhigh")
         self.assertEqual(receipt.sandbox, "read-only")
         self.assertIs(receipt.ephemeral, True)
+        self.assertEqual(
+            receipt.provider_session_id,
+            "10000000-0000-4000-8000-000000000001",
+        )
+        self.assertTrue(receipt.provider_transcript_sha256.startswith("sha256:"))
+        self.assertEqual(
+            receipt.capability_snapshot_sha256,
+            sha256_digest(receipt.capability_snapshot),
+        )
         self.assertEqual(
             run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
         )
@@ -213,6 +227,14 @@ class ProviderExecutionTest(unittest.TestCase):
                     workspace=self.workspace,
                 )
 
+    def test_direct_codex_rejects_path_injected_script_before_launch(self) -> None:
+        fake = self.workspace / "codex"
+        fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        fake.chmod(0o755)
+        with patch.dict(os.environ, {"PATH": str(self.workspace)}):
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_INVALID"):
+                DirectCodexRunner()
+
 
 class ProviderIssuerTest(unittest.TestCase):
     def test_v1_issuer_is_read_only(self) -> None:
@@ -250,10 +272,21 @@ class ProviderIssuerTest(unittest.TestCase):
             reasoning_effort="xhigh",
             sandbox="read-only",
             ephemeral=True,
-            capability_snapshot_sha256=digest("capability"),
+            provider_session_id="50000000-0000-4000-8000-000000000010",
+            provider_transcript_sha256=digest("transcript"),
+            capability_snapshot={"source": "test"},
+            capability_snapshot_sha256="",
             input_sha256=digest("input"),
             output_sha256=digest("output"),
             result_text=REVIEW_RESULT,
+        )
+        receipt = ProviderExecutionReceipt(
+            **{
+                **receipt.__dict__,
+                "capability_snapshot_sha256": sha256_digest(
+                    receipt.capability_snapshot
+                ),
+            }
         )
         envelope = issuer.issue(
             execution=receipt,
@@ -344,10 +377,21 @@ class ProviderIssuerTest(unittest.TestCase):
             reasoning_effort="xhigh",
             sandbox="read-only",
             ephemeral=True,
-            capability_snapshot_sha256=digest("capability"),
+            provider_session_id="50000000-0000-4000-8000-000000000011",
+            provider_transcript_sha256=digest("transcript-invalid"),
+            capability_snapshot={"source": "test-invalid"},
+            capability_snapshot_sha256="",
             input_sha256=digest("input"),
             output_sha256=digest("output"),
             result_text=REVIEW_RESULT.replace(".v1", ".v2"),
+        )
+        receipt = ProviderExecutionReceipt(
+            **{
+                **receipt.__dict__,
+                "capability_snapshot_sha256": sha256_digest(
+                    receipt.capability_snapshot
+                ),
+            }
         )
         with self.assertRaisesRegex(PolicyError, "PROVIDER_REVIEW_RESULT_INVALID"):
             issuer.issue(

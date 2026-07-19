@@ -6,8 +6,10 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+from tests.ai.signed_evidence_fixture import make_signed_evidence
+
 MODULE_PATH = REPO_ROOT / "scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
 sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("view_only_pilot_owner_authorization", MODULE_PATH)
@@ -25,29 +27,18 @@ RECEIPT_SPEC.loader.exec_module(RECEIPT)
 
 
 OWNER_BODY = "Owner bounded-pilot directive"
-ADVISORY_RESPONSE = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
 ADVISORY_BASE_TIP_SHA = "0" * 40
 ADVISORY_BASE_SHA = "9" * 40
 ADVISORY_HEAD_SHA = "a" * 40
-ADVISORY_SCOPE_SHA256 = "b" * 64
+ADVISORY_FIXTURE = make_signed_evidence(
+    base_tip_sha=ADVISORY_BASE_TIP_SHA,
+    base_sha=ADVISORY_BASE_SHA,
+    head_sha=ADVISORY_HEAD_SHA,
+    reference_time=datetime(2026, 7, 15, 0, 0, tzinfo=timezone.utc),
+)
+ADVISORY_SCOPE_SHA256 = ADVISORY_FIXTURE.bindings["scope_sha256"]
 ADVISORY_BODY = json.dumps(
-    {
-        "schema": "cross-ai-provider-evidence/v2",
-        "provider": "openai",
-        "requested_model": "gpt-5.6-sol",
-        "actual_model": "gpt-5.6-sol",
-        "reasoning_effort": "xhigh",
-        "sandbox": "read-only",
-        "ephemeral": True,
-        "base_tip_sha": ADVISORY_BASE_TIP_SHA,
-        "base_sha": ADVISORY_BASE_SHA,
-        "head_sha": ADVISORY_HEAD_SHA,
-        "scope_sha256": ADVISORY_SCOPE_SHA256,
-        "verdict": "AGREE",
-        "response_sha256": hashlib.sha256(ADVISORY_RESPONSE.encode()).hexdigest(),
-        "response": ADVISORY_RESPONSE,
-    },
-    separators=(",", ":"),
+    ADVISORY_FIXTURE.evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
 )
 
 
@@ -71,8 +62,8 @@ def policy():
             "advisoryOnly": True,
             "consensusVerdict": "AGREE",
             "providers": ["OpenAI/gpt-5.6-sol"],
-            "provenanceClass": "owner-attested-direct-codex-evidence-v2",
-            "providerCryptographicAttestation": False,
+            "provenanceClass": "signed-direct-codex-launch-attested-v3",
+            "providerCryptographicAttestation": True,
             "evidenceBinding": {
                 "baseTipSha": ADVISORY_BASE_TIP_SHA,
                 "baseSha": ADVISORY_BASE_SHA,
@@ -201,6 +192,12 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             "run_id": 123,
             "head_sha": "a" * 40,
             "triggering_actor": "workflow-operator",
+            "advisory_scope_bytes": ADVISORY_FIXTURE.scope_bytes,
+            "cross_ai_trust_root": ADVISORY_FIXTURE.authority.trust_root,
+            "cross_ai_revocations": ADVISORY_FIXTURE.authority.revocations_envelope,
+            "expected_cross_ai_trust_root_sha256": (
+                ADVISORY_FIXTURE.authority.expected_trust_root_sha256
+            ),
         }
         inputs.update(overrides)
         return AUTH.build_authorization(**inputs)
@@ -242,13 +239,12 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             self.build(policy=value, advisory_comment=bad_comment)
 
         downgraded = json.loads(ADVISORY_BODY)
-        downgraded["requested_model"] = "gpt-5.3-codex-spark"
-        downgraded["actual_model"] = "gpt-5.3-codex-spark"
+        downgraded["capability_snapshot"]["requestedModel"] = "gpt-5.3-codex-spark"
         downgraded_body = json.dumps(downgraded, separators=(",", ":"))
         downgraded_comment = comment(102, downgraded_body)
         value = policy()
         value["aiAdvisory"]["bodySha256"] = AUTH.digest_bytes(downgraded_body.encode())
-        with self.assertRaisesRegex(AUTH.AuthorizationError, "execution identity"):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "capability differs"):
             self.build(policy=value, advisory_comment=downgraded_comment)
 
         immutable_v1 = json.loads(
@@ -314,7 +310,10 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             with self.subTest(binding=evidence_key):
                 value = policy()
                 value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
-                with self.assertRaisesRegex(AUTH.AuthorizationError, f"{evidence_key} binding mismatch"):
+                with self.assertRaisesRegex(
+                    AUTH.AuthorizationError,
+                    "scope bytes differ|subject or prompt binding mismatch",
+                ):
                     self.build(policy=value)
 
         edited = comment(
@@ -370,6 +369,7 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         legacy["ownerDirectiveRef"] = legacy_policy["ownerDirective"]["ref"]
         legacy["ownerDirectiveSha256"] = legacy_policy["ownerDirective"]["bodySha256"]
         legacy["aiAdvisoryProvenanceClass"] = "owner-attested-provider-session"
+        legacy["aiProviderCryptographicAttestation"] = False
         legacy["aiAdvisoryRef"] = legacy_policy["aiAdvisory"]["ref"]
         legacy["aiAdvisorySha256"] = legacy_policy["aiAdvisory"]["bodySha256"]
         raw = AUTH.canonical_bytes(legacy) + b"\n"
@@ -382,7 +382,23 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         RECEIPT.verify(
             legacy, raw, legacy_policy, revocations(), 123, "a" * 40,
             datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc), True,
+            datetime(2026, 7, 14, 23, 59, tzinfo=timezone.utc),
+            datetime(2026, 7, 14, 23, 59, 1, tzinfo=timezone.utc),
         )
+
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "requires fetched activation run"):
+            RECEIPT.verify(
+                legacy, raw, legacy_policy, revocations(), 123, "a" * 40,
+                datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc), True,
+            )
+
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "activation run started"):
+            RECEIPT.verify(
+                legacy, raw, legacy_policy, revocations(), 123, "a" * 40,
+                datetime(2026, 7, 19, 0, 10, tzinfo=timezone.utc), True,
+                datetime(2026, 7, 19, 0, 0, tzinfo=timezone.utc),
+                datetime(2026, 7, 19, 0, 0, 1, tzinfo=timezone.utc),
+            )
 
         current_legacy = dict(legacy)
         current_legacy["issuedAt"] = "2026-07-19T00:00:00Z"
@@ -392,6 +408,8 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             RECEIPT.verify(
                 current_legacy, current_raw, legacy_policy, revocations(), 123,
                 "a" * 40, datetime(2026, 7, 19, 0, 10, tzinfo=timezone.utc), True,
+                datetime(2026, 7, 18, 23, 59, tzinfo=timezone.utc),
+                datetime(2026, 7, 18, 23, 59, 1, tzinfo=timezone.utc),
             )
 
 

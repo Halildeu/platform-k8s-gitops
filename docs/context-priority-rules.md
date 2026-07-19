@@ -462,13 +462,16 @@ Canonical `single` receipt biçimi:
 Codex receipt: provider=openai; requested=<gpt-5.3-codex-spark|gpt-5.6-sol>; actual=<requested ile exact aynı>; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=<base-tip>; base=<merge-base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
 ```
 
-Ref gövdesi `cross-ai-provider-evidence/v2` şemasına, exact
-model/effort/sandbox/ephemeral/base/head/scope bağına, tam provider response'una
-ve response/body SHA-256 digestlerine uyar. `scripts/ai/build_cross_ai_evidence.py`
-yalnız provider `openai`, scope sınıfındaki iki exact model, `xhigh`,
-`read-only` ve `ephemeral=true` kabul eder; `scripts/ai/post_cross_ai_evidence.py` gövdeyi argv
-veya stdout'a çıkarmadan GitHub'a gönderir. Evidence operator-captured,
-provider-unsigned'dır; kriptografik provider attestation iddiası taşımaz.
+Ref gövdesi `cross-ai-provider-evidence/v3` şemasında imzalı DSSE review leaf'i,
+fixed prompt-domain ve prompt SHA-256'sını, exact base-tip/base/head/scope bağını,
+Codex JSON-event transcript digestini ve sınıfa bağlı sabit Spark/SOL
+`xhigh`/read-only/ephemeral launch capability snapshot'ını taşır.
+`scripts/ai/build_cross_ai_evidence.py`
+git koordinatlarını ve canonical scope'u worktree'den kendi türetir; caller response,
+subject, model veya koordinat kabul etmez. `scripts/ai/post_cross_ai_evidence.py`
+comment'i yalnız transport olarak kullanır. Kabul, repo-public pinned OpenAI
+provider-review trust root'u ile güncel ve imzalı revocation setini zorunlu tutar;
+owner comment'i tek başına authority değildir.
 
 <details>
 <summary>11.H — Yürürlükten kaldırılmış 2026-07-17 üç-kanal sözleşmesi (yalnız tarihsel denetim)</summary>

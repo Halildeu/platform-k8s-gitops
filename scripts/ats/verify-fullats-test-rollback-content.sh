@@ -60,6 +60,14 @@ fi
 receipt_ref="$(sed -nE 's/^.*; ref=(https:\/\/api\.github\.com\/repos\/Halildeu\/platform-k8s-gitops\/issues\/comments\/[1-9][0-9]*); sha256=[0-9a-f]{64}$/\1/p' <<<"$receipt_line")"
 receipt_sha256="$(sed -nE 's/^.*; sha256=([0-9a-f]{64})$/\1/p' <<<"$receipt_line")"
 evidence_comment="$(gh api "$receipt_ref")"
+scope_file="${RUNNER_TEMP:-/tmp}/fullats-promotion-cross-ai-scope-$$.patch"
+scope_receipt="$(python3 scripts/ai/prepare_cross_ai_scope.py \
+  --derive-only \
+  --base-ref "$PROMOTION_BASE_SHA" \
+  --base-sha "$PROMOTION_BASE_SHA" \
+  --head-sha "$promotion_head" \
+  --output "$scope_file")"
+[[ "$(jq -r .scope_sha256 <<<"$scope_receipt")" == "$promotion_scope" ]] || exit 1
 printf '%s' "$evidence_comment" | python3 scripts/ai/verify_cross_ai_evidence_comment.py \
   --owner Halildeu \
   --body-sha256 "$receipt_sha256" \
@@ -67,7 +75,10 @@ printf '%s' "$evidence_comment" | python3 scripts/ai/verify_cross_ai_evidence_co
   --base-sha "$PROMOTION_BASE_SHA" \
   --head-sha "$promotion_head" \
   --scope-sha256 "$promotion_scope" \
+  --scope-file "$scope_file" \
+  --repo-root "$PWD" \
   --model gpt-5.6-sol >/dev/null || exit 1
+rm -f "$scope_file"
 [[ "$(grep -Eic '^[[:space:]]*(claude|minimax) receipt[[:space:]]*:' <<<"$promotion_body" || true)" == "0" ]] || exit 1
 
 [[ "$(git rev-list --parents -n 1 "$PR_HEAD_SHA" | awk '{print NF - 1}')" == "1" ]] || exit 1

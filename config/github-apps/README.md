@@ -17,6 +17,36 @@ in the service deployment as `--expected-trust-root-sha256`. Do not derive the
 pin from the mounted trust-root file at service startup; that would make a
 tampered file self-authorizing.
 
+Standalone direct-Codex review leaves use the fixed public authority locator
+`cross-ai-provider-review-authority.v1.json`. It is intentionally
+`tracked_pending` until the TEST Vault Transit public keys, a signed revocation
+set and an independently computed trust-root pin are released at the exact
+paths declared by the locator. No private Vault key or token belongs in these
+public files. The public root may live at most 720 hours; provider-review keys
+rotate within 168 hours with at least 24 hours overlap. Signed revocations must
+refresh within 60 minutes and individual review leaves remain bounded to 120
+minutes. Updating a CLI does not rotate the root: the signed launch capability
+snapshot binds the pinned-copy CLI digest, version, live model catalog and
+fixed arguments inside each provider-review leaf.
+
+The public root contains only the OpenAI provider-review role plus one each of
+the coordinator, revocation and runner-management roles. A provider rotation
+may temporarily expose exactly two consecutive OpenAI key versions; both are
+bounded to 168 hours and overlap for at least 24 hours. Anthropic and MiniMax
+AppRoles and ACL policies must both be absent in the public bootstrap receipt;
+their historical public keys are input provenance only and are never copied
+into the active v2 root. The OpenAI role permits only the fixed routine
+`gpt-5.3-codex-spark` and high-impact `gpt-5.6-sol` routes; both remain xhigh,
+read-only, ephemeral and trusted-launch-attested. The former short-lived
+staging root is forensic-only and is not an allowed locator target or fallback.
+
+`build_cross_ai_provider_review_revocations.py` is the only repository release
+entrypoint for the public revocation file. It signs only
+`acik.cross-ai-deployment-revocations.v1` with the fixed
+`cross-ai/revocation` Transit route, requires the independently supplied root
+pin, enforces a maximum 60-minute `nextUpdate`, verifies the emitted DSSE and
+writes create-once bytes. Missing or stale revocations never mean an empty set.
+
 The example names three dedicated no-input `*-protected.yml` workflows. Their
 execution actions are pinned to immutable commit
 `ead8b151457929c7a7525ebdab2fd2b374b4f976`; all three share one literal,
@@ -27,7 +57,8 @@ crash/CallbackUnknown recovery lane and checks the live watchdog bundle marker
 before destructive cleanup.
 
 The workflows are intentionally fail-closed until the one-time owner Transit
-bootstrap produces the six public keys. Their command currently pins the zero
+bootstrap produces the five-key public v2 receipt and the four-role active
+root. Their command currently pins the zero
 digest sentinel and references environment-specific policy, trust-root and
 revocation files that are deliberately absent. A separate reviewed release
 change must add those public artifacts and replace the sentinel with the

@@ -7,7 +7,7 @@ import copy
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from cryptography.hazmat.primitives import serialization
@@ -127,6 +127,16 @@ class FixtureFactory:
         envelope.update(replacement)
 
     def trust_root(self) -> dict[str, Any]:
+        root_start = _utc(f"{self.day}T19:00:00Z")
+        root_end = (
+            root_start + timedelta(days=30)
+            if self.contract_version == "v2"
+            else _utc(f"{self.day}T22:00:00Z")
+        )
+
+        def canonical_time(value: datetime) -> str:
+            return value.isoformat().replace("+00:00", "Z")
+
         def entry(
             key_id: str,
             role: str,
@@ -136,12 +146,17 @@ class FixtureFactory:
             model_ids: list[str] | None = None,
             identity_classes: list[str] | None = None,
         ) -> dict[str, Any]:
+            key_end = (
+                root_start + timedelta(hours=168)
+                if self.contract_version == "v2" and role == "provider-review"
+                else root_end
+            )
             return {
                 "keyId": key_id,
                 "role": role,
                 "publicKeyBase64": _public_b64(self.keys[key_id]),
-                "notBefore": f"{self.day}T19:00:00Z",
-                "notAfter": f"{self.day}T22:00:00Z",
+                "notBefore": canonical_time(root_start),
+                "notAfter": canonical_time(key_end),
                 "providerFamily": family,
                 "allowedChannels": channels,
                 "allowedModelIds": model_ids or [],
@@ -183,7 +198,11 @@ class FixtureFactory:
                 "openai",
                 ["openai-codex"],
                 True,
-                ["gpt-5.6-sol"],
+                (
+                    ["gpt-5.3-codex-spark", "gpt-5.6-sol"]
+                    if self.contract_version == "v2"
+                    else ["gpt-5.6-sol"]
+                ),
                 [
                     "provider-reported"
                     if self.contract_version == "v1"
@@ -198,8 +217,8 @@ class FixtureFactory:
                 else "acik.cross-ai-deployment-trust-root.v2"
             ),
             "trustRootId": "10000000-0000-4000-8000-000000000001",
-            "issuedAt": f"{self.day}T19:00:00Z",
-            "expiresAt": f"{self.day}T22:00:00Z",
+            "issuedAt": canonical_time(root_start),
+            "expiresAt": canonical_time(root_end),
             "maxClockSkewSeconds": 60,
             "requiredProviderFamilies": providers,
             "minimumProviderFamilies": len(providers),
@@ -228,7 +247,7 @@ class FixtureFactory:
             "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
             "revocationSetId": "20000000-0000-4000-8000-000000000001",
             "issuedAt": f"{self.day}T20:00:00Z",
-            "nextUpdate": f"{self.day}T21:30:00Z",
+            "nextUpdate": f"{self.day}T21:00:00Z",
             "entries": entries or [],
         }
         return self.sign(REVOCATIONS_PAYLOAD_TYPE, payload, self.REVOCATION_KEY_ID)
@@ -296,6 +315,8 @@ class FixtureFactory:
                     "reasoningEffort": "xhigh",
                     "sandbox": "read-only",
                     "ephemeral": True,
+                    "providerSessionId": review_id,
+                    "providerTranscriptSha256": digest(f"transcript-{review_id}"),
                 }
             )
         return self.sign(self.review_payload_type, payload, key_id)

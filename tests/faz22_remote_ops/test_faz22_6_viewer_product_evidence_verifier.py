@@ -10,8 +10,10 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py"
+sys.path.insert(0, str(MODULE_PATH.parents[2]))
+from tests.ai.signed_evidence_fixture import make_signed_evidence
+
 SPEC = importlib.util.spec_from_file_location("viewer_product_verifier", MODULE_PATH)
 VERIFIER = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -30,27 +32,19 @@ AUTHORIZATION_ARTIFACT_ID = 500001
 OWNER_COMMENT_ID = 900001
 ADVISORY_COMMENT_ID = 900002
 OWNER_COMMENT_BODY = "Owner authorizes the bounded attended VIEW_ONLY test pilot; legal clearance is not claimed."
-ADVISORY_RESPONSE = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
 ADVISORY_BASE_TIP_SHA = "0" * 40
 ADVISORY_BASE_SHA = "9" * 40
-ADVISORY_SCOPE_SHA256 = "b" * 64
+ADVISORY_FIXTURE = make_signed_evidence(
+    base_tip_sha=ADVISORY_BASE_TIP_SHA,
+    base_sha=ADVISORY_BASE_SHA,
+    head_sha=HEAD_SHA,
+    reference_time=datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+)
+ADVISORY_SCOPE_SHA256 = ADVISORY_FIXTURE.bindings["scope_sha256"]
 ADVISORY_COMMENT_BODY = json.dumps(
-    {
-        "schema": "cross-ai-provider-evidence/v2",
-        "provider": "openai",
-        "requested_model": "gpt-5.6-sol",
-        "actual_model": "gpt-5.6-sol",
-        "reasoning_effort": "xhigh",
-        "sandbox": "read-only",
-        "ephemeral": True,
-        "base_tip_sha": ADVISORY_BASE_TIP_SHA,
-        "base_sha": ADVISORY_BASE_SHA,
-        "head_sha": HEAD_SHA,
-        "scope_sha256": ADVISORY_SCOPE_SHA256,
-        "verdict": "AGREE",
-        "response_sha256": hashlib.sha256(ADVISORY_RESPONSE.encode()).hexdigest(),
-        "response": ADVISORY_RESPONSE,
-    },
+    ADVISORY_FIXTURE.evidence,
+    ensure_ascii=False,
+    sort_keys=True,
     separators=(",", ":"),
 )
 
@@ -546,8 +540,8 @@ def owner_policy_fixture():
             "advisoryOnly": True,
             "consensusVerdict": "AGREE",
             "providers": ["OpenAI/gpt-5.6-sol"],
-            "provenanceClass": "owner-attested-direct-codex-evidence-v2",
-            "providerCryptographicAttestation": False,
+            "provenanceClass": "signed-direct-codex-launch-attested-v3",
+            "providerCryptographicAttestation": True,
             "evidenceBinding": {
                 "baseTipSha": ADVISORY_BASE_TIP_SHA,
                 "baseSha": ADVISORY_BASE_SHA,
@@ -617,8 +611,8 @@ def authorization_document():
         "ownerDirectiveRef": owner_policy_fixture()["ownerDirective"]["ref"],
         "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
         "aiAdvisoryOnly": True,
-        "aiAdvisoryProvenanceClass": "owner-attested-direct-codex-evidence-v2",
-        "aiProviderCryptographicAttestation": False,
+        "aiAdvisoryProvenanceClass": "signed-direct-codex-launch-attested-v3",
+        "aiProviderCryptographicAttestation": True,
         "aiAdvisoryRef": owner_policy_fixture()["aiAdvisory"]["ref"],
         "aiAdvisorySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),
         "aiConsensusVerdict": "AGREE",
@@ -967,7 +961,16 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
 
     def verify(self, client=None, now=NOW):
         return VERIFIER.verify_product_evidence(
-            client or FakeClient(), VERIFIER.EXPECTED_REPOSITORY, RUN_ID, now=now
+            client or FakeClient(),
+            VERIFIER.EXPECTED_REPOSITORY,
+            RUN_ID,
+            now=now,
+            advisory_scope_bytes=ADVISORY_FIXTURE.scope_bytes,
+            cross_ai_trust_root=ADVISORY_FIXTURE.authority.trust_root,
+            cross_ai_revocations=ADVISORY_FIXTURE.authority.revocations_envelope,
+            expected_cross_ai_trust_root_sha256=(
+                ADVISORY_FIXTURE.authority.expected_trust_root_sha256
+            ),
         )
 
     def client_for_policy(
@@ -982,6 +985,8 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         authorization["aiAdvisoryRef"] = policy_value["aiAdvisory"]["ref"]
         authorization["aiAdvisorySha256"] = policy_value["aiAdvisory"]["bodySha256"]
         authorization["aiAdvisoryProvenanceClass"] = policy_value["aiAdvisory"]["provenanceClass"]
+        if legacy_v1:
+            authorization["aiProviderCryptographicAttestation"] = False
         authorization.update(authorization_updates or {})
         raw_authorization = VERIFIER.canonical_bytes(authorization) + b"\n"
         protected_archive = activation_archive(raw_authorization)
@@ -1202,7 +1207,8 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
                 policy_value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
                 client = self.client_for_policy(policy_value)
                 with self.assertRaisesRegex(
-                    VERIFIER.EvidenceError, f"{evidence_key} binding mismatch",
+                    VERIFIER.EvidenceError,
+                    "scope bytes differ|subject or prompt binding mismatch",
                 ):
                     self.verify(client)
 
@@ -1249,6 +1255,19 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         client.activation_created_at = "2026-07-19T00:00:00Z"
         client.activation_updated_at = "2026-07-19T00:00:30Z"
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "migration cutoff"):
+            VERIFIER.verify_activation_authorization(
+                client, client.operator_payload, HEAD_SHA, binding(),
+                datetime(2026, 7, 19, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 19, 0, 6, tzinfo=timezone.utc),
+                allow_legacy_v1=True,
+            )
+
+    def test_legacy_v1_forensics_rejects_backdated_receipt_from_post_cutoff_run(self):
+        legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
+        client = self.client_for_policy(legacy_policy, legacy_v1=True)
+        client.activation_created_at = "2026-07-19T00:00:00Z"
+        client.activation_updated_at = "2026-07-19T00:00:30Z"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "activation run started"):
             VERIFIER.verify_activation_authorization(
                 client, client.operator_payload, HEAD_SHA, binding(),
                 datetime(2026, 7, 19, 0, 1, tzinfo=timezone.utc),

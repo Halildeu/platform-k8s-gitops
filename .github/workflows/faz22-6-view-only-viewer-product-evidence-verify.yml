@@ -44,9 +44,11 @@ jobs:
 
       - name: Checkout independent verifier revision
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
-      - name: Install strict JSON Schema validator
-        run: python3 -m pip install --quiet jsonschema==4.25.1
+      - name: Install signed authority verifier dependencies
+        run: python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
 
       - name: Fetch and verify producer artifact
         env:

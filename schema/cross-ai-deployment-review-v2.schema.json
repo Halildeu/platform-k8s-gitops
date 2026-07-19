@@ -16,6 +16,8 @@
     "reasoningEffort",
     "sandbox",
     "ephemeral",
+    "providerSessionId",
+    "providerTranscriptSha256",
     "capabilitySnapshotSha256",
     "subjectSha256",
     "round",
@@ -76,6 +78,13 @@
     },
     "ephemeral": {
       "const": true
+    },
+    "providerSessionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "providerTranscriptSha256": {
+      "$ref": "#/$defs/digest"
     },
     "capabilitySnapshotSha256": {
       "$ref": "#/$defs/digest"

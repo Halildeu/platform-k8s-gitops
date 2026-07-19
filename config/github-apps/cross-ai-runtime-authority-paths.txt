@@ -7,6 +7,7 @@ bootstrap/vault-policies/test/cross-ai-*.hcl
 bootstrap/vault-policies/test/vault-config-reconciler.hcl
 scripts/ops/bootstrap_cross_ai_transit.py
 scripts/ops/build_cross_ai_test_trust_root.py
+scripts/ops/build_cross_ai_provider_review_revocations.py
 scripts/ops/vault-policy-reconcile.sh
 scripts/faz22-remote-ops/**
 kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**

@@ -662,6 +662,68 @@ class EvidenceContractV2Test(unittest.TestCase):
         self.assertEqual(result.provider_families, ("openai",))
         self.assertEqual(result.final_review_digests, (direct_agree_digest,))
 
+    def test_rotation_accepts_leaf_issued_while_previous_key_was_valid(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        provider = next(
+            item for item in trust_root["keys"] if item["role"] == "provider-review"
+        )
+        provider["notAfter"] = "2026-07-18T20:16:00Z"
+        result = EvidenceVerifier(
+            trust_root=trust_root,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=self.fixture.now,
+        ).verify_bundle(self.fixture.bundle_envelope)
+        self.assertEqual(result.provider_families, ("openai",))
+
+    def test_v2_rejects_ephemeral_root_lifetime(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["expiresAt"] = "2026-07-21T19:00:00Z"
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_LIFETIME_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_review_must_be_issued_during_root_and_provider_key_validity(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        final_leaf = bundle["reviewEnvelopes"][-1]
+        subject_digest = self.factory.decode_payload(final_leaf)["subjectSha256"]
+
+        root_after_review = copy.deepcopy(self.fixture.trust_root)
+        root_after_review["issuedAt"] = "2026-07-18T20:20:00Z"
+        refreshed_revocations = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-revocations.v1+json",
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000009",
+                "issuedAt": "2026-07-18T20:20:00Z",
+                "nextUpdate": "2026-07-18T21:00:00Z",
+                "entries": [],
+            },
+            self.factory.REVOCATION_KEY_ID,
+        )
+        verifier = EvidenceVerifier(
+            trust_root=root_after_review,
+            revocations_envelope=refreshed_revocations,
+            now=self.fixture.now,
+        )
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_NOT_YET_VALID"):
+            verifier.verify_provider_review(final_leaf, subject_digest)
+
+        key_after_review = copy.deepcopy(self.fixture.trust_root)
+        provider = next(
+            item for item in key_after_review["keys"] if item["role"] == "provider-review"
+        )
+        provider["notBefore"] = "2026-07-18T20:20:00Z"
+        verifier = EvidenceVerifier(
+            trust_root=key_after_review,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=self.fixture.now,
+        )
+        with self.assertRaisesRegex(PolicyError, "SIGNING_KEY_NOT_YET_VALID"):
+            verifier.verify_provider_review(final_leaf, subject_digest)
+
     def test_v2_rejects_retired_providers_and_openai_provider_report_upgrade(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         openai = next(

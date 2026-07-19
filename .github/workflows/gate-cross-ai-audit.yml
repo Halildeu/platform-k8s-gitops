@@ -104,6 +104,19 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install signed authority verifier dependencies
+        run: |
+          python3 -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
+
       # Run the trusted-base verifier before importing any PR-head git object
       # into the job. The verifier opens from the immutable base checkout and
       # fetches the exact rollback head internally only for content inspection;
@@ -169,6 +182,8 @@ jobs:
             --changed-files-file /tmp/changed-files.txt
             --derived-base-sha "${{ steps.scope.outputs.merge_base }}"
             --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
+            --scope-file /tmp/cross-ai-derived-scope.patch
+            --repo-root "$GITHUB_WORKSPACE"
           )
           if [[ -f "$ATTESTATION_OUTPUT" ]]; then
             args+=(

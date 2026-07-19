@@ -20,7 +20,9 @@
 //   2 — INPUT ERROR
 
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { argv, env, exit } from 'node:process';
 
 const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
@@ -28,27 +30,11 @@ const VALID_VERDICTS = new Set(['AGREE', 'REVISE', 'PARTIAL', 'RED']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
-const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
-const NO_FINDINGS_RE = /^None$/;
-const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
-const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
-const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
-const BEARER_RE = /(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}/i;
-const JWT_RE = /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/;
-const KNOWN_TOKEN_RE = /(?<![A-Za-z0-9])(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{22,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,}|sk_live_[A-Za-z0-9]{16,})(?![A-Za-z0-9])/;
-const SECRET_ASSIGNMENT_RE = /\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?secret|secret[_-]?access[_-]?key|service[_-]?account[_-]?key|signing[_-]?key|hmac[_-]?key|private[_-]?key|credential)\b\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/i;
-const WEBHOOK_URL_RE = /\bwebhook[_-]?url\b\s*[:=]\s*https?:\/\/[^\s"'<>]{12,}/i;
-const COOKIE_HEADER_RE = /^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$/im;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
   'effort', 'sandbox', 'ephemeral', 'verdict', 'ref', 'sha256',
 ]);
-const EVIDENCE_KEYS = [
-  'actual_model', 'base_sha', 'base_tip_sha', 'ephemeral', 'head_sha',
-  'provider', 'reasoning_effort', 'requested_model', 'response',
-  'response_sha256', 'sandbox', 'schema', 'scope_sha256', 'verdict',
-];
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
   'promotion_base_sha', 'promotion_head_sha', 'promotion_merge_sha',
@@ -345,6 +331,8 @@ function loadInput(args) {
         baseSha: args['base-tip-sha'] ?? '',
         derivedBaseSha: args['derived-base-sha'] ?? '',
         derivedScopeSha256: args['derived-scope-sha256'] ?? '',
+        scopeFile: args['scope-file'] ?? '',
+        repoRoot: args['repo-root'] ?? REPO_ROOT,
         headRepo: '',
         baseRepo: '',
         actor: '',
@@ -365,6 +353,8 @@ function loadInput(args) {
         baseSha: pr.base?.sha ?? '',
         derivedBaseSha: args['derived-base-sha'] ?? '',
         derivedScopeSha256: args['derived-scope-sha256'] ?? '',
+        scopeFile: args['scope-file'] ?? '',
+        repoRoot: args['repo-root'] ?? REPO_ROOT,
         headRepo: pr.head?.repo?.full_name ?? '',
         baseRepo: pr.base?.repo?.full_name ?? '',
         // `actor` = PR author (immutable once opened). `sender` = who
@@ -605,48 +595,6 @@ function validEvidenceRef(value, baseRepo) {
   }
 }
 
-function sha256Utf8(value) {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-function parseProviderResponseVerdict(response) {
-  if (typeof response !== 'string') return null;
-  const matches = [...response.matchAll(/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/gm)];
-  const lines = response.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/.test(lines.at(-1))) {
-    return null;
-  }
-  const headingRe = /^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$/gm;
-  const headings = [...response.matchAll(headingRe)];
-  if (headings.map((match) => match[1]).join(',') !== 'P0,P1,P2') {
-    return null;
-  }
-  if (response.slice(0, headings[0].index).trim()) return null;
-  const sectionContents = headings.map((heading, index) => {
-    const start = heading.index + heading[0].length;
-    const end = index < 2 ? headings[index + 1].index : matches[0].index;
-    return response.slice(start, end).trim();
-  });
-  if (sectionContents.some((content) => content.length === 0)) return null;
-  const verdict = matches[0][1].toUpperCase();
-  if (verdict === 'AGREE' && (
-    sectionContents.some((content) => !NO_FINDINGS_RE.test(content))
-  )) return null;
-  return verdict;
-}
-
-function containsSensitiveResponse(response) {
-  return EMAIL_RE.test(response)
-    || TURKISH_PHONE_RE.test(response)
-    || PRIVATE_KEY_RE.test(response)
-    || BEARER_RE.test(response)
-    || JWT_RE.test(response)
-    || KNOWN_TOKEN_RE.test(response)
-    || SECRET_ASSIGNMENT_RE.test(response)
-    || WEBHOOK_URL_RE.test(response)
-    || COOKIE_HEADER_RE.test(response);
-}
-
 async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
   if (Object.hasOwn(evidenceOverrides, ref)) {
     const override = evidenceOverrides[ref];
@@ -663,13 +611,7 @@ async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
     });
     if (!response.ok) return null;
     const payload = await response.json();
-    return {
-      body: payload?.body,
-      author: payload?.user?.login,
-      authorAssociation: payload?.author_association,
-      createdAt: payload?.created_at,
-      updatedAt: payload?.updated_at,
-    };
+    return payload;
   } catch {
     return null;
   }
@@ -677,55 +619,31 @@ async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
 
 function evidenceMatches(
   comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
+  scopeFile, repoRoot,
 ) {
-  const createdAtMs = Date.parse(comment?.createdAt || '');
-  const evidenceAgeMs = Date.now() - createdAtMs;
-  if (
-    !comment
-    || typeof comment.body !== 'string'
-    || typeof comment.author !== 'string'
-    || comment.author.toLowerCase() !== expectedOwner.toLowerCase()
-    || comment.authorAssociation !== 'OWNER'
-    || !comment.createdAt
-    || comment.createdAt !== comment.updatedAt
-    || !Number.isFinite(createdAtMs)
-    || evidenceAgeMs < -EVIDENCE_FUTURE_SKEW_MS
-    || evidenceAgeMs > EVIDENCE_MAX_AGE_MS
-    || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
-  ) return false;
-  let evidence;
-  try {
-    evidence = JSON.parse(comment.body);
-  } catch {
-    return false;
-  }
-  if (!evidence || Array.isArray(evidence) || typeof evidence !== 'object') return false;
-  if (JSON.stringify(evidence) !== comment.body) return false;
-  const keys = Object.keys(evidence).sort();
-  if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
-    return false;
-  }
-  const responseVerdict = parseProviderResponseVerdict(evidence.response);
-  return Boolean(
-    evidence.schema === 'cross-ai-provider-evidence/v2'
-    && evidence.provider === expected.provider
-    && evidence.requested_model === expected.model
-    && evidence.actual_model === expected.model
-    && evidence.reasoning_effort === REQUIRED_REASONING_EFFORT
-    && evidence.sandbox === REQUIRED_SANDBOX
-    && evidence.ephemeral === true
-    && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
-    && evidence.base_sha?.toLowerCase() === base.toLowerCase()
-    && evidence.head_sha?.toLowerCase() === head.toLowerCase()
-    && evidence.scope_sha256?.toLowerCase() === scope.toLowerCase()
-    && evidence.verdict === 'AGREE'
-    && responseVerdict === evidence.verdict
-    && typeof evidence.response === 'string'
-    && evidence.response.length > 0
-    && !containsSensitiveResponse(evidence.response)
-    && SHA256_RE.test(evidence.response_sha256 || '')
-    && sha256Utf8(evidence.response) === evidence.response_sha256.toLowerCase()
+  if (!comment || !scopeFile || !repoRoot) return false;
+  const result = spawnSync(
+    'python3',
+    [
+      join(repoRoot, 'scripts/ai/verify_cross_ai_evidence_comment.py'),
+      '--owner', expectedOwner,
+      '--body-sha256', receipt.sha256.toLowerCase(),
+      '--base-tip-sha', baseTip.toLowerCase(),
+      '--base-sha', base.toLowerCase(),
+      '--head-sha', head.toLowerCase(),
+      '--scope-sha256', scope.toLowerCase(),
+      '--scope-file', scopeFile,
+      '--repo-root', repoRoot,
+      '--model', expected.model,
+    ],
+    {
+      input: JSON.stringify(comment),
+      encoding: 'utf8',
+      stdio: ['pipe', 'ignore', 'ignore'],
+      timeout: 30_000,
+    },
   );
+  return result.status === 0;
 }
 
 function docsOnlyExemption(fields, prMeta) {
@@ -853,14 +771,14 @@ async function appendConsultationFindings(
       : null;
     const pass = shapePass && evidenceMatches(
       evidenceComment, receipt, expected, expectedOwner,
-      baseTip, base, commit, scope,
+      baseTip, base, commit, scope, prMeta?.scopeFile, prMeta?.repoRoot,
     );
     findings.push({
       check: field.replaceAll(' ', '_'),
       pass,
       detail: pass
-        ? `${expected.provider}/${expected.model}/${REQUIRED_REASONING_EFFORT} read-only ephemeral evidence + response digest + base/head/scope doğrulandı`
-        : `${field}: scope sınıfına uygun exact model + xhigh/read-only/ephemeral receipt + matching GitHub evidence zorunlu`,
+        ? `${expected.provider}/${expected.model}/${REQUIRED_REASONING_EFFORT} signed trusted-launch evidence + pinned authority + base/head/scope doğrulandı`
+        : `${field}: exact model + signed DSSE launch receipt + pinned public authority + matching scope zorunlu`,
     });
   }
   findings.push({

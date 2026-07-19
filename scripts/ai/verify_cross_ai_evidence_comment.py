@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a fetched GitHub evidence comment without normalizing its body.
-
-The GitHub comment JSON is read from stdin.  In particular, the body is never
-round-tripped through a shell command substitution before its receipt digest
-is checked, so trailing newlines and every other UTF-8 byte remain bound.
-"""
+"""Verify a GitHub-carried signed Codex leaf against independent authority."""
 
 from __future__ import annotations
 
@@ -14,8 +9,20 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from post_cross_ai_evidence import validate_evidence_text
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.ai.trusted_cross_ai_evidence import (
+    TrustedEvidenceError,
+    canonical_bytes,
+    validate_evidence,
+)
+from scripts.ai.cross_ai_authority import AuthorityUnavailable, load_active_authority
+from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
+from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_MODELS
 
 
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -42,24 +49,22 @@ def main() -> None:
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--scope-sha256", required=True)
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--scope-file", required=True, type=Path)
+    parser.add_argument("--repo-root", required=True, type=Path)
+    parser.add_argument("--model", choices=tuple(sorted(CODEX_MODELS)), required=True)
     args = parser.parse_args()
-
     if (
         not SHA256_RE.fullmatch(args.body_sha256)
         or not GIT_SHA_RE.fullmatch(args.base_tip_sha)
         or not GIT_SHA_RE.fullmatch(args.base_sha)
         or not GIT_SHA_RE.fullmatch(args.head_sha)
         or not SHA256_RE.fullmatch(args.scope_sha256)
-        or args.model not in {"gpt-5.3-codex-spark", "gpt-5.6-sol"}
     ):
         raise SystemExit(2)
-
     try:
         comment = json.load(sys.stdin)
     except (json.JSONDecodeError, UnicodeError):
         raise SystemExit(1)
-
     body = comment.get("body") if isinstance(comment, dict) else None
     user = comment.get("user") if isinstance(comment, dict) else None
     created_at = parse_github_time(comment.get("created_at")) if isinstance(comment, dict) else None
@@ -77,22 +82,34 @@ def main() -> None:
         or hashlib.sha256(body.encode("utf-8")).hexdigest() != args.body_sha256
     ):
         raise SystemExit(1)
-
-    evidence, validated_body_sha256 = validate_evidence_text(body)
-    if (
-        validated_body_sha256 != args.body_sha256
-        or evidence.get("provider") != "openai"
-        or evidence.get("requested_model") != args.model
-        or evidence.get("actual_model") != args.model
-        or evidence.get("reasoning_effort") != "xhigh"
-        or evidence.get("sandbox") != "read-only"
-        or evidence.get("ephemeral") is not True
-        or evidence.get("base_tip_sha") != args.base_tip_sha
-        or evidence.get("base_sha") != args.base_sha
-        or evidence.get("head_sha") != args.head_sha
-        or evidence.get("scope_sha256") != args.scope_sha256
-        or evidence.get("verdict") != "AGREE"
+    try:
+        evidence = json.loads(body)
+        if canonical_bytes(evidence).decode("utf-8") != body:
+            raise TrustedEvidenceError("comment carrier is not canonical")
+        scope_bytes = args.scope_file.read_bytes()
+        authority = load_active_authority(args.repo_root)
+        validated = validate_evidence(
+            evidence,
+            trust_root=authority.trust_root,
+            revocations_envelope=authority.revocations_envelope,
+            expected_trust_root_sha256=authority.expected_trust_root_sha256,
+            expected_bindings={
+                "base_tip_sha": args.base_tip_sha,
+                "base_sha": args.base_sha,
+                "head_sha": args.head_sha,
+                "scope_sha256": args.scope_sha256,
+            },
+            scope_bytes=scope_bytes,
+            now=now,
+            require_agree=True,
+            expected_model=args.model,
+        )
+    except (
+        AuthorityUnavailable, OSError, json.JSONDecodeError, PolicyError,
+        TrustedEvidenceError,
     ):
+        raise SystemExit(1)
+    if validated["review"]["modelId"] != args.model:
         raise SystemExit(1)
 
 

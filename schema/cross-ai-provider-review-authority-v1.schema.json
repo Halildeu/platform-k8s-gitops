@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-provider-review-authority-v1.schema.json",
+  "title": "Direct Codex provider-review public authority locator",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "authoritySource",
+    "trustRootPath",
+    "revocationsPath",
+    "expectedTrustRootSha256",
+    "rotationPolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-provider-review-authority.v1"
+    },
+    "status": {
+      "enum": ["tracked_pending", "active"]
+    },
+    "authoritySource": {
+      "const": "test-vault-transit-public-export"
+    },
+    "trustRootPath": {
+      "oneOf": [
+        {"type": "null"},
+        {"const": "config/github-apps/cross-ai-provider-review-trust-root.v2.json"}
+      ]
+    },
+    "revocationsPath": {
+      "oneOf": [
+        {"type": "null"},
+        {"const": "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json"}
+      ]
+    },
+    "expectedTrustRootSha256": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      ]
+    },
+    "rotationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxTrustRootLifetimeHours",
+        "maxProviderKeyRotationHours",
+        "minimumKeyOverlapHours",
+        "maxRevocationStalenessMinutes",
+        "maxReviewLeafLifetimeMinutes"
+      ],
+      "properties": {
+        "maxTrustRootLifetimeHours": {"const": 720},
+        "maxProviderKeyRotationHours": {"const": 168},
+        "minimumKeyOverlapHours": {"const": 24},
+        "maxRevocationStalenessMinutes": {"const": 60},
+        "maxReviewLeafLifetimeMinutes": {"const": 120}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "active"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "trustRootPath": {"type": "string"},
+          "revocationsPath": {"type": "string"},
+          "expectedTrustRootSha256": {"type": "string"}
+        }
+      },
+      "else": {
+        "properties": {
+          "trustRootPath": {"type": "null"},
+          "revocationsPath": {"type": "null"},
+          "expectedTrustRootSha256": {"type": "null"}
+        }
+      }
+    }
+  ]
+}

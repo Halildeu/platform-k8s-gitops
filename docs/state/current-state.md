@@ -26,7 +26,7 @@ rule remains authoritative.
 The same branch retires the Claude-bearing Faz 22.6 owner policy v1 as a source
 of new authorization. Every active authorization/receipt/product-evidence
 consumer is rebound to versioned policy v2, which accepts only an owner-bound
-canonical `cross-ai-provider-evidence/v2` comment proving direct
+canonical signed `cross-ai-provider-evidence/v3` comment proving direct
 `gpt-5.6-sol xhigh`, read-only, ephemeral and finding-free `AGREE`. Canonical
 v2 is deliberately `tracked_pending` with no fabricated advisory comment, so
 new protected activation remains fail-closed until a real Codex-only advisory
@@ -53,15 +53,16 @@ Live/source evidence:
   or evidence;
 - root-free sign policies and the routine AppRole subset are reconciled.
   Provider issuer/coordinator AppRole definitions and their SecretIDs are not
-  live; no signed deployment bundle has been issued. The #2638 source now
-  removes legacy MiniMax AppRole/policy authority, but its live absence and a
-  fresh five-key public v2 receipt still require the attended owner bootstrap;
+  live; no signed deployment bundle has been issued. The #2688 source removes
+  both legacy Anthropic and MiniMax AppRole/policy authority, but their live
+  absence and a fresh five-key public v2 receipt still require the attended
+  owner bootstrap;
 - the evaluator App/observer facts below remain unchanged. A dedicated
   dispatcher App is not live, no Environment custom rule is attached, and the
   existing human required-reviewer rule remains authoritative;
-- direct Claude Opus 4.8 and honest Codex `gpt-5.6-sol` launch-attestation
-  adapters, accepted-dispatch correlation and the deterministic five-key v2
-  public trust-root builder are source changes under #2502. MiniMax is excluded
+- honest direct Codex routine Spark/high-impact SOL launch-attestation,
+  accepted-dispatch correlation and the deterministic five-key v2 public
+  trust-root builder are source changes under #2688. Claude and MiniMax are excluded
   from new evidence. These changes are not live until exact-head review, CI,
   merge and a separate TEST rollout prove them;
 - OpenAI is deliberately `trusted-launch-attested`, not provider-reported.

@@ -93,6 +93,8 @@ jobs:
             and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
           ' "$out/run.json" >/dev/null
           activation_head_sha="$(jq -er '.head_sha' "$out/run.json")"
+          activation_run_created_at="$(jq -er '.created_at' "$out/run.json")"
+          activation_run_started_at="$(jq -er '.run_started_at' "$out/run.json")"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
             > "$out/artifacts.json"
           expected="faz22-view-only-pilot-protected-authorization-$ACTIVATION_RUN_ID"
@@ -145,7 +147,11 @@ jobs:
               ;;
             v1)
               policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
-              legacy_args=(--allow-legacy-v1)
+              legacy_args=(
+                --allow-legacy-v1
+                --activation-run-created-at "$activation_run_created_at"
+                --activation-run-started-at "$activation_run_started_at"
+              )
               ;;
             *)
               echo "::error::unsupported owner policy selection"

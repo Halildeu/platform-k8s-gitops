@@ -42,6 +42,14 @@ class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
             fixtures.SOURCE_RUN_IDS["browser"],
             fixtures.ACTIVATION_RUN_ID,
             fixtures.HEAD_SHA,
+            advisory_scope_bytes=fixtures.ADVISORY_FIXTURE.scope_bytes,
+            cross_ai_trust_root=fixtures.ADVISORY_FIXTURE.authority.trust_root,
+            cross_ai_revocations=(
+                fixtures.ADVISORY_FIXTURE.authority.revocations_envelope
+            ),
+            expected_cross_ai_trust_root_sha256=(
+                fixtures.ADVISORY_FIXTURE.authority.expected_trust_root_sha256
+            ),
         )
         self.assertEqual("operator", child["evidenceType"])
         self.assertEqual(fixtures.binding(), child["binding"])
@@ -66,6 +74,14 @@ class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
                 fixtures.SOURCE_RUN_IDS["browser"],
                 fixtures.ACTIVATION_RUN_ID,
                 fixtures.HEAD_SHA,
+                advisory_scope_bytes=fixtures.ADVISORY_FIXTURE.scope_bytes,
+                cross_ai_trust_root=fixtures.ADVISORY_FIXTURE.authority.trust_root,
+                cross_ai_revocations=(
+                    fixtures.ADVISORY_FIXTURE.authority.revocations_envelope
+                ),
+                expected_cross_ai_trust_root_sha256=(
+                    fixtures.ADVISORY_FIXTURE.authority.expected_trust_root_sha256
+                ),
             )
 
 
