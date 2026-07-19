@@ -123,6 +123,36 @@ class SourceActivationTests(unittest.TestCase):
 
         self.assertEqual(descendant, activated)
 
+    def test_marker_before_last_source_activates_at_first_complete_descendant(self) -> None:
+        marker = self.repo / MODULE.ACTIVATION_MARKER_PATH
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_bytes(MODULE.ACTIVATION_MARKER_BYTES)
+        self.commit("introduce activation marker")
+
+        source_paths = tuple(MODULE.TRUSTED_SOURCE_PATHS.values())
+        for index, relative_path in enumerate(source_paths):
+            target = self.repo / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((ROOT / relative_path).read_bytes())
+            self.commit(f"add producer source {index}")
+
+        complete_sha = self.head_sha()
+        complete = MODULE.verify_activation(
+            self.repo, complete_sha, complete_sha, **self.CONTEXT
+        )
+        self.assertRegex(
+            complete["activated_at"],
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+        )
+
+        (self.repo / "README.md").write_text("descendant\n", encoding="utf-8")
+        self.commit("mainline descendant")
+        descendant_sha = self.head_sha()
+        descendant = MODULE.verify_activation(
+            self.repo, descendant_sha, descendant_sha, **self.CONTEXT
+        )
+        self.assertEqual(descendant["activated_at"], complete["activated_at"])
+
     def test_marker_mutation_cannot_activate_policy(self) -> None:
         self.activate_source_stack()
         activation_sha = self.head_sha()

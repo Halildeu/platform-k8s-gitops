@@ -138,7 +138,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   // Tombstone: deleting the retired wrapper remains a governance change, and
   // any future MiniMax-named review helper cannot be reintroduced under none.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|attest_cross_ai_scope_pii|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review|verify_cross_ai_source_activation)\.py$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|attest_cross_ai_scope_pii|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review|verify_cross_ai_source_activation|complete_cross_ai_audit_status)\.py$/,
   /^scripts\/ai\/cross_ai_source_activation_marker\.json$/,
   /^tests\/ai\/test_.*\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,

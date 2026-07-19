@@ -23,11 +23,12 @@ import sys
 path = sys.argv[sys.argv.index("api") + 1]
 login = os.environ.get("FAKE_GH_LOGIN", "Halildeu")
 if path == "user":
-    print(json.dumps({"login": login}))
+    print(json.dumps({"login": login, "id": 101}))
 elif path == "repos/Halildeu/platform-k8s-gitops":
     print(json.dumps({
+        "id": 202,
         "full_name": "Halildeu/platform-k8s-gitops",
-        "owner": {"login": "Halildeu"},
+        "owner": {"login": "Halildeu", "id": 101},
         "permissions": {"admin": os.environ.get("FAKE_GH_ADMIN", "1") == "1"},
     }))
 else:
@@ -89,7 +90,9 @@ class ScopePiiAttestationTests(unittest.TestCase):
         self.assertEqual(attestation["scope_sha256"], self.digest)
         self.assertEqual(attestation["decision"], "no-sensitive-pii")
         self.assertEqual(attestation["repository"], "Halildeu/platform-k8s-gitops")
+        self.assertEqual(attestation["repository_id"], 202)
         self.assertEqual(attestation["reviewer_login"], "Halildeu")
+        self.assertEqual(attestation["reviewer_id"], 101)
         self.assertEqual(
             attestation["reviewer_role"], "authenticated-repository-owner"
         )

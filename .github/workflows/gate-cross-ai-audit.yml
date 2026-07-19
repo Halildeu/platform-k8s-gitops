@@ -212,17 +212,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          payload="$(jq -nc --arg url "$PR_URL" '{
-            state: "success",
-            context: "cross-ai-audit",
-            description: "Trusted exact-head Cross-AI audit passed",
-            target_url: $url
-          }')"
-          result="$(printf '%s' "$payload" | gh api \
-            "repos/${GH_REPO}/statuses/${PR_HEAD_SHA}" \
-            --method POST --input -)"
-          test "$(printf '%s' "$result" | jq -r .state)" = "success"
-          test "$(printf '%s' "$result" | jq -r .context)" = "cross-ai-audit"
+          python3 scripts/ai/complete_cross_ai_audit_status.py \
+            --repo "$GH_REPO" \
+            --issue "$PR_NUMBER" \
+            --event-path "$GITHUB_EVENT_PATH"

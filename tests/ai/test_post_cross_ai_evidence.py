@@ -114,7 +114,7 @@ class EvidenceValidationTests(unittest.TestCase):
             if "/statuses/" in command[2]:
                 posted = json.loads(str(kwargs["input"]))
                 status_contexts.append(posted["context"])
-                identifier = 1 if posted["context"].startswith("cross-ai/evidence/") else 2
+                identifier = 11 if posted["context"].startswith("cross-ai/evidence/") else 10
                 return subprocess.CompletedProcess(
                     command,
                     0,
@@ -137,7 +137,13 @@ class EvidenceValidationTests(unittest.TestCase):
                 )
             posted = json.loads(str(kwargs["input"]))
             return subprocess.CompletedProcess(
-                command, 0, stdout=json.dumps({"body": posted["body"]})
+                command,
+                0,
+                stdout=json.dumps({
+                    "body": posted["body"],
+                    "state": "open",
+                    "head": {"sha": payload["head_sha"]},
+                }),
             )
 
         result = MODULE.publish_evidence(
@@ -154,17 +160,18 @@ class EvidenceValidationTests(unittest.TestCase):
             calls[0][2],
             f"repos/Halildeu/platform-k8s-gitops/statuses/{payload['head_sha']}",
         )
-        self.assertEqual(calls[1][2], calls[0][2])
+        self.assertEqual(calls[1][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
+        self.assertEqual(calls[2][2], calls[0][2])
         self.assertEqual(
             status_contexts,
             ["cross-ai-audit", f"cross-ai/evidence/{digest}"],
         )
-        self.assertIn("/comments", calls[2][2])
-        self.assertEqual(calls[3][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
+        self.assertIn("/comments", calls[3][2])
+        self.assertEqual(calls[4][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
         self.assertEqual(result["ledger_context"], f"cross-ai/evidence/{digest}")
         self.assertEqual(
             result["audit_recheck_marker"],
-            f"<!-- cross-ai-audit-recheck:1:{digest} -->",
+            f"<!-- cross-ai-audit-recheck:10:11:{digest} -->",
         )
 
     def test_invalidation_failure_never_creates_binding_evidence(self) -> None:
@@ -210,6 +217,16 @@ class EvidenceValidationTests(unittest.TestCase):
                         "creator": {"login": "Halildeu"},
                     }),
                 )
+            if "/pulls/" in command[2]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "body": posted["body"],
+                        "state": "open",
+                        "head": {"sha": payload["head_sha"]},
+                    }),
+                )
             return subprocess.CompletedProcess(command, 1, stdout="")
 
         with contextlib.redirect_stdout(io.StringIO()):
@@ -224,8 +241,10 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(all("/statuses/" in command[2] for command in calls))
+        self.assertEqual(len(calls), 3)
+        self.assertIn("/statuses/", calls[0][2])
+        self.assertIn("/pulls/", calls[1][2])
+        self.assertIn("/statuses/", calls[2][2])
 
     def test_comment_failure_occurs_after_durable_ledger(self) -> None:
         payload = evidence()
@@ -247,6 +266,17 @@ class EvidenceValidationTests(unittest.TestCase):
                         "creator": {"login": "Halildeu"},
                     }),
                 )
+            if "/pulls/" in command[2]:
+                posted = json.loads(str(kwargs["input"]))
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "body": posted["body"],
+                        "state": "open",
+                        "head": {"sha": payload["head_sha"]},
+                    }),
+                )
             return subprocess.CompletedProcess(command, 1, stdout="")
 
         with contextlib.redirect_stdout(io.StringIO()):
@@ -261,10 +291,11 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 4)
         self.assertIn("/statuses/", calls[0][2])
-        self.assertIn("/statuses/", calls[1][2])
-        self.assertIn("/comments", calls[2][2])
+        self.assertIn("/pulls/", calls[1][2])
+        self.assertIn("/statuses/", calls[2][2])
+        self.assertIn("/comments", calls[3][2])
 
     def test_body_recheck_failure_leaves_pending_invalidation_after_comment(self) -> None:
         payload = evidence()
@@ -296,6 +327,17 @@ class EvidenceValidationTests(unittest.TestCase):
                         "updated_at": "2026-07-19T18:00:01Z",
                     }),
                 )
+            if "/pulls/" in command[2] and len(calls) == 2:
+                posted = json.loads(str(kwargs["input"]))
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "body": posted["body"],
+                        "state": "open",
+                        "head": {"sha": payload["head_sha"]},
+                    }),
+                )
             return subprocess.CompletedProcess(command, 1, stdout="")
 
         with contextlib.redirect_stdout(io.StringIO()):
@@ -310,10 +352,11 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 4)
-        self.assertIn("/statuses/", calls[1][2])
-        self.assertIn("/comments", calls[2][2])
-        self.assertIn("/pulls/", calls[3][2])
+        self.assertEqual(len(calls), 5)
+        self.assertIn("/pulls/", calls[1][2])
+        self.assertIn("/statuses/", calls[2][2])
+        self.assertIn("/comments", calls[3][2])
+        self.assertIn("/pulls/", calls[4][2])
 
     def test_invalid_pr_body_fails_before_any_github_mutation(self) -> None:
         payload = evidence()
@@ -340,7 +383,7 @@ class EvidenceValidationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("statuses: write", workflow)
         self.assertIn("Mark exact-head Cross-AI audit status current", workflow)
-        self.assertIn('context: "cross-ai-audit"', workflow)
+        self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()

@@ -33,7 +33,7 @@ MODELS = {
 EXECUTION_PROFILE = "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2"
 CODEX_NATIVE_TRUST_ROOT = "repo-pinned-codex-native-sha256-v1"
 SOURCE_TRUST_ROOT = "trusted-base-cross-ai-sources-sha256-v1"
-PII_ATTESTATION_SCHEMA = "cross-ai-pii-review-attestation/v2"
+PII_ATTESTATION_SCHEMA = "cross-ai-pii-review-attestation/v3"
 PII_REVIEW_STATUS = "no-sensitive-pii"
 TRUSTED_SOURCE_PATHS = {
     "review_harness_sha256": "scripts/ai/run_isolated_codex_review.py",
@@ -170,7 +170,7 @@ def repository_slug_from_origin(worktree: Path) -> str:
 def read_pii_attestation(
     path: Path,
     expected_scope_sha256: str,
-    expected_repository: str,
+    expected_owner_identity: dict,
 ) -> str:
     """Validate the deliberate exact-scope PII gate and return its digest."""
     try:
@@ -187,15 +187,20 @@ def read_pii_attestation(
         or not isinstance(attestation, dict)
         or set(attestation) != {
             "schema", "scope_sha256", "decision", "reviewer_role",
-            "repository", "reviewer_login",
+            "repository", "repository_id", "reviewer_login", "reviewer_id",
         }
         or attestation.get("schema") != PII_ATTESTATION_SCHEMA
         or attestation.get("scope_sha256") != expected_scope_sha256.lower()
         or attestation.get("decision") != PII_REVIEW_STATUS
         or attestation.get("reviewer_role") != "authenticated-repository-owner"
-        or attestation.get("repository", "").lower() != expected_repository.lower()
+        or attestation.get("repository", "").lower()
+        != expected_owner_identity.get("repository", "").lower()
+        or attestation.get("repository_id")
+        != expected_owner_identity.get("repository_id")
         or attestation.get("reviewer_login", "").lower()
-        != expected_repository.split("/", 1)[0].lower()
+        != expected_owner_identity.get("reviewer_login", "").lower()
+        or attestation.get("reviewer_id")
+        != expected_owner_identity.get("reviewer_id")
     ):
         fail("scope_pii_review_tracked_pending")
     return hashlib.sha256(encoded).hexdigest()
@@ -997,6 +1002,9 @@ def main() -> None:
         UNATTESTED_ACTUAL_MODEL,
         validate_provider_response,
     )
+    from attest_cross_ai_scope_pii import (  # pylint: disable=import-outside-toplevel
+        verify_authenticated_repository_owner,
+    )
 
     if os.path.lexists(args.evidence_output):
         fail("evidence_output_exists")
@@ -1010,10 +1018,11 @@ def main() -> None:
     gitleaks_bytes, gitleaks_executable_name, _ = resolve_gitleaks_native()
     scope = read_scope(args.scope_file, args.scope_sha256)
     repository = repository_slug_from_origin(args.worktree.resolve())
+    owner_identity = verify_authenticated_repository_owner(repository)
     pii_attestation_sha256 = read_pii_attestation(
         args.pii_attestation_file,
         args.scope_sha256,
-        repository,
+        owner_identity,
     )
     verify_scope_binding(
         worktree=args.worktree.resolve(),

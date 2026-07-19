@@ -50,7 +50,7 @@ def run_git(repo: Path, *args: str) -> bytes:
 
 
 def derive_activation_epoch(repo: Path, expected_sha: str) -> str:
-    """Return the first mainline commit carrying the immutable activation marker."""
+    """Return the first mainline commit carrying marker plus complete stack."""
     marker_history = (
         run_git(
             repo,
@@ -66,7 +66,19 @@ def derive_activation_epoch(repo: Path, expected_sha: str) -> str:
     )
     if not marker_history:
         raise ActivationError("activation_epoch_unavailable")
-    for candidate in marker_history:
+    first_marker_commit = marker_history[0]
+    descendants = (
+        run_git(
+            repo,
+            "rev-list",
+            "--first-parent",
+            "--reverse",
+            f"{first_marker_commit}..{expected_sha}",
+        )
+        .decode()
+        .splitlines()
+    )
+    for candidate in (first_marker_commit, *descendants):
         try:
             if (
                 run_git(repo, "show", f"{candidate}:{ACTIVATION_MARKER_PATH}")

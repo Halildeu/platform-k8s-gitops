@@ -547,22 +547,27 @@ Producer güncellemesi bu nedenle daha önce geçerli olan immutable kanıtı ge
 dönük olarak bozmaz. Scope external provider'a verilmeden önce owner-only
 `attest_cross_ai_scope_pii.py` exact digest için `no-sensitive-pii` kararı
 üretmelidir. Attester `gh api user` ile authenticated login'i, target repository
-owner'ını ve `permissions.admin=true` yetkisini canlı doğrular; v2 artifact repo,
-owner login, exact scope digest ve kararı birlikte bağlar. Harness artifact repo
-ve login'ini incelenen worktree'nin GitHub origin owner'ı ile eşleştirir; eksik,
-başka repo/kimlikte veya doğrulanamayan karar `tracked_pending` olur. Evidence v4 exact CLI
+owner'ını ve `permissions.admin=true` yetkisini canlı doğrular; v3 artifact repo
+id, owner login/id, exact scope digest ve kararı birlikte bağlar. Harness provider
+çağrısından önce aynı `gh` owner/admin kimliğini yeniden doğrular ve artifact'i
+incelenen worktree'nin GitHub origin owner'ıyla eşleştirir; eksik, başka
+repo/kimlikte veya doğrulanamayan karar `tracked_pending` olur. Evidence v4 exact CLI
 version/target/native SHA-256/trust-root, producer kimlikleri, PII attestation
 ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
 review ister. Poster exact şema/profil/provenance dışında fail-closed olur;
 trusted producer commit'inin exact PR base tip'inin atası olduğunu posting
 öncesinde doğrular. Yeni binding evidence görünür olmadan exact-head
-`cross-ai-audit` commit status'unu `pending` yapar; ardından immutable status
-ledger'ını owner comment'ten önce üretir ve PR body'deki ledger-id/digest recheck
-marker'ını değiştirerek trusted-base `pull_request_target: edited` audit'ini
-yeniden tetikler. Audit ancak tüm receipt/ledger/comment/lineage kontrolleri
-geçince exact-head status'u `success` yapar. Ledger, comment veya body update
-başarısız kalırsa pending status fail-closed korunur; aynı evidence digest'iyle
+`cross-ai-audit` commit status'unu `pending` yapar ve status ID'sini PR body'deki
+ilk generation marker'ına hemen bağlar. Ardından immutable status ledger'ını
+owner comment'ten önce üretir ve exact pending-id/ledger-id/digest taşıyan final
+marker'la trusted-base `pull_request_target: edited` audit'ini yeniden tetikler.
+Trusted completion helper event body/head ile canlı açık PR body/head'ini,
+marker'daki pending ID ile latest pending status'u ve marker'daki ledger ID ile
+exact digest/PR/owner ledger'ını yeniden doğrulamadan success yazamaz. Audit
+ancak tüm receipt/ledger/comment/lineage kontrolleri geçince exact generation
+için status'u `success` yapar. Ledger, comment veya body update başarısız kalırsa
+pending status fail-closed korunur; aynı evidence digest'iyle
 retry güvenlidir. CI receipt, GitHub comment gövdesi ve status-ledger bağını
 digest üzerinden birlikte doğrular. CI provider credential'ı kullanmaz ve
 deterministik güvenlik-negatiflerinde fake binary çalıştırır; bootstrap'taki ham

@@ -23,7 +23,7 @@ from typing import NoReturn
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-SCHEMA = "cross-ai-pii-review-attestation/v2"
+SCHEMA = "cross-ai-pii-review-attestation/v3"
 DECISION = "no-sensitive-pii"
 REVIEWER_ROLE = "authenticated-repository-owner"
 MAX_SCOPE_BYTES = 2_000_000
@@ -70,7 +70,7 @@ def gh_json(path: str) -> dict:
     return payload
 
 
-def verify_authenticated_repository_owner(repo: str) -> str:
+def verify_authenticated_repository_owner(repo: str) -> dict:
     if REPO_RE.fullmatch(repo) is None or shutil.which("gh") is None:
         fail("pii_reviewer_identity_unverifiable")
     actor = gh_json("user")
@@ -78,10 +78,17 @@ def verify_authenticated_repository_owner(repo: str) -> str:
     login = actor.get("login")
     owner = repository.get("owner")
     permissions = repository.get("permissions")
+    reviewer_id = actor.get("id")
+    repository_id = repository.get("id")
     if (
         not isinstance(login, str)
+        or not isinstance(reviewer_id, int)
+        or reviewer_id < 1
+        or not isinstance(repository_id, int)
+        or repository_id < 1
         or not isinstance(owner, dict)
         or not isinstance(owner.get("login"), str)
+        or owner.get("id") != reviewer_id
         or not isinstance(permissions, dict)
         or permissions.get("admin") is not True
         or repository.get("full_name", "").lower() != repo.lower()
@@ -89,7 +96,12 @@ def verify_authenticated_repository_owner(repo: str) -> str:
         or login.lower() != repo.split("/", 1)[0].lower()
     ):
         fail("pii_reviewer_not_repository_owner")
-    return login
+    return {
+        "repository": repository["full_name"],
+        "repository_id": repository_id,
+        "reviewer_login": login,
+        "reviewer_id": reviewer_id,
+    }
 
 
 def main() -> None:
@@ -105,7 +117,7 @@ def main() -> None:
         fail("invalid_scope_sha256")
     if os.path.lexists(args.output):
         fail("pii_attestation_output_exists")
-    reviewer_login = verify_authenticated_repository_owner(args.repo)
+    owner_identity = verify_authenticated_repository_owner(args.repo)
     try:
         scope_stat = args.scope_file.stat()
         scope_bytes = args.scope_file.read_bytes()
@@ -126,8 +138,7 @@ def main() -> None:
             "scope_sha256": args.scope_sha256.lower(),
             "decision": DECISION,
             "reviewer_role": REVIEWER_ROLE,
-            "repository": args.repo,
-            "reviewer_login": reviewer_login,
+            **owner_identity,
         },
         ensure_ascii=False,
         separators=(",", ":"),

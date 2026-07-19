@@ -142,6 +142,27 @@ fi
 exit 0
 '''
 
+FAKE_GH = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+path = sys.argv[sys.argv.index("api") + 1]
+login = os.environ.get("FAKE_GH_LOGIN", "Halildeu")
+admin = os.environ.get("FAKE_GH_ADMIN", "1") == "1"
+if path == "user":
+    print(json.dumps({"login": login, "id": 101}))
+elif path == "repos/Halildeu/platform-k8s-gitops":
+    print(json.dumps({
+        "id": 202,
+        "full_name": "Halildeu/platform-k8s-gitops",
+        "owner": {"login": "Halildeu", "id": 101},
+        "permissions": {"admin": admin},
+    }))
+else:
+    raise SystemExit(2)
+'''
+
 
 class IsolatedCodexReviewTests(unittest.TestCase):
     def test_untrusted_builder_cannot_execute_before_source_verification(self) -> None:
@@ -299,6 +320,9 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         fake_gitleaks = self.bin_dir / "gitleaks"
         fake_gitleaks.write_text(FAKE_GITLEAKS, encoding="utf-8")
         fake_gitleaks.chmod(0o700)
+        fake_gh = self.bin_dir / "gh"
+        fake_gh.write_text(FAKE_GH, encoding="utf-8")
+        fake_gh.chmod(0o700)
         package_root = self.root / "lib" / "node_modules" / "@openai" / "codex"
         launcher = package_root / "bin" / "codex.js"
         launcher.parent.mkdir(parents=True)
@@ -425,21 +449,27 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             raise RuntimeError(prepare.stdout + prepare.stderr)
         self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
         self.pii_attestation = self.root / "pii-attestation.json"
-        self.pii_attestation.write_text(
-            json.dumps(
-                {
-                    "schema": "cross-ai-pii-review-attestation/v2",
-                    "scope_sha256": self.scope_sha,
-                    "decision": "no-sensitive-pii",
-                    "reviewer_role": "authenticated-repository-owner",
-                    "repository": "Halildeu/platform-k8s-gitops",
-                    "reviewer_login": "Halildeu",
-                },
-                separators=(",", ":"),
-            ),
-            encoding="utf-8",
+        attest = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/ai/attest_cross_ai_scope_pii.py"),
+                "--scope-file", str(self.scope),
+                "--scope-sha256", self.scope_sha,
+                "--decision", "no-sensitive-pii",
+                "--repo", "Halildeu/platform-k8s-gitops",
+                "--output", str(self.pii_attestation),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={
+                **os.environ,
+                "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            },
+            check=False,
         )
-        self.pii_attestation.chmod(0o600)
+        if attest.returncode != 0:
+            raise RuntimeError(attest.stdout + attest.stderr)
         self.output = self.root / "evidence.json"
         self.expected_stdin = self.root / "expected-stdin.txt"
         self.expected_stdin.write_text(
@@ -474,6 +504,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         pii_attestation_file: Path | None = None,
         untrusted_source: bool = False,
         review_tmpdir: Path | None = None,
+        gh_login: str = "Halildeu",
+        gh_admin: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -482,6 +514,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             "FAKE_PROTECTED_INPUT": str(self.protected_input),
             "FAKE_EXFIL_MARKER": str(self.exfil_marker),
             "FAKE_EXPECTED_STDIN_FILE": str(self.expected_stdin),
+            "FAKE_GH_LOGIN": gh_login,
+            "FAKE_GH_ADMIN": "1" if gh_admin else "0",
         }
         if tool_event:
             env["FAKE_TOOL_EVENT"] = "1"
@@ -691,12 +725,14 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         wrong.write_text(
             json.dumps(
                 {
-                    "schema": "cross-ai-pii-review-attestation/v2",
+                    "schema": "cross-ai-pii-review-attestation/v3",
                     "scope_sha256": "f" * 64,
                     "decision": "no-sensitive-pii",
                     "reviewer_role": "authenticated-repository-owner",
                     "repository": "Halildeu/platform-k8s-gitops",
+                    "repository_id": 202,
                     "reviewer_login": "Halildeu",
+                    "reviewer_id": 101,
                 },
                 separators=(",", ":"),
             ),
@@ -709,6 +745,23 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             json.loads(result.stdout)["error"],
             "scope_pii_review_tracked_pending",
         )
+
+    def test_rejects_pii_attestation_when_harness_actor_is_not_owner_admin(self) -> None:
+        for options in (
+            {"gh_login": "contributor"},
+            {"gh_admin": False},
+        ):
+            with self.subTest(options=options):
+                result = self.run_harness(**options)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(
+                    json.loads(result.stdout)["error"],
+                    {
+                        "pii_reviewer_not_repository_owner",
+                        "pii_reviewer_identity_unverifiable",
+                    },
+                )
+                self.assertFalse(self.output.exists())
 
     def test_rejects_review_producer_not_equal_to_trusted_base(self) -> None:
         result = self.run_harness(untrusted_source=True)
@@ -818,12 +871,14 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.pii_attestation.write_text(
             json.dumps(
                 {
-                    "schema": "cross-ai-pii-review-attestation/v2",
+                    "schema": "cross-ai-pii-review-attestation/v3",
                     "scope_sha256": self.scope_sha,
                     "decision": "no-sensitive-pii",
                     "reviewer_role": "authenticated-repository-owner",
                     "repository": "Halildeu/platform-k8s-gitops",
+                    "repository_id": 202,
                     "reviewer_login": "Halildeu",
+                    "reviewer_id": 101,
                 },
                 separators=(",", ":"),
             ),

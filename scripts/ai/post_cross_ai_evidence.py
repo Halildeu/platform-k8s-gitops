@@ -21,7 +21,7 @@ from typing import NoReturn
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 RECHECK_MARKER_RE = re.compile(
-    r"(?:\n\n)?<!-- cross-ai-audit-recheck:\d+:[0-9a-f]{64} -->\n?"
+    r"(?:\n\n)?<!-- cross-ai-audit-recheck:\d+(?::\d+)?:[0-9a-f]{64} -->\n?"
 )
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -306,6 +306,54 @@ def audit_invalidation_payload(pr_url: str) -> dict:
     }
 
 
+def patch_recheck_marker(
+    *,
+    repo: str,
+    issue_number: int,
+    head_sha: str,
+    clean_body: str,
+    pending_status_id: int,
+    ledger_status_id: int,
+    body_sha256: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> str:
+    marker = (
+        "<!-- cross-ai-audit-recheck:"
+        f"{pending_status_id}:{ledger_status_id}:{body_sha256} -->"
+    )
+    updated_body = f"{clean_body}\n\n{marker}\n"
+    if len(updated_body.encode("utf-8")) > 65_536:
+        fail("gh_pr_body_invalid")
+    try:
+        update_result = runner(
+            [
+                "gh", "api", f"repos/{repo}/pulls/{issue_number}",
+                "--method", "PATCH", "--input", "-",
+            ],
+            input=json.dumps({"body": updated_body}, separators=(",", ":")),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_audit_recheck_trigger_failed")
+    if update_result.returncode != 0:
+        fail("gh_audit_recheck_trigger_failed")
+    try:
+        updated_pr = json.loads(update_result.stdout)
+        updated_head = updated_pr["head"]["sha"].lower()
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("gh_audit_recheck_trigger_invalid")
+    if (
+        updated_pr.get("body") != updated_body
+        or updated_pr.get("state") != "open"
+        or updated_head != head_sha.lower()
+    ):
+        fail("gh_audit_recheck_trigger_invalid")
+    return marker
+
+
 def publish_evidence(
     *,
     repo: str,
@@ -317,13 +365,13 @@ def publish_evidence(
     pr_body: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict:
-    """Invalidate the audit, then publish ledger and mutable comment payload.
+    """Publish evidence under one exact-head audit generation.
 
-    The exact-head required status becomes pending before any new binding
-    evidence is visible. A failed ledger or comment write therefore remains
-    fail-closed. Retrying may create an identical status, which the verifier
-    coalesces by evidence digest. This ordering prevents both a stale-green
-    merge race and an unledgered owner comment from poisoning the PR.
+    The required status becomes pending before any new binding evidence is
+    visible. Its GitHub status id is written into the PR body immediately, so
+    an older workflow event cannot clear a newer pending generation. The
+    ledger id is added only after the immutable status and owner comment exist.
+    Any partial publication therefore remains fail-closed.
     """
     if not isinstance(pr_body, str):
         fail("gh_pr_body_invalid")
@@ -351,16 +399,32 @@ def publish_evidence(
         invalidation_record = json.loads(invalidation_result.stdout)
         invalidation_ref = invalidation_record["url"]
         invalidation_creator = invalidation_record["creator"]["login"].lower()
+        invalidation_id = invalidation_record["id"]
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_audit_invalidation_invalid")
     if (
         invalidation_record.get("context") != invalidation["context"]
+        or not isinstance(invalidation_id, int)
+        or invalidation_id < 1
         or invalidation_record.get("state") != invalidation["state"]
         or invalidation_record.get("description") != invalidation["description"]
         or invalidation_record.get("target_url") != invalidation["target_url"]
         or invalidation_creator != repo.split("/", 1)[0].lower()
     ):
         fail("gh_audit_invalidation_invalid")
+
+    # Change the PR body immediately after invalidation. Any audit run created
+    # from an older body generation can no longer clear this pending status.
+    patch_recheck_marker(
+        repo=repo,
+        issue_number=issue_number,
+        head_sha=evidence["head_sha"],
+        clean_body=clean_body,
+        pending_status_id=invalidation_id,
+        ledger_status_id=0,
+        body_sha256=body_sha256,
+        runner=runner,
+    )
 
     expected_status = status_ledger_payload(
         evidence, body_sha256, issue_number, pr_url
@@ -440,34 +504,16 @@ def publish_evidence(
     except (json.JSONDecodeError, KeyError, TypeError):
         fail("gh_response_invalid")
 
-    recheck_marker = (
-        f"<!-- cross-ai-audit-recheck:{ledger_id}:{body_sha256} -->"
+    recheck_marker = patch_recheck_marker(
+        repo=repo,
+        issue_number=issue_number,
+        head_sha=evidence["head_sha"],
+        clean_body=clean_body,
+        pending_status_id=invalidation_id,
+        ledger_status_id=ledger_id,
+        body_sha256=body_sha256,
+        runner=runner,
     )
-    updated_body = f"{clean_body}\n\n{recheck_marker}\n"
-    if len(updated_body.encode("utf-8")) > 65_536:
-        fail("gh_pr_body_invalid")
-    try:
-        update_result = runner(
-            [
-                "gh", "api", f"repos/{repo}/pulls/{issue_number}",
-                "--method", "PATCH", "--input", "-",
-            ],
-            input=json.dumps({"body": updated_body}, separators=(",", ":")),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except OSError:
-        fail("gh_audit_recheck_trigger_failed")
-    if update_result.returncode != 0:
-        fail("gh_audit_recheck_trigger_failed")
-    try:
-        updated_pr = json.loads(update_result.stdout)
-    except (json.JSONDecodeError, TypeError):
-        fail("gh_audit_recheck_trigger_invalid")
-    if updated_pr.get("body") != updated_body:
-        fail("gh_audit_recheck_trigger_invalid")
     return {
         "ref": api_ref,
         "created_at": created_at,
@@ -475,6 +521,7 @@ def publish_evidence(
         "ledger_ref": ledger_ref,
         "ledger_context": ledger_context,
         "audit_invalidation_ref": invalidation_ref,
+        "audit_generation_id": invalidation_id,
         "audit_recheck_marker": recheck_marker,
     }
 
@@ -554,6 +601,7 @@ def main() -> None:
                 "ledger_ref": publication["ledger_ref"],
                 "ledger_context": publication["ledger_context"],
                 "audit_invalidation_ref": publication["audit_invalidation_ref"],
+                "audit_generation_id": publication["audit_generation_id"],
                 "audit_recheck_marker": publication["audit_recheck_marker"],
             },
             ensure_ascii=False,
