@@ -59,7 +59,8 @@ jobs:
           test "$GITHUB_REF" = "refs/heads/main"
           gh api "repos/$GH_REPO/environments/$EXPECTED_ENVIRONMENT" > "$RUNNER_TEMP/environment.json"
           jq -e '
-            any(
+            .can_admins_bypass == false
+            and any(
               .protection_rules[]?;
               .type == "required_reviewers"
               and .prevent_self_review == true

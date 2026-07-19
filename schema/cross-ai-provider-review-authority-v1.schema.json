@@ -55,7 +55,7 @@
     },
     "historicalAuthorities": {
       "type": "array",
-      "maxItems": 32,
+      "maxItems": 4096,
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/historicalAuthority"}
     },

@@ -36,6 +36,18 @@ def verify_history_contract(text: str) -> None:
         raise ValueError("signed authority checkout must retain complete git history")
 
 
+def verify_activation_revision_contract(text: str) -> None:
+    required = (
+        'activation_head_sha="$(jq -r .head_sha "$out/run.json")"',
+        '--expected-head-sha "$activation_head_sha"',
+        'and (.head_sha | test("^[a-f0-9]{40}$"))',
+    )
+    if any(token not in text for token in required):
+        raise ValueError("activation revision contract is missing")
+    if '--expected-head-sha "$GITHUB_SHA"' in text:
+        raise ValueError("collector incorrectly binds authorization to its own revision")
+
+
 def verify_runtime_advisory_contract(text: str) -> None:
     required = (
         "advisory_comment_id:",
@@ -72,6 +84,20 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             with self.subTest(workflow=path.name):
                 self.assertEqual(1, text.count("--expected-file owner-comment.json"))
+        verify_activation_revision_contract(
+            BROWSER_WORKFLOW.read_text(encoding="utf-8")
+        )
+
+    def test_browser_collector_rejects_activation_revision_substitution(self):
+        original = BROWSER_WORKFLOW.read_text(encoding="utf-8")
+        for token in (
+            'activation_head_sha="$(jq -r .head_sha "$out/run.json")"',
+            '--expected-head-sha "$activation_head_sha"',
+            'and (.head_sha | test("^[a-f0-9]{40}$"))',
+        ):
+            with self.subTest(omitted=token):
+                with self.assertRaisesRegex(ValueError, "contract is missing"):
+                    verify_activation_revision_contract(original.replace(token, "", 1))
 
     def test_current_workflows_are_content_addressed_and_operator_is_unshallow(self):
         rendered = {

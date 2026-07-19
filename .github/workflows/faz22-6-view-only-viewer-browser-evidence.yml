@@ -211,15 +211,16 @@ jobs:
           out="$RUNNER_TEMP/faz22-viewer-activation"
           mkdir -p "$out"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
-          jq -e --arg sha "$GITHUB_SHA" '
+          jq -e '
             .status == "completed"
             and .conclusion == "success"
             and .event == "workflow_dispatch"
             and .head_branch == "main"
-            and .head_sha == $sha
+            and (.head_sha | test("^[a-f0-9]{40}$"))
             and .name == "Apply #2373 VIEW_ONLY viewer product pilot surface"
             and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
           ' "$out/run.json" >/dev/null
+          activation_head_sha="$(jq -r .head_sha "$out/run.json")"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
             > "$out/artifacts.json"
           expected="faz22-view-only-pilot-protected-authorization-$ACTIVATION_RUN_ID"
@@ -244,7 +245,7 @@ jobs:
             --policy config/faz22-6-view-only-pilot-owner-policy.v2.json \
             --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
             --expected-run-id "$ACTIVATION_RUN_ID" \
-            --expected-head-sha "$GITHUB_SHA"
+            --expected-head-sha "$activation_head_sha"
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6

@@ -111,6 +111,14 @@ class PublicReviewAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(AuthorityUnavailable, "tracked_pending"):
             load_active_authority(self.root, now=self.fixture.factory.now)
 
+    def test_history_schema_retains_a_multi_decade_weekly_rotation_horizon(self) -> None:
+        schema = json.loads(
+            (ROOT / "schema/cross-ai-provider-review-authority-v1.schema.json").read_text()
+        )
+        self.assertGreaterEqual(
+            schema["properties"]["historicalAuthorities"]["maxItems"], 4096
+        )
+
     def test_active_locator_requires_signed_fresh_revocations_and_independent_pin(self) -> None:
         self.install_active_files()
         self.write_json(
@@ -1415,6 +1423,7 @@ class GenesisTransitionTests(unittest.TestCase):
             "GH_TOKEN: ${{ steps.app-token.outputs.token }}",
             'test "$GITHUB_REF" = "refs/heads/main"',
             "repos/$GH_REPO/environments/$EXPECTED_ENVIRONMENT",
+            ".can_admins_bypass == false",
             '.type == "required_reviewers"',
             ".prevent_self_review == true",
             "--require-hashes",
