@@ -12,8 +12,10 @@ from pathlib import Path
 
 from scripts.ai import post_cross_ai_evidence as POST
 from scripts.ai.trusted_cross_ai_evidence import (
+    GITHUB_COMMENT_MAX_CHARS,
     TrustedEvidenceError,
     canonical_bytes,
+    validate_github_comment_transport,
     validate_evidence,
     validate_response_hygiene,
 )
@@ -51,6 +53,14 @@ class EvidenceValidationTests(unittest.TestCase):
             validated["review"]["modelIdentityClass"],
             "trusted-launch-attested",
         )
+
+    def test_github_comment_transport_is_bounded_to_actual_65536_limit(self) -> None:
+        validate_github_comment_transport("x" * GITHUB_COMMENT_MAX_CHARS)
+        with self.assertRaisesRegex(TrustedEvidenceError, "65536-character"):
+            validate_github_comment_transport("x" * (GITHUB_COMMENT_MAX_CHARS + 1))
+        # A character-count pass cannot smuggle an oversized UTF-8 payload.
+        with self.assertRaisesRegex(TrustedEvidenceError, "65536-character"):
+            validate_github_comment_transport("ş" * GITHUB_COMMENT_MAX_CHARS)
 
     def test_rejects_response_repackaging_even_when_outer_text_is_well_formed(self) -> None:
         evidence = copy.deepcopy(self.fixture.evidence)

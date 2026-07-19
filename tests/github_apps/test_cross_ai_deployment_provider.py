@@ -203,9 +203,6 @@ class ProviderExecutionTest(unittest.TestCase):
             receipt.capability_snapshot["officialExecutableProvenance"],
             self.executable_entry,
         )
-        self.assertEqual(
-            run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
-        )
         dispatched_executables = {
             call.kwargs["executable"] for call in run.call_args_list
         }
@@ -220,10 +217,21 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertTrue(
             all(Path(call.kwargs["cwd"]) == review_root for call in run.call_args_list)
         )
+        self.assertTrue(
+            all(
+                call.args[0][0] == str(dispatched_executable)
+                and call.args[0][0] == call.kwargs["executable"]
+                for call in run.call_args_list
+            )
+        )
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            [str(dispatched_executable), "debug", "models"],
+        )
         self.assertEqual(
             run.call_args_list[2].args[0],
             [
-                str(runner.executable),
+                str(dispatched_executable),
                 *canonical_codex_execution_arguments(
                     CODEX_MODEL, str(review_root.resolve())
                 ),

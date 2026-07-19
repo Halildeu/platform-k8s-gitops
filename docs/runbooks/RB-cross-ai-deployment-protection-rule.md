@@ -277,6 +277,48 @@ validate the exact allowed launch identity and only then consume its one-use
 sign token. Until that adapter and its redacted, content-addressed receipt are accepted, enforcement remains
 `tracked_pending`.
 
+### One-time provider-review authority genesis and activation
+
+The public provider-review root uses a two-PR, fail-closed transition. This is
+the only allowed root-of-trust bootstrap and is tracked by #2688 solely because
+it blocks the #2373 protected activation -> attended VIEW_ONLY render -> durable
+product-evidence customer journey.
+
+**PR A — stage public authority**
+
+- trusted base genesis status must be `installed`; active locator remains
+  `tracked_pending`;
+- exact changed files are only the genesis record, public v2 trust root and
+  signed revocations carrier;
+- dispatch `.github/workflows/cross-ai-provider-review-genesis.yml` from exact
+  `main` with `phase=stage`, PR number and exact head SHA;
+- the `cross-ai-provider-review-genesis` Environment must have at least one
+  human required reviewer and `prevent_self_review=true`; an unprotected or
+  unreadable Environment fails before PR data is evaluated;
+- after human approval, the trusted-main workflow verifies same-repository
+  base/head, exact paths, root pin, DSSE role and revocation freshness. Record
+  the successful API run URL as `Authority genesis run`; consultation mode is
+  exactly `none`, because no provider key may self-authorize its own root.
+
+**PR B — activate and retire genesis**
+
+- PR A must already be on the trusted base with genesis status `staged`;
+- exact changed files are only the inactive authority locator and genesis
+  record; the public root, revocations, schema and verifier bytes cannot move;
+- build the review against the head locator, but the trusted-base audit
+  independently loads the already staged base root and accepts only the exact
+  locator projection plus `staged -> retired` transition;
+- require direct `gpt-5.6-sol xhigh`, read-only, ephemeral finding-free signed
+  receipt and a fresh `phase=activate` protected-Environment run;
+- merge makes the active locator authoritative and permanently retires the
+  one-time bootstrap. Any later rotation uses the normal signed authority
+  release contract, never genesis replay.
+
+A run dispatched from a non-main ref, bound to a stale base/head, older than 24
+hours, failed, missing the exact title, or attached to an ordinary PR is not an
+approval. Protected Environment approval is a real human root ceremony; the
+Codex receipt does not impersonate it.
+
 The evaluator's Transit client requires a canonical HTTPS Vault origin. The
 loopback HTTP address above is accepted only by the attended owner bootstrap.
 If TEST Vault still lacks a reviewed HTTPS service identity, signed evidence

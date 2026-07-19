@@ -35,6 +35,32 @@ rotate the provider-review signing root. The signed launch capability snapshot
 then binds the matched allowlist entry, private-copy digest, live model catalog
 and fixed arguments inside each provider-review leaf.
 
+The first public root cannot cryptographically authorize its own introduction.
+`cross-ai-provider-review-genesis.v1.json` resolves that bootstrap without a
+general bypass. It permits exactly two default-branch transitions:
+
+1. `installed -> staged`: a PR may change only the genesis locator plus the
+   fixed public trust-root and signed-revocations paths. It carries no provider
+   receipt and passes only through the trusted-main
+   `cross-ai-provider-review-genesis.yml` workflow after the protected
+   `cross-ai-provider-review-genesis` Environment proves a non-self human
+   reviewer is configured and approves the run. The workflow independently
+   verifies same-repo PR/base/head, exact changed paths, root digest, DSSE and
+   revocation freshness; the ordinary audit accepts `none` only with that
+   exact successful run.
+2. `staged -> retired`: a second PR may change only the authority locator and
+   genesis status. The trusted-base verifier uses the already committed staged
+   root to validate an exact `gpt-5.6-sol xhigh` signed receipt, requires a
+   second protected-Environment run, checks the locator projection byte-for-
+   byte and retires the genesis path. A root, revocation, schema or code change
+   cannot ride with activation.
+
+The workflow must be dispatched from exact `refs/heads/main`; its successful
+run is valid for 24 hours and must bind the current PR base and head. An
+ordinary PR cannot present `Authority genesis run`, and a failed/stale run does
+not lower the consultation floor. After retirement, only the active signed
+authority path remains; genesis cannot be replayed to recover or replace it.
+
 The public root contains only the OpenAI provider-review role plus one each of
 the coordinator, revocation and runner-management roles. A provider rotation
 may temporarily expose exactly two consecutive OpenAI key versions; both are

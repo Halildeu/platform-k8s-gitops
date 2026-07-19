@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-provider-review-genesis-v1.schema.json",
+  "title": "One-time direct Codex public-authority genesis contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "ownerDecision",
+    "tracking",
+    "protectedEnvironment",
+    "transitionContract",
+    "trustRootPath",
+    "revocationsPath",
+    "expectedTrustRootSha256"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "acik.cross-ai-provider-review-genesis.v1"},
+    "status": {"enum": ["installed", "staged", "retired"]},
+    "ownerDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiRef", "bodySha256", "owner", "authorAssociation", "createdAt", "updatedAt"],
+      "properties": {
+        "apiRef": {"const": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/5014836397"},
+        "bodySha256": {"const": "sha256:4b6a269ed29c717bb826c59cb6be4b60e93a781bf989850a2361768723925f79"},
+        "owner": {"const": "Halildeu"},
+        "authorAssociation": {"const": "OWNER"},
+        "createdAt": {"const": "2026-07-19T07:17:54Z"},
+        "updatedAt": {"const": "2026-07-19T07:17:54Z"}
+      }
+    },
+    "tracking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enablerIssue", "customerJourneyIssue", "customerJourney"],
+      "properties": {
+        "enablerIssue": {"const": "Halildeu/platform-k8s-gitops#2688"},
+        "customerJourneyIssue": {"const": "Halildeu/platform-k8s-gitops#2373"},
+        "customerJourney": {"const": "protected-test-activation-to-attended-view-only-render-to-durable-product-evidence"}
+      }
+    },
+    "protectedEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "workflowPath", "trustedRef", "maxRunAgeHours", "requireHumanReviewer", "preventSelfReview"],
+      "properties": {
+        "name": {"const": "cross-ai-provider-review-genesis"},
+        "workflowPath": {"const": ".github/workflows/cross-ai-provider-review-genesis.yml"},
+        "trustedRef": {"const": "refs/heads/main"},
+        "maxRunAgeHours": {"const": 24},
+        "requireHumanReviewer": {"const": true},
+        "preventSelfReview": {"const": true}
+      }
+    },
+    "transitionContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stagePublicAuthority", "activateAuthority"],
+      "properties": {
+        "stagePublicAuthority": {"$ref": "#/$defs/stageTransition"},
+        "activateAuthority": {"$ref": "#/$defs/activateTransition"}
+      }
+    },
+    "trustRootPath": {
+      "oneOf": [
+        {"type": "null"},
+        {"const": "config/github-apps/cross-ai-provider-review-trust-root.v2.json"}
+      ]
+    },
+    "revocationsPath": {
+      "oneOf": [
+        {"type": "null"},
+        {"const": "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json"}
+      ]
+    },
+    "expectedTrustRootSha256": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      ]
+    }
+  },
+  "$defs": {
+    "stageTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromStatus", "toStatus", "consultationMode", "authority", "exactChangedPaths"],
+      "properties": {
+        "fromStatus": {"const": "installed"},
+        "toStatus": {"const": "staged"},
+        "consultationMode": {"const": "none"},
+        "authority": {"const": "protected-environment-human-genesis"},
+        "exactChangedPaths": {
+          "const": [
+            "config/github-apps/cross-ai-provider-review-genesis.v1.json",
+            "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+          ]
+        }
+      }
+    },
+    "activateTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromStatus", "toStatus", "consultationMode", "consultationClass", "model", "authority", "exactChangedPaths"],
+      "properties": {
+        "fromStatus": {"const": "staged"},
+        "toStatus": {"const": "retired"},
+        "consultationMode": {"const": "single"},
+        "consultationClass": {"const": "high-impact"},
+        "model": {"const": "gpt-5.6-sol"},
+        "authority": {"const": "staged-public-authority-plus-protected-environment"},
+        "exactChangedPaths": {
+          "const": [
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            "config/github-apps/cross-ai-provider-review-genesis.v1.json"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "installed"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "trustRootPath": {"type": "null"},
+          "revocationsPath": {"type": "null"},
+          "expectedTrustRootSha256": {"type": "null"}
+        }
+      },
+      "else": {
+        "properties": {
+          "trustRootPath": {"type": "string"},
+          "revocationsPath": {"type": "string"},
+          "expectedTrustRootSha256": {"type": "string"}
+        }
+      }
+    }
+  ]
+}

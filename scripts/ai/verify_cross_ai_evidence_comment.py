@@ -18,9 +18,14 @@ if str(ROOT) not in sys.path:
 from scripts.ai.trusted_cross_ai_evidence import (
     TrustedEvidenceError,
     canonical_bytes,
+    validate_github_comment_transport,
     validate_evidence,
 )
-from scripts.ai.cross_ai_authority import AuthorityUnavailable, load_active_authority
+from scripts.ai.cross_ai_authority import (
+    AuthorityUnavailable,
+    load_active_authority,
+    load_staged_activation_authority,
+)
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_MODELS
 
@@ -69,10 +74,12 @@ def main() -> None:
     user = comment.get("user") if isinstance(comment, dict) else None
     created_at = parse_github_time(comment.get("created_at")) if isinstance(comment, dict) else None
     now = datetime.now(timezone.utc)
+    try:
+        validate_github_comment_transport(body)
+    except TrustedEvidenceError:
+        raise SystemExit(1)
     if (
-        not isinstance(body, str)
-        or not body
-        or not isinstance(user, dict)
+        not isinstance(user, dict)
         or user.get("login") != args.owner
         or comment.get("author_association") != "OWNER"
         or created_at is None
@@ -87,7 +94,22 @@ def main() -> None:
         if canonical_bytes(evidence).decode("utf-8") != body:
             raise TrustedEvidenceError("comment carrier is not canonical")
         scope_bytes = args.scope_file.read_bytes()
-        authority = load_active_authority(args.repo_root)
+        try:
+            authority = load_active_authority(args.repo_root, now=now)
+        except AuthorityUnavailable as exc:
+            if "tracked_pending" not in str(exc):
+                raise
+            authority = load_staged_activation_authority(
+                args.repo_root,
+                expected_bindings={
+                    "base_tip_sha": args.base_tip_sha,
+                    "base_sha": args.base_sha,
+                    "head_sha": args.head_sha,
+                    "scope_sha256": args.scope_sha256,
+                },
+                scope_bytes=scope_bytes,
+                now=now,
+            )
         validated = validate_evidence(
             evidence,
             trust_root=authority.trust_root,

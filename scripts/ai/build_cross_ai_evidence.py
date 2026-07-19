@@ -31,9 +31,11 @@ from scripts.ai.cross_ai_authority import (
 )
 from scripts.ai.trusted_cross_ai_evidence import (
     EVIDENCE_SCHEMA,
+    TrustedEvidenceError,
     build_prompt,
     build_subject,
     canonical_bytes,
+    validate_github_comment_transport,
     validate_evidence,
 )
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
@@ -50,9 +52,6 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
 )
 from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
 from scripts.github_apps.cross_ai_deployment_policy.transit import VaultTransitSigner
-
-
-MAX_COMMENT_EVIDENCE_BYTES = 256_000
 
 
 def parse_args() -> argparse.Namespace:
@@ -271,8 +270,10 @@ def build_signed_evidence(
         expected_model=model,
     )
     rendered = canonical_bytes(evidence)
-    if len(rendered) > MAX_COMMENT_EVIDENCE_BYTES:
-        reject("EVIDENCE_OUTPUT_INVALID", "signed evidence exceeds the GitHub carrier limit")
+    try:
+        validate_github_comment_transport(rendered.decode("utf-8"))
+    except TrustedEvidenceError as exc:
+        reject("EVIDENCE_OUTPUT_INVALID", str(exc))
     _write_exclusive(args.output, rendered)
     return {
         "ok": True,

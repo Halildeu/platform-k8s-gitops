@@ -28,6 +28,7 @@ on:
       - "scripts/ai/prepare_cross_ai_scope.py"
       - "scripts/ai/trusted_cross_ai_evidence.py"
       - "scripts/ai/verify_cross_ai_evidence_comment.py"
+      - "scripts/ai/verify_cross_ai_authority_transition.py"
       - "tests/ai/signed_evidence_fixture.py"
       - "tests/ai/test_build_cross_ai_evidence.py"
       - "tests/ai/test_cross_ai_authority.py"
@@ -44,6 +45,7 @@ on:
       - ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml"
       - ".github/workflows/rollback-view-only-viewer-pilot-protected.yml"
       - ".github/workflows/gate-cross-ai-deployment-protection.yml"
+      - ".github/workflows/cross-ai-provider-review-genesis.yml"
   push:
     branches: [main]
     paths:
@@ -64,6 +66,7 @@ on:
       - "scripts/ai/prepare_cross_ai_scope.py"
       - "scripts/ai/trusted_cross_ai_evidence.py"
       - "scripts/ai/verify_cross_ai_evidence_comment.py"
+      - "scripts/ai/verify_cross_ai_authority_transition.py"
       - "tests/ai/signed_evidence_fixture.py"
       - "tests/ai/test_build_cross_ai_evidence.py"
       - "tests/ai/test_cross_ai_authority.py"
@@ -80,6 +83,7 @@ on:
       - ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml"
       - ".github/workflows/rollback-view-only-viewer-pilot-protected.yml"
       - ".github/workflows/gate-cross-ai-deployment-protection.yml"
+      - ".github/workflows/cross-ai-provider-review-genesis.yml"
 
 permissions:
   contents: read
@@ -133,6 +137,7 @@ jobs:
           scripts/ai/prepare_cross_ai_scope.py
           scripts/ai/trusted_cross_ai_evidence.py
           scripts/ai/verify_cross_ai_evidence_comment.py
+          scripts/ai/verify_cross_ai_authority_transition.py
           scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py
           tests/github_apps/*.py
           tests/ai/signed_evidence_fixture.py

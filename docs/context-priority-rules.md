@@ -341,11 +341,27 @@ Mavis bildirimi **yerine geçmez**:
 ## 11. Durumsal Cross-AI İstişare — Yalnız Direct Codex
 
 Kullanıcının [#2688](https://github.com/Halildeu/platform-k8s-gitops/issues/2688)
-kararı Claude'u da yeni istişare/review/receipt zincirinden çıkarır. Önceki
+kararı Claude'u da yeni istişare/review/receipt zincirinden çıkarır. Exact
+authority, repo owner `Halildeu` tarafından yazılmış ve değiştirilmemiş
+(`#5014836397`, `created_at == updated_at == 2026-07-19T07:17:54Z`)
+[owner comment'idir](https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/5014836397);
+UTF-8 body SHA-256 değeri
+`4b6a269ed29c717bb826c59cb6be4b60e93a781bf989850a2361768723925f79`.
+Bu karar daha eski Claude-birincil/Claude-opsiyonel/zorunlu-üç-kanal
+talimatlarını bu repo için açıkça supersede eder; başka bir bağlam dosyasında
+tekrar edilmeleri yeni acceptance authority üretmez. Önceki
 [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621) ve
 [#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638) az-kanal ve
 MiniMax-emeklilik kararları korunur. Yeni authoritative provider yolu yalnız
 ayrı bağlamdaki direct OpenAI Codex CLI'dır.
+
+#2688 bu kuralı kendi başına amaçlaştıran bir governance işi değildir. Exact
+Product Slice [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373)
+Faz 22.6 VIEW_ONLY viewer product acceptance'tır; #2688 yalnız protected test
+aktivasyonunun signed Codex advisory + repo-public authority halkasını açar.
+Müşteri sonucu, yetkili browser operatörünün onaylı pilot endpoint'ten gerçek
+frame render etmesi ve durable product evidence'ın sonraki tüketici tarafından
+doğrulanmasıdır. Kaynak merge'i, CI veya receipt bu canlı zincirin yerine geçmez.
 
 Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
 adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar

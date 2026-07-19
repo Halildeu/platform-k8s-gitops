@@ -1,0 +1,114 @@
+name: Cross-AI provider-review authority genesis
+run-name: Cross-AI authority ${{ inputs.phase }} PR #${{ inputs.pr_number }} @${{ inputs.expected_head_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Exact one-time authority transition
+        required: true
+        type: choice
+        options:
+          - stage
+          - activate
+      pr_number:
+        description: Open same-repository PR number
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact 40-character PR head SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cross-ai-provider-review-genesis
+  cancel-in-progress: false
+
+jobs:
+  verify-genesis-transition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: cross-ai-provider-review-genesis
+    steps:
+      - name: Require immutable default-branch workflow and protected human gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_ENVIRONMENT: cross-ai-provider-review-genesis
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          gh api "repos/$GH_REPO/environments/$EXPECTED_ENVIRONMENT" > "$RUNNER_TEMP/environment.json"
+          jq -e '
+            any(
+              .protection_rules[]?;
+              .type == "required_reviewers"
+              and .prevent_self_review == true
+              and ((.reviewers // []) | length) > 0
+            )
+          ' "$RUNNER_TEMP/environment.json" >/dev/null
+
+      - name: Checkout exact trusted default-branch tip
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install content-addressed verifier dependencies
+        run: |
+          python3 -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
+
+      - name: Resolve exact same-repository PR binding
+        id: binding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        run: |
+          case "$PR_NUMBER" in (*[!0-9]*|'') exit 1;; esac
+          printf '%s' "$EXPECTED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          gh api "repos/$GH_REPO/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr.json"
+          test "$(jq -r .state "$RUNNER_TEMP/pr.json")" = open
+          test "$(jq -r .base.ref "$RUNNER_TEMP/pr.json")" = main
+          test "$(jq -r .base.sha "$RUNNER_TEMP/pr.json")" = "$GITHUB_SHA"
+          test "$(jq -r .head.sha "$RUNNER_TEMP/pr.json")" = "$EXPECTED_HEAD_SHA"
+          test "$(jq -r .head.repo.full_name "$RUNNER_TEMP/pr.json")" = "$GH_REPO"
+          git fetch --no-tags origin "pull/$PR_NUMBER/head"
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$GITHUB_SHA" "$EXPECTED_HEAD_SHA")" = "$GITHUB_SHA"
+          echo "base_tip=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "head=$EXPECTED_HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Verify exact fail-closed transition
+        env:
+          PHASE: ${{ inputs.phase }}
+        run: |
+          python3 scripts/ai/verify_cross_ai_authority_transition.py \
+            --phase "$PHASE" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --base-tip-sha "${{ steps.binding.outputs.base_tip }}" \
+            --base-sha "${{ steps.binding.outputs.base_tip }}" \
+            --head-sha "${{ steps.binding.outputs.head }}" \
+            --output "$RUNNER_TEMP/cross-ai-provider-review-genesis-attestation.json"
+
+      - name: Upload bounded genesis attestation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cross-ai-provider-review-genesis-attestation
+          path: ${{ runner.temp }}/cross-ai-provider-review-genesis-attestation.json
+          if-no-files-found: error
+          retention-days: 30

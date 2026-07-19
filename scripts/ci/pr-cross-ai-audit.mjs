@@ -61,6 +61,17 @@ const REQUIRED_SANDBOX = 'read-only';
 const FORBIDDEN_CONSULTATION_FIELDS = new Set(['claude receipt', 'minimax receipt']);
 const CONSULTATION_MODES = new Set(['none', 'single']);
 const CONSULTATION_CLASSES = new Set(['routine', 'high-impact']);
+const GENESIS_WORKFLOW_PATH = '.github/workflows/cross-ai-provider-review-genesis.yml';
+const GENESIS_STAGE_PATHS = [
+  'config/github-apps/cross-ai-provider-review-genesis.v1.json',
+  'config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json',
+  'config/github-apps/cross-ai-provider-review-trust-root.v2.json',
+];
+const GENESIS_ACTIVATE_PATHS = [
+  'config/github-apps/cross-ai-provider-review-authority.v1.json',
+  'config/github-apps/cross-ai-provider-review-genesis.v1.json',
+];
+const GENESIS_MAX_RUN_AGE_MS = 24 * 60 * 60 * 1000;
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
@@ -326,6 +337,7 @@ function loadInput(args) {
     return {
       body: readFileSync(args['body-file'], 'utf8'),
       prMeta: {
+        number: 0,
         headRef: '',
         headSha: args['head-sha'] ?? '',
         baseSha: args['base-tip-sha'] ?? '',
@@ -348,6 +360,7 @@ function loadInput(args) {
     return {
       body: pr.body ?? '',
       prMeta: {
+        number: Number.isInteger(pr.number) ? pr.number : 0,
         headRef: pr.head?.ref ?? '',
         headSha: pr.head?.sha ?? '',
         baseSha: pr.base?.sha ?? '',
@@ -465,7 +478,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Consultation class|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Consultation class|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Authority genesis run|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -615,6 +628,85 @@ async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
   } catch {
     return null;
   }
+}
+
+function exactPathSet(actual, expected) {
+  return Array.isArray(actual)
+    && actual.length === expected.length
+    && [...actual].sort().every((value, index) => value === [...expected].sort()[index]);
+}
+
+function genesisTransition(changedFiles) {
+  if (exactPathSet(changedFiles, GENESIS_STAGE_PATHS)) return 'stage';
+  if (exactPathSet(changedFiles, GENESIS_ACTIVATE_PATHS)) return 'activate';
+  return null;
+}
+
+function validGenesisRunRef(value, baseRepo) {
+  if (!value || !baseRepo) return false;
+  try {
+    const url = new URL(value);
+    const prefix = `/repos/${baseRepo}/actions/runs/`;
+    const runId = url.pathname.toLowerCase().startsWith(prefix.toLowerCase())
+      ? url.pathname.slice(prefix.length)
+      : '';
+    return url.protocol === 'https:'
+      && url.hostname === 'api.github.com'
+      && url.search === ''
+      && url.hash === ''
+      && /^\d+$/.test(runId);
+  } catch {
+    return false;
+  }
+}
+
+async function loadGenesisRun(ref, baseRepo, evidenceOverrides) {
+  if (Object.hasOwn(evidenceOverrides, ref)) {
+    const override = evidenceOverrides[ref];
+    return override && typeof override === 'object' ? override : null;
+  }
+  if (!validGenesisRunRef(ref, baseRepo)) return null;
+  const headers = { Accept: 'application/vnd.github+json' };
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  try {
+    const response = await fetch(ref, {
+      headers,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function genesisRunMatches(run, phase, prMeta) {
+  if (!run || !phase || !Number.isInteger(prMeta?.number) || prMeta.number < 1) {
+    return false;
+  }
+  const created = Date.parse(run.created_at ?? '');
+  const started = Date.parse(run.run_started_at ?? '');
+  const updated = Date.parse(run.updated_at ?? '');
+  const now = Date.now();
+  const expectedTitle = `Cross-AI authority ${phase} PR #${prMeta.number} @${prMeta.headSha}`;
+  return run.repository?.full_name === prMeta.baseRepo
+    && run.path === GENESIS_WORKFLOW_PATH
+    && run.event === 'workflow_dispatch'
+    && run.status === 'completed'
+    && run.conclusion === 'success'
+    && run.head_branch === 'main'
+    && run.head_sha?.toLowerCase() === prMeta.baseSha?.toLowerCase()
+    && run.display_title === expectedTitle
+    && Number.isInteger(run.run_attempt)
+    && run.run_attempt >= 1
+    && Number.isFinite(created)
+    && Number.isFinite(started)
+    && Number.isFinite(updated)
+    && created <= started
+    && started <= updated
+    && created >= now - GENESIS_MAX_RUN_AGE_MS
+    && updated <= now + 5 * 60 * 1000;
 }
 
 function evidenceMatches(
@@ -799,7 +891,15 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
     Object.hasOwn(fields, field)
   );
-  const requiredFloor = minimumConsultationMode(prMeta);
+  const genesisPhase = genesisTransition(prMeta?.changedFiles);
+  const genesisRunRef = (fields['authority genesis run'] || '').trim();
+  const genesisRun = genesisPhase && validGenesisRunRef(genesisRunRef, prMeta?.baseRepo)
+    ? await loadGenesisRun(genesisRunRef, prMeta.baseRepo, evidenceOverrides)
+    : null;
+  const genesisRunPass = genesisRunMatches(genesisRun, genesisPhase, prMeta);
+  const requiredFloor = genesisPhase === 'stage' && genesisRunPass
+    ? { mode: 'none', reason: 'exact protected-Environment public-authority genesis stage' }
+    : minimumConsultationMode(prMeta);
   const requiredClass = minimumConsultationClass(prMeta);
   const modeRank = { none: 0, single: 1 };
   const classRank = { routine: 0, 'high-impact': 1 };
@@ -814,6 +914,25 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? `consultation mode ${mode}`
       : 'Consultation mode yalnız none veya single olabilir',
   });
+  findings.push({
+    check: 'authority_genesis_run_bounded',
+    pass: genesisPhase ? genesisRunPass : !Object.hasOwn(fields, 'authority genesis run'),
+    detail: genesisPhase
+      ? genesisRunPass
+        ? `${genesisPhase} transition exact trusted-main protected-Environment run ile bağlı`
+        : `${genesisPhase} transition exact successful trusted-main protected-Environment run ister`
+      : !Object.hasOwn(fields, 'authority genesis run')
+        ? 'ordinary PR one-time genesis authority iddiası taşımıyor'
+        : 'Authority genesis run yalnız exact stage/activate path setinde kullanılabilir',
+  });
+  if (genesisPhase) {
+    const expectedGenesisMode = genesisPhase === 'stage' ? 'none' : 'single';
+    findings.push({
+      check: 'authority_genesis_mode_exact',
+      pass: mode === expectedGenesisMode,
+      detail: `${genesisPhase} transition Consultation mode: ${expectedGenesisMode} ister`,
+    });
+  }
   findings.push({
     check: 'consultation_reason_present',
     pass: meaningfulStatement(reason),
