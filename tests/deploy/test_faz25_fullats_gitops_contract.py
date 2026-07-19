@@ -584,12 +584,18 @@ if [[ "$*" == *"/pulls/2636"* ]]; then
     '{merged_at:"2026-07-18T00:00:00Z",merge_commit_sha:$merge,head:{sha:$head},body:$body}'
 elif [[ "$*" == *"issues/comments/123456789"* ]]; then
   evidence_comment_body="$evidence_body"
+  evidence_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "body-newline" ]]; then
     evidence_comment_body="${evidence_body}"$'\n'
+  elif [[ "${FAKE_RECEIPT_TAMPER:-none}" == "stale-comment" ]]; then
+    evidence_timestamp="2020-01-01T00:00:00Z"
+  elif [[ "${FAKE_RECEIPT_TAMPER:-none}" == "future-comment" ]]; then
+    evidence_timestamp="2999-01-01T00:00:00Z"
   fi
   jq -n \
     --arg body "$evidence_comment_body" \
-    '{body:$body,user:{login:"Halildeu"},author_association:"OWNER",created_at:"2026-07-19T00:00:00Z",updated_at:"2026-07-19T00:00:00Z"}'
+    --arg timestamp "$evidence_timestamp" \
+    '{body:$body,user:{login:"Halildeu"},author_association:"OWNER",created_at:$timestamp,updated_at:$timestamp}'
 elif [[ "$*" == *"/git/commits/$PROMOTION_HEAD_SHA"* ]]; then
   if [[ "${FAKE_TREE_MISMATCH:-0}" == "1" ]]; then printf '%040d\n' 6; else printf '%s\n' "$PROMOTION_TREE_SHA"; fi
 elif [[ "$*" == *"/git/commits/$PR_BASE_SHA"* ]]; then
@@ -605,6 +611,8 @@ fi
             (False, False, "missing-base-tip", 1),
             (False, False, "bad-digest", 1),
             (False, False, "body-newline", 1),
+            (False, False, "stale-comment", 1),
+            (False, False, "future-comment", 1),
             (False, False, "response-revise", 1),
             (False, False, "internal-head", 1),
         ):

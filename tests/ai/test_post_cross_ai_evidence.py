@@ -44,13 +44,33 @@ class EvidenceValidationTests(unittest.TestCase):
     def assert_rejected(self, payload: dict) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit):
-                MODULE.validate_evidence_text(json.dumps(payload))
+                MODULE.validate_evidence_text(
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                )
 
     def test_accepts_exact_builder_schema_and_digest(self) -> None:
         text = json.dumps(evidence(), separators=(",", ":"))
         parsed, digest = MODULE.validate_evidence_text(text)
         self.assertEqual(parsed["provider"], "openai")
         self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
+
+    def test_rejects_noncanonical_or_duplicate_key_json(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.validate_evidence_text(json.dumps(evidence()))
+
+        canonical = json.dumps(
+            evidence(), ensure_ascii=False, separators=(",", ":")
+        )
+        duplicate = canonical.replace(
+            '"response":',
+            '"response":"P0\\nFinding\\nP1\\nNone\\nP2\\nNone\\n'
+            'VERDICT: REVISE","response":',
+            1,
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.validate_evidence_text(duplicate)
 
     def test_rejects_extra_schema_key(self) -> None:
         payload = evidence()
@@ -78,6 +98,8 @@ class EvidenceValidationTests(unittest.TestCase):
             "P0\nNone\nP1\nNone\nVERDICT: AGREE",
             "P0\nFinding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
             "P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE",
+            "P0: Critical finding is present\nNone\nP1\nNone\nP2\nNone\n"
+            "VERDICT: AGREE",
         ):
             payload = evidence()
             payload["response"] = response

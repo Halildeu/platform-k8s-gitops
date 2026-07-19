@@ -22,8 +22,7 @@ VERDICT_RE = re.compile(
     r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE
 )
 PRIORITY_HEADING_RE = re.compile(
-    r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
-    r"(?:[ \t]*[—:-].*)?[ \t]*$"
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
 )
 NO_FINDINGS_RE = re.compile(r"^None$")
 EMAIL_RE = re.compile(
