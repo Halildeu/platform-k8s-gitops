@@ -282,10 +282,15 @@ python3 scripts/ops/build_cross_ai_test_trust_root.py \
   --trust-root-id RELEASE_UUID \
   --issued-at RELEASE_UTC \
   --expires-at EXPIRY_UTC \
+  --issuer-image-digest sha256:PINNED_ISSUER_IMAGE_DIGEST \
+  --launcher-source-sha256 sha256:REVIEWED_LAUNCHER_SOURCE_DIGEST \
   --out /OWNER/LOCAL/cross-ai-deployment-trust-root.json
 ```
 
-The output binds a stable `sourcePublicKeysetSha256` projection. Operational
+The output also binds the fixed provider-review workload image, reviewed
+launcher source and runner-management attestor key into the independently
+pinned trust-root digest. The output binds a stable `sourcePublicKeysetSha256`
+projection. Operational
 receipt fields such as `verifiedAt` do not move that digest; any key, immutable
 setting, reconciler-policy digest or public version-history change does. The
 existing v1 owner-local receipt is historical evidence and is deliberately not

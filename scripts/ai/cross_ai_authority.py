@@ -136,6 +136,11 @@ def _validate_public_authority_documents(
         and sha256_digest(revocations) != locator["expectedRevocationsSha256"]
     ):
         raise AuthorityUnavailable("provider-review revocation snapshot pin mismatch")
+    if (
+        trust_root.get("providerReviewRuntimePolicy")
+        != locator["issuerRuntimePolicy"]
+    ):
+        raise AuthorityUnavailable("provider-review runtime policy pin mismatch")
     try:
         verifier = EvidenceVerifier(
             trust_root=trust_root,
@@ -689,6 +694,14 @@ def load_review_submission_authority(
         expected_bindings=expected_bindings,
         now=observed,
     )
+    if is_exact_revocation_transition(root, expected_bindings=expected_bindings):
+        return load_revocation_refresh_authority(
+            root,
+            expected_bindings=expected_bindings,
+            scope_bytes=scope_bytes,
+            now=observed,
+            require_stale_predecessor=False,
+        )
     base = expected_bindings["base_sha"]
     head = expected_bindings["head_sha"]
     try:
@@ -828,14 +841,15 @@ def load_revocation_refresh_authority(
     head = expected_bindings["head_sha"]
     current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
     merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
-    if current != base_tip or base != base_tip or merge_base != base:
+    if current not in {base_tip, head} or base != base_tip or merge_base != base:
         raise AuthorityUnavailable(
-            "provider-review revocation recovery requires the exact trusted base tip"
+            "provider-review revocation recovery requires the exact base or head checkout"
         )
     try:
+        manifest_schema = _git_json(root, base, MANIFEST_SCHEMA)
         manifest = _validate_document(
-            load_json_file(root / MANIFEST_PATH),
-            load_json_file(root / MANIFEST_SCHEMA),
+            _git_json(root, base, MANIFEST_PATH),
+            manifest_schema,
             "authority manifest",
         )
     except Exception as exc:
@@ -847,9 +861,10 @@ def load_revocation_refresh_authority(
     locator = manifest
     if manifest["status"] == "tracked_pending":
         try:
+            genesis_schema = _git_json(root, base, GENESIS_SCHEMA)
             genesis = _validate_document(
-                load_json_file(root / GENESIS_PATH),
-                load_json_file(root / GENESIS_SCHEMA),
+                _git_json(root, base, GENESIS_PATH),
+                genesis_schema,
                 "genesis contract",
             )
         except Exception as exc:
@@ -886,8 +901,8 @@ def load_revocation_refresh_authority(
         raise AuthorityUnavailable(
             "provider-review revocation recovery changes paths outside the signed release"
         )
-    trust_root = load_json_file(_fixed_config_path(root, locator["trustRootPath"]))
-    predecessor = load_json_file(_fixed_config_path(root, locator["revocationsPath"]))
+    trust_root = _git_json(root, base, Path(locator["trustRootPath"]))
+    predecessor = _git_json(root, base, Path(locator["revocationsPath"]))
     replacement = _git_json(root, head, revocations_path)
     expected = locator["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected:
@@ -937,9 +952,9 @@ def is_exact_revocation_transition(
     head = expected_bindings["head_sha"]
     current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
     merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
-    if current != base_tip or base != base_tip or merge_base != base:
+    if current not in {base_tip, head} or base != base_tip or merge_base != base:
         raise AuthorityUnavailable(
-            "provider-review revocation classification requires the exact trusted base tip"
+            "provider-review revocation classification requires the exact base or head checkout"
         )
     changed = sorted(
         line for line in _git(

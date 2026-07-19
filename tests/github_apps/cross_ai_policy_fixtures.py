@@ -238,7 +238,51 @@ class FixtureFactory:
         }
         if self.contract_version == "v2":
             trust_root["sourcePublicKeysetSha256"] = digest("public-keyset-v2")
+            trust_root["providerReviewRuntimePolicy"] = self.runtime_policy()
         return trust_root
+
+    def runtime_policy(self) -> dict[str, Any]:
+        return {
+            "schemaVersion": "acik.cross-ai-provider-review-runtime-policy.v1",
+            "workloadIdentity": (
+                "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"
+            ),
+            "issuerImageDigest": digest("provider-review-issuer-image"),
+            "launcherSourceSha256": digest("provider-review-launcher-source"),
+            "attestorKeyId": self.RUNNER_MANAGEMENT_KEY_ID,
+            "maxAttestationLifetimeSeconds": 600,
+        }
+
+    def _runtime_attestation(
+        self, review_envelope: dict[str, Any], *, attestation_id: str
+    ) -> dict[str, Any]:
+        review = self.decode_payload(review_envelope)
+        policy = self.runtime_policy()
+        issued_at = _utc(review["issuedAt"])
+        expires_at = (issued_at + timedelta(minutes=10)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        return self.sign(
+            "application/vnd.acik.cross-ai-provider-review-runtime-attestation.v1+json",
+            {
+                "schemaVersion": (
+                    "acik.cross-ai-provider-review-runtime-attestation.v1"
+                ),
+                "attestationId": attestation_id,
+                "keyId": self.RUNNER_MANAGEMENT_KEY_ID,
+                "workloadIdentity": policy["workloadIdentity"],
+                "issuerImageDigest": policy["issuerImageDigest"],
+                "launcherSourceSha256": policy["launcherSourceSha256"],
+                "providerReviewEnvelopeSha256": sha256_digest(review_envelope),
+                "promptSha256": review["inputSha256"],
+                "responseSha256": review["outputSha256"],
+                "capabilitySnapshotSha256": review["capabilitySnapshotSha256"],
+                "providerSessionId": review["providerSessionId"],
+                "issuedAt": review["issuedAt"],
+                "expiresAt": expires_at,
+            },
+            self.RUNNER_MANAGEMENT_KEY_ID,
+        )
 
     def revocations(
         self, entries: list[dict[str, Any]] | None = None
@@ -587,6 +631,16 @@ class FixtureFactory:
             },
             "grant": grant,
         }
+        if self.contract_version == "v2":
+            bundle["reviewRuntimeAttestationEnvelopes"] = [
+                self._runtime_attestation(
+                    review,
+                    attestation_id=(
+                        f"80000000-0000-4000-8000-{index:012d}"
+                    ),
+                )
+                for index, review in enumerate(review_envelopes, start=1)
+            ]
         return SignedFixture(
             trust_root=self.trust_root(),
             revocations_envelope=self.revocations(),

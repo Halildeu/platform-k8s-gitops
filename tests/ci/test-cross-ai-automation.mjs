@@ -351,6 +351,8 @@ const VIEW_ONLY_CODEX_POLICY_PATHS = [
   '.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml',
   '.github/workflows/faz22-6-view-only-viewer-matrix-collector.yml',
   '.github/workflows/faz22-6-view-only-viewer-termination-collector.yml',
+  '.github/workflows/gate-faz22-view-only-evidence-verifier.yml',
+  'schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json',
   'config/faz22-6-view-only-pilot-owner-policy.v1.json',
   'config/faz22-6-view-only-pilot-owner-policy.v2.json',
   'config/faz22-6-view-only-pilot-owner-policy-history/'

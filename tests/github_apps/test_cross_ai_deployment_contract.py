@@ -646,6 +646,12 @@ class EvidenceContractV2Test(unittest.TestCase):
         )
         direct_agree_digest = sha256_digest(direct_agree)
         bundle["reviewEnvelopes"] = [direct_agree]
+        bundle["reviewRuntimeAttestationEnvelopes"] = [
+            self.factory._runtime_attestation(
+                direct_agree,
+                attestation_id="80000000-0000-4000-8000-000000000010",
+            )
+        ]
         bundle["closure"] = {
             "entries": [],
             "closureRootSha256": closure_root,
@@ -661,6 +667,54 @@ class EvidenceContractV2Test(unittest.TestCase):
         result = self.verifier().verify_bundle(self.fixture.bundle_envelope)
         self.assertEqual(result.provider_families, ("openai",))
         self.assertEqual(result.final_review_digests, (direct_agree_digest,))
+
+    def test_rejects_missing_runtime_attestation(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        bundle["reviewRuntimeAttestationEnvelopes"].pop()
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "PROVIDER_RUNTIME_CARDINALITY_MISMATCH"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_duplicate_runtime_attestation(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        bundle["reviewRuntimeAttestationEnvelopes"][1] = copy.deepcopy(
+            bundle["reviewRuntimeAttestationEnvelopes"][0]
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_DUPLICATE"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_runtime_attestation_for_external_review(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        runtime = self.factory.decode_payload(
+            bundle["reviewRuntimeAttestationEnvelopes"][0]
+        )
+        runtime["providerReviewEnvelopeSha256"] = "sha256:" + ("0" * 64)
+        bundle["reviewRuntimeAttestationEnvelopes"][0] = self.factory.sign(
+            "application/vnd.acik.cross-ai-provider-review-runtime-attestation.v1+json",
+            runtime,
+            self.factory.RUNNER_MANAGEMENT_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_REVIEW_UNKNOWN"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_runtime_image_rebinding(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        runtime = self.factory.decode_payload(
+            bundle["reviewRuntimeAttestationEnvelopes"][0]
+        )
+        runtime["issuerImageDigest"] = "sha256:" + ("0" * 64)
+        bundle["reviewRuntimeAttestationEnvelopes"][0] = self.factory.sign(
+            "application/vnd.acik.cross-ai-provider-review-runtime-attestation.v1+json",
+            runtime,
+            self.factory.RUNNER_MANAGEMENT_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_BINDING_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def test_rotation_accepts_previous_key_only_while_it_remains_active(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)

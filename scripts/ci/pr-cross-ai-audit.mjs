@@ -86,6 +86,8 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/actions\/protected-(?:apply|bootstrap|browser-evidence|rollback)\//,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
   /^schema\/cross-ai-[^/]+\.json$/,
+  /^schema\/faz22-6-view-only-viewer-product-evidence-child-v2\.schema\.json$/,
+  /^\.github\/workflows\/gate-faz22-view-only-evidence-verifier\.yml$/,
   /^scripts\/github_apps\//,
   /^tests\/github_apps\//,
   /^config\/github-apps\//,

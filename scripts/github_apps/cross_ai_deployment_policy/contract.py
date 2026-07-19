@@ -725,6 +725,8 @@ class EvidenceVerifier:
         runner_admission_lease = self._verify_runner_admission_lease(bundle)
 
         reviews = self._verify_reviews(bundle, subject_digest)
+        if self.contract_version == "v2":
+            self._verify_review_runtime_attestations(bundle, reviews)
         closure_root = self._verify_closure(bundle, reviews, subject_digest)
         final_reviews, families = self._verify_consensus(
             bundle,
@@ -1027,6 +1029,62 @@ class EvidenceVerifier:
         if len(reviews) != 1:
             reject("REVIEW_CARDINALITY_INVALID", "exactly one provider review is required")
         return next(iter(reviews.values()))
+
+    def _verify_review_runtime_attestations(
+        self,
+        bundle: dict[str, Any],
+        reviews: dict[str, VerifiedReview],
+    ) -> None:
+        attestations = bundle["reviewRuntimeAttestationEnvelopes"]
+        if len(attestations) != len(reviews):
+            reject(
+                "PROVIDER_RUNTIME_CARDINALITY_MISMATCH",
+                "every provider review requires exactly one runtime attestation",
+            )
+        attested_reviews: set[str] = set()
+        runtime_policy = self.trust_root["providerReviewRuntimePolicy"]
+        for envelope in attestations:
+            verified = verify_json_envelope(
+                envelope,
+                expected_payload_type=PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+                allowed_keys=self._role_keys("runner-management"),
+                exactly_one_signature=True,
+            )
+            _validate_schema(
+                verified.payload,
+                PROVIDER_RUNTIME_ATTESTATION_SCHEMA,
+                "PROVIDER_RUNTIME_ATTESTATION_SCHEMA_INVALID",
+            )
+            review_digest = verified.payload["providerReviewEnvelopeSha256"]
+            if review_digest in attested_reviews:
+                reject(
+                    "PROVIDER_RUNTIME_DUPLICATE",
+                    "a provider review has more than one runtime attestation",
+                )
+            review = reviews.get(review_digest)
+            if review is None:
+                reject(
+                    "PROVIDER_RUNTIME_REVIEW_UNKNOWN",
+                    "runtime attestation references a review outside the bundle",
+                )
+            self.verify_provider_runtime_attestation(
+                envelope,
+                runtime_policy=runtime_policy,
+                provider_review_envelope_sha256=review.digest,
+                prompt_sha256=review.payload["inputSha256"],
+                response_sha256=review.payload["outputSha256"],
+                capability_snapshot_sha256=review.payload[
+                    "capabilitySnapshotSha256"
+                ],
+                provider_session_id=review.payload["providerSessionId"],
+                provider_review_issued_at=review.issued_at,
+            )
+            attested_reviews.add(review_digest)
+        if attested_reviews != set(reviews):
+            reject(
+                "PROVIDER_RUNTIME_REVIEW_MISSING",
+                "one or more provider reviews lack a runtime attestation",
+            )
 
     def verify_provider_runtime_attestation(
         self,

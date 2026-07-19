@@ -279,6 +279,8 @@ def build_trust_root(
     trust_root_id: str,
     issued_at: str,
     expires_at: str,
+    issuer_image_digest: str,
+    launcher_source_sha256: str,
     max_clock_skew_seconds: int = 60,
 ) -> dict[str, Any]:
     keys, source_digest = _validate_receipt(receipt)
@@ -301,6 +303,20 @@ def build_trust_root(
         or not 0 <= max_clock_skew_seconds <= 300
     ):
         raise TrustRootBuildError("clock skew must be between 0 and 300 seconds")
+    for label, value in (
+        ("issuer image digest", issuer_image_digest),
+        ("launcher source digest", launcher_source_sha256),
+    ):
+        if (
+            not isinstance(value, str)
+            or not value.startswith("sha256:")
+            or len(value) != 71
+        ):
+            raise TrustRootBuildError(f"{label} is invalid")
+        try:
+            bytes.fromhex(value.removeprefix("sha256:"))
+        except ValueError as exc:
+            raise TrustRootBuildError(f"{label} is invalid") from exc
 
     def trust_key(
         source: dict[str, Any],
@@ -380,6 +396,16 @@ def build_trust_root(
         "requiredProviderFamilies": ["openai"],
         "minimumProviderFamilies": 1,
         "minimumDirectProviderRoutes": 1,
+        "providerReviewRuntimePolicy": {
+            "schemaVersion": "acik.cross-ai-provider-review-runtime-policy.v1",
+            "workloadIdentity": (
+                "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"
+            ),
+            "issuerImageDigest": issuer_image_digest,
+            "launcherSourceSha256": launcher_source_sha256,
+            "attestorKeyId": by_name["runner-management"]["keyId"],
+            "maxAttestationLifetimeSeconds": 600,
+        },
         "keys": provider_entries
         + [
             trust_key(by_name["coordinator"], "coordinator", None),
@@ -413,6 +439,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--trust-root-id", required=True)
     parser.add_argument("--issued-at", required=True)
     parser.add_argument("--expires-at", required=True)
+    parser.add_argument("--issuer-image-digest", required=True)
+    parser.add_argument("--launcher-source-sha256", required=True)
     parser.add_argument("--max-clock-skew-seconds", type=int, default=60)
     parser.add_argument("--out", type=Path, required=True)
     return parser.parse_args(argv)
@@ -426,6 +454,8 @@ def main(argv: list[str] | None = None) -> int:
             trust_root_id=args.trust_root_id,
             issued_at=args.issued_at,
             expires_at=args.expires_at,
+            issuer_image_digest=args.issuer_image_digest,
+            launcher_source_sha256=args.launcher_source_sha256,
             max_clock_skew_seconds=args.max_clock_skew_seconds,
         )
         payload = _canonical_bytes(trust_root)
