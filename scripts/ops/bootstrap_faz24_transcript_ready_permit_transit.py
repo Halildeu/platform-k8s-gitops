@@ -30,7 +30,7 @@ POLICY_NAME = "faz24-transcript-ready-permit-signer-test"
 RECEIPT_SCHEMA = "faz24.transcriptReadyPermitTransitReceipt.v1"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 SIGNER_TTL_SECONDS = 1800
-SIGNER_TOKEN_USES = 10
+SIGNER_TOKEN_USES = 1
 EXPECTED_POLICY = b'''# TEST-only Faz 24 transcript-ready pre-enable permit signer.
 #
 # This token can sign with one dedicated non-exportable Ed25519 Transit key. It
@@ -43,6 +43,10 @@ path "meeting-ai/sign/transcript-ready-permit" {
 
 path "auth/token/lookup-self" {
   capabilities = ["read"]
+}
+
+path "auth/token/revoke-self" {
+  capabilities = ["update"]
 }
 '''
 
@@ -404,43 +408,46 @@ def bootstrap(
     accessor = auth.get("accessor") if isinstance(auth, dict) else None
     policies = auth.get("token_policies") if isinstance(auth, dict) else None
     lease_duration = auth.get("lease_duration") if isinstance(auth, dict) else None
+    accessor_valid = (
+        isinstance(accessor, str)
+        and 20 <= len(accessor) <= 4096
+        and accessor.isascii()
+        and not any(character.isspace() for character in accessor)
+    )
     if (
         not isinstance(token, str)
         or not 20 <= len(token) <= 4096
         or not token.isascii()
         or any(character.isspace() for character in token)
-        or not isinstance(accessor, str)
-        or not 20 <= len(accessor) <= 4096
-        or not accessor.isascii()
-        or any(character.isspace() for character in accessor)
+        or not accessor_valid
         or policies != [POLICY_NAME]
         or lease_duration != SIGNER_TTL_SECONDS
         or auth.get("renewable") is not False
     ):
+        if accessor_valid:
+            client.request(
+                "POST", "auth/token/revoke-accessor", {"accessor": accessor}
+            )
         raise BootstrapError("Vault returned an invalid narrow signer token")
-    lookup = response_data(
-        client.request(
-            "POST", "auth/token/lookup-accessor", {"accessor": accessor}
-        ),
-        "signer token lookup",
-    )
-    ttl = lookup.get("ttl")
-    if (
-        lookup.get("policies") != [POLICY_NAME]
-        or lookup.get("renewable") is not False
-        or lookup.get("num_uses") != SIGNER_TOKEN_USES
-        or isinstance(ttl, bool)
-        or not isinstance(ttl, int)
-        or not 0 < ttl <= SIGNER_TTL_SECONDS
-    ):
-        client.request(
-            "POST", "auth/token/revoke-accessor", {"accessor": accessor}
-        )
-        raise BootstrapError("signer token readback differs from requested bounds")
-
     receipt_created = False
     signer_token_created = False
     try:
+        lookup = response_data(
+            client.request(
+                "POST", "auth/token/lookup-accessor", {"accessor": accessor}
+            ),
+            "signer token lookup",
+        )
+        ttl = lookup.get("ttl")
+        if (
+            lookup.get("policies") != [POLICY_NAME]
+            or lookup.get("renewable") is not False
+            or lookup.get("num_uses") != SIGNER_TOKEN_USES
+            or isinstance(ttl, bool)
+            or not isinstance(ttl, int)
+            or not 0 < ttl <= SIGNER_TTL_SECONDS
+        ):
+            raise BootstrapError("signer token readback differs from requested bounds")
         write_exclusive(receipt_out, canonical_json(receipt), 0o600)
         receipt_created = True
         write_exclusive(signer_token_out, token.encode("ascii"), 0o600)

@@ -606,6 +606,7 @@ class GateTests(unittest.TestCase):
     def test_query_contract_binds_event_to_same_finalization_occurrence(self) -> None:
         sql = collector.counts_sql("public")
         for fragment in (
+            "COALESCE((ready.doc->>'schema' = 'meeting.event.v1'",
             "finalization.tenant_id = ready.tenant_id",
             "finalization.meeting_id = ready.meeting_id",
             "finalization.session_id = ready.aggregate_id",
@@ -627,6 +628,14 @@ class GateTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, collector.REDIS_LUA)
+
+    def test_postgres_ready_classification_must_be_exhaustive(self) -> None:
+        value = copy.deepcopy(self.evidence)
+        for snapshot in ("postgresBefore", "postgresAfter"):
+            value["live"][snapshot]["counts"]["readyOutboxTotal"] = 3
+        self.assertIn(
+            "postgres_ready_classification_complete", self.failed_names(value)
+        )
 
     def test_null_finalization_rows_fail(self) -> None:
         value = copy.deepcopy(self.evidence)

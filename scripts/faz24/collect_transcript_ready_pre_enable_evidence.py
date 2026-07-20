@@ -200,10 +200,10 @@ WITH ready AS (
   WHERE event_type = 'meeting.transcript.ready'
 ), classified AS (
   SELECT ready.status, ready.lease_expires_at,
-    (ready.doc->>'schema' = 'meeting.event.v1'
+    COALESCE((ready.doc->>'schema' = 'meeting.event.v1'
       AND (NOT (ready.doc ? 'analysisRunId')
-        OR jsonb_typeof(ready.doc->'analysisRunId') = 'null')) AS legacy,
-    (ready.doc->>'schema' = 'meeting.event.v1'
+        OR jsonb_typeof(ready.doc->'analysisRunId') = 'null')), false) AS legacy,
+    COALESCE((ready.doc->>'schema' = 'meeting.event.v1'
       AND ready.doc->>'eventType' = 'meeting.transcript.ready'
       AND ready.doc->>'tenantId' = ready.tenant_id::text
       AND ready.doc->>'meetingId' = ready.meeting_id::text
@@ -213,7 +213,8 @@ WITH ready AS (
       AND (ready.doc->>'analysisRunId') ~
         '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[1-5][0-9a-f]{{3}}-[89ab][0-9a-f]{{3}}-[0-9a-f]{{12}}$'
       AND finalization.id IS NOT NULL
-      AND finalization.analysis_run_id::text = ready.doc->>'analysisRunId') AS compatible,
+      AND finalization.analysis_run_id::text = ready.doc->>'analysisRunId'), false)
+      AS compatible,
     ready.tenant_id::text || '|' || ready.meeting_id::text || '|'
       || ready.aggregate_id::text || '|' || ready.doc->>'finalizationVersion' || '|'
       || ready.doc->>'analysisRunId' AS binding
@@ -558,6 +559,27 @@ def collect_postgres_snapshot(
             raise ContractError("PostgreSQL compatible binding inventory is invalid")
         if any(not isinstance(value, str) or len(value) > 240 for value in bindings):
             raise ContractError("PostgreSQL compatible binding metadata is invalid")
+        legacy = counts.get("legacyOutbox")
+        classified = (
+            legacy.get("total")
+            if isinstance(legacy, dict) and isinstance(legacy.get("total"), int)
+            else None
+        )
+        malformed = counts.get("malformedReadyOutbox")
+        ready_total = counts.get("readyOutboxTotal")
+        if (
+            classified is None
+            or isinstance(classified, bool)
+            or not isinstance(malformed, int)
+            or isinstance(malformed, bool)
+            or not isinstance(compatible_count, int)
+            or isinstance(compatible_count, bool)
+            or not isinstance(ready_total, int)
+            or isinstance(ready_total, bool)
+            or min(classified, malformed, compatible_count, ready_total) < 0
+            or classified + malformed + compatible_count != ready_total
+        ):
+            raise ContractError("PostgreSQL ready classification is not exhaustive")
         counts["compatibleBindingSetSha256"] = binding_set_sha256(bindings)
     return {"collected": True, "schema": metadata, "counts": counts}
 

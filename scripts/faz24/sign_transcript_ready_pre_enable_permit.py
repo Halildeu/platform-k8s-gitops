@@ -28,6 +28,7 @@ from scripts.github_apps.cross_ai_deployment_policy.errors import (  # noqa: E40
 )
 from scripts.github_apps.cross_ai_deployment_policy.github import (  # noqa: E402
     Transport,
+    UrllibTransport,
 )
 from scripts.github_apps.cross_ai_deployment_policy.transit import (  # noqa: E402
     VaultTransitSigner,
@@ -55,6 +56,7 @@ from transcript_ready_pre_enable_contract import (  # noqa: E402
     sensitive_findings,
     sha256_bytes,
 )
+import verify_transcript_ready_pre_enable_evidence as verdict_verifier  # noqa: E402
 
 TRANSIT_MOUNT = "meeting-ai"
 TRANSIT_KEY_NAME = "transcript-ready-permit"
@@ -194,6 +196,7 @@ def _validate_verdict(
     if not isinstance(pod, dict) or set(pod) != LIVE_POD_BINDING_FIELDS:
         raise ContractError("live transcript pod binding is invalid")
     observed_at = parse_utc(pod.get("observedAt"))
+    live_observation_age = (now - observed_at).total_seconds()
     if (
         not isinstance(pod.get("podUid"), str)
         or UUID_RE.fullmatch(pod["podUid"]) is None
@@ -202,6 +205,8 @@ def _validate_verdict(
         or re.fullmatch(r"[0-9a-f]{64}", pod["evidenceSha256"]) is None
         or observed_at > generated_at
         or generated_at - observed_at > dt.timedelta(seconds=900)
+        or live_observation_age < -30
+        or live_observation_age > max_age_seconds
     ):
         raise ContractError("live transcript pod runtime evidence is invalid")
     guard = binding.get("hostStartupGuard")
@@ -224,6 +229,75 @@ def _validate_verdict(
         or not 0 <= evidence_age <= 900
     ):
         raise ContractError("evidence age does not bind the live observation")
+
+
+def _recompute_canonical_verdict(
+    *,
+    verdict: dict[str, Any],
+    evidence_path: Path,
+    policy_path: Path,
+    expected_gitops_commit: str,
+    expected_policy_sha256: str,
+) -> None:
+    policy = verdict_verifier.load_policy(policy_path)
+    policy_digest = verdict_verifier.file_sha256(policy_path)
+    if policy_digest != expected_policy_sha256:
+        raise ContractError("policy bytes do not match the signing intent")
+    evidence = verdict_verifier.load_json(evidence_path)
+    evidence_digest = verdict_verifier.file_sha256(evidence_path)
+    generated_at = parse_utc(verdict.get("generatedAt"))
+    checks, context = verdict_verifier.validate(
+        evidence,
+        policy,
+        expected_gitops_commit=expected_gitops_commit,
+        policy_path=policy_path,
+        now=generated_at,
+    )
+    recomputed = verdict_verifier.build_verdict(
+        checks=checks,
+        context=context,
+        policy=policy,
+        expected_gitops_commit=expected_gitops_commit,
+        policy_digest=policy_digest,
+        evidence_digest=evidence_digest,
+        generated_at=generated_at,
+    )
+    if canonical_json(recomputed) != canonical_json(verdict):
+        raise ContractError(
+            "verdict differs from the canonical evidence and policy verification"
+        )
+
+
+def _revoke_and_remove_token(
+    *,
+    vault_origin: str,
+    token: str,
+    token_file: Path,
+    transport: Transport,
+) -> None:
+    revoke_error: ContractError | None = None
+    try:
+        response = transport.request(
+            "POST",
+            f"{vault_origin}/v1/auth/token/revoke-self",
+            headers={
+                "Content-Type": "application/json",
+                "X-Vault-Token": token,
+                "User-Agent": "acik-faz24-permit-signer/1",
+            },
+            body=b"{}",
+        )
+        # A one-use token is already invalid after the Transit request.
+        if response.status not in {204, 403}:
+            revoke_error = ContractError("Vault signer token revocation failed")
+    except PolicyError:
+        revoke_error = ContractError("Vault signer token revocation failed")
+    try:
+        token_file.unlink(missing_ok=True)
+    except OSError as exc:
+        raise ContractError("Vault signer token file cleanup failed") from exc
+    if revoke_error is not None:
+        raise revoke_error
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
@@ -249,6 +323,8 @@ def _atomic_write(path: Path, payload: bytes) -> None:
 def sign_permit(
     *,
     verdict_path: Path,
+    evidence_path: Path,
+    policy_path: Path,
     trust_root_path: Path,
     expected_trust_root_sha256: str,
     app_env: str,
@@ -281,64 +357,90 @@ def sign_permit(
     if isinstance(vault_key_version, bool) or vault_key_version < 1:
         raise ContractError("Vault key version is invalid")
     require_secure_regular_file(vault_token_file, "Vault token file")
-
-    _verdict_raw, verdict = load_strict_json(verdict_path, "verdict")
-    trust_raw, trust_root = load_strict_json(trust_root_path, "trust-root")
-    expected_key_id = (
-        f"vault-transit://{vault_mount}/{vault_key_name}#v{vault_key_version}"
-    )
-    public_key = _validate_trust_root(
-        raw=trust_raw,
-        root=trust_root,
-        expected_sha256=expected_trust_root_sha256,
-        expected_key_id=expected_key_id,
-        app_env=app_env,
-        now=now,
-    )
-    _validate_verdict(
-        verdict,
-        app_env=app_env,
-        expected_gitops_commit=expected_gitops_commit,
-        expected_policy_sha256=expected_policy_sha256,
-        expected_producer_image_digest=expected_producer_image_digest,
-        now=now,
-        max_age_seconds=max_age_seconds,
-    )
-
-    payload_bytes = canonical_json(verdict)
-    signer = VaultTransitSigner(
-        vault_origin=vault_origin,
-        token_file=vault_token_file,
-        mount=vault_mount,
-        key_name=vault_key_name,
-        key_version=vault_key_version,
-        transport=transport,
-    )
-    if signer.key_id != expected_key_id:
-        raise ContractError("Vault signer key ID differs from the pinned trust root")
-    signature = signer.sign(pae(PERMIT_PAYLOAD_TYPE, payload_bytes))
     try:
-        Ed25519PublicKey.from_public_bytes(public_key).verify(
-            signature, pae(PERMIT_PAYLOAD_TYPE, payload_bytes)
+        token = vault_token_file.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError) as exc:
+        raise ContractError("Vault token file is unavailable") from exc
+    if not 20 <= len(token) <= 4096 or any(character.isspace() for character in token):
+        raise ContractError("Vault token file content is invalid")
+    selected_transport = transport or UrllibTransport()
+
+    try:
+        _verdict_raw, verdict = load_strict_json(verdict_path, "verdict")
+        trust_raw, trust_root = load_strict_json(trust_root_path, "trust-root")
+        expected_key_id = (
+            f"vault-transit://{vault_mount}/{vault_key_name}#v{vault_key_version}"
         )
-    except (InvalidSignature, ValueError) as exc:
-        raise ContractError("Vault signature does not verify with the pinned root") from exc
-    envelope = {
-        "payloadType": PERMIT_PAYLOAD_TYPE,
-        "payload": base64.b64encode(payload_bytes).decode("ascii"),
-        "signatures": [
-            {
-                "keyid": signer.key_id,
-                "sig": base64.b64encode(signature).decode("ascii"),
-            }
-        ],
-    }
-    return envelope, payload_bytes, canonical_json(envelope)
+        public_key = _validate_trust_root(
+            raw=trust_raw,
+            root=trust_root,
+            expected_sha256=expected_trust_root_sha256,
+            expected_key_id=expected_key_id,
+            app_env=app_env,
+            now=now,
+        )
+        _validate_verdict(
+            verdict,
+            app_env=app_env,
+            expected_gitops_commit=expected_gitops_commit,
+            expected_policy_sha256=expected_policy_sha256,
+            expected_producer_image_digest=expected_producer_image_digest,
+            now=now,
+            max_age_seconds=max_age_seconds,
+        )
+        _recompute_canonical_verdict(
+            verdict=verdict,
+            evidence_path=evidence_path,
+            policy_path=policy_path,
+            expected_gitops_commit=expected_gitops_commit,
+            expected_policy_sha256=expected_policy_sha256,
+        )
+
+        payload_bytes = canonical_json(verdict)
+        signer = VaultTransitSigner(
+            vault_origin=vault_origin,
+            token_file=vault_token_file,
+            mount=vault_mount,
+            key_name=vault_key_name,
+            key_version=vault_key_version,
+            transport=selected_transport,
+        )
+        if signer.key_id != expected_key_id:
+            raise ContractError("Vault signer key ID differs from the pinned trust root")
+        signature = signer.sign(pae(PERMIT_PAYLOAD_TYPE, payload_bytes))
+        try:
+            Ed25519PublicKey.from_public_bytes(public_key).verify(
+                signature, pae(PERMIT_PAYLOAD_TYPE, payload_bytes)
+            )
+        except (InvalidSignature, ValueError) as exc:
+            raise ContractError(
+                "Vault signature does not verify with the pinned root"
+            ) from exc
+        envelope = {
+            "payloadType": PERMIT_PAYLOAD_TYPE,
+            "payload": base64.b64encode(payload_bytes).decode("ascii"),
+            "signatures": [
+                {
+                    "keyid": signer.key_id,
+                    "sig": base64.b64encode(signature).decode("ascii"),
+                }
+            ],
+        }
+        return envelope, payload_bytes, canonical_json(envelope)
+    finally:
+        _revoke_and_remove_token(
+            vault_origin=vault_origin,
+            token=token,
+            token_file=vault_token_file,
+            transport=selected_transport,
+        )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--verdict", required=True, type=Path)
+    parser.add_argument("--evidence", required=True, type=Path)
+    parser.add_argument("--policy", required=True, type=Path)
     parser.add_argument("--trust-root", required=True, type=Path)
     parser.add_argument("--expected-trust-root-sha256", required=True)
     parser.add_argument("--app-env", required=True, choices=sorted(APP_ENVIRONMENTS))
@@ -360,6 +462,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         envelope, payload_bytes, envelope_bytes = sign_permit(
             verdict_path=args.verdict,
+            evidence_path=args.evidence,
+            policy_path=args.policy,
             trust_root_path=args.trust_root,
             expected_trust_root_sha256=args.expected_trust_root_sha256,
             app_env=args.app_env,

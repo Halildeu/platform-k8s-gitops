@@ -789,6 +789,22 @@ def validate(
         "malformed transcript-ready outbox count must be zero",
         "PURGE_OR_REPUBLISH",
     )
+    legacy_total = integer(legacy.get("total"))
+    malformed_total = integer(counts.get("malformedReadyOutbox"))
+    compatible_total = integer(counts.get("compatibleReadyOutbox"))
+    ready_total = integer(counts.get("readyOutboxTotal"))
+    add(
+        checks,
+        "postgres_ready_classification_complete",
+        legacy_total is not None
+        and malformed_total is not None
+        and compatible_total is not None
+        and ready_total is not None
+        and min(legacy_total, malformed_total, compatible_total, ready_total) >= 0
+        and legacy_total + malformed_total + compatible_total == ready_total,
+        "every transcript-ready outbox row must have exactly one classification",
+        "PURGE_OR_REPUBLISH",
+    )
 
     redis = object_field(live.get("redis"), "live.redis")
     add(

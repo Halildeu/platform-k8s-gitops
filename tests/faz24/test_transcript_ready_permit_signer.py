@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -56,6 +57,8 @@ class TransitTransport:
 
     def request(self, method, url, *, headers, body=None, timeout=10.0):
         self.calls.append((method, url, dict(headers), body))
+        if url.endswith("/v1/auth/token/revoke-self"):
+            return HTTPResponse(204, {}, b"")
         request = json.loads(body)
         message = base64.b64decode(request["input"], validate=True)
         signature = self.key.sign(message)
@@ -153,11 +156,20 @@ class TranscriptReadyPermitTests(unittest.TestCase):
         self.verdict_path.write_text(
             json.dumps(self.verdict, indent=2, sort_keys=True), encoding="utf-8"
         )
+        self.evidence_path = self.root / "evidence.json"
+        self.evidence_path.write_text("{}", encoding="utf-8")
+        self.policy_path = self.root / "policy.json"
+        self.policy_path.write_text("{}", encoding="utf-8")
         self.transport = TransitTransport(self.key)
 
-    def sign(self, **overrides):
+    def sign(self, *, canonical: bool = False, **overrides):
+        if not self.token.exists():
+            self.token.write_text("hvs." + ("t" * 40), encoding="ascii")
+            self.token.chmod(0o600)
         arguments = {
             "verdict_path": self.verdict_path,
+            "evidence_path": self.evidence_path,
+            "policy_path": self.policy_path,
             "trust_root_path": self.trust_root,
             "expected_trust_root_sha256": self.trust_sha,
             "app_env": "test",
@@ -173,7 +185,13 @@ class TranscriptReadyPermitTests(unittest.TestCase):
             "transport": self.transport,
         }
         arguments.update(overrides)
-        return permit_signer.sign_permit(**arguments)
+        if canonical:
+            return permit_signer.sign_permit(**arguments)
+        with mock.patch.object(permit_signer, "_recompute_canonical_verdict"):
+            return permit_signer.sign_permit(**arguments)
+
+    def transit_calls(self) -> list[tuple]:
+        return [call for call in self.transport.calls if "/sign/" in call[1]]
 
     def write_verdict(self, value: dict) -> None:
         self.verdict_path.write_text(
@@ -181,6 +199,7 @@ class TranscriptReadyPermitTests(unittest.TestCase):
         )
 
     def test_v2_verdict_signs_and_signature_verifies(self) -> None:
+        token_bytes = self.token.read_bytes().strip()
         envelope, payload_bytes, envelope_bytes = self.sign()
         self.assertEqual(canonical_json(self.verdict), payload_bytes)
         self.assertEqual(canonical_json(envelope), envelope_bytes)
@@ -191,13 +210,17 @@ class TranscriptReadyPermitTests(unittest.TestCase):
         self.assertEqual(KEY_ID, envelope["signatures"][0]["keyid"])
         self.assertEqual(4, self.verdict["binding"]["evidenceAgeSeconds"])
         self.assertEqual("", self.verdict["checks"][0]["remediation"])
-        call = self.transport.calls[0]
+        call = self.transit_calls()[0]
         self.assertEqual(
             "https://vault.test.example/v1/meeting-ai/sign/transcript-ready-permit",
             call[1],
         )
-        self.assertNotIn(self.token.read_bytes().strip(), call[3])
+        self.assertNotIn(token_bytes, call[3])
         self.assertNotIn(b"private", envelope_bytes.lower())
+        self.assertFalse(self.token.exists())
+        self.assertTrue(
+            any(call[1].endswith("/auth/token/revoke-self") for call in self.transport.calls)
+        )
 
     def test_rejected_or_stale_verdict_is_never_sent_to_vault(self) -> None:
         rejected = copy.deepcopy(self.verdict)
@@ -206,12 +229,34 @@ class TranscriptReadyPermitTests(unittest.TestCase):
         self.write_verdict(rejected)
         with self.assertRaisesRegex(ContractError, "only an accepted"):
             self.sign()
-        self.assertEqual([], self.transport.calls)
+        self.assertEqual([], self.transit_calls())
 
         self.write_verdict(self.verdict)
         with self.assertRaisesRegex(ContractError, "freshness"):
             self.sign(now=NOW + dt.timedelta(minutes=16))
-        self.assertEqual([], self.transport.calls)
+        self.assertEqual([], self.transit_calls())
+
+    def test_live_observation_must_be_fresh_at_signing_time(self) -> None:
+        altered = copy.deepcopy(self.verdict)
+        altered["binding"]["liveTranscriptPod"]["observedAt"] = (
+            "2026-07-20T07:45:29Z"
+        )
+        altered["binding"]["evidenceAgeSeconds"] = 871
+        self.write_verdict(altered)
+        with self.assertRaisesRegex(ContractError, "runtime evidence"):
+            self.sign(now=NOW + dt.timedelta(seconds=30))
+        self.assertEqual([], self.transit_calls())
+
+    def test_arbitrary_passing_verdict_is_not_canonical_evidence(self) -> None:
+        actual_policy_sha = hashlib.sha256(self.policy_path.read_bytes()).hexdigest()
+        with self.assertRaises(ContractError):
+            permit_signer._recompute_canonical_verdict(
+                verdict=self.verdict,
+                evidence_path=self.evidence_path,
+                policy_path=self.policy_path,
+                expected_gitops_commit=GITOPS_COMMIT,
+                expected_policy_sha256=actual_policy_sha,
+            )
 
     def test_trust_pin_and_dedicated_key_binding_fail_closed(self) -> None:
         with self.assertRaisesRegex(ContractError, "out-of-band pin"):
@@ -240,7 +285,7 @@ class TranscriptReadyPermitTests(unittest.TestCase):
         self.token.chmod(0o644)
         with self.assertRaisesRegex(ContractError, "owner-only"):
             self.sign()
-        self.assertEqual([], self.transport.calls)
+        self.assertEqual([], self.transit_calls())
 
     def test_unsafe_or_unpinned_public_receipt_is_rejected(self) -> None:
         receipt = json.loads(self.receipt.read_text(encoding="utf-8"))

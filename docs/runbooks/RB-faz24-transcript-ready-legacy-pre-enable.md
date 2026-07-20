@@ -243,6 +243,8 @@ PERMIT_ENVELOPE="${PERMIT_DIR}/transcript-ready-permit.dsse.json"
 
 python3 scripts/faz24/sign_transcript_ready_pre_enable_permit.py \
   --verdict "${EVIDENCE_DIR}/verdict.json" \
+  --evidence "${EVIDENCE_DIR}/evidence.json" \
+  --policy config/faz24-transcript-ready-pre-enable-policy.v1.json \
   --trust-root "${TRUST_ROOT}" \
   --expected-trust-root-sha256 "${TRUST_ROOT_SHA256}" \
   --app-env test \
@@ -255,10 +257,11 @@ python3 scripts/faz24/sign_transcript_ready_pre_enable_permit.py \
   --output "${PERMIT_ENVELOPE}"
 ```
 
-Signer Vault'tan dönen signature'ı pinned public trust root ile lokal olarak
-doğrulamadan zarf yazmaz. Başarılı imzadan sonra kısa ömürlü signer token revoke
-edilir veya TTL/use sınırında expire olması izlenir; dosya güvenli biçimde
-silinir. DSSE permit ve trust root platform-ai
+Signer canonical evidence ve policy verifier'ını aynı `generatedAt` anında yeniden
+çalıştırıp verdict byte'larını birebir eşleştirmeden Vault'a gitmez; dönen signature'ı
+pinned public trust root ile lokal olarak doğrulamadan zarf yazmaz. Tek kullanımlık
+signer token başarı, doğrulama reddi ve Vault hatası yollarında revoke edilir; yerel
+token dosyası silinir. DSSE permit ve trust root platform-ai
 `deploy/gpu-host/configure-meeting-ai.ps1` komutuna sırasıyla
 `-ReadyPermitSourcePath` ve `-ReadyPermitTrustRootSourcePath` olarak verilir.
 Platform-ai activation bunları kendi governed runtime alanına atomik taşır,

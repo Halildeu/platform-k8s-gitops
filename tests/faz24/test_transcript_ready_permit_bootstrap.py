@@ -34,6 +34,7 @@ class FakeVaultClient:
         self.key_exists = False
         self.policy: str | None = None
         self.lookup_override: dict[str, Any] = {}
+        self.lookup_payload_valid = True
         self.revoked = False
 
     def response(self, status: int, payload: dict[str, Any] | None):
@@ -125,7 +126,7 @@ class FakeVaultClient:
                 "ttl": bootstrap.SIGNER_TTL_SECONDS - 1,
             }
             lookup.update(self.lookup_override)
-            return self.response(200, {"data": lookup})
+            return self.response(200, {"data": lookup} if self.lookup_payload_valid else {})
         if (method, path) == ("POST", "auth/token/revoke-accessor"):
             self.revoked = True
             return self.response(204, None)
@@ -176,7 +177,7 @@ class TranscriptReadyPermitBootstrapTests(unittest.TestCase):
                 "ttl": "1800s",
                 "explicit_max_ttl": "1800s",
                 "renewable": False,
-                "num_uses": 10,
+                "num_uses": 1,
                 "no_default_policy": True,
             },
             create_payload,
@@ -187,6 +188,16 @@ class TranscriptReadyPermitBootstrapTests(unittest.TestCase):
         self.client.lookup_override = {"num_uses": 9}
 
         with self.assertRaisesRegex(bootstrap.BootstrapError, "readback"):
+            self.run_bootstrap()
+
+        self.assertTrue(self.client.revoked)
+        self.assertFalse(self.signer_token.exists())
+        self.assertFalse(self.receipt.exists())
+
+    def test_token_readback_failure_revokes_without_writing_outputs(self) -> None:
+        self.client.lookup_payload_valid = False
+
+        with self.assertRaisesRegex(bootstrap.BootstrapError, "response data"):
             self.run_bootstrap()
 
         self.assertTrue(self.client.revoked)

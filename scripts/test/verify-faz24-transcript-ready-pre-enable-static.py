@@ -58,6 +58,10 @@ path "meeting-ai/sign/transcript-ready-permit" {
 path "auth/token/lookup-self" {
   capabilities = ["read"]
 }
+
+path "auth/token/revoke-self" {
+  capabilities = ["update"]
+}
 '''
 
 
@@ -127,6 +131,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             'TRANSIT_KEY_NAME = "transcript-ready-permit"',
             "Ed25519PublicKey.from_public_bytes",
             "VaultTransitSigner",
+            "_recompute_canonical_verdict",
+            "auth/token/revoke-self",
         ),
         TRANSIT_BOOTSTRAP: (
             'MOUNT = "meeting-ai"',
