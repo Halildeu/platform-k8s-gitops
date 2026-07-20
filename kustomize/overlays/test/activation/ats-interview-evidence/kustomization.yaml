@@ -9,8 +9,9 @@
 # Önkoşullar (39d-2, 2026-07-11'de TAMAM):
 #   - PG: ats DB + ats_app kullanıcı (test compose PG; canlı login kanıtlı)
 #   - Vault: kv/platform/ats (DB url/user/pass) → ESO ClusterSecretStore
-#   - KC platform-test: ats-api client + 14 client-role + 15 default-scope
-#     scope'ları (Codex 019f50b7 verdict A: default scope + rol-kapısı ats#96)
+#   - KC platform-test: ats-api client + 16 client-role + 17 default-scope
+#     scope'ları (Faz 25 #2441: ats.screening.{read,write} eklendi; default scope
+#     + rol-kapısı ats#96/#168 modeli değişmez)
 #
 # Güncel Faz 25 #2615 branch-acceptance imaj pini. Numerik UID (10001:10001) ve deployment
 # securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:

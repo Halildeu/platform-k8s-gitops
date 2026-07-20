@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 39d-2c/39d-11 + Faz 25 #2526 — platform-test KC realm: ats-api client +
-# 14 client-role (13 PERMS + atanmayan export.repair) +
+# 39d-2c/39d-11 + Faz 25 #2526 + Faz 25 #2441 — platform-test KC realm: ats-api client +
+# 16 client-role (15 PERMS + atanmayan export.repair) +
 # audience/permission client-scope'ları + persona rol atamaları.
 # Model: Codex 019f50b7 verdict A — permission scope'lar DEFAULT (yetki değil);
 # gerçek yetki YALNIZ ats-api client-role atamasıyla (rol-kapısı ats#96).
@@ -61,11 +61,11 @@ else
   echo "KC: ats-api client exists"
 fi
 
-# --- 2) client-role'ler (13 PERMS + atanmayan export.repair) ---
+# --- 2) client-role'ler (15 PERMS + atanmayan export.repair) ---
 # 39d-8..11: ats.export.read (receipt/artifact salt-okuma) PERMS'te — operator
 # sınıfına atanır. ats.export.repair BİLEREK PERMS DIŞI: rol+scope oluşturulur
 # ama HİÇBİR persona'ya otomatik ATANMAZ (runbook R4 onay-kapısı — Codex 39d-11).
-PERMS="ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.application.read ats.application.status.write ats.export.read ats.export.write ats.dsar.write ats.erasure.execute"
+PERMS="ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.screening.write ats.screening.read ats.review.write ats.review.read ats.application.read ats.application.status.write ats.export.read ats.export.write ats.dsar.write ats.erasure.execute"
 REPAIR_PERM="ats.export.repair"
 for p in $PERMS $REPAIR_PERM; do
   if ! kc get "clients/$ATS_CID/roles/$p" -r $REALM >/dev/null 2>&1; then
@@ -115,7 +115,7 @@ else
   fi
 fi
 
-# --- 4) permission client-scope'lar (13 PERMS + repair; scope claim'ine ad girsin) ---
+# --- 4) permission client-scope'lar (15 PERMS + repair; scope claim'ine ad girsin) ---
 for p in $PERMS $REPAIR_PERM; do
   SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes 2>/dev/null | awk -F, -v n="$p" '$2==n{print $1}' | head -1 || true)
   if [ -z "$SID" ]; then
@@ -144,10 +144,10 @@ for name in ats-api-audience $PERMS $REPAIR_PERM; do
     echo "KC: frontend += default-scope $name"
   fi
 done
-echo "KC: frontend default-scopes bound (audience + 13 permission + repair)"
+echo "KC: frontend default-scopes bound (audience + 15 permission + repair)"
 
 # --- 6) persona'lar + rol atamaları ---
-# admin@example.com (test super-admin; yalnız ROL+tenant attr; şifreye dokunulmaz): operator (13 rol; repair HARİÇ)
+# admin@example.com (test super-admin; yalnız ROL+tenant attr; şifreye dokunulmaz): operator (15 rol; repair HARİÇ)
 # ats-reader-persona: yalnız interview read; ats-reviewer-persona: consent/ingest/review/citation
 # ats-recruiter-persona: yalnız application inbox + insan kontrollü status transition
 ensure_user() { # $1=username -> stdout id
@@ -273,34 +273,34 @@ if [ -n "$ADMIN_UID" ]; then
   set_tenant "$ADMIN_UID" "$FULLATS_PUBLIC_TENANT_ID"
   # shellcheck disable=SC2086
   grant "$ADMIN_UID" $PERMS
-  echo "KC: admin test kullanıcısına Full ATS public tenant + 13 ats-api rolü atandı (repair HARİÇ)"
+  echo "KC: admin test kullanıcısına Full ATS public tenant + 15 ats-api rolü atandı (repair HARİÇ)"
 else
   echo "WARN: admin@example.com bulunamadı — operator ataması atlandı" >&2
 fi
 
 READER_UID=$(ensure_user ats-reader-persona)
 set_tenant "$READER_UID" t-platform-test
-grant "$READER_UID" ats.transcript.read ats.review.read
-echo "KC: ats-reader-persona → read rolleri"
+grant "$READER_UID" ats.transcript.read ats.screening.read ats.review.read
+echo "KC: ats-reader-persona → 3 read rolü (screening.read dahil)"
 
 REVIEWER_UID=$(ensure_user ats-reviewer-persona)
 set_tenant "$REVIEWER_UID" t-platform-test
-grant "$REVIEWER_UID" ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
-echo "KC: ats-reviewer-persona → reviewer rolleri (export/dsar/erasure YOK)"
+grant "$REVIEWER_UID" ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.screening.write ats.screening.read ats.review.write ats.review.read
+echo "KC: ats-reviewer-persona → 9 reviewer rolü (screening read/write dahil; export/dsar/erasure YOK)"
 
 RECRUITER_UID=$(ensure_user ats-recruiter-persona)
 set_tenant "$RECRUITER_UID" 00000000-0000-0000-0000-000000000001
 grant "$RECRUITER_UID" ats.application.read ats.application.status.write
 echo "KC: ats-recruiter-persona → public careers tenant + application read/status rolleri"
 
-# operator persona (13 rol) — admin kullanıcısının şifresine DOKUNMADAN
+# operator persona (15 rol) — admin kullanıcısının şifresine DOKUNMADAN
 # export/dsar allow kanıtı için; roleless persona (0 rol) — rol-kapısının
 # canlı 403 kanıtı için (default scope'lar token'a girse bile yetki YOK).
 OPERATOR_UID=$(ensure_user ats-operator-persona)
 set_tenant "$OPERATOR_UID" t-platform-test
 # shellcheck disable=SC2086
 grant "$OPERATOR_UID" $PERMS
-echo "KC: ats-operator-persona → 13 rol (operator; export.repair HARİÇ)"
+echo "KC: ats-operator-persona → 15 rol (operator; export.repair HARİÇ)"
 echo "KC: $REPAIR_PERM rol+scope OLUŞTURULDU, kimseye ATANMADI (R4 repair onay-kapısı: runbook'la manuel atama)"
 ROLELESS_UID=$(ensure_user ats-roleless-persona)
 set_tenant "$ROLELESS_UID" t-platform-test
@@ -420,9 +420,9 @@ echo "KC: 5 persona şifresi Vault ile kararlı uzlaştırıldı (secret argv/st
 # --- FINAL ASSERT (Codex 019f50b7 P1: fail-open yerine dogrulanmis durum) ---
 fail=0
 ROLE_N=$(kc get "clients/$ATS_CID/roles" -r $REALM --fields name --format csv --noquotes | grep -c '^ats\.') || true
-[ "$ROLE_N" -eq 14 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (14 bekleniyor: 13 PERMS + export.repair)" >&2; fail=1; }
+[ "$ROLE_N" -eq 16 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (16 bekleniyor: 15 PERMS + export.repair)" >&2; fail=1; }
 BOUND_N=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes | grep -cE '^(ats\.|ats-api-audience)') || true
-[ "$BOUND_N" -eq 15 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (15 bekleniyor: audience + 13 PERMS + repair)" >&2; fail=1; }
+[ "$BOUND_N" -eq 17 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (17 bekleniyor: audience + 15 PERMS + repair)" >&2; fail=1; }
 # TAM-KUME esitligi (Codex 019f50b7: '>=' least-privilege drift'ini yakalamaz —
 # reader'a operator rolu eklense bile PASS olurdu; kume birebir eslesmeli)
 assert_roles_exact() { # $1=uid $2=etiket $3..=beklenen roller (tam kume)
@@ -450,8 +450,8 @@ print(v[0] if len(v)==1 else "")')
 # shellcheck disable=SC2086
 [ -n "$ADMIN_UID" ] && assert_roles_exact "$ADMIN_UID" operator-admin $PERMS
 [ -n "$ADMIN_UID" ] && assert_tenant_exact "$ADMIN_UID" fullats-admin "$FULLATS_PUBLIC_TENANT_ID"
-assert_roles_exact "$READER_UID" reader ats.transcript.read ats.review.read
-assert_roles_exact "$REVIEWER_UID" reviewer ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
+assert_roles_exact "$READER_UID" reader ats.transcript.read ats.screening.read ats.review.read
+assert_roles_exact "$REVIEWER_UID" reviewer ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.screening.write ats.screening.read ats.review.write ats.review.read
 assert_roles_exact "$RECRUITER_UID" recruiter ats.application.read ats.application.status.write
 # shellcheck disable=SC2086
 assert_roles_exact "$OPERATOR_UID" operator $PERMS
@@ -463,5 +463,5 @@ assert_tenant_exact "$ROLELESS_UID" roleless t-platform-test
 have_roleless=$(kc get "users/$ROLELESS_UID/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
 [ "$have_roleless" -eq 0 ] || { echo "ASSERT FAIL: roleless persona rol tasiyor ($have_roleless)" >&2; fail=1; }
 [ "$fail" -eq 0 ] || exit 1
-echo "ASSERT OK: 14 rol + 15 default-scope + tenant-bagli persona atamalari dogrulandi (export.repair ATANMAMIS)"
+echo "ASSERT OK: 16 rol + 17 default-scope + tenant-bagli persona atamalari dogrulandi (export.repair ATANMAMIS)"
 echo "DONE 39d-2c"
