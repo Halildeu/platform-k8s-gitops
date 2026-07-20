@@ -134,7 +134,7 @@ if [ "${ATS_SCREENING_EXPECTED:-0}" = "1" ]; then
   else
     SCREEN_KEY="scrq_$(python3 -c 'import uuid; print(uuid.uuid4())')"
     SCREEN_BODY="{\"sourceKind\":\"TRANSCRIPT_SEGMENT\",\"transcriptKey\":\"$TK\",\"segmentIndex\":0}"
-    SCREEN_CODE=$(curl -sk --max-time 30 -D "$T/d29-screen-create.headers" \
+    SCREEN_CODE=$(curl -sS --max-time 30 -D "$T/d29-screen-create.headers" \
       -o "$T/d29-screen-create.json" -w '%{http_code}' -X POST "$API/screenings" \
       -H "Authorization: Bearer $REVIEWER" -H 'Content-Type: application/json' \
       -H "X-ATS-Idempotency-Key: $SCREEN_KEY" -d "$SCREEN_BODY")
@@ -173,7 +173,7 @@ PY
       bad "screening response pointer-only exact sema ihlali"
     fi
     FSR=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("findingSetRef", ""))' "$T/d29-screen-create.json" 2>/dev/null)
-    REPLAY_CODE=$(curl -sk --max-time 30 -D "$T/d29-screen-replay.headers" \
+    REPLAY_CODE=$(curl -sS --max-time 30 -D "$T/d29-screen-replay.headers" \
       -o "$T/d29-screen-replay.json" -w '%{http_code}' -X POST "$API/screenings" \
       -H "Authorization: Bearer $REVIEWER" -H 'Content-Type: application/json' \
       -H "X-ATS-Idempotency-Key: $SCREEN_KEY" -d "$SCREEN_BODY")
@@ -189,7 +189,7 @@ PY
     fi
     C=$(code GET "$API/screenings/$FSR" "$READER")
     [ "$C" = "200" ] && ok "reader screening.read -> 200" || bad "reader screening.read -> $C"
-    READER_WRITE=$(curl -sk --max-time 20 -o "$T/d29-screen-reader-write.json" -w '%{http_code}' \
+    READER_WRITE=$(curl -sS --max-time 20 -o "$T/d29-screen-reader-write.json" -w '%{http_code}' \
       -X POST "$API/screenings" -H "Authorization: Bearer $READER" \
       -H 'Content-Type: application/json' \
       -H "X-ATS-Idempotency-Key: scrq_$(python3 -c 'import uuid; print(uuid.uuid4())')" \
