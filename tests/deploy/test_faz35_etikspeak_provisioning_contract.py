@@ -32,6 +32,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.openfga = (
             ROOT / "scripts/faz35/provision-test-openfga.sh"
         ).read_text()
+        cls.openfga_normalization_lib_path = (
+            ROOT / "scripts/faz35/lib-openfga-model-normalization.sh"
+        )
+        cls.openfga_normalization_lib = cls.openfga_normalization_lib_path.read_text()
         cls.entitlement = (
             ROOT / "scripts/faz35/provision-test-ethic-entitlement.sh"
         ).read_text()
@@ -706,7 +710,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "canonical OpenFGA model digest does not match runtime ledger",
             self.openfga,
         )
-        self.assertIn("select(del(.id) == $desired)", self.openfga)
+        self.assertIn("faz35_select_equivalent_openfga_models", self.openfga)
+        self.assertIn("faz35_normalize_openfga_model", self.preflight)
         self.assertNotIn("tojson) ==", self.openfga)
 
         compiled_model = json.loads(
@@ -731,10 +736,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             f'EXPECTED_MODEL_JSON_SHA256="{canonical_digest}"',
             self.preflight,
         )
-        self.assertIn(
-            "jq -j -cS '.authorization_model | del(.id)'",
-            self.preflight,
-        )
+        self.assertIn("expected_model_normalized", self.preflight)
 
         # Exercise the exact OpenFGA GET response envelope. The server's JSON
         # whitespace and jq's normal output newline are transport details; only
@@ -757,6 +759,47 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             hashlib.sha256(canonicalized_live).hexdigest(),
             canonical_digest,
         )
+
+        # OpenFGA's protobuf JSON readback adds empty/default fields that were
+        # not present in the reviewed write payload. Those exact defaults are
+        # transport representation, not a different authorization model.
+        server_readback = json.loads(json.dumps(compiled_model))
+        server_readback["conditions"] = {}
+        server_readback["type_definitions"][0]["metadata"] = None
+        server_readback["type_definitions"][0]["relations"] = {}
+        server_readback["type_definitions"][1]["metadata"]["module"] = ""
+        server_readback["type_definitions"][1]["metadata"]["source_info"] = None
+        member_metadata = server_readback["type_definitions"][1]["metadata"]["relations"]["member"]
+        member_metadata["module"] = ""
+        member_metadata["source_info"] = None
+        member_metadata["directly_related_user_types"][0]["condition"] = ""
+        normalized_desired = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{self.openfga_normalization_lib_path}"; '
+                "faz35_normalize_openfga_model",
+            ],
+            input=json.dumps(compiled_model),
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        normalized_readback = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{self.openfga_normalization_lib_path}"; '
+                "faz35_normalize_openfga_model",
+            ],
+            input=json.dumps(server_readback),
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        self.assertEqual(normalized_readback, normalized_desired)
+        self.assertIn("del(.condition | select(. == \"\"))", self.openfga_normalization_lib)
+        self.assertIn("del(.object | select(. == \"\"))", self.openfga_normalization_lib)
 
         fga_source = (
             ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"

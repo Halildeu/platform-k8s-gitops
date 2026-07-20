@@ -13,6 +13,8 @@ SCRIPT_DIR="$REPO_ROOT/scripts/faz35"
 source "$SCRIPT_DIR/lib-activation-artifacts.sh"
 # shellcheck source=scripts/faz35/lib-image-attestation.sh
 source "$SCRIPT_DIR/lib-image-attestation.sh"
+# shellcheck source=scripts/faz35/lib-openfga-model-normalization.sh
+source "$SCRIPT_DIR/lib-openfga-model-normalization.sh"
 ACTIVATION="$REPO_ROOT/kustomize/overlays/test/activation/etik-speak"
 NETPOL="$ACTIVATION/netpol.yaml"
 ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
@@ -314,10 +316,13 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   }
   live_model=$(remote \
     "kubectl --request-timeout=10s --context k3d-test -n platform-test exec deploy/meeting-service -- curl --connect-timeout 5 --max-time 10 -fsS 'http://openfga:8080/stores/$store_id/authorization-models/$model_id'")
-  # -j is part of the content-address contract: jq's default trailing LF is
-  # transport formatting and must not become part of the canonical model bytes.
-  live_model_sha=$(printf '%s' "$live_model" | jq -j -cS '.authorization_model | del(.id)' | sha256_stream)
-  [ "$live_model_sha" = "$EXPECTED_MODEL_JSON_SHA256" ] || {
+  expected_model_normalized=$(jq -cS . \
+    "$REPO_ROOT/bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json" | \
+    faz35_normalize_openfga_model)
+  live_model_normalized=$(printf '%s' "$live_model" | \
+    jq -cS '.authorization_model | del(.id)' | \
+    faz35_normalize_openfga_model)
+  [ "$live_model_normalized" = "$expected_model_normalized" ] || {
     echo "FATAL: pinned live OpenFGA model differs from the reviewed canonical model" >&2
     exit 1
   }
