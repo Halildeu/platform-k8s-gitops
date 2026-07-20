@@ -1164,47 +1164,55 @@ fi
         self.assertEqual(desired.group(1), workflow.group(1))
         self.assertEqual(workflow.group(1), runtime.group(1))
 
-    def test_consultation_defaults_to_none_then_single_claude_and_max_two(self):
-        rule = "Durumsal Cross-AI istişare — varsayılan az kanal"
+    def test_consultation_defaults_to_none_then_flexible_provider_and_max_two(self):
+        # User 2026-07-20 flexibility: provider list is now {Claude, Codex,
+        # MiniMax, GLM}, model choice is free within any provider, no specific
+        # model slug is locked, MiniMax is re-admitted as a valid reviewer.
+        # Fixed HARD RULES stay: provider-distinct, Cursor forbidden,
+        # AI-app-window forbidden, tracked_pending on quota/auth/empty output.
+        rule = "Durumsal Cross-AI istişare — varsayılan az kanal + sağlayıcı/model esnek"
         self.assertIn(rule, self.agents)
         self.assertIn("`Consultation mode: none`", self.agents)
-        self.assertIn("(`single`)", self.agents)
-        self.assertIn("(`dual`)", self.agents)
-        self.assertIn("`claude-opus-4-8`", self.agents)
-        self.assertIn("`gpt-5.6-sol`", self.agents)
+        # Modes are still declared, but not gated to a specific model slug.
+        self.assertIn("`single`", self.agents)
+        self.assertIn("`dual`", self.agents)
         self.assertIn("toplam iki kanal aşılmaz", self.agents)
-        self.assertIn("MiniMax yeni istişarelerde çağrılmaz", self.agents)
+        # Flexibility markers.
+        self.assertIn("Claude (Anthropic), Codex (OpenAI), MiniMax veya GLM", self.agents)
+        self.assertIn("spesifik model kilidi yoktur", self.agents)
+        self.assertIn("MiniMax ve GLM `single`/`dual` reviewer olarak kabul edilir", self.agents)
+        # Preserved HARD RULES.
         self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
         self.assertIn("consultation governance dosyası", self.agents)
         self.assertIn("audit/evidence enforcement kodunun kendisi `dual` ister", self.agents)
-        self.assertIn("Claude implementer kendi receipt'ini", self.agents)
-        self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
-        self.assertIn("exact Claude + exact Codex", self.context_rules)
+        # Canonical rule set updates. Short keyphrases only (multi-line safe).
+        self.assertIn("provider-distinct", self.context_rules)
+        self.assertIn("`dual` gerekir", self.context_rules)
+        self.assertIn("Claude (Anthropic)", self.context_rules)
+        self.assertIn("Codex (OpenAI)", self.context_rules)
+        self.assertIn("MiniMax", self.context_rules)
+        self.assertIn("GLM (Z.ai)", self.context_rules)
+        self.assertIn("model seçimi", self.context_rules.lower())
+        self.assertIn("esnektir", self.context_rules)
+        self.assertIn("model kilidi yoktur", self.context_rules)
         self.assertIn("`other` bu iki modda", self.context_rules)
-        self.assertIn("Varsayımsal istişare karar kanıtı değildir", self.agents)
         self.assertIn("non-authoritative direction exploration", self.context_rules)
         self.assertIn("tracked_pending", self.context_rules)
-        self.assertFalse((ROOT / "scripts/ai/minimax_m3_review.py").exists())
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
         self.assertIn(
-            "## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal",
+            "## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal + Sağlayıcı/Model Esnek",
             self.context_rules,
         )
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
         self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
         self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
-        self.assertIn("**`claude-opus-4-8`**", self.context_rules)
-        self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
         self.assertIn(
             "İstişare bir teslimat ritüeli değil, yalnız karar",
             self.context_rules,
         )
-        self.assertIn("JSON `modelUsage`", self.context_rules)
-        self.assertIn("Tek ve birincil kanal", self.context_rules)
         self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
-        self.assertIn("AI uygulama pencereleri istişare kanalı değildir", self.context_rules)
         self.assertIn("irreversible-production", self.context_rules)
         self.assertIn("Path/branch sınıflandırıcısı", self.context_rules)
         self.assertIn("`none` receipt", self.context_rules)
