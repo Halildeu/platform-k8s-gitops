@@ -373,6 +373,53 @@ class GateTests(unittest.TestCase):
             [], [check.name for check in self.checks() if not check.passed]
         )
 
+    def test_v2_verdict_binds_exact_live_runtime_and_evidence_bytes(self) -> None:
+        self.path.write_text(json.dumps(self.policy), encoding="utf-8")
+        self.evidence["source"]["policySha256"] = file_sha256(self.path)
+        evidence_path = self.artifact_root / "candidate.json"
+        evidence_path.write_text(json.dumps(self.evidence), encoding="utf-8")
+        checks, context = verifier.validate(
+            self.evidence,
+            self.policy,
+            expected_gitops_commit=GITOPS_COMMIT,
+            policy_path=self.path,
+            now=dt.datetime(2026, 7, 18, 12, 0, 4, tzinfo=dt.timezone.utc),
+            artifact_root=self.artifact_root,
+        )
+        verdict = verifier.build_verdict(
+            checks=checks,
+            context=context,
+            policy=self.policy,
+            expected_gitops_commit=GITOPS_COMMIT,
+            policy_digest=file_sha256(self.path),
+            evidence_digest=file_sha256(evidence_path),
+            generated_at=dt.datetime(
+                2026, 7, 18, 12, 0, 4, tzinfo=dt.timezone.utc
+            ),
+        )
+        self.assertEqual(
+            "faz24.transcriptReadyPreEnableVerdict.v2", verdict["schemaVersion"]
+        )
+        self.assertEqual("test", verdict["binding"]["targetAppEnv"])
+        self.assertEqual(
+            {
+                "transcriptImageDigest": IMAGE_DIGEST,
+                "backendCommit": BACKEND_COMMIT,
+            },
+            verdict["binding"]["producerCapability"],
+        )
+        self.assertEqual(
+            {
+                "podUid": "11111111-1111-1111-1111-111111111111",
+                "imageDigest": IMAGE_DIGEST,
+                "observedAt": "2026-07-18T11:59:56Z",
+                "evidenceSha256": file_sha256(evidence_path),
+            },
+            verdict["binding"]["liveTranscriptPod"],
+        )
+        self.assertEqual(8, verdict["binding"]["evidenceAgeSeconds"])
+        self.assertTrue(all(item["remediation"] == "" for item in verdict["checks"]))
+
     def test_committed_empty_allowlists_keep_gate_closed(self) -> None:
         blocked = json.loads(
             (

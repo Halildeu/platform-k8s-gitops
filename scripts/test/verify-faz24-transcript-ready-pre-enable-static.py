@@ -14,6 +14,17 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config/faz24-transcript-ready-pre-enable-policy.v1.json"
+TRANSIT_POLICY = (
+    ROOT
+    / "bootstrap/vault-policies/test/faz24-transcript-ready-permit-signer.hcl"
+)
+CONTRACT = ROOT / "scripts/faz24/transcript_ready_pre_enable_contract.py"
+VERIFIER = ROOT / "scripts/faz24/verify_transcript_ready_pre_enable_evidence.py"
+TRUST_BUILDER = ROOT / "scripts/faz24/build_transcript_ready_permit_trust_root.py"
+PERMIT_SIGNER = ROOT / "scripts/faz24/sign_transcript_ready_pre_enable_permit.py"
+TRANSIT_BOOTSTRAP = (
+    ROOT / "scripts/ops/bootstrap_faz24_transcript_ready_permit_transit.py"
+)
 CI = ROOT / ".github/workflows/ci.yml"
 STATIC = ROOT / "scripts/test/faz24-finalization-rollout-static.sh"
 READY_FLAG = "MAI_READY_CONSUMER_ENABLED"
@@ -34,6 +45,20 @@ EXPECTED_REMEDIATIONS = {
     "metadataOnly": "RECOLLECT_METADATA_ONLY",
     "rerun": "FRESH_ZERO_SCAN",
 }
+EXPECTED_TRANSIT_POLICY = '''# TEST-only Faz 24 transcript-ready pre-enable permit signer.
+#
+# This token can sign with one dedicated non-exportable Ed25519 Transit key. It
+# cannot read/export/delete/rotate keys, mint tokens, access KV, or use the
+# cross-ai signing domain.
+
+path "meeting-ai/sign/transcript-ready-permit" {
+  capabilities = ["update"]
+}
+
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+'''
 
 
 def fail(message: str) -> None:
@@ -78,8 +103,47 @@ def main(argv: Sequence[str] | None = None) -> None:
         fail("current policy must keep enableAuthorized=false")
     if policy.get("environment", {}).get("redisTls") is not False:
         fail("current Redis evidence target must remain explicit non-TLS test runtime")
+    if policy.get("environment", {}).get("appEnv") != "test":
+        fail("current permit target must remain explicit appEnv=test")
     if policy.get("remediationEvidence") != EXPECTED_REMEDIATIONS:
         fail("policy remediation evidence classes drifted")
+
+    if TRANSIT_POLICY.read_text(encoding="utf-8") != EXPECTED_TRANSIT_POLICY:
+        fail("dedicated TEST Transit signer policy drifted")
+    source_markers = {
+        CONTRACT: (
+            'VERDICT_SCHEMA = "faz24.transcriptReadyPreEnableVerdict.v2"',
+            'PERMIT_TRUST_ROOT_SCHEMA = "faz24.transcriptReadyPermitTrustRoot.v1"',
+            "application/vnd.acik.faz24.transcript-ready-pre-enable-verdict.v2+json",
+        ),
+        VERIFIER: ("def build_verdict(", '"targetAppEnv"', '"evidenceSha256"'),
+        TRUST_BUILDER: (
+            'TRANSIT_MOUNT = "meeting-ai"',
+            'TRANSIT_KEY_NAME = "transcript-ready-permit"',
+            "requiresOutOfBandOwnerPin",
+        ),
+        PERMIT_SIGNER: (
+            'TRANSIT_MOUNT = "meeting-ai"',
+            'TRANSIT_KEY_NAME = "transcript-ready-permit"',
+            "Ed25519PublicKey.from_public_bytes",
+            "VaultTransitSigner",
+        ),
+        TRANSIT_BOOTSTRAP: (
+            'MOUNT = "meeting-ai"',
+            'KEY_NAME = "transcript-ready-permit"',
+            'POLICY_NAME = "faz24-transcript-ready-permit-signer-test"',
+            '"auth/token/lookup-accessor"',
+            '"auth/token/revoke-accessor"',
+        ),
+    }
+    for path, markers in source_markers.items():
+        content = path.read_text(encoding="utf-8")
+        missing_markers = [marker for marker in markers if marker not in content]
+        if missing_markers:
+            fail(
+                f"{path.relative_to(ROOT)} misses permit markers: "
+                + ",".join(missing_markers)
+            )
 
     operational_roots = (
         ROOT / "kustomize",
@@ -118,7 +182,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     required = (
         "collect_transcript_ready_pre_enable_evidence.py",
         "verify_transcript_ready_pre_enable_evidence.py",
+        "build_transcript_ready_permit_trust_root.py",
+        "sign_transcript_ready_pre_enable_permit.py",
+        "bootstrap_faz24_transcript_ready_permit_transit.py",
         "tests.faz24.test_transcript_ready_pre_enable_gate",
+        "tests.faz24.test_transcript_ready_permit_bootstrap",
+        "tests.faz24.test_transcript_ready_permit_signer",
         "verify-faz24-transcript-ready-pre-enable-static.py",
         "--test-render",
         "--test-eso-render",

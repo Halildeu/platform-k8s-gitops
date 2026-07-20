@@ -21,6 +21,9 @@ python3 -m py_compile \
   "${ROOT}/scripts/faz24/transcript_ready_pre_enable_contract.py" \
   "${ROOT}/scripts/faz24/collect_transcript_ready_pre_enable_evidence.py" \
   "${ROOT}/scripts/faz24/verify_transcript_ready_pre_enable_evidence.py" \
+  "${ROOT}/scripts/faz24/build_transcript_ready_permit_trust_root.py" \
+  "${ROOT}/scripts/faz24/sign_transcript_ready_pre_enable_permit.py" \
+  "${ROOT}/scripts/ops/bootstrap_faz24_transcript_ready_permit_transit.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
@@ -38,7 +41,9 @@ python3 "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   "${ROOT}/docs/faz-24-evidence/2026-07-18-finalization-source-ci.json"
 python3 -m unittest \
   tests.faz24.test_finalization_evidence_verifiers \
-  tests.faz24.test_transcript_ready_pre_enable_gate
+  tests.faz24.test_transcript_ready_pre_enable_gate \
+  tests.faz24.test_transcript_ready_permit_bootstrap \
+  tests.faz24.test_transcript_ready_permit_signer
 python3 "${ROOT}/scripts/test/verify-faz24-transcript-ready-pre-enable-static.py" \
   --test-render "${TEST_RENDER}" \
   --test-eso-render "${TEST_ESO_RENDER}" \

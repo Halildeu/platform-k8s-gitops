@@ -6,14 +6,20 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import re
+import stat
 from pathlib import Path
 from typing import Any, Iterable
 
 
 POLICY_SCHEMA = "faz24.transcriptReadyPreEnablePolicy.v1"
 EVIDENCE_SCHEMA = "faz24.transcriptReadyPreEnableEvidence.v1"
-VERDICT_SCHEMA = "faz24.transcriptReadyPreEnableVerdict.v1"
+VERDICT_SCHEMA = "faz24.transcriptReadyPreEnableVerdict.v2"
+PERMIT_TRUST_ROOT_SCHEMA = "faz24.transcriptReadyPermitTrustRoot.v1"
+PERMIT_PAYLOAD_TYPE = (
+    "application/vnd.acik.faz24.transcript-ready-pre-enable-verdict.v2+json"
+)
 ISSUE = "platform-k8s-gitops#2610"
 SHA256_RE = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -21,6 +27,54 @@ GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:@/-]{1,200}$")
 SSH_ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+KEY_ID_RE = re.compile(
+    r"^vault-transit://[a-z0-9][a-z0-9-]*/[A-Za-z0-9_.-]+#v[1-9][0-9]*$"
+)
+APP_ENVIRONMENTS = frozenset({"test", "stage", "prod"})
+VERDICT_FIELDS = frozenset(
+    {
+        "schemaVersion",
+        "generatedAt",
+        "issue",
+        "status",
+        "enableAuthorized",
+        "checks",
+        "requiredRemediationEvidence",
+        "binding",
+        "boundary",
+    }
+)
+VERDICT_CHECK_FIELDS = frozenset({"name", "passed", "message", "remediation"})
+VERDICT_BINDING_FIELDS = frozenset(
+    {
+        "targetAppEnv",
+        "expectedGitopsCommit",
+        "policySha256",
+        "producerCapability",
+        "liveTranscriptPod",
+        "hostStartupGuard",
+        "evidenceAgeSeconds",
+    }
+)
+PRODUCER_BINDING_FIELDS = frozenset({"transcriptImageDigest", "backendCommit"})
+LIVE_POD_BINDING_FIELDS = frozenset(
+    {"podUid", "imageDigest", "observedAt", "evidenceSha256"}
+)
+HOST_GUARD_BINDING_FIELDS = frozenset(
+    {"platformAiCommit", "startupScriptSha256", "permitRequired"}
+)
+PERMIT_TRUST_ROOT_FIELDS = frozenset(
+    {
+        "schemaVersion",
+        "keyId",
+        "algorithm",
+        "publicKeyBase64",
+        "allowedAppEnvironments",
+        "notBefore",
+        "notAfter",
+    }
+)
+MAX_DOCUMENT_BYTES = 1024 * 1024
 
 FORBIDDEN_KEYS = {
     "access_token",
@@ -53,6 +107,23 @@ FORBIDDEN_VALUE_PATTERNS = (
 
 class ContractError(RuntimeError):
     """Evidence or policy violated the bounded gate contract."""
+
+
+def _reject_float(_value: str) -> None:
+    raise ContractError("JSON floating-point values are forbidden")
+
+
+def _reject_constant(_value: str) -> None:
+    raise ContractError("JSON non-finite constants are forbidden")
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ContractError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
 def utc_now() -> str:
@@ -111,6 +182,47 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def load_strict_json(path: Path, label: str) -> tuple[bytes, dict[str, Any]]:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ContractError(f"cannot read {label}") from exc
+    if (
+        not raw
+        or len(raw) > MAX_DOCUMENT_BYTES
+        or b"\x00" in raw
+        or raw.startswith(b"\xef\xbb\xbf")
+    ):
+        raise ContractError(f"{label} byte contract is invalid")
+    try:
+        value = json.loads(
+            raw,
+            object_pairs_hook=_unique_object,
+            parse_float=_reject_float,
+            parse_constant=_reject_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError(f"{label} is not strict UTF-8 JSON") from exc
+    if not isinstance(value, dict):
+        raise ContractError(f"{label} root must be an object")
+    return raw, value
+
+
+def require_secure_regular_file(path: Path, label: str) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise ContractError(f"{label} is unavailable") from exc
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o077
+        or not 20 <= metadata.st_size <= 4096
+    ):
+        raise ContractError(f"{label} must be an owner-only regular file")
+
+
 def load_policy(path: Path) -> dict[str, Any]:
     policy = load_json(path)
     if policy.get("schemaVersion") != POLICY_SCHEMA:
@@ -125,6 +237,7 @@ def load_policy(path: Path) -> dict[str, Any]:
     if not isinstance(environment, dict):
         raise ContractError("policy environment must be an object")
     required_names = (
+        "appEnv",
         "cluster",
         "kubectlContext",
         "namespace",
@@ -140,6 +253,8 @@ def load_policy(path: Path) -> dict[str, Any]:
     )
     for name in required_names:
         require_safe_name(environment.get(name), f"environment.{name}")
+    if environment["appEnv"] not in APP_ENVIRONMENTS:
+        raise ContractError("environment.appEnv must be test, stage or prod")
     if not SSH_ALIAS_RE.fullmatch(environment["gpuHost"]):
         raise ContractError("environment.gpuHost must be a simple SSH alias")
     for name in ("postgresPort", "redisPort"):

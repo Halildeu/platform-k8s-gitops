@@ -33,7 +33,6 @@ from transcript_ready_pre_enable_contract import (
     require_sha256,
     sensitive_findings,
     sha256_bytes,
-    utc_now,
 )
 
 
@@ -983,9 +982,28 @@ def validate(
         "RECOLLECT_METADATA_ONLY",
     )
     context = {
-        "producerCapability": capability,
-        "hostStartupGuard": guard,
-        "evidenceAgeSeconds": age,
+        "producerCapability": (
+            None
+            if capability is None
+            else {
+                "transcriptImageDigest": capability.get("transcriptImageDigest"),
+                "backendCommit": capability.get("backendCommit"),
+            }
+        ),
+        "liveTranscriptPod": {
+            "podUid": pod.get("uid"),
+            "imageDigest": pod.get("imageDigest"),
+            "observedAt": pod.get("observedAt"),
+        },
+        "hostStartupGuard": (
+            None
+            if guard is None
+            else {
+                "platformAiCommit": guard.get("platformAiCommit"),
+                "startupScriptSha256": guard.get("startupScriptSha256"),
+                "permitRequired": guard.get("permitRequired"),
+            }
+        ),
     }
     return checks, context
 
@@ -999,26 +1017,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(argv)
-    policy_digest = None
-    try:
-        expected_commit = require_git_sha(
-            args.expected_gitops_commit, "expected GitOps commit"
-        )
-        policy = load_policy(args.policy)
-        policy_digest = file_sha256(args.policy)
-        evidence = load_json(args.evidence)
-        checks, context = validate(
-            evidence,
-            policy,
-            expected_gitops_commit=expected_commit,
-            policy_path=args.policy,
-            now=dt.datetime.now(dt.timezone.utc),
-        )
-    except ContractError as exc:
-        checks = [Check("verifier_input", False, str(exc), "FRESH_ZERO_SCAN")]
-        context = {}
+def build_verdict(
+    *,
+    checks: list[Check],
+    context: dict[str, Any],
+    policy: dict[str, Any] | None,
+    expected_gitops_commit: str,
+    policy_digest: str | None,
+    evidence_digest: str | None,
+    generated_at: dt.datetime,
+) -> dict[str, Any]:
+    if generated_at.tzinfo is None or generated_at.utcoffset() != dt.timedelta(0):
+        raise ContractError("verdict generation time must be UTC")
+    generated_at = generated_at.replace(microsecond=0)
     accepted = all(check.passed for check in checks)
     remediations = sorted(
         {
@@ -1030,26 +1041,88 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not accepted:
         remediations.append("FRESH_ZERO_SCAN")
         remediations = sorted(set(remediations))
-    verdict = {
+    live_pod = context.get("liveTranscriptPod")
+    evidence_age_seconds = None
+    if isinstance(live_pod, dict):
+        try:
+            evidence_age_seconds = int(
+                (generated_at - parse_utc(live_pod.get("observedAt"))).total_seconds()
+            )
+        except ContractError:
+            evidence_age_seconds = None
+    bound_live_pod = (
+        None
+        if not isinstance(live_pod, dict)
+        else {
+            **live_pod,
+            "evidenceSha256": evidence_digest,
+        }
+    )
+    return {
         "schemaVersion": VERDICT_SCHEMA,
-        "generatedAt": utc_now(),
+        "generatedAt": generated_at.isoformat().replace("+00:00", "Z"),
         "issue": ISSUE,
         "status": "accepted-candidate" if accepted else "rejected",
         "enableAuthorized": accepted,
-        "checks": [asdict(check) for check in checks],
+        "checks": [
+            {**asdict(check), "remediation": check.remediation or ""}
+            for check in checks
+        ],
         "requiredRemediationEvidence": remediations,
         "binding": {
-            "expectedGitopsCommit": args.expected_gitops_commit,
+            "targetAppEnv": (
+                policy.get("environment", {}).get("appEnv")
+                if isinstance(policy, dict)
+                else None
+            ),
+            "expectedGitopsCommit": expected_gitops_commit,
             "policySha256": policy_digest,
             "producerCapability": context.get("producerCapability"),
+            "liveTranscriptPod": bound_live_pod,
             "hostStartupGuard": context.get("hostStartupGuard"),
-            "evidenceAgeSeconds": context.get("evidenceAgeSeconds"),
+            "evidenceAgeSeconds": evidence_age_seconds,
         },
         "boundary": (
             "A passing candidate is usable only by the allowlisted host startup guard; "
             "it is not an operator assertion or a production approval."
         ),
     }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    policy = None
+    policy_digest = None
+    evidence_digest = None
+    verdict_generated_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    try:
+        expected_commit = require_git_sha(
+            args.expected_gitops_commit, "expected GitOps commit"
+        )
+        policy = load_policy(args.policy)
+        policy_digest = file_sha256(args.policy)
+        evidence = load_json(args.evidence)
+        evidence_digest = file_sha256(args.evidence)
+        checks, context = validate(
+            evidence,
+            policy,
+            expected_gitops_commit=expected_commit,
+            policy_path=args.policy,
+            now=verdict_generated_at,
+        )
+    except ContractError as exc:
+        checks = [Check("verifier_input", False, str(exc), "FRESH_ZERO_SCAN")]
+        context = {}
+    accepted = all(check.passed for check in checks)
+    verdict = build_verdict(
+        checks=checks,
+        context=context,
+        policy=policy,
+        expected_gitops_commit=args.expected_gitops_commit,
+        policy_digest=policy_digest,
+        evidence_digest=evidence_digest,
+        generated_at=verdict_generated_at,
+    )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
@@ -1066,7 +1139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not check.passed:
                 print(f"- {check.name}: {check.message}", file=sys.stderr)
         print(
-            "required=" + ",".join(remediations),
+            "required=" + ",".join(verdict["requiredRemediationEvidence"]),
             file=sys.stderr,
         )
     return 0 if accepted else 1

@@ -2,6 +2,7 @@
   "schemaVersion": "faz24.transcriptReadyPreEnablePolicy.v1",
   "issue": "platform-k8s-gitops#2610",
   "environment": {
+    "appEnv": "test",
     "cluster": "k3d-test",
     "kubectlContext": "k3d-test",
     "namespace": "platform-test",

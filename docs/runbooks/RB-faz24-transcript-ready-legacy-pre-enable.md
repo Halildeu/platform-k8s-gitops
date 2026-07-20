@@ -2,8 +2,10 @@
 
 > **Issue:** `platform-k8s-gitops#2610`  
 > **Ortam:** yalnız `k3d-test` + `platform-test` + `denetim-pc`  
-> **Durum (2026-07-18):** `tracked-pending`; ready consumer default-off  
-> **Mutation sınırı:** bu runbook yalnız read-only evidence toplar ve doğrular
+> **Durum (2026-07-20):** `tracked-pending`; ready consumer default-off
+> **Mutation sınırı:** §4-§5 read-only'dir. §6 yalnız TEST Vault'ta owner-gated
+> dedicated Transit key/policy/token oluşturur. §8 imzalama yapar; Kubernetes,
+> backend veya Windows runtime'ını kendi başına değiştirmez.
 
 ## 1. Amaç ve Fail-Closed Sonuç
 
@@ -130,7 +132,145 @@ Kabul için tüm koşullar birlikte gerekir:
 
 Bu koşullardan biri eksikse verifier `enableAuthorized=false` döndürür.
 
-## 6. Rejection ve Remediation Evidence
+## 6. Owner-Gated TEST Vault Transit Bootstrap
+
+Bu adım yalnız `platform-test` Vault cluster'ında çalışır. Root token owner-only
+bir dosyadan okunur; stdout, shell argümanı, GitHub artifact'ı veya evidence'e
+girmez. Bootstrap şu dar mutation'ları yapar:
+
+1. exact TEST Vault cluster ID ve unsealed/active health doğrular;
+2. dedicated `meeting-ai` Transit mount'unu ve non-exportable, non-derived
+   Ed25519 `transcript-ready-permit` key'ini oluşturur veya güvenlik
+   özelliklerini read-back ile doğrular;
+3. yalnız `meeting-ai/sign/transcript-ready-permit` ve
+   `auth/token/lookup-self` yetkili git-reviewed ACL policy'yi uygular;
+4. default policy taşımayan, non-renewable, en fazla `1800s` ve `10` kullanımlı
+   signer token mint eder; accessor read-back ile policy/TTL/use sınırını
+   doğrular;
+5. signer token'ı mode `0600` secret dosyaya, public-key receipt'i ayrı mode
+   `0600` dosyaya yazar. Sonraki hata halinde minted token accessor ile revoke
+   edilir ve yalnız bu koşuda yaratılan kısmi dosyalar temizlenir.
+
+```bash
+umask 077
+PERMIT_DIR="$(mktemp -d /tmp/faz24-ready-permit.XXXXXX)"
+ROOT_TOKEN_FILE="${PERMIT_DIR}/test-vault-root.token"
+SIGNER_TOKEN_FILE="${PERMIT_DIR}/transcript-ready-signer.token"
+TRANSIT_RECEIPT="${PERMIT_DIR}/transit-receipt.json"
+
+# ROOT_TOKEN_FILE owner tarafından terminal transcript'i dışında mode 0600
+# oluşturulur. Ham token bu runbook çıktısına veya komut argümanına yazılmaz.
+python3 scripts/ops/bootstrap_faz24_transcript_ready_permit_transit.py \
+  --vault-origin "${TEST_VAULT_ORIGIN}" \
+  --root-token-file "${ROOT_TOKEN_FILE}" \
+  --expected-cluster-id "${TEST_VAULT_CLUSTER_ID}" \
+  --signer-token-out "${SIGNER_TOKEN_FILE}" \
+  --receipt-out "${TRANSIT_RECEIPT}"
+
+rm -f -- "${ROOT_TOKEN_FILE}"
+```
+
+Bootstrap stdout'u yalnız key ID, public receipt SHA-256, TTL/use sayısı ve
+out-of-band pin gereksinimini taşır. `SIGNER_TOKEN_FILE` Git'e, GitHub'a,
+Windows host'a veya Kubernetes Secret'a kopyalanmaz; yalnız §8 imza koşusunda
+Vault'a gönderilen `X-Vault-Token` header'ı için kullanılır.
+
+## 7. Public Trust-Root ve Out-of-Band Pin
+
+Public receipt'in SHA-256 değeri, receipt dosyasını taşıyan kanaldan bağımsız
+owner/operator kanalında doğrulanır. Builder yalnız TEST environment allowlist'i,
+dedicated key/version, canonical HTTPS Vault origin, Ed25519 public key ve
+non-exportable/non-derived safety özellikleriyle trust root üretir.
+
+```bash
+RECEIPT_SHA256="$(python3 - "${TRANSIT_RECEIPT}" <<'PY'
+import hashlib
+import pathlib
+import sys
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+TRUST_ROOT="${PERMIT_DIR}/transcript-ready-trust-root.json"
+
+python3 scripts/faz24/build_transcript_ready_permit_trust_root.py \
+  --receipt "${TRANSIT_RECEIPT}" \
+  --expected-receipt-sha256 "${RECEIPT_SHA256}" \
+  --allowed-app-environment test \
+  --not-before "${TRUST_NOT_BEFORE_UTC}" \
+  --not-after "${TRUST_NOT_AFTER_UTC}" \
+  --output "${TRUST_ROOT}"
+
+TRUST_ROOT_SHA256="$(python3 - "${TRUST_ROOT}" <<'PY'
+import hashlib
+import pathlib
+import sys
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+```
+
+Builder stdout'undaki `trust_root_sha256` değeri de Windows host'a trust-root
+dosyasından ayrı kanalda pinlenir. Public trust root secret değildir; yine de
+başka key/environment ile sessizce değiştirilmemesi için digest binding'i
+zorunludur.
+
+## 8. Accepted v2 Verdict'i DSSE Permit Olarak İmzalama
+
+Verifier'ın `accepted-candidate` üretmesi yeterli değildir. Signer; verdict'in
+kapalı alanlı `faz24.transcriptReadyPreEnableVerdict.v2` şemasını, `appEnv=test`,
+GitOps commit, policy SHA-256, exact producer image digest, live pod UID/image/
+evidence digest'i, platform-ai startup guard ve en fazla `900s` freshness'i
+yeniden doğrular. Rejected, stale, extra-field veya mismatch verdict Vault'a
+gönderilmez.
+
+```bash
+POLICY_SHA256="$(python3 - <<'PY'
+import hashlib
+import pathlib
+print(hashlib.sha256(pathlib.Path(
+    "config/faz24-transcript-ready-pre-enable-policy.v1.json"
+).read_bytes()).hexdigest())
+PY
+)"
+KEY_VERSION="$(python3 - "${TRANSIT_RECEIPT}" <<'PY'
+import json
+import pathlib
+import sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_bytes())["keyVersion"])
+PY
+)"
+PERMIT_ENVELOPE="${PERMIT_DIR}/transcript-ready-permit.dsse.json"
+
+python3 scripts/faz24/sign_transcript_ready_pre_enable_permit.py \
+  --verdict "${EVIDENCE_DIR}/verdict.json" \
+  --trust-root "${TRUST_ROOT}" \
+  --expected-trust-root-sha256 "${TRUST_ROOT_SHA256}" \
+  --app-env test \
+  --expected-gitops-commit "${GITOPS_COMMIT}" \
+  --expected-policy-sha256 "${POLICY_SHA256}" \
+  --expected-producer-image-digest "${PRODUCER_IMAGE_DIGEST}" \
+  --vault-origin "${TEST_VAULT_ORIGIN}" \
+  --vault-token-file "${SIGNER_TOKEN_FILE}" \
+  --vault-key-version "${KEY_VERSION}" \
+  --output "${PERMIT_ENVELOPE}"
+```
+
+Signer Vault'tan dönen signature'ı pinned public trust root ile lokal olarak
+doğrulamadan zarf yazmaz. Başarılı imzadan sonra kısa ömürlü signer token revoke
+edilir veya TTL/use sınırında expire olması izlenir; dosya güvenli biçimde
+silinir. DSSE permit ve trust root platform-ai
+`deploy/gpu-host/configure-meeting-ai.ps1` komutuna sırasıyla
+`-ReadyPermitSourcePath` ve `-ReadyPermitTrustRootSourcePath` olarak verilir.
+Platform-ai activation bunları kendi governed runtime alanına atomik taşır,
+permit source'unu tüketir ve replay/stale/wrong-key durumunda consumer'ı
+fail-closed kapalı tutar.
+
+Bu adımların hiçbiri tek başına runtime acceptance değildir. Geçerli kanıt:
+immutable platform-ai commit + Windows CI, test host activation, ready event
+consume, canonical meeting result persistence ve attended kullanıcı yolculuğu
+ayrı ayrı doğrulanınca oluşur.
+
+## 9. Rejection ve Remediation Evidence
 
 Verifier her başarısız kontrolü aşağıdaki evidence sınıfına bağlar:
 
@@ -177,7 +317,7 @@ veya workload mutation yapmaz. Bu operasyonların her biri ayrı claimed issue,
 rollback/irreversibility değerlendirmesi ve metadata-only evidence ister. Ham SQL
 row veya Redis payload evidence'e kopyalanmaz.
 
-## 7. Sonraki Enable Değişikliğinin Şartı
+## 10. Sonraki Enable Değişikliğinin Şartı
 
 Bir sonraki source/runtime dalgası şu sırayı korur:
 
@@ -191,14 +331,20 @@ Bir sonraki source/runtime dalgası şu sırayı korur:
    `MAI_READY_CONSUMER_ENABLED=true` prosesini başlatmayı reddeder.
 4. Exact producer/host tuple'ları policy allowlist'lerine ayrı review'lu değişiklik
    ile eklenir; `currentBoundary.enableAuthorized=true` deliberate olarak değişir.
-5. Bu collector/verifier fresh `accepted-candidate` üretir.
-6. Yalnız allowlisted startup guard aynı artifact'ı tüketerek test consumer'ı
-   başlatabilir. Artifact tek başına production, insan/hukuk veya müşteri
-   acceptance kanıtı değildir.
+5. Bu collector/verifier fresh v2 `accepted-candidate` üretir.
+6. §6-§8 dedicated TEST Vault key + pinned public root ile exact verdict'i DSSE
+   permit olarak imzalar.
+7. Yalnız allowlisted startup guard fresh permit + pinned trust root'u tüketerek
+   test consumer'ı başlatabilir. Artifact tek başına production, insan/hukuk
+   veya müşteri acceptance kanıtı değildir.
 
-## 8. Rollback
+## 11. Rollback
 
-Bu runbook read-only olduğundan rollback gerektiren mutation yoktur. Daha sonraki
-test enable dalgasında rollback, Windows host governed config üzerinden consumer
-flag'ını tekrar `false` yapmak ve exact önceki platform-ai commit'e dönmektir.
-Backend veri migration'ı geri alınmaz; legacy remediation kanıtı korunur.
+§4-§5 read-only olduğundan rollback gerektirmez. §6 başarısızlığında bootstrap
+minted token'ı accessor ile revoke eder; dedicated TEST key silinmez, export
+edilmez veya deletion-enabled yapılmaz. Kullanılmayan signer token ayrıca revoke/
+expire edilir ve lokal secret dosya kaldırılır. Daha sonraki test enable
+dalgasında rollback, Windows host governed config üzerinden consumer flag'ını
+tekrar `false` yapmak, active permit'i revoke/consume etmek ve exact önceki
+platform-ai commit'e dönmektir. Backend veri migration'ı geri alınmaz; legacy
+remediation ve public trust-root audit kanıtı korunur.
