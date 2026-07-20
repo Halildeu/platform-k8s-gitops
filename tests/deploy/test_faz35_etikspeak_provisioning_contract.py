@@ -1318,10 +1318,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "--max-time 10",
             'if [ "$PREFLIGHT_STAGE" = foundation ]',
             "check_object_headroom secrets 1 1",
-            "check_object_headroom services 2 2",
+            "check_object_headroom services 3 2",
             "check_object_headroom configmaps 2 2",
             "check_object_headroom secrets 2 2",
-            "check_object_headroom pods 4 2",
+            "check_object_headroom pods 6 2",
             "activation must render exactly two ExternalSecrets",
             "both public ingresses must use the synthetic test access gate",
             "one-year HSTS header",
@@ -1615,9 +1615,49 @@ spec:
             "requests.memory: 896Mi",
             'limits.cpu: "2500m"',
             "limits.memory: 2Gi",
-            'pods: "6"',
         ):
             self.assertIn(expected, self.product_quota)
+
+        rendered = subprocess.run(
+            [
+                "kustomize",
+                "build",
+                str(ROOT / "kustomize/overlays/test/activation/etik-speak"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        documents = rendered.split("---\n")
+        deployment_documents = [
+            document
+            for document in documents
+            if re.search(r"(?m)^kind: Deployment$", document)
+        ]
+        service_count = sum(
+            bool(re.search(r"(?m)^kind: Service$", document))
+            for document in documents
+        )
+        rollout_peak = 0
+        for document in deployment_documents:
+            replicas = re.search(r"(?m)^  replicas: ([0-9]+)$", document)
+            max_surge = re.search(r"(?m)^      maxSurge: ([0-9]+)$", document)
+            self.assertIsNotNone(replicas)
+            self.assertIsNotNone(max_surge)
+            rollout_peak += int(replicas.group(1)) + int(max_surge.group(1))
+
+        repair_reserve = 2
+        self.assertEqual(len(deployment_documents), 3)
+        self.assertEqual(service_count, 3)
+        self.assertIn(f'pods: "{rollout_peak + repair_reserve}"', self.product_quota)
+        self.assertIn(
+            f"check_object_headroom pods {rollout_peak} {repair_reserve}",
+            self.preflight,
+        )
+        self.assertIn(
+            f"check_object_headroom services {service_count} {repair_reserve}",
+            self.preflight,
+        )
         self.assertNotIn("api-gateway-to-ethics-service", self.netpol)
 
     def test_prune_false_rollback_uses_fail_closed_gitops_tombstone(self):

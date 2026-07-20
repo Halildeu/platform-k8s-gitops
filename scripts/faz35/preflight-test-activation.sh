@@ -156,10 +156,10 @@ if [ "$PREFLIGHT_STAGE" = foundation ]; then
   # foundation provisioning depend on workload quotas that activation owns.
   check_object_headroom secrets 1 1
 else
-  check_object_headroom services 2 2
+  check_object_headroom services 3 2
   check_object_headroom configmaps 2 2
   check_object_headroom secrets 2 2
-  check_object_headroom pods 4 2
+  check_object_headroom pods 6 2
 fi
 [ "$quota_failures" -eq 0 ] || exit 1
 
