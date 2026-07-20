@@ -47,7 +47,7 @@ case "$PREFLIGHT_STAGE" in
   *) echo "FATAL: PREFLIGHT_STAGE must be foundation or activation" >&2; exit 1 ;;
 esac
 
-for command_name in ssh curl jq kustomize gh grep awk sed; do
+for command_name in ssh curl dig jq kustomize gh grep awk sed; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "FATAL: required command missing: $command_name" >&2
     exit 1
@@ -165,8 +165,39 @@ fi
 
 public_ip=""
 for host in etik.acik.com speakup.acik.com; do
-  edge=$(curl --connect-timeout 5 --max-time 10 -sS -o /dev/null \
-    -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' "https://$host/")
+  resolve_args=()
+  if ! edge=$(curl --connect-timeout 5 --max-time 10 -sS -o /dev/null \
+      -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' "https://$host/"); then
+    # FortiClient split-DNS can omit newly-created public records even while
+    # authoritative public DNS is live. Bind only this TLS request to the
+    # externally resolved edge; certificate/hostname verification stays on.
+    public_dns_ip=$(dig +time=3 +tries=1 +short "$host" @1.1.1.1 | \
+      awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print; exit}')
+    [ -n "$public_dns_ip" ] || {
+      echo "FATAL: $host is absent from both system and public DNS" >&2
+      exit 1
+    }
+    resolve_args=(--resolve "$host:443:$public_dns_ip")
+    if ! edge=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 -sS \
+        -o /dev/null -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' \
+        "https://$host/"); then
+      # The VPN intentionally has no hairpin route to the public WAN address.
+      # The product hosts terminate on the same internal edge as testai.
+      vpn_edge_ip=$(dig +time=3 +tries=1 +short testai.acik.com | \
+        awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print; exit}')
+      [ -n "$vpn_edge_ip" ] || {
+        echo "FATAL: public DNS exists but no VPN edge is resolvable via testai.acik.com" >&2
+        exit 1
+      }
+      resolve_args=(--resolve "$host:443:$vpn_edge_ip")
+      edge=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 -sS \
+        -o /dev/null -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' \
+        "https://$host/")
+      echo "DNS: $host public=$public_dns_ip; VPN split-edge=$vpn_edge_ip"
+    else
+      echo "DNS: $host system split-DNS missing; public edge proof uses $public_dns_ip"
+    fi
+  fi
   IFS='|' read -r http_code verify_result remote_ip <<<"$edge"
   [ "$verify_result" = 0 ] || {
     echo "FATAL: $host TLS verification failed" >&2
@@ -176,7 +207,8 @@ for host in etik.acik.com speakup.acik.com; do
     echo "FATAL: $host did not resolve to a reachable edge" >&2
     exit 1
   }
-  edge_headers=$(curl --connect-timeout 5 --max-time 10 -sSI "https://$host/")
+  edge_headers=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 \
+    -sSI "https://$host/")
   printf '%s\n' "$edge_headers" | grep -Eqi \
     '^strict-transport-security:[[:space:]]*max-age=31536000(;|$)' || {
     echo "FATAL: $host lacks the required one-year HSTS header" >&2
@@ -355,6 +387,12 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
     echo "FATAL: pinned live OpenFGA model differs from the reviewed canonical model" >&2
     exit 1
   }
+  # Caller-authored ledger fields are metadata, not acceptance. Re-resolve the
+  # fixed TEST personas from live Keycloak and prove the exact allow/deny tuple
+  # matrix against the pinned store/model without mutating either system.
+  # shellcheck disable=SC2029 # validated ULIDs are the only remote arguments.
+  remote "bash -s -- '$store_id' '$model_id'" \
+    <"$SCRIPT_DIR/verify-test-openfga-authz.sh"
 fi
 
 if grep -Fq 'activation/etik-speak' "$ROOT_OVERLAY"; then

@@ -30,6 +30,7 @@ set -uo pipefail
 
 ENV="${1:-prod}"
 REPO_ROOT="${PLATFORM_GITOPS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+CATALOG_CONTRACT_PYTHON="${CATALOG_CONTRACT_PYTHON:-python3}"
 OVERLAY="$REPO_ROOT/kustomize/overlays/${ENV}"
 [[ ! -d "$OVERLAY" ]] && { echo "ERR: overlay not found: $OVERLAY"; exit 1; }
 
@@ -54,8 +55,9 @@ else
   echo "[OK]  All rendered GHCR image refs are @sha256: pinned"
 fi
 
+image_contract_rc=0
 image_contract_output=$(echo "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
-  python3 -c '
+  "$CATALOG_CONTRACT_PYTHON" -c '
 import sys, yaml
 from lib.catalog_runtime_contracts import image_contract_findings
 from lib.services_catalog import ServicesCatalog
@@ -63,8 +65,12 @@ from lib.services_catalog import ServicesCatalog
 catalog = ServicesCatalog.from_yaml(sys.argv[2])
 for finding in image_contract_findings(yaml.safe_load_all(sys.stdin), catalog, sys.argv[1]):
     print(f"[FAIL] {finding.message}")
-' "$ENV" "$REPO_ROOT/docs/operations/services.yaml")
-if [[ -n "$image_contract_output" ]]; then
+' "$ENV" "$REPO_ROOT/docs/operations/services.yaml" 2>&1) || image_contract_rc=$?
+if [[ $image_contract_rc -ne 0 ]]; then
+  echo "[FAIL] image_contract_exec_error: catalog image contract could not execute (rc=$image_contract_rc)"
+  echo "$image_contract_output"
+  EXIT_CODE=1
+elif [[ -n "$image_contract_output" ]]; then
   echo "$image_contract_output"
   EXIT_CODE=1
 else
@@ -81,14 +87,13 @@ if [[ -x "$VERIFIER" ]]; then
   check2_output=$(echo "$RENDER" | python3 "$VERIFIER" 2>&1)
   check2_rc=$?
   echo "$check2_output"
-  if [[ $check2_rc -eq 1 ]]; then
+  if [[ $check2_rc -ne 0 ]]; then
+    echo "[FAIL] GHCR verification did not prove every rendered digest (rc=$check2_rc)"
     EXIT_CODE=1
-  elif [[ $check2_rc -eq 2 ]]; then
-    echo "[WARN] GHCR verification inconclusive (network/auth) — runtime detector remains line of defense"
   fi
 else
-  total_images=$(echo "$RENDER" | grep -oE 'image:\s*ghcr\.io/[^@]+@sha256:[a-f0-9]+' | sort -u | wc -l | tr -d ' ')
-  echo "[INFO] $total_images unique pinned image digests (verifier missing — fallback count-only)"
+  echo "[FAIL] GHCR verifier missing or not executable: $VERIFIER"
+  EXIT_CODE=1
 fi
 
 # Check 3: ConfigMap invariants for JWT-validating services

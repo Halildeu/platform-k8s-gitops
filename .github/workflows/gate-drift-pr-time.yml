@@ -51,10 +51,31 @@ jobs:
       - name: Install Python dependencies
         run: python3 -m pip install --quiet PyYAML
 
+      - name: Require cross-repository GHCR reader identity
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${APP_ID:-}" && -n "${APP_PRIVATE_KEY:-}" ]] || {
+            echo "::error title=GHCR verification disabled::AUTOMATION_APP_ID and AUTOMATION_APP_PRIVATE_KEY are required."
+            exit 1
+          }
+
+      - name: Generate least-privilege cross-repository GHCR token
+        id: ghcr-app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          owner: Halildeu
+          permission-packages: read
+
       - name: Drift PR-time check (${{ matrix.env }})
         env:
           PLATFORM_GITOPS_REPO: ${{ github.workspace }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.ghcr-app-token.outputs.token }}
+          GHCR_STRICT: 'true'
         run: |
           chmod +x scripts/drift-detection/check_pr_time.sh
           chmod +x scripts/drift-detection/verify_ghcr_manifests.py

@@ -5,7 +5,10 @@ from __future__ import annotations
 import sys
 import subprocess
 import unittest
+import importlib.util
 from pathlib import Path
+from unittest import mock
+import urllib.error
 
 import yaml
 
@@ -326,6 +329,71 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
         self.assertIn(
             "`activation/etik-speak` with `deactivation/etik-speak`", runbook
         )
+
+    def test_shell_catalog_gates_capture_execution_failures(self):
+        root = Path(__file__).resolve().parents[3]
+        pr_time = (root / "scripts/drift-detection/check_pr_time.sh").read_text()
+        runtime = (root / "scripts/drift-detection/check_env_drift.sh").read_text()
+        self.assertIn("image_contract_rc=0", pr_time)
+        self.assertIn("image_contract_exec_error", pr_time)
+        self.assertIn(") || image_contract_rc=$?", pr_time)
+        self.assertIn("image_contract_rc=0", runtime)
+        self.assertIn("mark_exec_error", runtime)
+        self.assertIn("jwt_rc=0", runtime)
+        self.assertIn("jwt_contract_exec_error", runtime)
+        self.assertIn("configmap_query_exec_error", runtime)
+
+    def test_digest_exception_remains_managed_in_runtime_catalog_scope(self):
+        root = Path(__file__).resolve().parents[3]
+        runtime = (root / "scripts/drift-detection/check_env_drift.sh").read_text()
+        self.assertIn('print("M", service.name, "managed", sep=chr(9))', runtime)
+        self.assertIn('CATALOG_WORKLOADS["$field"]=1', runtime)
+        self.assertIn('${CATALOG_WORKLOADS[$svc]:-}', runtime)
+
+    def test_ghcr_token_network_failure_is_not_auth_success(self):
+        root = Path(__file__).resolve().parents[3]
+        verifier_path = root / "scripts/drift-detection/verify_ghcr_manifests.py"
+        spec = importlib.util.spec_from_file_location("verify_ghcr_manifests", verifier_path)
+        assert spec and spec.loader
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        verifier._token_cache.clear()
+        with mock.patch.object(
+            verifier.urllib.request,
+            "urlopen",
+            side_effect=urllib.error.URLError("synthetic-network-failure"),
+        ):
+            token, status = verifier.get_token("halildeu/platform-backend-ethics-service")
+        self.assertIsNone(token)
+        self.assertEqual(status, "NETWORK_FAIL")
+
+    def test_ghcr_extractor_strips_optional_tag_before_digest(self):
+        root = Path(__file__).resolve().parents[3]
+        verifier_path = root / "scripts/drift-detection/verify_ghcr_manifests.py"
+        spec = importlib.util.spec_from_file_location("verify_ghcr_extract", verifier_path)
+        assert spec and spec.loader
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        digest = "sha256:" + "a" * 64
+        pairs = verifier.extract_pairs(
+            f"image: ghcr.io/halildeu/example:sha-deadbee@{digest}\n"
+            f"image: ghcr.io/halildeu/other@{digest}\n"
+        )
+        self.assertEqual(
+            pairs,
+            {
+                ("halildeu/example", digest),
+                ("halildeu/other", digest),
+            },
+        )
+
+    def test_ghcr_gate_uses_app_identity_and_strict_mode(self):
+        root = Path(__file__).resolve().parents[3]
+        workflow = (root / ".github/workflows/gate-drift-pr-time.yml").read_text()
+        self.assertIn("id: ghcr-app-token", workflow)
+        self.assertIn("permission-packages: read", workflow)
+        self.assertIn("GITHUB_TOKEN: ${{ steps.ghcr-app-token.outputs.token }}", workflow)
+        self.assertIn("GHCR_STRICT: 'true'", workflow)
 
 
 if __name__ == "__main__":  # pragma: no cover

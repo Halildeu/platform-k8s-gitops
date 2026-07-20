@@ -43,7 +43,8 @@ import base64
 from typing import Optional
 
 DIGEST_PATTERN = re.compile(
-    r"image:\s*(?P<full>(?P<reg>ghcr\.io)/(?P<path>[^@\s]+)@(?P<dig>sha256:[a-f0-9]{64}))"
+    r"image:\s*(?P<full>(?P<reg>ghcr\.io)/(?P<path>[^@:\s]+)"
+    r"(?::[^@\s]+)?@(?P<dig>sha256:[a-f0-9]{64}))"
 )
 
 GHCR_TOKEN_URL = "https://ghcr.io/token"
@@ -62,10 +63,10 @@ MANIFEST_ACCEPT = (
 _token_cache: dict[str, str] = {}
 
 
-def get_token(image_path: str) -> Optional[str]:
+def get_token(image_path: str) -> tuple[Optional[str], str]:
     """Get GHCR Bearer token for the given image_path (e.g. halildeu/platform-backend-user-service)."""
     if image_path in _token_cache:
-        return _token_cache[image_path]
+        return (_token_cache[image_path], "EXISTS")
 
     url = f"{GHCR_TOKEN_URL}?service=ghcr.io&scope=repository:{image_path}:pull"
 
@@ -84,21 +85,22 @@ def get_token(image_path: str) -> Optional[str]:
             token = data.get("token") or data.get("access_token")
             if token:
                 _token_cache[image_path] = token
-                return token
+                return (token, "EXISTS")
     except urllib.error.HTTPError as e:
-        # 401 on auth → return None for caller to handle as "auth failed"
         sys.stderr.write(f"  [auth] {image_path}: {e.code} {e.reason}\n")
+        return (None, "AUTH_FAIL")
     except (urllib.error.URLError, TimeoutError) as e:
         sys.stderr.write(f"  [auth] {image_path}: network error: {e}\n")
+        return (None, "NETWORK_FAIL")
 
-    return None
+    return (None, "AUTH_FAIL")
 
 
 def verify_manifest(image_path: str, digest: str) -> tuple[str, Optional[str]]:
     """Return (status, detail). status in {'EXISTS','MISSING','AUTH_FAIL','NETWORK_FAIL'}."""
-    token = get_token(image_path)
+    token, token_status = get_token(image_path)
     if not token:
-        return ("AUTH_FAIL", "could not obtain pull token")
+        return (token_status, "could not obtain pull token")
 
     url = f"{GHCR_API_BASE}/{image_path}/manifests/{digest}"
     req = urllib.request.Request(

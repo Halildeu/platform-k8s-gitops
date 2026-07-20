@@ -1167,6 +1167,21 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("RECUSAL_SENTINEL_CASE_ID", self.openfga)
         self.assertIn("explicit recusal sentinel did not fail closed", self.openfga)
 
+    def test_activation_preflight_reproves_live_openfga_authorization(self):
+        verifier = (
+            ROOT / "scripts/faz35/verify-test-openfga-authz.sh"
+        ).read_text()
+        self.assertIn('verify-test-openfga-authz.sh', self.preflight)
+        self.assertIn('remote "bash -s --', self.preflight)
+        self.assertIn("resolve_persona_subject ethics-manager-test", verifier)
+        self.assertIn("resolve_persona_subject ethics-manager-wrong-org-test", verifier)
+        self.assertIn("resolve_persona_subject ethics-manager-denied-test", verifier)
+        self.assertIn("case_viewer case_triager case_handler", verifier)
+        self.assertIn("wrong-org-canonical", verifier)
+        self.assertIn("denied-persona", verifier)
+        self.assertIn("assert_exact_tuple", verifier)
+        self.assertIn("recusal-sentinel", verifier)
+
     def test_all_vault_json_credentials_use_single_document_classification(self):
         self.assertIn("vault_json_document_classify", self.pg_vault)
         self.assertIn("vault_kv_document_classify", self.pg_vault)
