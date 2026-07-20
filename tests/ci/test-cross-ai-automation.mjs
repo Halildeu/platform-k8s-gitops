@@ -434,7 +434,7 @@ const FULLATS_ATTESTATION = {
   promotion_pr: 2685,
   promotion_merge_sha: BASE_TIP_SHA,
   promotion_head_sha: 'b'.repeat(40),
-  promotion_base_sha: 'c341e5c4f8616bf0693e4aab2823db2d96426d72',
+  promotion_base_sha: '62f763ba1e4334588fbc9b250a665bacf369a263',
   promotion_scope_sha256: 'c'.repeat(64),
   changed_diff_sha256: 'd'.repeat(64),
   expected_paths: FULLATS_ROLLBACK_FILES,

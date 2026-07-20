@@ -423,11 +423,12 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
     def test_fullats_rollback_is_bound_to_reviewed_tree_and_trusted_content_attestation(self):
         for required in (
             'require_exact_body_line "Consultation commit: $promotion_head"',
-            'require_exact_body_line "Consultation mode: dual"',
+            'require_exact_body_line "Consultation mode: single"',
             'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
-            "exact $receipt_label binding is missing or invalid",
-            "MiniMax receipt is forbidden by forward policy",
+            "exact direct Codex receipt binding is missing or invalid",
+            "Claude and MiniMax receipts are forbidden by current owner policy",
+            "Tracked by Halildeu/ats#163",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
@@ -473,7 +474,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
-        promotion_base = "c341e5c4f8616bf0693e4aab2823db2d96426d72"
+        promotion_base = "62f763ba1e4334588fbc9b250a665bacf369a263"
         pr_base = "1" * 40
         pr_head = "2" * 40
         promotion_head = "3" * 40
@@ -547,12 +548,10 @@ if [[ "$*" == *"/pulls/2685"* ]]; then
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
-    "Consultation mode: dual" \
-    "Consultation reason: Protected rollback enforcement requires two independent provider reviews." \
-    "Risk trigger: security-authz: Trusted rollback exemption changes the protected review boundary." \
+    "Consultation mode: single" \
+    "Consultation reason: Protected rollback enforcement requires an exact direct Codex review." \
     "Verdict: AGREE" \
-    "Claude receipt: provider=anthropic; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 6)" \
-    "Codex receipt: provider=openai; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
+    "Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
