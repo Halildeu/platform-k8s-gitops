@@ -1164,23 +1164,23 @@ fi
         self.assertEqual(desired.group(1), workflow.group(1))
         self.assertEqual(workflow.group(1), runtime.group(1))
 
-    def test_consultation_defaults_to_none_then_single_claude_and_max_two(self):
-        rule = "Durumsal Cross-AI istişare — varsayılan az kanal"
+    def test_consultation_defaults_to_none_then_single_codex_only(self):
+        rule = "Durumsal Cross-AI istişare — Codex-only, varsayılan az kanal"
         self.assertIn(rule, self.agents)
         self.assertIn("`Consultation mode: none`", self.agents)
-        self.assertIn("(`single`)", self.agents)
-        self.assertIn("(`dual`)", self.agents)
-        self.assertIn("`claude-opus-4-8`", self.agents)
+        self.assertIn("`single` yalnız ayrı bağlamda", self.agents)
+        self.assertIn("`dual` modu kaldırılmıştır", self.agents)
+        self.assertIn("`gpt-5.3-codex-spark`", self.agents)
         self.assertIn("`gpt-5.6-sol`", self.agents)
-        self.assertIn("toplam iki kanal aşılmaz", self.agents)
-        self.assertIn("MiniMax yeni istişarelerde çağrılmaz", self.agents)
-        self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
+        self.assertIn("Claude, MiniMax, Cursor, Mavis", self.agents)
+        self.assertIn("bağımsız sağlayıcı veya insan onayı olarak sunulmaz", self.agents)
         self.assertIn("consultation governance dosyası", self.agents)
-        self.assertIn("audit/evidence enforcement kodunun kendisi `dual` ister", self.agents)
-        self.assertIn("Claude implementer kendi receipt'ini", self.agents)
-        self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
-        self.assertIn("exact Claude + exact Codex", self.context_rules)
-        self.assertIn("`other` bu iki modda", self.context_rules)
+        self.assertIn("enforcement kodunun kendisi de `single` ister", self.context_rules)
+        self.assertIn("yalnız doğrudan OpenAI Codex CLI kanalını kabul eder", self.context_rules)
+        self.assertIn("İki açık mod vardır", self.context_rules)
+        self.assertIn("gpt-5.3-codex-spark", self.context_rules)
+        self.assertIn("gpt-5.6-sol", self.context_rules)
+        self.assertIn("provider-distinct bağımsız", self.context_rules)
         self.assertIn("Varsayımsal istişare karar kanıtı değildir", self.agents)
         self.assertIn("non-authoritative direction exploration", self.context_rules)
         self.assertIn("tracked_pending", self.context_rules)
@@ -1193,22 +1193,20 @@ fi
             self.context_rules,
         )
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
-        self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
-        self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
-        self.assertIn("**`claude-opus-4-8`**", self.context_rules)
-        self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
+        self.assertIn("**`single` — inceleme gerektiğinde:**", self.context_rules)
         self.assertIn(
             "İstişare bir teslimat ritüeli değil, yalnız karar",
             self.context_rules,
         )
-        self.assertIn("JSON `modelUsage`", self.context_rules)
-        self.assertIn("Tek ve birincil kanal", self.context_rules)
+        current_policy = self.context_rules.split("<details>", 1)[0]
+        self.assertNotIn("Consultation mode: none|single|dual", current_policy)
+        self.assertNotIn("Claude receipt:", current_policy)
         self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
-        self.assertIn("AI uygulama pencereleri istişare kanalı değildir", self.context_rules)
-        self.assertIn("irreversible-production", self.context_rules)
+        self.assertIn("uygulama pencereleri istişare kanalı değildir", self.context_rules)
         self.assertIn("Path/branch sınıflandırıcısı", self.context_rules)
         self.assertIn("`none` receipt", self.context_rules)
-        self.assertIn("`dual` yayın sırası zorunlu değildir", self.context_rules)
+        self.assertIn("Claude ve MiniMax receipt alanları", self.context_rules)
+        self.assertNotIn("**`dual` — istisnai yüksek risk:**", current_policy)
 
 if __name__ == "__main__":
     unittest.main()
