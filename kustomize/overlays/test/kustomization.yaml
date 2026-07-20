@@ -227,8 +227,21 @@ images:
     # untrimmed consent grant/revoke audit events. platform-backend#861 fixes
     # the audit-consumer image build; canonical main image run 29603219415
     # produced the immutable digest below. Runtime proof: gitops#2594.
+    # 2026-07-20 rollout: platform-backend#894 adds structured
+    # ApplicationReadyEvent INFO log + BRIDGE_ROUTE_PATTERN single-source-
+    # of-truth constant for LiveSttWebSocketConfig. Purpose: give the
+    # operator a machine-emitted proof line that the #184 WS bridge
+    # actually wired at runtime. Was invisible on Zeynep's 2026-07-20
+    # attended smoke where the bridge was believed live but the pod
+    # returned upstream 400 while nothing in its own logs said whether
+    # the bridge was configured. This overlay bump moves the fix from
+    # main into k3d-test so the next smoke can distinguish handshake-
+    # protocol reject from unwired-config with a single log grep.
+    # Cross-AI: Claude Opus 4.8 birincil AGREE recorded 2026-07-20;
+    # Codex challenger DEFERRED to Jul 26 usage-quota reset (merge-time
+    # governance-exception noted on platform-backend#894).
     # D30 immutable digest pin.
-    digest: sha256:f8148d31955336a585a8cfbf4dc12c8c40c14f8106f0aadb332006e69612b432
+    digest: sha256:c667300b686b732a7f7059e7b686d6c70ddc52642799966e037b37cf0df0ceb8
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
