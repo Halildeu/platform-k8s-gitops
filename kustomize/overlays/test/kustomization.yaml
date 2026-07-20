@@ -1515,7 +1515,27 @@ images:
     # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
     #          proves the artifact, not the full source lineage. Reconcile the Actions run
     #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:a23c72fa3d196a927737055b93e37490033c1cc451507c52f2d885e59e4df9d9
+    # 2026-07-20 update: sha-39c4545 — board #2555 Slice C / #2715.
+    # Source : platform-backend PR #897 squash 39c45452c8142ad030814d7d28e9c751d6b5bbdb
+    #          (CI 21/21 pass; permission-service 422/0/0/4 unit+IT — 419 pre-Slice-C + 3
+    #          new bind-exception tests in AccessScopeControllerTest).
+    # Tag    : ci-image-push.yml -> sha-39c4545 (build run 29780966603 success).
+    # Digest : sha256:32e7e2b539bd8d7c1afe1b93a39b560aa45ef62c8426eaa7fe11257a69aeaece
+    #          captured via k3d-test-server-0 smoke pull (kubectl run --image=…:sha-39c4545
+    #          with imagePullSecrets ghcr-pull -> status.containerStatuses[0].imageID).
+    # Ships  : GET /api/v1/access/scope no longer returns HTTP 500 on user-supplied
+    #          invalid @RequestParam (bad UUID / bad Long / missing required param).
+    #          GlobalExceptionHandler adds two @ExceptionHandler methods —
+    #          MethodArgumentTypeMismatchException -> HTTP 400 INVALID_PARAMETER,
+    #          MissingServletRequestParameterException -> HTTP 400 MISSING_PARAMETER,
+    #          both with fieldErrors[{field:paramName, message}] so the admin UI
+    #          can highlight the offending input. Same pattern already used by
+    #          transcript-service + endpoint-admin-service GlobalExceptionHandler;
+    #          fix applies service-wide (every permission-service @RequestParam
+    #          endpoint), not just AccessScopeController. Test-only rollout;
+    #          prod defer D30 atomic cutover.
+    #
+    digest: sha256:32e7e2b539bd8d7c1afe1b93a39b560aa45ef62c8426eaa7fe11257a69aeaece
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)

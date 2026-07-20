@@ -956,10 +956,14 @@ fi
         current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
         # #2555 Slice B (2026-07-20) - bumped from sha256:55f2f2f2 to sha256:a23c72fa
         # (sha-4a0dc67, platform-backend PR #896). AccessScopeService.grant()
-        # widens the P0001 handler; POST /access/scope 500->400. Faz 25 ATS
+        # widens the P0001 handler; POST /access/scope 500->400.
+        # #2555 Slice C (2026-07-20) - bumped from sha256:a23c72fa to sha256:32e7e2b5
+        # (sha-39c4545, platform-backend PR #897). GlobalExceptionHandler adds
+        # MethodArgumentTypeMismatchException + MissingServletRequestParameterException
+        # handlers; GET /access/scope 500->400 for bad @RequestParam. Faz 25 ATS
         # promotion state is invariant under this backend-only behavior change
         # (no ATS DTO / catalog / recruiter-scope contract touched).
-        current_permission = "sha256:a23c72fa3d196a927737055b93e37490033c1cc451507c52f2d885e59e4df9d9"
+        current_permission = "sha256:32e7e2b539bd8d7c1afe1b93a39b560aa45ef62c8426eaa7fe11257a69aeaece"
         promoted = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
             "tag": "sha-eee1310",
