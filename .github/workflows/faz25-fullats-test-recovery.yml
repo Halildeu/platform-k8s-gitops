@@ -35,7 +35,7 @@ env:
   ARGOCD_NAMESPACE: argocd
   ARGOCD_APPLICATION: platform-test
   ATS_IMAGE_REPOSITORY: ghcr.io/halildeu/ats-app-boot
-  EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+  EXPECTED_ATS_DIGEST: sha256:5b8985c1a5287588e3338bf569136c6eb6091a4475d4226a0b80c8603571b20d
   EXPECTED_ATS_ENDPOINT_REF: faz24-stt-prod
   EXPECTED_ATS_APPROVAL_REF: mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43
 
@@ -43,7 +43,8 @@ jobs:
   recover:
     name: Recover ATS migration and run Full ATS acceptance
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    timeout-minutes: 25
+    # 300s Argo fence + 600s rollout backoff + provisioning/smoke budget.
+    timeout-minutes: 35
 
     steps:
       - name: Validate canonical dispatch boundary
@@ -176,7 +177,7 @@ jobs:
             --image-ref "${ATS_IMAGE_REPOSITORY}@${EXPECTED_ATS_DIGEST}" \
             --confirm APPEND_FAZ25_TEST_MODEL_GOVERNANCE
 
-      - name: Wait for GitOps-owned ATS rollout and verify V4/V5/V6
+      - name: Wait for GitOps-owned ATS rollout and verify V4 through V11
         if: inputs.dry_run == 'false'
         run: |
           set -euo pipefail
@@ -220,11 +221,11 @@ jobs:
           fi
 
           migration_state="$(docker exec platform-pg-test psql -U postgres -d ats -At -F '|' -c \
-            "SELECT version,success FROM flyway_schema_history WHERE version IN ('4','5','6') ORDER BY installed_rank")"
-          [[ "$migration_state" == $'4|t\n5|t\n6|t' ]]
+            "SELECT version,success FROM flyway_schema_history WHERE version IN ('4','5','6','7','8','9','10','11') ORDER BY installed_rank")"
+          [[ "$migration_state" == $'4|t\n5|t\n6|t\n7|t\n8|t\n9|t\n10|t\n11|t' ]]
 
           echo "PASS ATS Ready pod uses expected immutable digest"
-          echo "PASS Flyway V4, V5 and V6 are successful"
+          echo "PASS Flyway V4 through V11 are successful"
 
       - name: Provision tenant-scoped Keycloak application roles
         if: inputs.dry_run == 'false'

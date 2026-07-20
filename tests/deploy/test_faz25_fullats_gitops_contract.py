@@ -423,11 +423,12 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
     def test_fullats_rollback_is_bound_to_reviewed_tree_and_trusted_content_attestation(self):
         for required in (
             'require_exact_body_line "Consultation commit: $promotion_head"',
-            'require_exact_body_line "Consultation mode: dual"',
+            'require_exact_body_line "Consultation mode: single"',
             'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
-            "exact $receipt_label binding is missing or invalid",
-            "MiniMax receipt is forbidden by forward policy",
+            "exact direct Codex receipt binding is missing or invalid",
+            "Claude and MiniMax receipts are forbidden by current owner policy",
+            "Tracked by Halildeu/ats#163",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
@@ -435,6 +436,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             '"$(git rev-parse "$PR_HEAD_SHA^")" == "$PR_BASE_SHA"',
             '"$promotion_merge_tree" == "$promotion_head_tree"',
             '"$(git rev-parse "$PROMOTION_BASE_SHA:$test_root")"',
+            '"$(git rev-parse "$PROMOTION_BASE_SHA:$ats_activation")"',
             '"$(git show "$PR_HEAD_SHA:$state_marker")" == "ROLLED_BACK"',
             'fullats-rollback-content-attestation/v1',
         ):
@@ -472,7 +474,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
-        promotion_base = "aa93f4743dc8254ce8e22a0317f92db1f5819268"
+        promotion_base = "62f763ba1e4334588fbc9b250a665bacf369a263"
         pr_base = "1" * 40
         pr_head = "2" * 40
         promotion_head = "3" * 40
@@ -488,7 +490,7 @@ shift || true
 printf 'git command=%s args=%s tamper=%s\n' "$command" "$*" "${FAKE_TAMPER:-unset}" >>"$FAKE_TRACE"
 case "$command" in
   fetch)
-    [[ "$*" == "--no-tags origin pull/2636/head" ]]
+    [[ "$*" == "--no-tags origin pull/2685/head" ]]
     ;;
   rev-list)
     target="${*: -1}"
@@ -523,6 +525,7 @@ case "$command" in
   diff)
     if [[ " $* " == *" --name-only "* ]]; then
       printf '%s\n' \
+        'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml' \
         'kustomize/overlays/test/fullats-promotion-state.txt' \
         'kustomize/overlays/test/kustomization.yaml'
     else
@@ -540,17 +543,15 @@ esac
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
-if [[ "$*" == *"/pulls/2636"* ]]; then
+if [[ "$*" == *"/pulls/2685"* ]]; then
   body="$(printf '%s\n' \
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
-    "Consultation mode: dual" \
-    "Consultation reason: Protected rollback enforcement requires two independent provider reviews." \
-    "Risk trigger: security-authz: Trusted rollback exemption changes the protected review boundary." \
+    "Consultation mode: single" \
+    "Consultation reason: Protected rollback enforcement requires an exact direct Codex review." \
     "Verdict: AGREE" \
-    "Claude receipt: provider=anthropic; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 6)" \
-    "Codex receipt: provider=openai; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
+    "Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
@@ -585,8 +586,8 @@ fi
                         **os.environ,
                         "PATH": f"{fake_bin}:{os.environ['PATH']}",
                         "GH_REPO": "Halildeu/platform-k8s-gitops",
-                        "PROMOTION_PR": "2636",
-                        "PR_NUMBER": "2636",
+                        "PROMOTION_PR": "2685",
+                        "PR_NUMBER": "2685",
                         "PR_HEAD_REF": branch,
                         "PR_HEAD_SHA": pr_head,
                         "PR_BASE_SHA": pr_base,
@@ -629,6 +630,14 @@ fi
             "getByRole('button', { name: 'Önizle' })",
             "getByRole('button', { name: 'Yayınla' })",
             "getByRole('link', { name: 'Başvuru formuna geç' })",
+            "getByLabel(/CV içe aktarma aydınlatmasını okudum/u).check()",
+            "getByTestId('candidate-resume').setInputFiles",
+            "getByTestId('resume-proposal-fullName')",
+            "getByRole('button', { name: 'Düzenlediğimi kaydet' }).click()",
+            "getByTestId('resume-proposal-city')",
+            "getByRole('button', { name: 'Reddet' }).click()",
+            "getByRole('button', { name: 'Güvenli önerileri kabul et' }).click()",
+            "await applySelectedButton.click()",
             "getByTestId('create-application-receipt')",
             "getByRole('button', { name: 'Duraklat' })",
             "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED')",
@@ -646,14 +655,62 @@ fi
         self.assertIn("finalJobState: 'CLOSED'", self.fullats_browser)
         self.assertIn("getByTestId('candidate-resume').setInputFiles", self.fullats_browser)
         self.assertIn("buildSyntheticResumePdf", self.fullats_browser)
-        self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
-        self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
+        self.assertIn("candidate-uploads-real-pdf-to-bounded-ats-parser", self.fullats_browser)
+        self.assertIn("candidate-reviews-field-provenance-before-form-transfer", self.fullats_browser)
+        self.assertIn("candidate-edits-one-pdf-proposal", self.fullats_browser)
+        self.assertIn("candidate-rejects-one-pdf-proposal", self.fullats_browser)
+        self.assertIn("candidate-confirms-selected-fields-atomically", self.fullats_browser)
+        self.assertIn("submittedPayload.resumeImportId !== resumeImportId", self.fullats_browser)
+        self.assertIn("submittedPayload.resumeDraftVersion !== confirmedResume.draft.version", self.fullats_browser)
+        self.assertIn("resumeImportIdSha256: sha256(resumeImportId)", self.fullats_browser)
+        self.assertIn("schemaVersion: 'fullats-live-browser-acceptance/v4'", self.fullats_browser)
+        self.assertNotIn("candidate-imports-real-pdf-locally", self.fullats_browser)
+        self.assertNotIn("PDF’den dolduruldu", self.fullats_browser)
         self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
         self.assertNotIn("getByTestId('fill-synthetic-resume').click()", self.fullats_browser)
         self.assertIn("attachNetworkEvidence(publicStatePage, 'negative-probe')", self.fullats_browser)
         self.assertIn("entry.persona === 'negative-probe'", self.fullats_browser)
         self.assertIn("result.error !== 'NOT_FOUND'", self.fullats_browser)
         self.assertNotIn("/jobs/urun-yoneticisi/apply", self.fullats_browser)
+
+    def test_fullats_browser_covers_human_evaluation_interview_offer_and_hire(self):
+        ordered_steps = [
+            "getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' })",
+            "getByRole('button', { name: 'Immutable değerlendirmeyi kaydet' })",
+            "{ name: 'Mülakat planlamasına al' }).click()",
+            "getByRole('button', { name: 'Yeni görüşme planla' }).click()",
+            "getByRole('button', { name: 'Görüşmeyi kalıcı olarak planla' })",
+            "getByRole('button', { name: 'İnsan scorecard’ı doldur' }).click()",
+            "getByRole('button', { name: 'Immutable scorecard’ı kaydet' })",
+            "getByRole('button', { name: 'Görüşmeyi tamamla' }).click()",
+            "getByRole('button', { name: 'İnsan eylemini kaydet' }).click()",
+            "getByRole('button', { name: 'Teklif taslağı oluştur' }).click()",
+            "getByRole('button', { name: 'Taslağı kalıcı kaydet' }).click()",
+            "getByRole('button', { name: 'Adaya iletmeyi hazırla' }).click()",
+            "getByRole('button', { name: 'Teklifi adaya ilet' }).click()",
+            "getByRole('button', { name: 'Teklifi kabul etmeyi hazırla' }).click()",
+            "getByRole('button', { name: 'Kabul yanıtını kalıcı kaydet' })",
+            "getByRole('button', { name: 'İşe alım sonucunu hazırla' }).click()",
+            "getByRole('button', { name: 'İşe alındı olarak kaydet' }).click()",
+        ]
+        cursor = -1
+        for step in ordered_steps:
+            cursor = self.fullats_browser.index(step, cursor + 1)
+        for required_path in (
+            "/evaluations`",
+            "/interviews`",
+            "/scorecards`",
+            "/interviews/${interviewId}/transitions`",
+            "/offers`",
+            "/offers/${offerId}/response`",
+            "/offers/${offerId}/transitions`",
+        ):
+            self.assertIn(required_path, self.fullats_browser)
+        self.assertIn("offerTransitions.length !== 2", self.fullats_browser)
+        self.assertIn("interviewIdSha256: sha256(interviewId)", self.fullats_browser)
+        self.assertIn("offerIdSha256: sha256(offerId)", self.fullats_browser)
+        self.assertIn("finalApplicationState: 'HIRED'", self.fullats_browser)
+        self.assertIn("'candidate-sees-hired-result'", self.fullats_browser)
 
     def test_fullats_recruiter_setup_is_least_privilege_and_action_explicit(self):
         for permission in (
@@ -692,9 +749,9 @@ fi
 
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
-            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
+            "ats": "sha256:5b8985c1a5287588e3338bf569136c6eb6091a4475d4226a0b80c8603571b20d",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
+            "frontend": "sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2",
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
@@ -706,15 +763,15 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c",
+            "EXPECTED_FRONTEND_SHA: f4a1f5822226fcb5452a7defd013933dac7fb440",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815",
+            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29663669275",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225",
+            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29663669275/job/88130433979",
             self.fullats_browser_workflow,
         )
         self.assertIn('echo "- frontend build job: ${FRONTEND_BUILD_JOB}"', self.fullats_browser_workflow)
@@ -766,11 +823,11 @@ fi
         )
 
     def test_frontend_promotion_receipt_is_cross_file_bound(self):
-        source_sha = "eee1310b33376013967482ae842bf15c797fe72c"
-        tag = "sha-eee1310"
-        digest = "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-        run_id = "29645789815"
-        job_id = "88083697225"
+        source_sha = "f4a1f5822226fcb5452a7defd013933dac7fb440"
+        tag = "sha-f4a1f58"
+        digest = "sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2"
+        run_id = "29663669275"
+        job_id = "88130433979"
 
         for exact in (
             f"Build run {run_id} testai job {job_id}.",
@@ -822,7 +879,7 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
-        self.assertIn('PROMOTION_PR: "2636"', self.fullats_browser_workflow)
+        self.assertIn('PROMOTION_PR: "2685"', self.fullats_browser_workflow)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn('[[ "$merge_sha" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn(
@@ -844,13 +901,15 @@ fi
         self.assertIn('parent_count="$(git rev-list --parents -n 1 "$merge_sha"', self.rollback_script)
         self.assertIn('"$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA"', self.rollback_script)
         self.assertIn('git show "$PROMOTION_BASE_SHA:$test_root"', self.rollback_script)
+        self.assertIn('git show "$PROMOTION_BASE_SHA:$ats_activation"', self.rollback_script)
         self.assertIn("printf 'ROLLED_BACK\\n'", self.rollback_script)
-        self.assertIn("changed-file set escaped two-file contract", self.rollback_script)
+        self.assertIn("changed-file set escaped three-file runtime contract", self.rollback_script)
         for digest in (
             "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
+            "sha256:5b8985c1a5287588e3338bf569136c6eb6091a4475d4226a0b80c8603571b20d",
+            "sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2",
         ):
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
@@ -870,7 +929,7 @@ fi
         )
         self.assertIn("## Boundary declaration (ADR-0011 §2.3)", self.rollback_script)
         self.assertIn("- [x] state-mutation (test cluster)", self.rollback_script)
-        self.assertIn("reviewed-base frontend", self.rollback_script)
+        self.assertIn("reviewed-base ATS and frontend", self.rollback_script)
         self.assertNotIn("önceki kanıtlı", self.rollback_script)
         self.assertIn(
             "scripts/deploy/reconcile-testai-backend-sequential.sh",
@@ -894,7 +953,7 @@ fi
         self.assertIn("fullats_run=$nonce", self.fullats_runtime)
         self.assertIn("ready_pod_image_ids_exact: true", self.rollback_script)
         self.assertIn(
-            'ATS_EXPECTED_DIGEST="$ATS_CURRENT" bash scripts/ats/d29-smoke.sh',
+            'ATS_EXPECTED_DIGEST="$ATS_OLD" bash scripts/ats/d29-smoke.sh',
             self.rollback_script,
         )
         self.assertIn("faz25-fullats-post-rollback-runtime/v1", self.rollback_script)
@@ -908,7 +967,7 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn("steps.rollback.outcome != 'success'", self.fullats_browser_workflow)
-        self.assertIn("frontend-only compensator", self.runbook)
+        self.assertIn("ATS + frontend runtime compensator", self.runbook)
 
     def test_fullats_rollback_installs_checksum_pinned_runner_local_github_cli(self):
         self.assertIn('VERSION="2.96.0"', self.pinned_gh_installer)
@@ -953,22 +1012,23 @@ fi
 
     def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
-        current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
         current_permission = "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
         promoted = {
+            "ats": "sha256:5b8985c1a5287588e3338bf569136c6eb6091a4475d4226a0b80c8603571b20d",
+            "frontend": "sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2",
+            "tag": "sha-f4a1f58",
+        }
+        rolled_back = {
+            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
             "tag": "sha-eee1310",
         }
-        rolled_back = {
-            "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
-            "tag": "sha-9f82edb",
-        }
         expected = promoted if self.promotion_state == "PROMOTED" else rolled_back
-        self.assertIn(current_ats, self.activation)
+        self.assertIn(expected["ats"], self.activation)
         self.assertIn(current_permission, self.test_root)
         self.assertIn(expected["frontend"], self.test_root)
         self.assertIn(
-            f"image: ghcr.io/halildeu/ats-app-boot@{current_ats}",
+            f"image: ghcr.io/halildeu/ats-app-boot@{expected['ats']}",
             self.rendered_test_root,
         )
         self.assertIn(
@@ -982,6 +1042,10 @@ fi
             self.rendered_test_root,
         )
         other = rolled_back if self.promotion_state == "PROMOTED" else promoted
+        self.assertNotIn(
+            f"image: ghcr.io/halildeu/ats-app-boot@{other['ats']}",
+            self.rendered_test_root,
+        )
         self.assertNotIn(
             "image: ghcr.io/halildeu/platform-web-frontend-testai:"
             f"{other['tag']}@{other['frontend']}",
@@ -1108,7 +1172,10 @@ fi
         self.assertIn(".state.terminated.exitCode", self.recovery_workflow)
         self.assertIn("involvedObject.kind=Pod", self.recovery_workflow)
         self.assertNotIn("kubectl logs", self.recovery_workflow)
-        self.assertIn("$'4|t\\n5|t\\n6|t'", self.recovery_workflow)
+        self.assertIn(
+            "$'4|t\\n5|t\\n6|t\\n7|t\\n8|t\\n9|t\\n10|t\\n11|t'",
+            self.recovery_workflow,
+        )
         self.assertIn(
             "bash scripts/ats/transition-test-model-governance.sh",
             self.recovery_workflow,
@@ -1122,7 +1189,7 @@ fi
             "bash scripts/ats/transition-test-model-governance.sh"
         )
         ready_wait = self.recovery_workflow.index(
-            "Wait for GitOps-owned ATS rollout and verify V4/V5/V6"
+            "Wait for GitOps-owned ATS rollout and verify V4 through V11"
         )
         self.assertLess(roles_only, governance_append)
         self.assertLess(governance_append, ready_wait)
@@ -1136,7 +1203,8 @@ fi
         self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
         self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
         self.assertIn("Faz 25 #2615 branch-acceptance pini", self.runbook)
-        self.assertIn("ATS #183 exact head `f4d2b4f`", self.runbook)
+        self.assertIn("ATS main `f8b9f40`", self.runbook)
+        self.assertIn("PDF CV, insan değerlendirmesi, görüşme, scorecard, teklif", self.runbook)
         self.assertIn("canlı D29 pending", self.runbook)
         self.assertIn("aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir", self.runbook)
         self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)

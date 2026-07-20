@@ -45,6 +45,8 @@ const allowedEvidencePaths = [
   '/api/ats/v1/jobs',
   '/api/ats/v1/careers/',
   '/api/ats/v1/candidate/applications',
+  '/api/ats/v1/candidate/resume-imports',
+  '/api/ats/v1/interviews',
   '/api/ats/v1/recruiter/applications',
   '/api/ats/v1/recruiter/jobs',
   '/api/v1/authz/me',
@@ -155,6 +157,15 @@ const waitVisible = async (locator, label, timeout = 60_000) => {
   });
 };
 
+const waitEnabled = async (locator, label, timeout = 60_000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await locator.isEnabled().catch(() => false)) return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`${label} ${timeout}ms icinde etkinlesmedi`);
+};
+
 const refreshUntilVisible = async (refreshButton, target, label, attempts = 3) => {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -224,6 +235,9 @@ const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] }
 let publicRef = '';
 let jobId = '';
 let publicHandle = '';
+let interviewId = '';
+let offerId = '';
+let resumeImportId = '';
 try {
   const recruiterContext = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
@@ -349,24 +363,127 @@ try {
   await candidatePage.getByRole('link', { name: 'Başvuru formuna geç' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-page'), 'candidate application page');
   await waitVisible(candidatePage.getByRole('heading', { name: jobTitle }), 'job title');
+  await candidatePage.getByLabel(/CV içe aktarma aydınlatmasını okudum/u).check();
+  const resumeCreateResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/careers/${publicHandle}/jobs/${jobSlug}/resume-imports`,
+    { timeout: 30_000 },
+  );
+  const resumeUploadResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      /^\/api\/ats\/v1\/candidate\/resume-imports\/ri_[A-Za-z0-9_-]{24}\/document$/u.test(
+        relevantPath(response.url()) ?? '',
+      ),
+    { timeout: 30_000 },
+  );
   await candidatePage.getByTestId('candidate-resume').setInputFiles({
     name: 'fullats-synthetic-resume.pdf',
     mimeType: 'application/pdf',
     buffer: buildSyntheticResumePdf({ fullName: candidateName, email: candidateEmail }),
   });
+  const resumeCreateResponse = await resumeCreateResponsePromise;
+  if (resumeCreateResponse.status() !== 201) {
+    throw new Error(`candidate resume import create HTTP ${resumeCreateResponse.status()}`);
+  }
+  const createdResumeImport = await resumeCreateResponse.json();
+  resumeImportId = typeof createdResumeImport.importId === 'string' ? createdResumeImport.importId : '';
+  if (!/^ri_[A-Za-z0-9_-]{24}$/u.test(resumeImportId)) {
+    throw new Error('candidate resume import id invalid');
+  }
+  const resumeUploadResponse = await resumeUploadResponsePromise;
+  if (![201, 202].includes(resumeUploadResponse.status())) {
+    throw new Error(`candidate resume upload HTTP ${resumeUploadResponse.status()}`);
+  }
+
+  const resumeReview = candidatePage.getByTestId('candidate-resume-review');
+  await waitVisible(resumeReview, 'candidate resume proposal review');
+  if ((await candidatePage.getByTestId('candidate-email').inputValue()) !== '') {
+    throw new Error('unreviewed PDF proposal escaped into authoritative form');
+  }
+  await waitVisible(
+    resumeReview.getByText(/Sayfa 1 · güven %\d+ · metin konumu doğrulandı/u).first(),
+    'candidate resume proposal provenance',
+  );
+
+  const editedCandidateName = `${candidateName} Düzenlendi`;
+  const fullNameProposal = candidatePage.getByTestId('resume-proposal-fullName');
+  await fullNameProposal.getByLabel('Aday tarafından düzenlenebilir değer').fill(editedCandidateName);
+  const fullNameEditResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/fullName`,
+    { timeout: 30_000 },
+  );
+  await fullNameProposal.getByRole('button', { name: 'Düzenlediğimi kaydet' }).click();
+  if ((await fullNameEditResponsePromise).status() !== 200) {
+    throw new Error('candidate resume full-name edit was not persisted');
+  }
+  await waitVisible(fullNameProposal.getByText('Düzenlendi', { exact: true }), 'edited resume field state');
+
+  const cityProposal = candidatePage.getByTestId('resume-proposal-city');
+  const cityRejectResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/city`,
+    { timeout: 30_000 },
+  );
+  await cityProposal.getByRole('button', { name: 'Reddet' }).click();
+  if ((await cityRejectResponsePromise).status() !== 200) {
+    throw new Error('candidate resume city rejection was not persisted');
+  }
+  await waitVisible(cityProposal.getByText('Reddedildi', { exact: true }), 'rejected resume field state');
+
+  await resumeReview.getByRole('button', { name: 'Güvenli önerileri kabul et' }).click();
+  const applySelectedButton = resumeReview.getByRole('button', {
+    name: /Seçtiğim alanları forma aktar \(\d+\)/u,
+  });
+  await waitEnabled(applySelectedButton, 'reviewed resume confirmation');
+  const resumeConfirmResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/resume-imports/${resumeImportId}/confirm`,
+    { timeout: 30_000 },
+  );
+  await applySelectedButton.click();
+  const resumeConfirmResponse = await resumeConfirmResponsePromise;
+  if (resumeConfirmResponse.status() !== 200) {
+    throw new Error(`candidate resume confirm HTTP ${resumeConfirmResponse.status()}`);
+  }
+  const confirmedResume = await resumeConfirmResponse.json();
+  if (
+    confirmedResume?.resumeImport?.state !== 'CONFIRMED' ||
+    confirmedResume?.draft?.importId !== resumeImportId ||
+    !Number.isInteger(confirmedResume?.draft?.version)
+  ) {
+    throw new Error('candidate resume confirmation binding invalid');
+  }
   const resumeMeta = candidatePage.getByTestId('candidate-resume-meta');
-  await waitVisible(resumeMeta, 'candidate PDF import result');
-  if (!/PDF’den dolduruldu/u.test((await resumeMeta.textContent()) ?? '')) {
-    throw new Error('candidate PDF did not autofill the application form');
+  await waitVisible(resumeMeta, 'candidate confirmed resume draft');
+  if (!/CV kararları kaydedildi; \d+ alan forma aktarıldı/u.test((await resumeMeta.textContent()) ?? '')) {
+    throw new Error('candidate confirmed resume draft did not populate the form');
   }
   if ((await candidatePage.getByTestId('candidate-email').inputValue()) !== candidateEmail) {
-    throw new Error('candidate PDF email autofill mismatch');
+    throw new Error('candidate accepted PDF email proposal mismatch');
   }
-  if ((await candidatePage.getByTestId('candidate-fullName').inputValue()) !== candidateName) {
-    throw new Error('candidate PDF full-name autofill mismatch');
+  if ((await candidatePage.getByTestId('candidate-fullName').inputValue()) !== editedCandidateName) {
+    throw new Error('candidate edited PDF full-name proposal mismatch');
   }
-  const editedCandidateName = `${candidateName} Düzenlendi`;
-  await candidatePage.getByTestId('candidate-fullName').fill(editedCandidateName);
+  if ((await candidatePage.getByTestId('candidate-city').inputValue()) !== '') {
+    throw new Error('candidate rejected PDF city proposal escaped into form');
+  }
+  await candidatePage.getByTestId('candidate-city').fill('Istanbul');
+  if ((await candidatePage.getByTestId('candidate-resume').count()) !== 0) {
+    throw new Error('raw PDF input remained mounted after terminal confirmation');
+  }
+  if (((await resumeMeta.textContent()) ?? '').includes('fullats-synthetic-resume.pdf')) {
+    throw new Error('candidate PDF filename escaped into confirmed product state');
+  }
   await candidatePage.getByRole('button', { name: 'Başvuruyu önizle' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-preview'), 'candidate preview');
   await waitVisible(
@@ -404,13 +521,21 @@ try {
     'noticeVersion',
     'phone',
     'portfolio',
+    'resumeDraftVersion',
+    'resumeImportId',
     'skills',
     'summary',
   ].sort();
   if (JSON.stringify(submittedKeys) !== JSON.stringify(expectedSubmittedKeys)) {
     throw new Error(`candidate submission field boundary mismatch: ${submittedKeys.join(',')}`);
   }
-  if (submittedPayload.fullName !== editedCandidateName || submittedPayload.email !== candidateEmail) {
+  if (
+    submittedPayload.fullName !== editedCandidateName ||
+    submittedPayload.email !== candidateEmail ||
+    submittedPayload.city !== 'Istanbul' ||
+    submittedPayload.resumeImportId !== resumeImportId ||
+    submittedPayload.resumeDraftVersion !== confirmedResume.draft.version
+  ) {
     throw new Error('candidate edited PDF fields were not submitted');
   }
   const serializedSubmission = JSON.stringify(submittedPayload);
@@ -545,6 +670,52 @@ try {
   const reviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'İnsan incelemesinde' });
   await refreshUntilVisible(refreshStatusButton, reviewStep.getByText('Şimdi'), 'candidate sees under review');
 
+  await reviewPanel.getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' }).click();
+  const applicationEvaluationForm = reviewPanel.getByRole('form', {
+    name: 'Yapılandırılmış insan scorecard’ı',
+  });
+  await waitVisible(applicationEvaluationForm, 'application human scorecard');
+  const applicationRatings = await applicationEvaluationForm
+    .getByLabel('Kanıt düzeyi (1–4)', { exact: true })
+    .all();
+  const applicationEvidenceFields = await applicationEvaluationForm
+    .getByLabel('İşle ilgili somut kanıt', { exact: true })
+    .all();
+  if (applicationRatings.length !== 3 || applicationEvidenceFields.length !== 3) {
+    throw new Error('application scorecard criterion count mismatch');
+  }
+  for (let index = 0; index < applicationRatings.length; index += 1) {
+    await applicationRatings[index].selectOption('3');
+    await applicationEvidenceFields[index].fill(
+      `Sentetik işle ilgili değerlendirme kanıtı ${index + 1}: aday örnek ve doğrulanabilir sonuç sundu.`,
+    );
+  }
+  await applicationEvaluationForm.getByLabel('İlerletme önerisi').check();
+  await applicationEvaluationForm
+    .getByLabel('Genel gerekçe')
+    .fill('Sentetik adayın işle ilgili örnekleri yapılandırılmış insan değerlendirmesiyle incelendi.');
+  await applicationEvaluationForm
+    .getByLabel(/Değerlendirme yalnız ilandaki iş gereklilikleri/u)
+    .check();
+  const evaluationResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/recruiter/applications/${publicRef}/evaluations`,
+    { timeout: 30_000 },
+  );
+  await applicationEvaluationForm
+    .getByRole('button', { name: 'Immutable değerlendirmeyi kaydet' })
+    .click();
+  const evaluationResponse = await evaluationResponsePromise;
+  if (evaluationResponse.status() !== 201) {
+    throw new Error(`application evaluation HTTP ${evaluationResponse.status()}`);
+  }
+  await waitVisible(
+    reviewPanel.getByText(/İnsan değerlendirmesi revizyon 1 olarak kaydedildi/u),
+    'application evaluation persisted',
+  );
+
   const terminalTransitionResponse = recruiterPage.waitForResponse(
     (response) =>
       response.request().method() === 'PUT' &&
@@ -565,6 +736,238 @@ try {
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-terminal-desktop');
   const interviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'Mülakat planlaması' });
   await refreshUntilVisible(refreshStatusButton, interviewStep.getByText('Şimdi'), 'candidate sees interview pending');
+
+  const interviewWorkspace = reviewPanel.getByTestId('recruiter-interview-workspace');
+  await waitVisible(
+    interviewWorkspace.getByRole('button', { name: 'Yeni görüşme planla' }),
+    'new interview action',
+  );
+  await interviewWorkspace.getByRole('button', { name: 'Yeni görüşme planla' }).click();
+  const interviewPlanForm = interviewWorkspace.getByRole('form', {
+    name: 'Yeni görüşme planı',
+  });
+  await waitVisible(interviewPlanForm, 'interview plan form');
+  const interviewCreateResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/recruiter/applications/${publicRef}/interviews`,
+    { timeout: 30_000 },
+  );
+  await interviewPlanForm
+    .getByRole('button', { name: 'Görüşmeyi kalıcı olarak planla' })
+    .click();
+  const interviewCreateResponse = await interviewCreateResponsePromise;
+  if (interviewCreateResponse.status() !== 201) {
+    throw new Error(`interview create HTTP ${interviewCreateResponse.status()}`);
+  }
+  const createdInterview = await interviewCreateResponse.json();
+  interviewId = typeof createdInterview.interviewId === 'string' ? createdInterview.interviewId : '';
+  if (!/^int_[A-Za-z0-9_-]{24}$/u.test(interviewId) || createdInterview.status !== 'SCHEDULED') {
+    throw new Error('created interview response contract invalid');
+  }
+  await waitVisible(
+    interviewWorkspace.getByText('Görüşme planlandı; adayın güvenli takvimine yansıdı.', {
+      exact: true,
+    }),
+    'interview persisted',
+  );
+  await refreshUntilVisible(
+    refreshStatusButton,
+    candidatePage.getByRole('heading', { name: 'Ön görüşme' }),
+    'candidate sees scheduled interview',
+  );
+  await waitVisible(
+    candidatePage.getByRole('link', { name: 'Güvenli görüşme bağlantısını aç' }),
+    'candidate-safe interview link',
+  );
+
+  await interviewWorkspace.getByRole('button', { name: 'İnsan scorecard’ı doldur' }).click();
+  const interviewScorecardForm = interviewWorkspace.getByRole('form', {
+    name: "Görüşme insan scorecard'ı",
+  });
+  await waitVisible(interviewScorecardForm, 'interview human scorecard');
+  const interviewRatings = await interviewScorecardForm
+    .getByLabel('Kanıt düzeyi (1–4)', { exact: true })
+    .all();
+  const interviewEvidenceFields = await interviewScorecardForm
+    .getByLabel('Somut iş kanıtı', { exact: true })
+    .all();
+  if (interviewRatings.length !== 3 || interviewEvidenceFields.length !== 3) {
+    throw new Error('interview scorecard criterion count mismatch');
+  }
+  for (let index = 0; index < interviewRatings.length; index += 1) {
+    await interviewRatings[index].selectOption('3');
+    await interviewEvidenceFields[index].fill(
+      `Sentetik görüşme kanıtı ${index + 1}: aday iş örneğini, kendi katkısını ve sonucu açıkladı.`,
+    );
+  }
+  await interviewScorecardForm.getByLabel('İnsan önerisi').selectOption('ADVANCE');
+  await interviewScorecardForm
+    .getByLabel('Genel gerekçe')
+    .fill('Sentetik görüşmede yalnız işle ilgili rubric ve gözlemlenebilir kanıtlar değerlendirildi.');
+  await interviewScorecardForm
+    .getByLabel(/Değerlendirme yalnız işle ilgili rubric/u)
+    .check();
+  const interviewScorecardResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) === `/api/ats/v1/interviews/${interviewId}/scorecards`,
+    { timeout: 30_000 },
+  );
+  await interviewScorecardForm
+    .getByRole('button', { name: 'Immutable scorecard’ı kaydet' })
+    .click();
+  const interviewScorecardResponse = await interviewScorecardResponsePromise;
+  if (interviewScorecardResponse.status() !== 201) {
+    throw new Error(`interview scorecard HTTP ${interviewScorecardResponse.status()}`);
+  }
+  await waitVisible(
+    interviewWorkspace.getByText(/İnsan scorecard’ı revizyon 1 olarak kaydedildi/u),
+    'interview scorecard persisted',
+  );
+
+  await interviewWorkspace.getByRole('button', { name: 'Görüşmeyi tamamla' }).click();
+  const interviewCompleteResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/recruiter/applications/${publicRef}/interviews/${interviewId}/transitions`,
+    { timeout: 30_000 },
+  );
+  await interviewWorkspace.getByRole('button', { name: 'İnsan eylemini kaydet' }).click();
+  const interviewCompleteResponse = await interviewCompleteResponsePromise;
+  if (interviewCompleteResponse.status() !== 200) {
+    throw new Error(`interview complete HTTP ${interviewCompleteResponse.status()}`);
+  }
+  await refreshUntilVisible(
+    refreshStatusButton,
+    candidatePage
+      .getByRole('listitem')
+      .filter({ hasText: 'Ön görüşme' })
+      .getByText('Tamamlandı', { exact: true }),
+    'candidate sees completed interview',
+  );
+
+  const offerWorkspace = reviewPanel.getByTestId('recruiter-offer-workspace');
+  await waitVisible(
+    offerWorkspace.getByRole('button', { name: 'Teklif taslağı oluştur' }),
+    'new offer action',
+  );
+  await offerWorkspace.getByRole('button', { name: 'Teklif taslağı oluştur' }).click();
+  const offerForm = offerWorkspace.getByRole('form', { name: 'Yeni teklif taslağı' });
+  await waitVisible(offerForm, 'offer draft form');
+  await offerForm.getByLabel('Brüt ücret').fill('125000');
+  await offerForm
+    .getByLabel('Teklif özeti')
+    .fill('Sentetik Full ATS kabulü için açık rol, ücret dönemi ve başlangıç koşulları.');
+  const offerCreateResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) === `/api/ats/v1/recruiter/applications/${publicRef}/offers`,
+    { timeout: 30_000 },
+  );
+  await offerForm.getByRole('button', { name: 'Taslağı kalıcı kaydet' }).click();
+  const offerCreateResponse = await offerCreateResponsePromise;
+  if (offerCreateResponse.status() !== 201) {
+    throw new Error(`offer draft HTTP ${offerCreateResponse.status()}`);
+  }
+  const createdOffer = await offerCreateResponse.json();
+  offerId = typeof createdOffer.offerId === 'string' ? createdOffer.offerId : '';
+  if (!/^off_[A-Za-z0-9_-]{24}$/u.test(offerId) || createdOffer.status !== 'DRAFT') {
+    throw new Error('created offer response contract invalid');
+  }
+  await waitVisible(
+    offerWorkspace.getByRole('button', { name: 'Adaya iletmeyi hazırla' }),
+    'extend offer action',
+  );
+  await offerWorkspace.getByRole('button', { name: 'Adaya iletmeyi hazırla' }).click();
+  const extendOfferPanel = offerWorkspace.getByRole('region', { name: 'Teklifi adaya ilet' });
+  await waitVisible(extendOfferPanel, 'extend offer confirmation');
+  await extendOfferPanel
+    .getByLabel('İnsan kararı gerekçesi')
+    .fill('Sentetik scorecard ve tamamlanmış görüşme sonrası teklif onayı.');
+  await extendOfferPanel
+    .getByLabel(/Koşulları, ücret dönemini ve yanıt son tarihini kontrol ettim/u)
+    .check();
+  const extendOfferResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/recruiter/applications/${publicRef}/offers/${offerId}/transitions`,
+    { timeout: 30_000 },
+  );
+  await extendOfferPanel.getByRole('button', { name: 'Teklifi adaya ilet' }).click();
+  const extendOfferResponse = await extendOfferResponsePromise;
+  if (extendOfferResponse.status() !== 200) {
+    throw new Error(`offer extend HTTP ${extendOfferResponse.status()}`);
+  }
+
+  await refreshUntilVisible(
+    refreshStatusButton,
+    candidatePage.getByRole('button', { name: 'Teklifi kabul etmeyi hazırla' }),
+    'candidate sees extended offer',
+  );
+  await candidatePage.getByRole('button', { name: 'Teklifi kabul etmeyi hazırla' }).click();
+  const candidateOfferPanel = candidatePage.getByRole('region', { name: 'Teklif kabul onayı' });
+  await waitVisible(candidateOfferPanel, 'candidate offer acceptance confirmation');
+  await candidateOfferPanel
+    .getByLabel(/Koşulları ve yanıt son tarihini inceledim/u)
+    .check();
+  const candidateAcceptResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/applications/${publicRef}/offers/${offerId}/response`,
+    { timeout: 30_000 },
+  );
+  await candidateOfferPanel
+    .getByRole('button', { name: 'Kabul yanıtını kalıcı kaydet' })
+    .click();
+  const candidateAcceptResponse = await candidateAcceptResponsePromise;
+  if (candidateAcceptResponse.status() !== 200) {
+    throw new Error(`candidate offer acceptance HTTP ${candidateAcceptResponse.status()}`);
+  }
+  await waitVisible(
+    candidatePage.getByRole('heading', { name: 'Teklifi kabul ettiniz' }),
+    'candidate accepted status',
+  );
+
+  await offerWorkspace.getByRole('button', { name: 'Teklifleri yenile' }).click();
+  await waitVisible(
+    offerWorkspace.getByRole('button', { name: 'İşe alım sonucunu hazırla' }),
+    'hire result action',
+  );
+  await offerWorkspace.getByRole('button', { name: 'İşe alım sonucunu hazırla' }).click();
+  const hirePanel = offerWorkspace.getByRole('region', { name: 'İşe alım sonucunu kaydet' });
+  await waitVisible(hirePanel, 'hire result confirmation');
+  await hirePanel
+    .getByLabel('İnsan kararı gerekçesi')
+    .fill('Adayın kalıcı ATS teklif kabulü doğrulandı ve sentetik işe alım sonucu kaydediliyor.');
+  await hirePanel
+    .getByLabel(/Adayın ATS kabul yanıtını inceledim/u)
+    .check();
+  const hireResponsePromise = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/recruiter/applications/${publicRef}/offers/${offerId}/transitions`,
+    { timeout: 30_000 },
+  );
+  await hirePanel.getByRole('button', { name: 'İşe alındı olarak kaydet' }).click();
+  const hireResponse = await hireResponsePromise;
+  if (hireResponse.status() !== 200) {
+    throw new Error(`hire result HTTP ${hireResponse.status()}`);
+  }
+  const hiredStep = candidatePage.getByRole('listitem').filter({
+    hasText: 'İşe alım sonucu kaydedildi',
+  });
+  await refreshUntilVisible(refreshStatusButton, hiredStep.getByText('Şimdi'), 'candidate sees hired result');
+  await waitVisible(candidatePage.getByText('İşe alındı', { exact: true }), 'candidate sees hired offer');
+  await assertAxeClean(recruiterPage, 'recruiter-workspace-hired-desktop');
+  await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-hired-desktop');
+  await assertAxeClean(candidatePage, 'candidate-portal-hired-mobile');
+  await assertNoHorizontalOverflow(candidatePage, 'candidate-portal-hired-mobile');
 
   const negativeProbeContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -590,7 +993,7 @@ try {
   await assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED');
   await refreshUntilVisible(
     refreshStatusButton,
-    interviewStep.getByText('Şimdi'),
+    hiredStep.getByText('Şimdi'),
     'existing candidate receipt survives pause',
   );
 
@@ -626,7 +1029,7 @@ try {
   await assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'CLOSED');
   await refreshUntilVisible(
     refreshStatusButton,
-    interviewStep.getByText('Şimdi'),
+    hiredStep.getByText('Şimdi'),
     'existing candidate receipt survives close',
   );
   await assertAxeClean(candidatePage, 'candidate-portal-after-job-close-mobile');
@@ -651,15 +1054,67 @@ try {
     ['recruiter', 'POST', '/api/ats/v1/recruiter/jobs', 201],
     ['recruiter', 'PUT', `/api/ats/v1/recruiter/jobs/${jobId}`, 200],
     ['candidate', 'GET', `/api/ats/v1/careers/${publicHandle}/jobs/${jobSlug}`, 200],
+    [
+      'candidate',
+      'POST',
+      `/api/ats/v1/careers/${publicHandle}/jobs/${jobSlug}/resume-imports`,
+      201,
+    ],
+    [
+      'candidate',
+      'PUT',
+      `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/fullName`,
+      200,
+    ],
+    [
+      'candidate',
+      'PUT',
+      `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/city`,
+      200,
+    ],
+    [
+      'candidate',
+      'POST',
+      `/api/ats/v1/candidate/resume-imports/${resumeImportId}/confirm`,
+      200,
+    ],
     ['candidate', 'POST', publicApplicationApiPath, 201],
     ['candidate', 'GET', `/api/ats/v1/candidate/applications/${publicRef}`, 200],
     ['recruiter', 'GET', '/api/ats/v1/recruiter/applications', 200],
     ['recruiter', 'PUT', `/api/ats/v1/recruiter/applications/${publicRef}/status`, 200],
+    ['recruiter', 'POST', `/api/ats/v1/recruiter/applications/${publicRef}/evaluations`, 201],
+    ['recruiter', 'POST', `/api/ats/v1/recruiter/applications/${publicRef}/interviews`, 201],
+    ['candidate', 'GET', `/api/ats/v1/candidate/applications/${publicRef}/interviews`, 200],
+    ['recruiter', 'POST', `/api/ats/v1/interviews/${interviewId}/scorecards`, 201],
+    [
+      'recruiter',
+      'POST',
+      `/api/ats/v1/recruiter/applications/${publicRef}/interviews/${interviewId}/transitions`,
+      200,
+    ],
+    ['recruiter', 'POST', `/api/ats/v1/recruiter/applications/${publicRef}/offers`, 201],
+    ['candidate', 'GET', `/api/ats/v1/candidate/applications/${publicRef}/offers`, 200],
+    [
+      'candidate',
+      'POST',
+      `/api/ats/v1/candidate/applications/${publicRef}/offers/${offerId}/response`,
+      200,
+    ],
   ];
   for (const [persona, method, pathname, status] of requiredChecks) {
     if (!networkEvidence.some((entry) => entry.persona === persona && entry.method === method && entry.pathname === pathname && entry.status === status)) {
       throw new Error(`missing network evidence: ${persona} ${method} ${pathname} ${status}`);
     }
+  }
+  const resumeUploads = networkEvidence.filter(
+    (entry) =>
+      entry.persona === 'candidate' &&
+      entry.method === 'PUT' &&
+      entry.pathname === `/api/ats/v1/candidate/resume-imports/${resumeImportId}/document` &&
+      [201, 202].includes(entry.status),
+  );
+  if (resumeUploads.length !== 1) {
+    throw new Error(`expected one bounded PDF upload, got ${resumeUploads.length}`);
   }
   const jobTransitions = networkEvidence.filter(
     (entry) =>
@@ -670,6 +1125,17 @@ try {
   );
   if (jobTransitions.length !== 4) {
     throw new Error(`expected 4 successful job transitions, got ${jobTransitions.length}`);
+  }
+  const offerTransitions = networkEvidence.filter(
+    (entry) =>
+      entry.persona === 'recruiter' &&
+      entry.method === 'POST' &&
+      entry.pathname ===
+        `/api/ats/v1/recruiter/applications/${publicRef}/offers/${offerId}/transitions` &&
+      entry.status === 200,
+  );
+  if (offerTransitions.length !== 2) {
+    throw new Error(`expected 2 successful offer transitions, got ${offerTransitions.length}`);
   }
   const rejectedApplications = networkEvidence.filter(
     (entry) =>
@@ -686,6 +1152,9 @@ try {
     for (const [value, marker] of [
       [publicRef, '[APPLICATION_REF]'],
       [jobId, '[JOB_ID]'],
+      [interviewId, '[INTERVIEW_ID]'],
+      [offerId, '[OFFER_ID]'],
+      [resumeImportId, '[RESUME_IMPORT_ID]'],
       [publicHandle, '[PUBLIC_HANDLE]'],
       [jobSlug, '[JOB_SLUG]'],
     ]) {
@@ -704,7 +1173,7 @@ try {
   }
 
   const summary = {
-    schemaVersion: 'fullats-live-browser-acceptance/v2',
+    schemaVersion: 'fullats-live-browser-acceptance/v4',
     environment: 'testai.acik.com',
     syntheticOnly: true,
     frontendSourceCommit: buildInfo.sha,
@@ -726,8 +1195,14 @@ try {
       'recruiter-previews-draft',
       'recruiter-publishes-job',
       'candidate-opens-dynamic-public-job',
-      'candidate-imports-real-pdf-locally',
-      'candidate-edits-pdf-autofilled-field',
+      'candidate-acknowledges-versioned-resume-import-notice',
+      'candidate-uploads-real-pdf-to-bounded-ats-parser',
+      'candidate-reviews-field-provenance-before-form-transfer',
+      'candidate-edits-one-pdf-proposal',
+      'candidate-rejects-one-pdf-proposal',
+      'candidate-accepts-remaining-safe-proposals',
+      'candidate-confirms-selected-fields-atomically',
+      'candidate-manually-completes-rejected-required-field',
       'editable-candidate-form',
       'explicit-preview-and-confirmation',
       'persistent-receipt-created',
@@ -735,8 +1210,19 @@ try {
       'authorized-recruiter-inbox',
       'human-controlled-under-review-transition',
       'candidate-sees-under-review',
+      'structured-human-application-evaluation',
       'human-controlled-interview-pending-transition',
       'candidate-sees-interview-pending',
+      'recruiter-schedules-persistent-interview',
+      'candidate-sees-safe-interview-schedule',
+      'assigned-human-submits-structured-scorecard',
+      'human-completes-scorecard-backed-interview',
+      'candidate-sees-completed-interview',
+      'recruiter-creates-persistent-offer-draft',
+      'human-extends-offer-to-candidate',
+      'candidate-sees-and-accepts-offer',
+      'human-records-hire-result',
+      'candidate-sees-hired-result',
       'recruiter-pauses-job',
       'paused-job-rejects-new-application',
       'existing-candidate-result-survives-pause',
@@ -747,15 +1233,19 @@ try {
     ],
     publicRefSha256: sha256(publicRef),
     jobIdSha256: sha256(jobId),
+    interviewIdSha256: sha256(interviewId),
+    offerIdSha256: sha256(offerId),
+    resumeImportIdSha256: sha256(resumeImportId),
     jobSlugSha256: sha256(jobSlug),
     publicHandleSha256: sha256(publicHandle),
     finalJobState: 'CLOSED',
+    finalApplicationState: 'HIRED',
     accessibility: 'axe-wcag2a-wcag2aa-wcag21a-wcag21aa-zero-violations',
     horizontalOverflow: 'none',
     candidateTracking: 'sessionStorage-only; no URL/localStorage token',
     capturedNetworkFields: ['persona', 'method', 'pathname', 'status'],
     evidenceBoundary:
-      'network evidence excludes headers and bodies; raw PDF, extracted text, and filename are not retained or submitted; screenshots contain synthetic product state only',
+      'network evidence excludes headers and bodies; the synthetic raw PDF is transiently uploaded only to the bounded ATS parser and is absent from the final application/evidence; extracted text and filename are not retained in evidence; screenshots contain synthetic product state only',
     networkEvidence: networkEvidence.map((entry) => ({
       ...entry,
       pathname: redactPath(entry.pathname),

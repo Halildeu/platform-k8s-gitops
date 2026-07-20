@@ -17,20 +17,20 @@ concurrency:
 
 jobs:
   live-browser:
-    name: Recruiter job lifecycle to candidate application on testai
+    name: Candidate application to human-controlled hire result on testai
     runs-on: [self-hosted, staging-sw, testai-deploy]
     # Includes the customer journey plus a bounded wait for a protected
     # compensating rollback PR if runtime/browser acceptance fails.
     timeout-minutes: 90
     env:
-      EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+      EXPECTED_ATS_DIGEST: sha256:5b8985c1a5287588e3338bf569136c6eb6091a4475d4226a0b80c8603571b20d
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
-      EXPECTED_FRONTEND_DIGEST: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
-      EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c
-      ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
+      EXPECTED_FRONTEND_DIGEST: sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2
+      EXPECTED_FRONTEND_SHA: f4a1f5822226fcb5452a7defd013933dac7fb440
+      ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29662277489
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
-      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815
-      FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225
+      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29663669275
+      FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29663669275/job/88130433979
     steps:
       - name: Validate test-only dispatch boundary
         id: preflight
@@ -145,7 +145,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.rollback-app-token.outputs.token }}
           GH_REPO: Halildeu/platform-k8s-gitops
-          PROMOTION_PR: "2636"
+          PROMOTION_PR: "2685"
           FAILED_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -179,13 +179,13 @@ jobs:
             echo ""
             echo "- environment: testai.acik.com"
             echo "- personas: synthetic candidate + synthetic recruiter"
-            echo "- journey: recruiter draft -> edit -> preview -> publish -> candidate real-PDF local autofill/edit/application -> recruiter inbox/status -> pause/republish/close -> new intake fail-closed -> existing receipt survives"
+            echo "- journey: recruiter draft/edit/publish -> candidate notice + bounded PDF upload + provenance review/edit/reject/atomic confirm -> application -> human evaluation -> interview schedule + scorecard -> offer/acceptance -> hire result -> pause/republish/close -> new intake fail-closed -> existing receipt survives"
             echo "- recruiter access setup: user activation + least-privilege ATS module/actions + role member product APIs"
             echo "- promoted D29 matrix: mandatory"
             echo "- revision fence: origin/main + Argo Synced/Healthy + pre/post runtime == workflow GitOps SHA"
             echo "- direct DB/OpenFGA acceptance seed: none"
             echo "- real PII / production mutation: none"
-            echo "- secrets/JWT/candidate access token in artifact: none"
+            echo "- secrets/JWT/candidate access token/raw PDF/extracted fields in artifact: none"
             echo "- artifact authority: live desired image + ready pod imageID exact digest"
             echo "- source lineage boundary: Actions build run metadata; no signed provenance attestation claimed"
             echo "- ATS build: ${ATS_BUILD_RUN}"

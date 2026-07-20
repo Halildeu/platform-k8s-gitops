@@ -55,10 +55,11 @@ const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'promotion_pr', 'promotion_scope_sha256', 'schema', 'source', 'valid',
 ];
 const FULLATS_ROLLBACK_PATHS = [
+  'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml',
   'kustomize/overlays/test/fullats-promotion-state.txt',
   'kustomize/overlays/test/kustomization.yaml',
 ];
-const FULLATS_PROMOTION_BASE_SHA = 'aa93f4743dc8254ce8e22a0317f92db1f5819268';
+const FULLATS_PROMOTION_BASE_SHA = '62f763ba1e4334588fbc9b250a665bacf369a263';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -213,11 +214,12 @@ const AUTOMATION_DIFF_ALLOWLIST = {
   'auto-test-frontend/': [
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
   ],
-  // Faz 25 #2615: failure compensator can restore only the frontend pin in
-  // the test overlay and the explicit promotion marker. ATS and permission
-  // artifacts stay on the already-validated current baseline.
+  // Faz 25 Full ATS: failure compensator can restore only the ATS activation
+  // pin, frontend test-overlay pin and explicit promotion marker. Permission
+  // stays on the already-validated current baseline.
   // It cannot carry workflow/governance/application changes in its bot PR.
   'auto-fullats-rollback/': [
+    /^kustomize\/overlays\/test\/activation\/ats-interview-evidence\/kustomization\.yaml$/,
     /^kustomize\/overlays\/test\/fullats-promotion-state\.txt$/,
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
   ],
@@ -1338,7 +1340,7 @@ function auditAutomation(body, prMeta) {
       && attestation.branch === prMeta.headRef
       && attestation.base_sha === prMeta.baseSha
       && attestation.head_sha === prMeta.headSha
-      && attestation.promotion_pr === 2636
+      && attestation.promotion_pr === 2685
       && attestation.promotion_merge_sha === prMeta.baseSha
       && COMMIT_SHA_RE.test(attestation.promotion_head_sha || '')
       && attestation.promotion_base_sha === FULLATS_PROMOTION_BASE_SHA
@@ -1350,7 +1352,7 @@ function auditAutomation(body, prMeta) {
       check: 'automation_fullats_content_attestation',
       pass: attestationPass,
       detail: attestationPass
-        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and four expected file blobs'
+        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and ATS/frontend runtime blobs'
         : 'trusted-base Full ATS rollback content attestation missing or does not match PR base/head/source/exact paths',
     });
   }
