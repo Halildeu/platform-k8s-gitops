@@ -680,7 +680,7 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
-    digest: sha256:b2f446eed46dfc1500cfb3a45d618999b92ed0557e0ece34cced5d51e5482a58
+    digest: sha256:c5ed9119e5e4895335cb0401b9c3251c8e41606abca954a556ba2578cd5e0cc8
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
