@@ -336,16 +336,29 @@ unavailable. This PR changes the reviewed source policy only; it does not claim
 that the owner-gated live policy replacement or role provisioning has occurred.
 
 This source contract does not make a local Transit signature equivalent to a
-provider execution. The fixed-function runtime attestor executes direct Codex,
+provider execution. The fixed-function runtime attestor implementation is
+`scripts/ai/cross_ai_runtime_attestor_service.py`, its fail-closed entrypoint is
+`scripts/ai/run_cross_ai_runtime_attestor.py`, and its pinned non-root image is
+built from `scripts/ai/runtime-attestor.Dockerfile`. The attestor executes direct Codex,
 retains the measured session and validates the exact allowed launch identity.
 The local builder may hold only the provider-review one-use sign token and a
 short-lived, bounded, fixed-purpose attestor session authorization; it never receives the
 `runner-management` Transit token. After the provider leaf is issued, the
 remote workload verifies that leaf against its stored transcript and only then
 signs the runtime leaf. Raw tokens and private key material never enter
-evidence, logs, arguments or repository files. Until the remote service and its
-redacted, content-addressed carrier are accepted, enforcement remains
+evidence, logs, arguments or repository files. Source and container tests are
+not activation evidence. Until the immutable image digest, HTTPS route,
+owner-only session authorization, public Codex-only trust root and signed
+revocations are deployed and independently pinned, enforcement remains
 `tracked_pending`.
+
+The session authorization is a canonical JSON file with schema
+`acik.cross-ai-provider-review-runtime-authorization.v1`, the exact
+`acik-cross-ai-provider-review-runtime` audience, a non-empty bearer, and
+RFC3339 `issuedAt`/`expiresAt` values no more than one hour apart. Both
+client and service open it with no-follow, regular-file, one-link, same-owner
+and `0600` checks; a non-canonical, future, expired or overlong credential is
+rejected before provider execution.
 
 ### One-time provider-review authority genesis and activation
 

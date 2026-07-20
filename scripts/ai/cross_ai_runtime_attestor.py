@@ -10,10 +10,8 @@ manufacture the second leaf.
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import ssl
-import stat
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -21,6 +19,10 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
+from scripts.ai.cross_ai_runtime_authorization import (
+    AUTH_AUDIENCE,
+    load_runtime_authorization,
+)
 from scripts.ai.trusted_cross_ai_evidence import canonical_bytes
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.errors import reject
@@ -31,7 +33,6 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
 
 
 SESSION_PATH = "/api/v1/cross-ai/provider-review-runtime/sessions"
-AUTH_AUDIENCE = "acik-cross-ai-provider-review-runtime"
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 DIGEST_FIELDS = {
     "providerTranscriptSha256",
@@ -56,53 +57,6 @@ def _canonical_uuid(value: object, label: str) -> str:
     if parsed != value:
         reject("PROVIDER_RUNTIME_ATTESTOR_INVALID", f"{label} is not canonical")
     return parsed
-
-
-def _secure_token(path: Path) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError:
-        reject(
-            "PROVIDER_RUNTIME_AUTH_UNAVAILABLE",
-            "runtime attestor authorization cannot be opened safely",
-        )
-    try:
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or metadata.st_nlink != 1
-            or metadata.st_mode & 0o077
-            or not 32 <= metadata.st_size <= 4096
-        ):
-            reject(
-                "PROVIDER_RUNTIME_AUTH_INVALID",
-                "runtime attestor authorization must be a bounded owner-only regular file",
-            )
-        raw = os.read(descriptor, metadata.st_size + 1)
-    except OSError:
-        reject(
-            "PROVIDER_RUNTIME_AUTH_UNAVAILABLE",
-            "runtime attestor authorization cannot be read safely",
-        )
-    finally:
-        os.close(descriptor)
-    if len(raw) != metadata.st_size:
-        reject(
-            "PROVIDER_RUNTIME_AUTH_INVALID",
-            "runtime attestor authorization changed while reading",
-        )
-    token = raw.strip()
-    if not 32 <= len(token) <= 4096 or b"\x00" in token:
-        reject("PROVIDER_RUNTIME_AUTH_INVALID", "runtime attestor authorization is invalid")
-    try:
-        return token.decode("ascii")
-    except UnicodeDecodeError:
-        reject(
-            "PROVIDER_RUNTIME_AUTH_INVALID",
-            "runtime attestor authorization must be ASCII",
-        )
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -153,7 +107,7 @@ class RemoteRuntimeAttestor:
                 "runtime attestor differs from the independently pinned policy",
             )
         self.runtime_policy = dict(runtime_policy)
-        self._token = _secure_token(auth_token_file)
+        self._authorization = load_runtime_authorization(auth_token_file)
         self._opener = opener or urllib.request.build_opener(
             urllib.request.ProxyHandler({}),
             _NoRedirectHandler(),
@@ -162,20 +116,27 @@ class RemoteRuntimeAttestor:
         self._session_id: str | None = None
         self._execution_sha256: str | None = None
 
-    def _post(self, path: str, document: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self,
+        path: str,
+        document: dict[str, Any],
+        *,
+        timeout_seconds: int,
+    ) -> dict[str, Any]:
+        self._authorization.assert_active()
         request = urllib.request.Request(
             self.runtime_policy["apiOrigin"] + path,
             data=canonical_bytes(document),
             method="POST",
             headers={
                 "Accept": "application/json",
-                "Authorization": f"Bearer {self._token}",
+                "Authorization": f"Bearer {self._authorization.token}",
                 "Content-Type": "application/json",
                 "User-Agent": "acik-cross-ai-provider-review-client/1",
             },
         )
         try:
-            with self._opener.open(request, timeout=30) as response:
+            with self._opener.open(request, timeout=timeout_seconds) as response:
                 if response.status != 200:
                     raise ValueError("runtime attestor rejected request")
                 if hasattr(response, "geturl") and response.geturl() != request.full_url:
@@ -237,7 +198,11 @@ class RemoteRuntimeAttestor:
             "toolPolicy": "none-pre-execution",
             "timeoutSeconds": timeout_seconds,
         }
-        response = self._post(self.runtime_policy["sessionPath"], request)
+        response = self._post(
+            self.runtime_policy["sessionPath"],
+            request,
+            timeout_seconds=timeout_seconds + 90,
+        )
         if (
             set(response) != {"schemaVersion", "sessionId", "execution"}
             or response.get("schemaVersion")
@@ -332,6 +297,7 @@ class RemoteRuntimeAttestor:
                 "issuedAt": issued_at,
                 "expiresAt": expires_at,
             },
+            timeout_seconds=90,
         )
         if (
             set(response) != {"schemaVersion", "runtimeAttestationEnvelope"}

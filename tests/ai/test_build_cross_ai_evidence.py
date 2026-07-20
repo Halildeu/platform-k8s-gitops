@@ -16,6 +16,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.ai import build_cross_ai_evidence as MODULE
+from scripts.ai.cross_ai_runtime_authorization import (
+    AUTHORIZATION_SCHEMA,
+    AUTH_AUDIENCE,
+)
 from scripts.ai.cross_ai_runtime_attestor import RemoteRuntimeAttestor
 from scripts.ai.trusted_cross_ai_evidence import canonical_bytes, validate_evidence
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
@@ -23,6 +27,7 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import (
     PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
+from scripts.github_apps.cross_ai_deployment_policy.timeutil import utc_now
 from tests.ai.signed_evidence_fixture import (
     StaticSigner,
     execution_receipt,
@@ -436,10 +441,25 @@ class RemoteRuntimeAttestorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
-        self.token = self.root / "attestor-auth"
-        self.token.write_text("attestor." + ("a" * 64), encoding="ascii")
-        self.token.chmod(0o600)
         self.fixture = make_signed_evidence()
+        self.token = self.root / "attestor-auth"
+        now = utc_now()
+        self.token.write_bytes(
+            canonical_bytes(
+                {
+                    "schemaVersion": AUTHORIZATION_SCHEMA,
+                    "audience": AUTH_AUDIENCE,
+                    "token": "attestor." + ("a" * 64),
+                    "issuedAt": (now - timedelta(minutes=1))
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "expiresAt": (now + timedelta(minutes=30))
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                }
+            )
+        )
+        self.token.chmod(0o600)
         self.prompt = "canonical review prompt"
         self.execution = execution_receipt(self.prompt)
         self.execution_document = {
@@ -576,6 +596,52 @@ class RemoteRuntimeAttestorTests(unittest.TestCase):
             RemoteRuntimeAttestor(
                 runtime_policy=self.fixture.authority.issuer_runtime_policy,
                 auth_token_file=alias,
+                opener=StaticOpener([]),
+            )
+
+    def test_attestor_auth_rejects_wrong_audience_expiry_and_noncanonical_bytes(
+        self,
+    ) -> None:
+        document = json.loads(self.token.read_bytes())
+        document["audience"] = "wrong-audience"
+        self.token.write_bytes(canonical_bytes(document))
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_AUTH_INVALID"):
+            RemoteRuntimeAttestor(
+                runtime_policy=self.fixture.authority.issuer_runtime_policy,
+                auth_token_file=self.token,
+                opener=StaticOpener([]),
+            )
+
+        now = utc_now()
+        document["audience"] = AUTH_AUDIENCE
+        document["issuedAt"] = (now - timedelta(minutes=31)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        document["expiresAt"] = (now - timedelta(minutes=1)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        self.token.write_bytes(canonical_bytes(document))
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_AUTH_EXPIRED"):
+            RemoteRuntimeAttestor(
+                runtime_policy=self.fixture.authority.issuer_runtime_policy,
+                auth_token_file=self.token,
+                opener=StaticOpener([]),
+            )
+
+        document["issuedAt"] = (now - timedelta(minutes=1)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        document["expiresAt"] = (now + timedelta(minutes=30)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        self.token.write_text(
+            json.dumps(document, indent=2),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_AUTH_INVALID"):
+            RemoteRuntimeAttestor(
+                runtime_policy=self.fixture.authority.issuer_runtime_policy,
+                auth_token_file=self.token,
                 opener=StaticOpener([]),
             )
 

@@ -23,7 +23,11 @@ on:
       - "scripts/ops/build_cross_ai_provider_review_revocations.py"
       - "scripts/ops/vault-policy-reconcile.sh"
       - "scripts/ai/build_cross_ai_evidence.py"
+      - "scripts/ai/cross_ai_runtime_authorization.py"
       - "scripts/ai/cross_ai_runtime_attestor.py"
+      - "scripts/ai/cross_ai_runtime_attestor_service.py"
+      - "scripts/ai/run_cross_ai_runtime_attestor.py"
+      - "scripts/ai/runtime-attestor.Dockerfile"
       - "scripts/ai/cross_ai_authority.py"
       - "scripts/ai/post_cross_ai_evidence.py"
       - "scripts/ai/prepare_cross_ai_scope.py"
@@ -32,6 +36,7 @@ on:
       - "scripts/ai/verify_cross_ai_authority_transition.py"
       - "tests/ai/signed_evidence_fixture.py"
       - "tests/ai/test_build_cross_ai_evidence.py"
+      - "tests/ai/test_cross_ai_runtime_attestor_service.py"
       - "tests/ai/test_cross_ai_authority.py"
       - "tests/ai/test_post_cross_ai_evidence.py"
       - "scripts/faz22-remote-ops/**"
@@ -62,7 +67,11 @@ on:
       - "scripts/ops/build_cross_ai_provider_review_revocations.py"
       - "scripts/ops/vault-policy-reconcile.sh"
       - "scripts/ai/build_cross_ai_evidence.py"
+      - "scripts/ai/cross_ai_runtime_authorization.py"
       - "scripts/ai/cross_ai_runtime_attestor.py"
+      - "scripts/ai/cross_ai_runtime_attestor_service.py"
+      - "scripts/ai/run_cross_ai_runtime_attestor.py"
+      - "scripts/ai/runtime-attestor.Dockerfile"
       - "scripts/ai/cross_ai_authority.py"
       - "scripts/ai/post_cross_ai_evidence.py"
       - "scripts/ai/prepare_cross_ai_scope.py"
@@ -71,6 +80,7 @@ on:
       - "scripts/ai/verify_cross_ai_authority_transition.py"
       - "tests/ai/signed_evidence_fixture.py"
       - "tests/ai/test_build_cross_ai_evidence.py"
+      - "tests/ai/test_cross_ai_runtime_attestor_service.py"
       - "tests/ai/test_cross_ai_authority.py"
       - "tests/ai/test_post_cross_ai_evidence.py"
       - "scripts/faz22-remote-ops/**"
@@ -134,7 +144,10 @@ jobs:
           scripts/ops/build_cross_ai_test_trust_root.py
           scripts/ops/build_cross_ai_provider_review_revocations.py
           scripts/ai/build_cross_ai_evidence.py
+          scripts/ai/cross_ai_runtime_authorization.py
           scripts/ai/cross_ai_runtime_attestor.py
+          scripts/ai/cross_ai_runtime_attestor_service.py
+          scripts/ai/run_cross_ai_runtime_attestor.py
           scripts/ai/cross_ai_authority.py
           scripts/ai/post_cross_ai_evidence.py
           scripts/ai/prepare_cross_ai_scope.py
@@ -145,6 +158,7 @@ jobs:
           tests/github_apps/*.py
           tests/ai/signed_evidence_fixture.py
           tests/ai/test_build_cross_ai_evidence.py
+          tests/ai/test_cross_ai_runtime_attestor_service.py
           tests/ai/test_cross_ai_authority.py
           tests/ai/test_post_cross_ai_evidence.py
 
@@ -170,5 +184,6 @@ jobs:
           python3 -m unittest discover -s tests/github_apps -p 'test_*.py' -v
           python3 -m unittest \
             tests.ai.test_build_cross_ai_evidence \
+            tests.ai.test_cross_ai_runtime_attestor_service \
             tests.ai.test_cross_ai_authority \
             tests.ai.test_post_cross_ai_evidence -v

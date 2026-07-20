@@ -20,7 +20,7 @@
         "cliVersion": "codex-cli 0.144.1",
         "cliVersionSha256": "sha256:9b2aa513e4795f64fa05a9aa1cfaeb1bae2a18588b6ac52f8b84ea068b384b54",
         "packageName": "@openai/codex",
-        "packageTarballSha512": "sha512:1cd19523e06e96b39a0bfd08cc1bdde842fada3ecbae56c52a26eb870ea16638c28c0794633441da3078a83cd737535fa838ba5ebbe78a87f79306f069bdb896",
+        "packageTarballSha512": "sha512:5e2af5cea3dfa5e9e1768028b21379deea27cdb0578f5f023b2cd190595566948dc849795ed92e62ef6875d10b78f14decaff4b1751c48edf801de487825cf6f",
         "packageVersion": "0.144.1",
         "platform": "linux-x64",
         "provenanceBuilderId": "https://github.com/actions/runner/github-hosted",

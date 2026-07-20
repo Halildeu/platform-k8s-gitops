@@ -48,7 +48,9 @@ that binds the pinned issuer image/source to the exact prompt, response,
 Codex session, launch capability and provider-review envelope; possession of
 the provider-review signer alone is insufficient.
 The local evidence builder no longer accepts a caller-provided execution or a
-`runner-management` signing token. A pinned fixed-function HTTPS attestor must
+`runner-management` signing token. The fixed-function service, fail-closed
+entrypoint and pinned non-root container contract now exist in source; a pinned
+HTTPS attestor must
 create and retain the direct-Codex session, then bind its stored measurement to
 the provider leaf. The source contract is testable, but live issuance remains
 `tracked_pending` until that workload, its bounded session authorization and

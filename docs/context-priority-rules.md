@@ -507,6 +507,12 @@ session API authorization ile bağlanır; attestor direct Codex'i kendisi çalı
 ölçülen transcript'i saklar ve ancak provider leaf aynı session ile exact
 eşleşirse runtime leaf'i imzalar. Caller-authored execution receipt, yerel
 runtime signer, gevşek izinli veya symlink auth dosyası fail-closed reddedilir.
+Canonical servis, entrypoint ve pinned non-root image sözleşmesi sırasıyla
+`scripts/ai/cross_ai_runtime_attestor_service.py`,
+`scripts/ai/run_cross_ai_runtime_attestor.py` ve
+`scripts/ai/runtime-attestor.Dockerfile` içindedir. Bunların source/CI geçişi
+canlı HTTPS deployment, immutable image digest, session auth veya public
+trust-root/revocation aktivasyonu kanıtı değildir.
 Root rotasyonu eski root ile son imzalı revocation snapshot'ını digest-adresli
 history dizinine byte-for-byte eklemek zorundadır; geçmiş entry veya archived
 byte silinemez/değiştirilemez. Revocation-only geçişi predecessor stale olsun

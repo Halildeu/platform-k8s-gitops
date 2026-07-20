@@ -179,15 +179,14 @@ jobs:
           retention-days: 30
 
   viewer-pilot-surface:
-    name: "Apply or rollback owner-gated #2373 VIEW_ONLY viewer product pilot surface"
+    # The sole human Environment gate is authorize-live-apply. Keeping this
+    # executor outside that Environment lets explicit and compensating rollback
+    # close exposure immediately without requesting a second approval.
+    name: "Apply, dry-run or immediate rollback #2373 VIEW_ONLY viewer product pilot surface"
     needs: [authorize-live-apply]
     if: github.ref == 'refs/heads/main' && always() && (inputs.action != 'apply' || needs.authorize-live-apply.result == 'success')
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 20
-    environment:
-      name: faz22-view-only-pilot
-      url: https://github.com/Halildeu/platform-k8s-gitops/issues/2373
-
     steps:
       - name: Validate dispatch inputs
         env:

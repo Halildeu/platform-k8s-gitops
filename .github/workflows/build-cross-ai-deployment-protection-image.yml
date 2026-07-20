@@ -4,13 +4,23 @@ on:
   pull_request:
     paths:
       - "scripts/github_apps/**"
+      - "scripts/ai/cross_ai_runtime_authorization.py"
+      - "scripts/ai/cross_ai_runtime_attestor_service.py"
+      - "scripts/ai/run_cross_ai_runtime_attestor.py"
+      - "scripts/ai/runtime-attestor.Dockerfile"
       - "schema/cross-ai-deployment-*.schema.json"
+      - "schema/cross-ai-provider-review-*.schema.json"
       - ".github/workflows/build-cross-ai-deployment-protection-image.yml"
   push:
     branches: [main]
     paths:
       - "scripts/github_apps/**"
+      - "scripts/ai/cross_ai_runtime_authorization.py"
+      - "scripts/ai/cross_ai_runtime_attestor_service.py"
+      - "scripts/ai/run_cross_ai_runtime_attestor.py"
+      - "scripts/ai/runtime-attestor.Dockerfile"
       - "schema/cross-ai-deployment-*.schema.json"
+      - "schema/cross-ai-provider-review-*.schema.json"
       - ".github/workflows/build-cross-ai-deployment-protection-image.yml"
 
 permissions:
@@ -18,7 +28,9 @@ permissions:
 
 env:
   IMAGE: ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection
+  RUNTIME_IMAGE: ghcr.io/halildeu/platform-k8s-gitops-cross-ai-runtime-attestor
   DOCKERFILE: scripts/github_apps/cross_ai_deployment_policy/Dockerfile
+  RUNTIME_DOCKERFILE: scripts/ai/runtime-attestor.Dockerfile
 
 jobs:
   container-contract:
@@ -65,6 +77,32 @@ jobs:
             sleep 1
           done
           exit 1
+
+  runtime-attestor-container-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Build pinned fixed-function runtime attestor
+        run: |
+          set -euo pipefail
+          docker build \
+            --platform linux/amd64 \
+            --file "$RUNTIME_DOCKERFILE" \
+            --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+            --tag cross-ai-runtime-attestor:contract \
+            .
+
+      - name: Verify fixed runtime entrypoint and pinned Codex bytes
+        run: |
+          set -euo pipefail
+          docker run --rm cross-ai-runtime-attestor:contract --help >/tmp/runtime-attestor-help.txt
+          grep -F -- '--runner-token-file' /tmp/runtime-attestor-help.txt
+          grep -F -- '--authorization-token-file' /tmp/runtime-attestor-help.txt
+          docker run --rm --entrypoint python cross-ai-runtime-attestor:contract \
+            -c 'import os,pwd; account=pwd.getpwuid(os.getuid()); assert os.getuid() == 10002 and account.pw_dir == "/var/lib/cross-ai-runtime"'
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -116,3 +154,54 @@ jobs:
         run: |
           set -euo pipefail
           printf 'image=%s@%s\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  publish-runtime-attestor:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: runtime-attestor-container-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable runtime attestor
+        id: runtime-build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ${{ env.RUNTIME_DOCKERFILE }}
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: SOURCE_REVISION=${{ github.sha }}
+          tags: ${{ env.RUNTIME_IMAGE }}:sha-${{ github.sha }}
+
+      - name: Attest pushed runtime image digest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.RUNTIME_IMAGE }}
+          subject-digest: ${{ steps.runtime-build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record immutable runtime desired-state input
+        env:
+          DIGEST: ${{ steps.runtime-build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          printf 'runtime_image=%s@%s\n' "$RUNTIME_IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
