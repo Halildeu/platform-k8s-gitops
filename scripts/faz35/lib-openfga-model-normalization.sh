@@ -43,3 +43,12 @@ faz35_select_equivalent_openfga_models() {
     [.[] | select((del(.id) | faz35_openfga_normalize) == \$desired)]
   "
 }
+
+faz35_assert_openfga_model_response_id() {
+  local expected_model_id=$1
+  jq -e --arg expected_model_id "$expected_model_id" '
+    type == "object" and
+    (.authorization_model | type) == "object" and
+    .authorization_model.id == $expected_model_id
+  ' >/dev/null
+}

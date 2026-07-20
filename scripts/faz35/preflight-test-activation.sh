@@ -21,6 +21,7 @@ ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
 SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.yaml"
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
 EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
+EXPECTED_MODEL_JSON="$REPO_ROOT/bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
 MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SHA256.json"
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
@@ -316,8 +317,23 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   }
   live_model=$(remote \
     "kubectl --request-timeout=10s --context k3d-test -n platform-test exec deploy/meeting-service -- curl --connect-timeout 5 --max-time 10 -fsS 'http://openfga:8080/stores/$store_id/authorization-models/$model_id'")
-  expected_model_normalized=$(jq -cS . \
-    "$REPO_ROOT/bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json" | \
+  expected_model_sha=$(jq -j -cS . "$EXPECTED_MODEL_JSON" | sha256_stream)
+  [ "$expected_model_sha" = "$EXPECTED_MODEL_JSON_SHA256" ] || {
+    echo "FATAL: reviewed local OpenFGA model digest is invalid" >&2
+    exit 1
+  }
+  ledger_content_sha=$(jq -r '.artifact_content_digest | sub("^sha256:"; "")' \
+    "$MODEL_LEDGER")
+  [ "$ledger_content_sha" = "$expected_model_sha" ] || {
+    echo "FATAL: local OpenFGA model is not content-bound to the runtime ledger" >&2
+    exit 1
+  }
+  printf '%s' "$live_model" | \
+    faz35_assert_openfga_model_response_id "$model_id" || {
+    echo "FATAL: pinned OpenFGA model response ID is missing or mismatched" >&2
+    exit 1
+  }
+  expected_model_normalized=$(jq -cS . "$EXPECTED_MODEL_JSON" | \
     faz35_normalize_openfga_model)
   live_model_normalized=$(printf '%s' "$live_model" | \
     jq -cS '.authorization_model | del(.id)' | \

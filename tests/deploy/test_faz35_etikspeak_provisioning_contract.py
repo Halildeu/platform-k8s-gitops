@@ -737,6 +737,19 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.preflight,
         )
         self.assertIn("expected_model_normalized", self.preflight)
+        self.assertIn(
+            'expected_model_sha=$(jq -j -cS . "$EXPECTED_MODEL_JSON" | sha256_stream)',
+            self.preflight,
+        )
+        self.assertIn(
+            '[ "$expected_model_sha" = "$EXPECTED_MODEL_JSON_SHA256" ]',
+            self.preflight,
+        )
+        self.assertIn(
+            '[ "$ledger_content_sha" = "$expected_model_sha" ]',
+            self.preflight,
+        )
+        self.assertIn("faz35_assert_openfga_model_response_id", self.preflight)
 
         # Exercise the exact OpenFGA GET response envelope. The server's JSON
         # whitespace and jq's normal output newline are transport details; only
@@ -800,6 +813,87 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertEqual(normalized_readback, normalized_desired)
         self.assertIn("del(.condition | select(. == \"\"))", self.openfga_normalization_lib)
         self.assertIn("del(.object | select(. == \"\"))", self.openfga_normalization_lib)
+
+        materially_different = json.loads(json.dumps(server_readback))
+        materially_different["type_definitions"][1]["relations"]["member"] = {
+            "computedUserset": {"relation": "member", "object": ""}
+        }
+
+        def select_matches(models):
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; '
+                    'desired=$(printf "%s" "$2" | faz35_normalize_openfga_model); '
+                    'printf "%s" "$3" | '
+                    'faz35_select_equivalent_openfga_models "$desired"',
+                    "bash",
+                    str(self.openfga_normalization_lib_path),
+                    json.dumps(compiled_model),
+                    json.dumps(models),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            return json.loads(result.stdout)
+
+        equivalent_one = {"id": "01KW0EJTM60YGZTEKNGS7PDPNP", **server_readback}
+        different_one = {"id": "01KW0EJTM60YGZTEKNGS7PDPNQ", **materially_different}
+        self.assertEqual(
+            [model["id"] for model in select_matches([equivalent_one, different_one])],
+            [equivalent_one["id"]],
+        )
+        equivalent_two = {"id": "01KW0EJTM60YGZTEKNGS7PDPNR", **server_readback}
+        self.assertEqual(
+            len(select_matches([equivalent_one, equivalent_two])),
+            2,
+        )
+
+        valid_response = {"authorization_model": equivalent_one}
+        valid_id = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; printf "%s" "$3" | '
+                'faz35_assert_openfga_model_response_id "$2"',
+                "bash",
+                str(self.openfga_normalization_lib_path),
+                equivalent_one["id"],
+                json.dumps(valid_response),
+            ],
+            check=False,
+        )
+        wrong_id = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; printf "%s" "$3" | '
+                'faz35_assert_openfga_model_response_id "$2"',
+                "bash",
+                str(self.openfga_normalization_lib_path),
+                different_one["id"],
+                json.dumps(valid_response),
+            ],
+            check=False,
+        )
+        missing_id = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; printf "%s" "$3" | '
+                'faz35_assert_openfga_model_response_id "$2"',
+                "bash",
+                str(self.openfga_normalization_lib_path),
+                equivalent_one["id"],
+                json.dumps({"authorization_model": compiled_model}),
+            ],
+            check=False,
+        )
+        self.assertEqual(valid_id.returncode, 0)
+        self.assertNotEqual(wrong_id.returncode, 0)
+        self.assertNotEqual(missing_id.returncode, 0)
 
         fga_source = (
             ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
