@@ -1249,7 +1249,7 @@ const cases = [
       baseSha: REAL_TRUSTED_BASE_PARENT_SHA, body: explicitNoneBody,
       changedFiles: [ROUTINE_PATH], evidence: realTrustedBaseCodexV4Evidence,
       includeTrustedSourceOverride: false,
-      expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['none mode rejects a post-retirement OpenAI v1 record',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
