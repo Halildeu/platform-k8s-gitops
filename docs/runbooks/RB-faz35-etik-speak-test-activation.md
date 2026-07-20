@@ -238,7 +238,7 @@ kubectl --context k3d-test -n platform-test exec deploy/etik-speak-manager -- \
 ```
 
 Backend, public UI and manager pod `imageID` values must match the reviewed
-digests, and the manager remote hash must be recorded against the same immutable
+digests, and the manager entrypoint hash must be recorded against the same immutable
 image. `Up` alone is not functional acceptance.
 
 The ES-1 manager is intentionally an isolated SPA, not the shared suite shell.

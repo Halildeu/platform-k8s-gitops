@@ -9,7 +9,7 @@
 #   1. All image refs use @sha256:<digest> (no moving tags like :latest, :main-stable)
 #   2. GHCR manifest existence — pinned digests must exist (catches GC'd digests
 #      like the sha256:2a7076c9 schema-service incident)
-#   3. ConfigMap KEYCLOAK_ISSUER_URI present for JWT-validating services +
+#   3. Catalog JWT service issuer/JWKS pair present and environment-correct +
 #      user-service SERVICE_AUTH_* invariants (Codex 019e1e0f Session 47
 #      stabilization follow-up — prevents kcSubject leak recurrence by
 #      pinning auth-service-issued service-token verifier endpoints).
@@ -74,7 +74,7 @@ fi
 
 # Check 3: ConfigMap invariants for JWT-validating services
 # (Codex AGREE retrospective tur — hardening per item "ConfigMap Invariant"):
-#   - Both KEYCLOAK_ISSUER_URI AND KEYCLOAK_JWKS_URI must be present
+#   - A supported KEYCLOAK_* or SECURITY_JWT_* issuer/JWKS pair must be present
 #   - OVERLAY_MUST_OVERRIDE placeholder must NOT leak into rendered overlay
 #   - Issuer must match expected per environment:
 #       test  → https://testai.acik.com/realms/platform-test  (or internal http://keycloak:8080/realms/platform-test)
@@ -82,77 +82,27 @@ fi
 #   - JWKS path must end with /protocol/openid-connect/certs
 echo
 echo "=== Check 3: ConfigMap invariants (Codex hardening) ==="
-JWT_SERVICES="api-gateway user-service variant-service permission-service schema-service report-service"
 check3_output=$(echo "$RENDER" | python3 -c "
 import sys, yaml, re
+sys.path.insert(0, '$REPO_ROOT/scripts/drift_detection')
+from lib.catalog_runtime_contracts import jwt_config_findings
+from lib.services_catalog import ServicesCatalog
 
 ENV = '$ENV'
-EXPECTED_ISSUERS = {
-    'prod': ['https://ai.acik.com/realms/serban'],
-    'test': [
-        'https://testai.acik.com/realms/platform-test',
-        'http://keycloak:8080/realms/platform-test',
-        'http://keycloak:8080/realms/serban',  # legacy fallback (some test fixtures use serban)
-    ],
-}
-expected = EXPECTED_ISSUERS.get(ENV, [])
-
 docs = list(yaml.safe_load_all(sys.stdin))
-fail_count = 0
-for svc in '$JWT_SERVICES'.split():
-    cm = next(
-        (d for d in docs
-         if isinstance(d, dict) and d.get('kind') == 'ConfigMap'
-         and d.get('metadata', {}).get('name') == f'{svc}-config'),
-        None,
-    )
-    if cm is None:
-        print(f'[SKIP] {svc}-config not in render (services.yaml gate will handle this in P0 next)')
-        continue
-
-    data = cm.get('data') or {}
-    issuer = data.get('KEYCLOAK_ISSUER_URI', '')
-    jwks = data.get('KEYCLOAK_JWKS_URI', '')
-
-    # Check 1: presence
-    if not issuer:
-        print(f'[FAIL] {svc} KEYCLOAK_ISSUER_URI missing')
-        fail_count += 1
-        continue
-    if not jwks:
-        print(f'[FAIL] {svc} KEYCLOAK_JWKS_URI missing')
-        fail_count += 1
-        continue
-
-    # Check 2: placeholder leak
-    if 'OVERLAY_MUST_OVERRIDE' in issuer:
-        print(f'[FAIL] {svc} KEYCLOAK_ISSUER_URI = OVERLAY_MUST_OVERRIDE placeholder leaked into {ENV} render')
-        fail_count += 1
-        continue
-    if 'OVERLAY_MUST_OVERRIDE' in jwks:
-        print(f'[FAIL] {svc} KEYCLOAK_JWKS_URI = OVERLAY_MUST_OVERRIDE placeholder leaked into {ENV} render')
-        fail_count += 1
-        continue
-
-    # Check 3: issuer matches env expectation
-    if expected and issuer not in expected:
-        print(f'[FAIL] {svc} KEYCLOAK_ISSUER_URI={issuer} not in expected for {ENV}: {expected}')
-        fail_count += 1
-        continue
-
-    # Check 4: JWKS path
-    if not jwks.endswith('/protocol/openid-connect/certs'):
-        print(f'[FAIL] {svc} KEYCLOAK_JWKS_URI={jwks} does not end with /protocol/openid-connect/certs')
-        fail_count += 1
-        continue
-
-    print(f'[OK]  {svc} ISSUER+JWKS valid')
+catalog = ServicesCatalog.from_yaml('$REPO_ROOT/docs/operations/services.yaml')
+jwt_findings = jwt_config_findings(docs, catalog, ENV)
+fail_count = len(jwt_findings)
+for finding in jwt_findings:
+    print(f'[FAIL] {finding.message}')
+if not jwt_findings:
+    print('[OK]  catalog JWT issuer/JWKS invariants satisfied')
 
 # Codex 019e1e0f follow-up — Session 47 stabilization invariant.
 # user-service's ServiceTokenAuthenticationFilter uses a SEPARATE
 # property chain (security.service-auth.*) from the OIDC JWT decoder
 # (security.oauth2.resourceserver.jwt.*). The application.properties
-# defaults hardcode unreachable `localhost:8081/realms/serban` — if
+# defaults hardcode unreachable localhost:8081/realms/serban — if
 # a future refactor drops the env override in user-service-config,
 # Session 47 drift recurs silently (internal service-token endpoint
 # 401s, kcSubject leaks back to public DTOs).

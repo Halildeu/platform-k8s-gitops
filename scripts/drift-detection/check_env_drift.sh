@@ -308,26 +308,17 @@ RENDER=$(kubectl kustomize "$OVERLAY" 2>/dev/null) || {
 declare -A YAML_DIGESTS
 while IFS=$'\t' read -r svc digest; do
   [[ -n "$svc" && -n "$digest" ]] && YAML_DIGESTS["$svc"]="$digest"
-done < <(echo "$RENDER" | awk '
-  /name: (auth-service|api-gateway|user-service|variant-service|core-data-service|report-service|schema-service|permission-service|frontend|endpoint-admin-service|openfga|workcube-mssql-bridge)$/ {
-    svc=$2
-    next
-  }
-  /image:.*@sha256:/ {
-    n=split($2, p, "@")
-    if (n==2 && svc!="") {
-      img_path=p[1]
-      digest=p[2]
-      # match by image short name suffix
-      n2=split(img_path, q, "/")
-      img_short=q[n2]
-      sub(/^platform-(backend|web)-/, "", img_short)
-      sub(/-testai$/, "", img_short)
-      printf "%s\t%s\n", img_short, digest
-    }
-    svc=""
-  }
-')
+done < <(printf '%s' "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
+  python3 -c '
+import sys, yaml
+from lib.catalog_runtime_contracts import desired_image_digests
+from lib.services_catalog import ServicesCatalog
+
+catalog = ServicesCatalog.from_yaml(sys.argv[2])
+digests = desired_image_digests(yaml.safe_load_all(sys.stdin), catalog, sys.argv[1])
+for name, digest in sorted(digests.items()):
+    print(f"{name}\t{digest}")
+' "$ENV" "$REPO_ROOT/docs/operations/services.yaml")
 
 # Live pod imageIDs
 declare -A POD_DIGESTS
@@ -363,16 +354,24 @@ for svc in "${!POD_DIGESTS[@]}"; do
 done
 set -u
 
-# ---- 3. ConfigMap KC issuer parity (services that validate JWT) -------------
-JWT_SERVICES=(api-gateway user-service variant-service permission-service schema-service report-service)
-for svc in "${JWT_SERVICES[@]}"; do
-  iss=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get configmap "${svc}-config" \
-    -o jsonpath='{.data.KEYCLOAK_ISSUER_URI}' 2>/dev/null || echo "")
-  if [[ -z "$iss" ]]; then
-    add_finding P1 configmap_kc_missing "$svc: KEYCLOAK_ISSUER_URI not set"
+# ---- 3. Catalog-driven JWT issuer/JWKS parity -------------------------------
+LIVE_CONFIGMAPS=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get configmaps -o yaml 2>/dev/null)
+jwt_output=$(printf '%s' "$LIVE_CONFIGMAPS" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
+  python3 -c '
+import sys, yaml
+from lib.catalog_runtime_contracts import jwt_config_findings
+from lib.services_catalog import ServicesCatalog
+
+catalog = ServicesCatalog.from_yaml(sys.argv[2])
+for finding in jwt_config_findings(yaml.safe_load_all(sys.stdin), catalog, sys.argv[1]):
+    print(f"{finding.code}\t{finding.message}")
+' "$ENV" "$REPO_ROOT/docs/operations/services.yaml")
+while IFS=$'\t' read -r code message; do
+  if [[ -n "$code" ]]; then
+    add_finding P1 "$code" "$message"
     mark_p1
   fi
-done
+done <<< "$jwt_output"
 
 # ---- 4. ResourceQuota headroom (P2 if surge pod won't fit) ------------------
 QUOTA_RAW=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get resourcequota platform-quota \

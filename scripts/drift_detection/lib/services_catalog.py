@@ -33,6 +33,7 @@ class Service:
     jvm_warmup_extra: bool = False
     environments: dict[str, str] = field(default_factory=dict)
     third_party: bool = False
+    jwt_validates: bool = True
 
     def is_enabled_in(self, env: str) -> bool:
         return self.environments.get(env) == "enabled"
@@ -131,4 +132,5 @@ def _parse_service(entry: dict) -> Service:
         jvm_warmup_extra=bool(entry.get("jvm_warmup_extra", False)),
         environments=dict(envs),
         third_party=bool(entry.get("third_party", False)),
+        jwt_validates=bool(entry.get("jwt_validates", True)),
     )
