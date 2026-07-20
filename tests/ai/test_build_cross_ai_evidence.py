@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.ai import build_cross_ai_evidence as MODULE
+from scripts.ai.cross_ai_runtime_attestor import RemoteRuntimeAttestor
 from scripts.ai.trusted_cross_ai_evidence import canonical_bytes, validate_evidence
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.contract import (
@@ -33,26 +34,26 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/ai/build_cross_ai_evidence.py"
 
 
-class StaticRunner:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def run(self, *, prompt, model, workspace, timeout_seconds=600):
-        self.calls += 1
-        self.prompt = prompt
-        self.model = model
-        self.workspace = workspace
-        self.timeout_seconds = timeout_seconds
-        return execution_receipt(prompt, model=model)
-
-
 class StaticRuntimeAttestor:
     def __init__(self, fixture) -> None:
         self.fixture = fixture
+        self.execute_calls = 0
         self.calls = 0
 
+    def execute(
+        self, *, prompt, model, bindings, subject_sha256, timeout_seconds,
+    ):
+        self.execute_calls += 1
+        self.prompt = prompt
+        self.model = model
+        self.bindings = bindings
+        self.subject_sha256 = subject_sha256
+        self.timeout_seconds = timeout_seconds
+        self.execution = execution_receipt(prompt, model=model)
+        return self.execution
+
     def attest(
-        self, *, provider_review_envelope, execution, prompt_sha256,
+        self, *, provider_review_envelope, prompt_sha256,
         issued_at, expires_at,
     ):
         self.calls += 1
@@ -68,9 +69,9 @@ class StaticRuntimeAttestor:
                 provider_review_envelope
             ),
             "promptSha256": prompt_sha256,
-            "responseSha256": execution.output_sha256,
-            "capabilitySnapshotSha256": execution.capability_snapshot_sha256,
-            "providerSessionId": execution.provider_session_id,
+            "responseSha256": self.execution.output_sha256,
+            "capabilitySnapshotSha256": self.execution.capability_snapshot_sha256,
+            "providerSessionId": self.execution.provider_session_id,
             "issuedAt": issued_at,
             "expiresAt": expires_at,
         }
@@ -97,6 +98,16 @@ class StaticHttpResponse:
         return self.raw
 
 
+class StaticOpener:
+    def __init__(self, documents):
+        self.responses = [StaticHttpResponse(document) for document in documents]
+        self.requests = []
+
+    def open(self, request, timeout):
+        self.requests.append((request, timeout))
+        return self.responses.pop(0)
+
+
 class EvidenceBuilderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -118,7 +129,6 @@ class EvidenceBuilderTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_fixed_launcher_derives_prompt_runs_once_and_self_verifies_signed_v3(self) -> None:
-        runner = StaticRunner()
         with (
             patch.object(
                 MODULE,
@@ -129,16 +139,15 @@ class EvidenceBuilderTests(unittest.TestCase):
         ):
             summary = MODULE.build_signed_evidence(
                 self.args,
-                runner=runner,
                 signer=StaticSigner(
                     self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                 ),
                 authority=self.fixture.authority,
                 runtime_attestor=self.runtime_attestor,
             )
-        self.assertEqual(runner.calls, 1)
-        self.assertEqual(runner.model, "gpt-5.6-sol")
-        self.assertIn("REVIEW_COORDINATES=", runner.prompt)
+        self.assertEqual(self.runtime_attestor.execute_calls, 1)
+        self.assertEqual(self.runtime_attestor.model, "gpt-5.6-sol")
+        self.assertIn("REVIEW_COORDINATES=", self.runtime_attestor.prompt)
         self.assertEqual(summary["schema"], "cross-ai-provider-evidence/v3")
         self.assertEqual(summary["verdict"], "AGREE")
         raw = self.output.read_bytes()
@@ -238,7 +247,6 @@ class EvidenceBuilderTests(unittest.TestCase):
         self.assertNotIn("origin", str(builder.return_value.open.call_args))
 
     def test_leaf_time_and_authority_are_refreshed_after_provider_returns(self) -> None:
-        runner = StaticRunner()
         completed_at = self.fixture.factory.now + timedelta(minutes=10)
         with (
             patch.object(
@@ -253,7 +261,6 @@ class EvidenceBuilderTests(unittest.TestCase):
         ):
             MODULE.build_signed_evidence(
                 self.args,
-                runner=runner,
                 signer=StaticSigner(
                     self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                 ),
@@ -269,7 +276,7 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
 
         self.output.unlink()
-        runner = StaticRunner()
+        runtime_attestor = StaticRuntimeAttestor(self.fixture)
         stale_time = self.fixture.factory.now + timedelta(hours=2)
         with (
             patch.object(
@@ -289,14 +296,13 @@ class EvidenceBuilderTests(unittest.TestCase):
             with self.assertRaisesRegex(PolicyError, "REVOCATIONS_STALE"):
                 MODULE.build_signed_evidence(
                     self.args,
-                    runner=runner,
                     signer=StaticSigner(
                         self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                     ),
-                    runtime_attestor=self.runtime_attestor,
+                    runtime_attestor=runtime_attestor,
                 )
         self.assertEqual(authority_loader.call_count, 2)
-        self.assertEqual(runner.calls, 1)
+        self.assertEqual(runtime_attestor.execute_calls, 1)
 
     def test_old_caller_authored_response_and_coordinate_arguments_are_rejected(self) -> None:
         result = subprocess.run(
@@ -317,10 +323,8 @@ class EvidenceBuilderTests(unittest.TestCase):
                 str(self.workspace / "unused-token"),
                 "--provider-key-version",
                 "1",
-                "--runtime-token-file",
-                str(self.workspace / "unused-runtime-token"),
-                "--runtime-key-version",
-                "1",
+                "--attestor-auth-token-file",
+                str(self.workspace / "unused-attestor-auth"),
                 "--output",
                 str(self.output),
             ],
@@ -335,7 +339,6 @@ class EvidenceBuilderTests(unittest.TestCase):
 
     def test_routine_class_maps_only_to_the_pinned_spark_route(self) -> None:
         self.args.consultation_class = "routine"
-        runner = StaticRunner()
         with (
             patch.object(
                 MODULE,
@@ -346,18 +349,16 @@ class EvidenceBuilderTests(unittest.TestCase):
         ):
             summary = MODULE.build_signed_evidence(
                 self.args,
-                runner=runner,
                 signer=StaticSigner(
                     self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                 ),
                 authority=self.fixture.authority,
                 runtime_attestor=self.runtime_attestor,
             )
-        self.assertEqual(runner.model, "gpt-5.3-codex-spark")
+        self.assertEqual(self.runtime_attestor.model, "gpt-5.3-codex-spark")
         self.assertEqual(summary["model_id"], "gpt-5.3-codex-spark")
 
     def test_wrong_signer_role_fails_before_provider_execution(self) -> None:
-        runner = StaticRunner()
         with (
             patch.object(
                 MODULE,
@@ -369,7 +370,6 @@ class EvidenceBuilderTests(unittest.TestCase):
             with self.assertRaisesRegex(PolicyError, "TRUST_SIGNER_BINDING_MISMATCH"):
                 MODULE.build_signed_evidence(
                     self.args,
-                    runner=runner,
                     signer=StaticSigner(
                         self.fixture.factory,
                         self.fixture.factory.COORDINATOR_KEY_ID,
@@ -377,10 +377,9 @@ class EvidenceBuilderTests(unittest.TestCase):
                     authority=self.fixture.authority,
                     runtime_attestor=self.runtime_attestor,
                 )
-        self.assertEqual(runner.calls, 0)
+        self.assertEqual(self.runtime_attestor.execute_calls, 0)
 
     def test_provider_signing_capability_alone_cannot_issue_accepted_evidence(self) -> None:
-        runner = StaticRunner()
         with (
             patch.object(
                 MODULE,
@@ -394,82 +393,24 @@ class EvidenceBuilderTests(unittest.TestCase):
             ):
                 MODULE.build_signed_evidence(
                     self.args,
-                    runner=runner,
                     signer=StaticSigner(
                         self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                     ),
                     authority=self.fixture.authority,
                 )
-        self.assertEqual(runner.calls, 0)
+        self.assertEqual(self.runtime_attestor.execute_calls, 0)
 
-    def test_provider_and_runtime_token_aliases_are_rejected(self) -> None:
-        provider_token = self.workspace / "provider-token"
-        runtime_token = self.workspace / "runtime-token"
-        for alias_kind in ("hardlink", "copied-credential"):
-            with self.subTest(alias_kind=alias_kind):
-                provider_token.write_text("hvs." + ("a" * 40), encoding="ascii")
-                provider_token.chmod(0o600)
-                if alias_kind == "hardlink":
-                    runtime_token.hardlink_to(provider_token)
-                else:
-                    runtime_token.write_bytes(provider_token.read_bytes())
-                    runtime_token.chmod(0o600)
-                self.args.provider_token_file = provider_token
-                self.args.provider_key_version = 1
-                self.args.runtime_token_file = runtime_token
-                self.args.runtime_key_version = 1
-                runner = StaticRunner()
-                with (
-                    patch.object(
-                        MODULE,
-                        "_scope",
-                        return_value=(self.fixture.bindings, self.fixture.scope_bytes),
-                    ),
-                    patch.object(
-                        MODULE, "utc_now", return_value=self.fixture.factory.now
-                    ),
-                    self.assertRaisesRegex(
-                        PolicyError,
-                        "VAULT_TOKEN_FILE_INVALID|TRUSTED_ISSUER_SERVICE_REQUIRED",
-                    ),
-                ):
-                    MODULE.build_signed_evidence(
-                        self.args,
-                        runner=runner,
-                        authority=self.fixture.authority,
-                    )
-                self.assertEqual(runner.calls, 0)
-                runtime_token.unlink()
-                provider_token.unlink()
+    def test_forged_runner_and_runtime_transit_token_surface_is_absent(self) -> None:
+        import inspect
 
-    def test_vault_runtime_attestor_binds_live_launcher_and_management_key(self) -> None:
-        policy = dict(self.fixture.authority.issuer_runtime_policy)
-        policy["launcherSourceSha256"] = "sha256:" + hashlib.sha256(
-            Path(MODULE.__file__).read_bytes()
-        ).hexdigest()
-        signer = StaticSigner(
-            self.fixture.factory, self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID
-        )
-        attestor = MODULE.VaultTransitRuntimeAttestor(
-            signer=signer,
-            runtime_policy=policy,
-        )
-        execution = execution_receipt("review prompt")
-        envelope = attestor.attest(
-            provider_review_envelope=self.fixture.evidence["review_envelope"],
-            execution=execution,
-            prompt_sha256=execution.input_sha256,
-            issued_at="2026-07-18T20:00:00Z",
-            expires_at="2026-07-18T20:10:00Z",
-        )
-        self.assertEqual(
-            envelope["signatures"][0]["keyid"],
-            self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
-        )
+        parameters = inspect.signature(MODULE.build_signed_evidence).parameters
+        self.assertNotIn("runner", parameters)
+        source = Path(MODULE.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("runtime-token-file", source)
+        self.assertNotIn('key_name="runner-management"', source)
 
     def test_evidence_output_is_create_once(self) -> None:
         self.output.write_text("occupied", encoding="utf-8")
-        runner = StaticRunner()
         with (
             patch.object(
                 MODULE,
@@ -481,7 +422,6 @@ class EvidenceBuilderTests(unittest.TestCase):
             with self.assertRaisesRegex(PolicyError, "EVIDENCE_OUTPUT_INVALID"):
                 MODULE.build_signed_evidence(
                     self.args,
-                    runner=runner,
                     signer=StaticSigner(
                         self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                     ),
@@ -489,8 +429,155 @@ class EvidenceBuilderTests(unittest.TestCase):
                     runtime_attestor=self.runtime_attestor,
                 )
         self.assertEqual(self.output.read_text(encoding="utf-8"), "occupied")
-        self.assertEqual(runner.calls, 0)
+        self.assertEqual(self.runtime_attestor.execute_calls, 0)
 
+
+class RemoteRuntimeAttestorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.token = self.root / "attestor-auth"
+        self.token.write_text("attestor." + ("a" * 64), encoding="ascii")
+        self.token.chmod(0o600)
+        self.fixture = make_signed_evidence()
+        self.prompt = "canonical review prompt"
+        self.execution = execution_receipt(self.prompt)
+        self.execution_document = {
+            "providerFamily": self.execution.provider_family,
+            "channel": self.execution.channel,
+            "directProviderCli": self.execution.direct_provider_cli,
+            "modelId": self.execution.model_id,
+            "modelIdentityClass": self.execution.model_identity_class,
+            "reasoningEffort": self.execution.reasoning_effort,
+            "sandbox": self.execution.sandbox,
+            "ephemeral": self.execution.ephemeral,
+            "providerSessionId": self.execution.provider_session_id,
+            "providerTranscriptSha256": self.execution.provider_transcript_sha256,
+            "capabilitySnapshot": self.execution.capability_snapshot,
+            "capabilitySnapshotSha256": self.execution.capability_snapshot_sha256,
+            "inputSha256": self.execution.input_sha256,
+            "outputSha256": self.execution.output_sha256,
+            "resultText": self.execution.result_text,
+        }
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_remote_service_executes_then_attests_its_stored_session(self) -> None:
+        runtime_envelope = self.fixture.evidence["issuer_runtime_envelope"]
+        opener = StaticOpener(
+            [
+                {
+                    "schemaVersion": "acik.cross-ai-provider-review-runtime-session-response.v1",
+                    "sessionId": "60000000-0000-4000-8000-000000000099",
+                    "execution": self.execution_document,
+                },
+                {
+                    "schemaVersion": "acik.cross-ai-provider-review-runtime-finalize-response.v1",
+                    "runtimeAttestationEnvelope": runtime_envelope,
+                },
+            ]
+        )
+        client = RemoteRuntimeAttestor(
+            runtime_policy=self.fixture.authority.issuer_runtime_policy,
+            auth_token_file=self.token,
+            opener=opener,
+        )
+        receipt = client.execute(
+            prompt=self.prompt,
+            model="gpt-5.6-sol",
+            bindings=self.fixture.bindings,
+            subject_sha256="sha256:" + ("b" * 64),
+            timeout_seconds=600,
+        )
+        envelope = client.attest(
+            provider_review_envelope=self.fixture.evidence["review_envelope"],
+            prompt_sha256=receipt.input_sha256,
+            issued_at="2026-07-18T20:00:00Z",
+            expires_at="2026-07-18T20:10:00Z",
+        )
+        self.assertEqual(runtime_envelope, envelope)
+        self.assertEqual(2, len(opener.requests))
+        first = json.loads(opener.requests[0][0].data)
+        second = json.loads(opener.requests[1][0].data)
+        self.assertNotIn("execution", first)
+        self.assertEqual(
+            sha256_digest(self.execution_document), second["executionSha256"]
+        )
+        self.assertNotIn("runner-management", opener.requests[0][0].headers.values())
+
+    def test_caller_cannot_supply_a_forged_execution(self) -> None:
+        forged = dict(self.execution_document)
+        forged["inputSha256"] = "sha256:" + ("0" * 64)
+        opener = StaticOpener(
+            [
+                {
+                    "schemaVersion": "acik.cross-ai-provider-review-runtime-session-response.v1",
+                    "sessionId": "60000000-0000-4000-8000-000000000099",
+                    "execution": forged,
+                }
+            ]
+        )
+        client = RemoteRuntimeAttestor(
+            runtime_policy=self.fixture.authority.issuer_runtime_policy,
+            auth_token_file=self.token,
+            opener=opener,
+        )
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_BINDING_MISMATCH"):
+            client.execute(
+                prompt=self.prompt,
+                model="gpt-5.6-sol",
+                bindings=self.fixture.bindings,
+                subject_sha256="sha256:" + ("b" * 64),
+                timeout_seconds=600,
+            )
+
+    def test_session_cannot_execute_twice(self) -> None:
+        opener = StaticOpener(
+            [
+                {
+                    "schemaVersion": "acik.cross-ai-provider-review-runtime-session-response.v1",
+                    "sessionId": "60000000-0000-4000-8000-000000000099",
+                    "execution": self.execution_document,
+                }
+            ]
+        )
+        client = RemoteRuntimeAttestor(
+            runtime_policy=self.fixture.authority.issuer_runtime_policy,
+            auth_token_file=self.token,
+            opener=opener,
+        )
+        arguments = {
+            "prompt": self.prompt,
+            "model": "gpt-5.6-sol",
+            "bindings": self.fixture.bindings,
+            "subject_sha256": "sha256:" + ("b" * 64),
+            "timeout_seconds": 600,
+        }
+        client.execute(**arguments)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_SESSION_REUSED"):
+            client.execute(**arguments)
+        self.assertEqual(1, len(opener.requests))
+
+    def test_attestor_auth_rejects_weak_permissions_and_symlink(self) -> None:
+        self.token.chmod(0o644)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_AUTH_INVALID"):
+            RemoteRuntimeAttestor(
+                runtime_policy=self.fixture.authority.issuer_runtime_policy,
+                auth_token_file=self.token,
+                opener=StaticOpener([]),
+            )
+        self.token.chmod(0o600)
+        alias = self.root / "alias"
+        alias.symlink_to(self.token)
+        with self.assertRaisesRegex(
+            PolicyError, "PROVIDER_RUNTIME_AUTH_UNAVAILABLE|PROVIDER_RUNTIME_AUTH_INVALID"
+        ):
+            RemoteRuntimeAttestor(
+                runtime_policy=self.fixture.authority.issuer_runtime_policy,
+                auth_token_file=alias,
+                opener=StaticOpener([]),
+            )
 
 if __name__ == "__main__":
     unittest.main()

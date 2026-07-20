@@ -97,14 +97,17 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["schemaVersion", "workloadIdentity", "issuerImageDigest", "launcherSourceSha256", "attestorKeyId", "maxAttestationLifetimeSeconds"],
+          "required": ["schemaVersion", "workloadIdentity", "issuerImageDigest", "launcherSourceSha256", "attestorKeyId", "maxAttestationLifetimeSeconds", "apiOrigin", "sessionPath", "authAudience"],
           "properties": {
             "schemaVersion": {"const": "acik.cross-ai-provider-review-runtime-policy.v1"},
             "workloadIdentity": {"const": "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"},
             "issuerImageDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
             "launcherSourceSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
             "attestorKeyId": {"type": "string", "pattern": "^vault-transit://cross-ai/runner-management#v[1-9][0-9]*$"},
-            "maxAttestationLifetimeSeconds": {"const": 600}
+            "maxAttestationLifetimeSeconds": {"const": 600},
+            "apiOrigin": {"type": "string", "pattern": "^https://[a-z0-9.-]+(?::[1-9][0-9]{0,4})?$"},
+            "sessionPath": {"const": "/api/v1/cross-ai/provider-review-runtime/sessions"},
+            "authAudience": {"const": "acik-cross-ai-provider-review-runtime"}
           }
         }
       ]

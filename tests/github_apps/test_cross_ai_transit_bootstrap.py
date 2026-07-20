@@ -235,6 +235,7 @@ class TransitBootstrapTests(unittest.TestCase):
             expires_at="2026-08-17T18:00:00Z",
             issuer_image_digest="sha256:" + ("b" * 64),
             launcher_source_sha256="sha256:" + ("c" * 64),
+            attestor_api_origin="https://testai.acik.com",
         )
         schema = json.loads(
             (

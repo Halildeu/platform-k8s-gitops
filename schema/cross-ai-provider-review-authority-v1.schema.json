@@ -177,7 +177,10 @@
         "issuerImageDigest",
         "launcherSourceSha256",
         "attestorKeyId",
-        "maxAttestationLifetimeSeconds"
+        "maxAttestationLifetimeSeconds",
+        "apiOrigin",
+        "sessionPath",
+        "authAudience"
       ],
       "properties": {
         "schemaVersion": {"const": "acik.cross-ai-provider-review-runtime-policy.v1"},
@@ -185,7 +188,10 @@
         "issuerImageDigest": {"$ref": "#/$defs/digest"},
         "launcherSourceSha256": {"$ref": "#/$defs/digest"},
         "attestorKeyId": {"type": "string", "pattern": "^vault-transit://cross-ai/runner-management#v[1-9][0-9]*$"},
-        "maxAttestationLifetimeSeconds": {"const": 600}
+        "maxAttestationLifetimeSeconds": {"const": 600},
+        "apiOrigin": {"type": "string", "pattern": "^https://[a-z0-9.-]+(?::[1-9][0-9]{0,4})?$"},
+        "sessionPath": {"const": "/api/v1/cross-ai/provider-review-runtime/sessions"},
+        "authAudience": {"const": "acik-cross-ai-provider-review-runtime"}
       }
     },
     "historicalAuthority": {

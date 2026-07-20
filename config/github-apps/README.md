@@ -92,9 +92,10 @@ Provider rotation does not collapse issuer-runtime independence: the OpenAI
 provider issuer may use only the provider-review signer, while a separate
 workload-identity-bound attestor owns runner-management signing and binds the
 pinned issuer image and launcher source to the exact prompt, response, Codex
-session, capability snapshot and provider-review envelope. The raw evidence
-CLI carries neither credential and cannot issue accepted evidence outside
-those fixed services.
+session, capability snapshot and provider-review envelope. The evidence CLI
+may carry only a one-use provider-review sign token and a short-lived, bounded,
+fixed-purpose attestor session authorization; it never carries the runner-management Transit
+capability and cannot self-attest an execution.
 
 Trust-root rotation is an append-only public transition. A replacement root
 must start at the exact recorded retirement time of the predecessor and the

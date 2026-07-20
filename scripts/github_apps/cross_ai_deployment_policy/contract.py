@@ -1113,6 +1113,9 @@ class EvidenceVerifier:
             "launcherSourceSha256",
             "attestorKeyId",
             "maxAttestationLifetimeSeconds",
+            "apiOrigin",
+            "sessionPath",
+            "authAudience",
         }
         if (
             not isinstance(runtime_policy, dict)
@@ -1120,6 +1123,10 @@ class EvidenceVerifier:
             or runtime_policy.get("schemaVersion")
             != "acik.cross-ai-provider-review-runtime-policy.v1"
             or runtime_policy.get("maxAttestationLifetimeSeconds") != 600
+            or runtime_policy.get("sessionPath")
+            != "/api/v1/cross-ai/provider-review-runtime/sessions"
+            or runtime_policy.get("authAudience")
+            != "acik-cross-ai-provider-review-runtime"
         ):
             reject(
                 "PROVIDER_RUNTIME_POLICY_INVALID",

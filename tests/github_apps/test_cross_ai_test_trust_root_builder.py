@@ -94,6 +94,7 @@ def build(
         expires_at=expires_at,
         issuer_image_digest=ISSUER_IMAGE_DIGEST,
         launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
+        attestor_api_origin="https://testai.acik.com",
         previous_trust_root=previous_trust_root,
     )
 
@@ -146,7 +147,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "d91e9b44c34ea75510364843d01fcda8c07c59a069d7ec8edc61eeaf07268ec3",
+            "faa8781bb34fbce357dde97e8bc0598be1a51f9e556e43eecae838371cc9402e",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:
@@ -261,6 +262,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                     expires_at=invalid,
                     issuer_image_digest=ISSUER_IMAGE_DIGEST,
                     launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
+                    attestor_api_origin="https://testai.acik.com",
                 )
 
     def test_rejects_unknown_missing_extra_duplicate_and_swapped_keys(self) -> None:
@@ -347,6 +349,8 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                 ISSUER_IMAGE_DIGEST,
                 "--launcher-source-sha256",
                 LAUNCHER_SOURCE_SHA256,
+                "--attestor-api-origin",
+                "https://testai.acik.com",
                 "--out",
                 str(output),
             ]

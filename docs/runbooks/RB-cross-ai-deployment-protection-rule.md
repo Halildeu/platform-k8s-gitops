@@ -284,6 +284,7 @@ python3 scripts/ops/build_cross_ai_test_trust_root.py \
   --expires-at EXPIRY_UTC \
   --issuer-image-digest sha256:PINNED_ISSUER_IMAGE_DIGEST \
   --launcher-source-sha256 sha256:REVIEWED_LAUNCHER_SOURCE_DIGEST \
+  --attestor-api-origin https://testai.acik.com \
   --out /OWNER/LOCAL/cross-ai-deployment-trust-root.json
 ```
 
@@ -335,13 +336,16 @@ unavailable. This PR changes the reviewed source policy only; it does not claim
 that the owner-gated live policy replacement or role provisioning has occurred.
 
 This source contract does not make a local Transit signature equivalent to a
-provider execution. The dedicated OpenAI issuer must execute direct Codex,
-validate the exact allowed launch identity and only then use its owner-only
-one-use sign-token file. The runtime leaf uses a different one-use token and the
-fixed `runner-management` Transit key after exact workload/image/launcher policy
-validation. Raw tokens and private key material never enter evidence, logs,
-arguments or repository files. Until both adapters and their redacted,
-content-addressed carrier are accepted, enforcement remains `tracked_pending`.
+provider execution. The fixed-function runtime attestor executes direct Codex,
+retains the measured session and validates the exact allowed launch identity.
+The local builder may hold only the provider-review one-use sign token and a
+short-lived, bounded, fixed-purpose attestor session authorization; it never receives the
+`runner-management` Transit token. After the provider leaf is issued, the
+remote workload verifies that leaf against its stored transcript and only then
+signs the runtime leaf. Raw tokens and private key material never enter
+evidence, logs, arguments or repository files. Until the remote service and its
+redacted, content-addressed carrier are accepted, enforcement remains
+`tracked_pending`.
 
 ### One-time provider-review authority genesis and activation
 

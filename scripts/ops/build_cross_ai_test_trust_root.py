@@ -18,6 +18,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -327,6 +328,7 @@ def build_trust_root(
     expires_at: str,
     issuer_image_digest: str,
     launcher_source_sha256: str,
+    attestor_api_origin: str,
     previous_trust_root: dict[str, Any] | None = None,
     max_clock_skew_seconds: int = 60,
 ) -> dict[str, Any]:
@@ -364,6 +366,16 @@ def build_trust_root(
             bytes.fromhex(value.removeprefix("sha256:"))
         except ValueError as exc:
             raise TrustRootBuildError(f"{label} is invalid") from exc
+    parsed_attestor_origin = urlsplit(attestor_api_origin)
+    if (
+        parsed_attestor_origin.scheme != "https"
+        or parsed_attestor_origin.username is not None
+        or parsed_attestor_origin.password is not None
+        or parsed_attestor_origin.path
+        or parsed_attestor_origin.query
+        or parsed_attestor_origin.fragment
+    ):
+        raise TrustRootBuildError("attestor API origin must be canonical HTTPS")
 
     def trust_key(
         source: dict[str, Any],
@@ -537,6 +549,9 @@ def build_trust_root(
             "launcherSourceSha256": launcher_source_sha256,
             "attestorKeyId": by_name["runner-management"]["keyId"],
             "maxAttestationLifetimeSeconds": 600,
+            "apiOrigin": attestor_api_origin,
+            "sessionPath": "/api/v1/cross-ai/provider-review-runtime/sessions",
+            "authAudience": "acik-cross-ai-provider-review-runtime",
         },
         "keys": provider_entries
         + [
@@ -573,6 +588,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expires-at", required=True)
     parser.add_argument("--issuer-image-digest", required=True)
     parser.add_argument("--launcher-source-sha256", required=True)
+    parser.add_argument("--attestor-api-origin", required=True)
     parser.add_argument("--previous-trust-root", type=Path)
     parser.add_argument("--max-clock-skew-seconds", type=int, default=60)
     parser.add_argument("--out", type=Path, required=True)
@@ -589,6 +605,7 @@ def main(argv: list[str] | None = None) -> int:
             expires_at=args.expires_at,
             issuer_image_digest=args.issuer_image_digest,
             launcher_source_sha256=args.launcher_source_sha256,
+            attestor_api_origin=args.attestor_api_origin,
             previous_trust_root=(
                 _load_previous_trust_root(args.previous_trust_root)
                 if args.previous_trust_root is not None

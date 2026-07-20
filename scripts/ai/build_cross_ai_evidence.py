@@ -3,12 +3,10 @@
 
 No provider response, model identity, git coordinate or signed payload is read
 from stdin/argv. The entrypoint derives the exact head/merge-base/sanitized
-scope, constructs the canonical prompt, launches DirectCodexRunner, issues the
-leaf with the active provider-review Vault Transit key, verifies it against the
-independently pinned trust root, requires a second runtime attestation from the
-isolated runner-management service and writes one create-once v3 carrier. The
-raw CLI owns neither signing capability and therefore fails closed; production
-issuance is available only through the pinned service adapters.
+scope and constructs the canonical prompt. A fixed-function remote attestor
+executes Codex and retains the measured transcript; this process issues the
+provider leaf, then asks that service to bind its stored session to the leaf.
+The runner-management Transit capability never enters this process.
 """
 
 from __future__ import annotations
@@ -38,6 +36,7 @@ from scripts.ai.cross_ai_authority import (
     PublicReviewAuthority,
     load_review_submission_authority,
 )
+from scripts.ai.cross_ai_runtime_attestor import RemoteRuntimeAttestor
 from scripts.ai.trusted_cross_ai_evidence import (
     EVIDENCE_SCHEMA,
     TrustedEvidenceError,
@@ -49,15 +48,12 @@ from scripts.ai.trusted_cross_ai_evidence import (
 )
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
-from scripts.github_apps.cross_ai_deployment_policy.contract import (
-    PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
-)
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError, reject
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
     CODEX_HIGH_IMPACT_MODEL,
     CODEX_ROUTINE_MODEL,
-    DirectCodexRunner,
     EnvelopeSigner,
+    ProviderExecutionReceipt,
     ProviderReviewIssuer,
     ReviewCoordinates,
     parse_canonical_review_response,
@@ -74,90 +70,26 @@ GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class IssuerRuntimeAttestor(Protocol):
-    """Remote runner-management service; never a local private-key adapter."""
+    """Remote executor/attestor; never a local private-key adapter."""
+
+    def execute(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        bindings: dict[str, str],
+        subject_sha256: str,
+        timeout_seconds: int,
+    ) -> ProviderExecutionReceipt: ...
 
     def attest(
         self,
         *,
         provider_review_envelope: dict[str, Any],
-        execution: object,
         prompt_sha256: str,
         issued_at: str,
         expires_at: str,
     ) -> dict[str, Any]: ...
-
-
-class VaultTransitRuntimeAttestor:
-    """Issue the second runtime leaf with the isolated management key."""
-
-    def __init__(
-        self,
-        *,
-        signer: VaultTransitSigner,
-        runtime_policy: dict[str, Any],
-    ) -> None:
-        required = {
-            "schemaVersion",
-            "workloadIdentity",
-            "issuerImageDigest",
-            "launcherSourceSha256",
-            "attestorKeyId",
-            "maxAttestationLifetimeSeconds",
-        }
-        if (
-            set(runtime_policy) != required
-            or runtime_policy.get("schemaVersion")
-            != "acik.cross-ai-provider-review-runtime-policy.v1"
-            or runtime_policy.get("attestorKeyId") != signer.key_id
-            or runtime_policy.get("maxAttestationLifetimeSeconds") != 600
-        ):
-            reject(
-                "PROVIDER_RUNTIME_POLICY_INVALID",
-                "runtime attestor differs from the independently pinned policy",
-            )
-        launcher_digest = "sha256:" + hashlib.sha256(
-            Path(__file__).read_bytes()
-        ).hexdigest()
-        if runtime_policy.get("launcherSourceSha256") != launcher_digest:
-            reject(
-                "PROVIDER_RUNTIME_LAUNCHER_MISMATCH",
-                "runtime attestor launcher source differs from the public authority",
-            )
-        self.signer = signer
-        self.runtime_policy = dict(runtime_policy)
-
-    def attest(
-        self,
-        *,
-        provider_review_envelope: dict[str, Any],
-        execution: object,
-        prompt_sha256: str,
-        issued_at: str,
-        expires_at: str,
-    ) -> dict[str, Any]:
-        payload = {
-            "schemaVersion": (
-                "acik.cross-ai-provider-review-runtime-attestation.v1"
-            ),
-            "attestationId": str(uuid4()),
-            "keyId": self.signer.key_id,
-            "workloadIdentity": self.runtime_policy["workloadIdentity"],
-            "issuerImageDigest": self.runtime_policy["issuerImageDigest"],
-            "launcherSourceSha256": self.runtime_policy["launcherSourceSha256"],
-            "providerReviewEnvelopeSha256": sha256_digest(
-                provider_review_envelope
-            ),
-            "promptSha256": prompt_sha256,
-            "responseSha256": execution.output_sha256,
-            "capabilitySnapshotSha256": execution.capability_snapshot_sha256,
-            "providerSessionId": execution.provider_session_id,
-            "issuedAt": issued_at,
-            "expiresAt": expires_at,
-        }
-        return self.signer.sign_json_envelope(
-            payload_type=PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
-            payload=payload,
-        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -172,8 +104,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vault-origin", required=True)
     parser.add_argument("--provider-token-file", type=Path, required=True)
     parser.add_argument("--provider-key-version", type=int, required=True)
-    parser.add_argument("--runtime-token-file", type=Path, required=True)
-    parser.add_argument("--runtime-key-version", type=int, required=True)
+    parser.add_argument("--attestor-auth-token-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -323,7 +254,6 @@ def _write_exclusive(path: Path, content: bytes) -> None:
 def build_signed_evidence(
     args: argparse.Namespace,
     *,
-    runner: DirectCodexRunner | None = None,
     signer: EnvelopeSigner | None = None,
     authority: PublicReviewAuthority | None = None,
     runtime_attestor: IssuerRuntimeAttestor | None = None,
@@ -366,53 +296,31 @@ def build_signed_evidence(
         now=preflight_now,
     )
     provider_token_file = getattr(args, "provider_token_file", None)
-    runtime_token_file = getattr(args, "runtime_token_file", None)
-    provider_transit_signer = None
     if signer is None:
         if provider_token_file is None:
             reject(
                 "TRUSTED_ISSUER_SERVICE_REQUIRED",
                 "provider signing requires the isolated one-use token file",
             )
-        provider_transit_signer = VaultTransitSigner(
+        active_signer = VaultTransitSigner(
             vault_origin=args.vault_origin,
             token_file=provider_token_file,
             mount="cross-ai",
             key_name="openai",
             key_version=args.provider_key_version,
         )
-        active_signer = provider_transit_signer
     else:
         active_signer = signer
     if runtime_attestor is None:
-        if runtime_token_file is None:
+        auth_token_file = getattr(args, "attestor_auth_token_file", None)
+        if auth_token_file is None:
             reject(
                 "TRUSTED_ISSUER_SERVICE_REQUIRED",
-                "runtime attestation requires the isolated one-use token file",
+                "runtime execution requires the fixed-function attestor authorization file",
             )
-        runtime_transit_signer = VaultTransitSigner(
-            vault_origin=args.vault_origin,
-            token_file=runtime_token_file,
-            mount="cross-ai",
-            key_name="runner-management",
-            key_version=args.runtime_key_version,
-        )
-        if (
-            provider_transit_signer is not None
-            and (
-                provider_transit_signer.token_file_identity
-                == runtime_transit_signer.token_file_identity
-                or provider_transit_signer.token_sha256
-                == runtime_transit_signer.token_sha256
-            )
-        ):
-            reject(
-                "TRUSTED_ISSUER_SERVICE_REQUIRED",
-                "provider and runtime authorities require distinct token files",
-            )
-        runtime_attestor = VaultTransitRuntimeAttestor(
-            signer=runtime_transit_signer,
+        runtime_attestor = RemoteRuntimeAttestor(
             runtime_policy=preflight_authority.issuer_runtime_policy,
+            auth_token_file=auth_token_file,
         )
     preflight_verifier = EvidenceVerifier(
         trust_root=preflight_authority.trust_root,
@@ -436,15 +344,11 @@ def build_signed_evidence(
         or key.direct_provider_cli is not True
     ):
         reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
-    execution = (
-        runner
-        or DirectCodexRunner(
-            executable_policy=preflight_authority.codex_executable_policy
-        )
-    ).run(
+    execution = runtime_attestor.execute(
         prompt=prompt,
         model=model,
-        workspace=workspace,
+        bindings=bindings,
+        subject_sha256=subject_sha256,
         timeout_seconds=args.timeout_seconds,
     )
     # The provider call can run for up to 20 minutes. Reload and revalidate the
@@ -511,7 +415,6 @@ def build_signed_evidence(
         reject("PROVIDER_LAUNCH_ATTESTATION_MISSING", "Codex launch attestation is missing")
     runtime_envelope = runtime_attestor.attest(
         provider_review_envelope=envelope,
-        execution=execution,
         prompt_sha256=subject["promptSha256"],
         issued_at=issued_at,
         expires_at=(now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),

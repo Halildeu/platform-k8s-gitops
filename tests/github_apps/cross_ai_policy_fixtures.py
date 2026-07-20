@@ -251,6 +251,9 @@ class FixtureFactory:
             "launcherSourceSha256": digest("provider-review-launcher-source"),
             "attestorKeyId": self.RUNNER_MANAGEMENT_KEY_ID,
             "maxAttestationLifetimeSeconds": 600,
+            "apiOrigin": "https://testai.acik.com",
+            "sessionPath": "/api/v1/cross-ai/provider-review-runtime/sessions",
+            "authAudience": "acik-cross-ai-provider-review-runtime",
         }
 
     def _runtime_attestation(

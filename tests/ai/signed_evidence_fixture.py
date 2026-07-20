@@ -63,6 +63,9 @@ def issuer_runtime_policy(factory: FixtureFactory) -> dict[str, Any]:
         "launcherSourceSha256": digest("provider-review-launcher-source"),
         "attestorKeyId": factory.RUNNER_MANAGEMENT_KEY_ID,
         "maxAttestationLifetimeSeconds": 600,
+        "apiOrigin": "https://testai.acik.com",
+        "sessionPath": "/api/v1/cross-ai/provider-review-runtime/sessions",
+        "authAudience": "acik-cross-ai-provider-review-runtime",
     }
 
 

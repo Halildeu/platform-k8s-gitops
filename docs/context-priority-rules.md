@@ -498,16 +498,15 @@ subject, model veya koordinat kabul etmez. `scripts/ai/post_cross_ai_evidence.py
 comment'i yalnız transport olarak kullanır. Kabul, repo-public pinned OpenAI
 provider-review trust root'u ile güncel ve imzalı revocation setini zorunlu tutar;
 owner comment'i tek başına authority değildir.
-Operational issuer yolu provider-review ve runner-management için iki farklı,
-owner-only (`0600`), symlink olmayan, bounded tek-kullanımlık Vault token dosyası
-ister. Builder bu dosyaları argv'ye veya çıktıya taşımaz; yalnız canonical HTTPS
-Vault origin, exact key version ve sabit `openai` / `runner-management` Transit
-key yollarını kabul eder. İki capability aynı token dosyasına bağlanamaz.
-Provider leaf direct Codex çalıştırıldıktan sonra `openai` key'iyle, runtime leaf
-ise repo-public policy'deki exact workload/image/launcher digestleri doğrulandıktan
-sonra ayrı `runner-management` key'iyle imzalanır. Eksik, gevşek izinli, symlink,
-değişmiş veya yanlış role/version tokenı provider çağrısı/acceptance öncesi
-fail-closed reddedilir.
+Operational issuer yolu yerel builder'a yalnız provider-review için owner-only
+(`0600`), symlink olmayan, bounded tek-kullanımlık Vault token dosyası verir.
+`runner-management` Transit capability yalnız repo-public policy'de pinlenmiş
+fixed-function HTTPS attestor workload'ında bulunur ve builder sürecine hiçbir
+zaman taşınmaz. Builder attestor'a sadece owner-only, kısa ömürlü ve bounded
+session API authorization ile bağlanır; attestor direct Codex'i kendisi çalıştırır,
+ölçülen transcript'i saklar ve ancak provider leaf aynı session ile exact
+eşleşirse runtime leaf'i imzalar. Caller-authored execution receipt, yerel
+runtime signer, gevşek izinli veya symlink auth dosyası fail-closed reddedilir.
 Root rotasyonu eski root ile son imzalı revocation snapshot'ını digest-adresli
 history dizinine byte-for-byte eklemek zorundadır; geçmiş entry veya archived
 byte silinemez/değiştirilemez. Revocation-only geçişi predecessor stale olsun

@@ -47,6 +47,13 @@ evidence also requires a role-distinct `runner-management` runtime attestation
 that binds the pinned issuer image/source to the exact prompt, response,
 Codex session, launch capability and provider-review envelope; possession of
 the provider-review signer alone is insufficient.
+The local evidence builder no longer accepts a caller-provided execution or a
+`runner-management` signing token. A pinned fixed-function HTTPS attestor must
+create and retain the direct-Codex session, then bind its stored measurement to
+the provider leaf. The source contract is testable, but live issuance remains
+`tracked_pending` until that workload, its bounded session authorization and
+the public Codex-only trust root/revocations are deployed and independently
+pinned.
 v2 is deliberately and permanently `tracked_pending`: it is the immutable
 constraint template, not a container for a receipt whose insertion would change
 the reviewed commit. A protected apply receives one #2373 advisory comment ID,
