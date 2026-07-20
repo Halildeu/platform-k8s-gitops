@@ -213,7 +213,7 @@ scripts/ops/vault-policy-reconcile.sh --emit-seed-secret-id audio-gateway-mtls-s
 # kuru çalıştırma:
 scripts/ops/vault-policy-reconcile.sh --dry-run
 ```
-Reconciler `common/*` + `test/*` policy'lerini ve manifest'teki approle'leri (eso-runtime, bootstrap-writer, audio-gateway-mtls-seeder) apply eder; **prod/* ASLA**. Runner-management Transit signing yalnız `cross-ai/provider-review-issuer` Kubernetes ServiceAccount rolüne bağlanır; legacy runner AppRole reconcile sırasında silinir ve yokluğu doğrulanır. Yeni policy → manifest'e satır ekle (PR + cross-AI) → reconcile.
+Reconciler `common/*` + `test/*` policy'lerini ve manifest'teki approle'leri (eso-runtime, bootstrap-writer, audio-gateway-mtls-seeder) apply eder; **prod/* ASLA**. Admission-bound runtime activation henüz kurulmadığı için runner-management Kubernetes rolü ve legacy runner AppRole reconcile sırasında silinir, yoklukları doğrulanır. ServiceAccount adına tek başına bağlı signing authority oluşturulmaz. Yeni policy → manifest'e satır ekle (PR + cross-AI) → reconcile.
 
 ## 7. ClusterSecretStore Entegrasyon
 

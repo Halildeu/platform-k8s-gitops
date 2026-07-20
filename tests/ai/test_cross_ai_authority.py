@@ -405,6 +405,7 @@ class GenesisTransitionTests(unittest.TestCase):
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
                 "approle:cross-ai-runner-management-test",
+                "kubernetes-role:cross-ai-provider-review-runtime",
                 "token-policy:cross-ai-runner-management-test",
             ],
             "verifiedAt": "2026-07-18T19:59:00Z",

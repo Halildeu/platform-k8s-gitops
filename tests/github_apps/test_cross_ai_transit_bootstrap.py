@@ -119,6 +119,7 @@ class FakeVaultClient:
             "auth/approle/role/cross-ai-issuer-minimax-test",
             "sys/policies/acl/cross-ai-issuer-minimax-test",
             "auth/approle/role/cross-ai-runner-management-test",
+            "auth/kubernetes/role/cross-ai-provider-review-runtime",
         }:
             if method == "DELETE":
                 status = type(self).legacy_delete_status
@@ -195,6 +196,7 @@ class TransitBootstrapTests(unittest.TestCase):
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
                 "approle:cross-ai-runner-management-test",
+                "kubernetes-role:cross-ai-provider-review-runtime",
                 "token-policy:cross-ai-runner-management-test",
             ],
         )
@@ -305,6 +307,7 @@ class TransitBootstrapTests(unittest.TestCase):
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
                 "approle:cross-ai-runner-management-test",
+                "kubernetes-role:cross-ai-provider-review-runtime",
                 "token-policy:cross-ai-runner-management-test",
             ],
         )
@@ -473,6 +476,12 @@ class TransitBootstrapTests(unittest.TestCase):
             'path "auth/kubernetes/role/cross-ai-provider-review-runtime"',
             config_policy,
         )
+        runtime_role_block = config_policy.split(
+            'path "auth/kubernetes/role/cross-ai-provider-review-runtime"', 1
+        )[1].split("}", 1)[0]
+        self.assertIn('capabilities = ["read", "delete"]', runtime_role_block)
+        self.assertNotIn('"create"', runtime_role_block)
+        self.assertNotIn('"update"', runtime_role_block)
         self.assertIn(
             'path "auth/approle/role/cross-ai-runner-management-test"',
             config_policy,
@@ -483,7 +492,8 @@ class TransitBootstrapTests(unittest.TestCase):
             config_policy,
         )
         self.assertIn('K8S_RUNNER_ROLE="cross-ai-provider-review-runtime"', reconciler)
-        self.assertIn('"token_num_uses":2', reconciler)
+        self.assertNotIn('"token_num_uses":', reconciler)
+        self.assertIn('unbound Kubernetes role remains readable', reconciler)
         self.assertIn('legacy runner AppRole remains readable', reconciler)
 
 

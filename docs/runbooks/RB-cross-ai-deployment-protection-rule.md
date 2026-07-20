@@ -355,12 +355,15 @@ owner-only session authorization, public Codex-only trust root and signed
 revocations are deployed and independently pinned, enforcement remains
 `tracked_pending`.
 
-The runtime workload does not receive a static Transit token. It authenticates
-to Vault through the `cross-ai-provider-review-runtime` Kubernetes role bound
-to namespace `cross-ai` and ServiceAccount `provider-review-issuer`. The role
-must issue a non-renewable, no-default-policy, `num_uses=2`, maximum-ten-minute
-token containing exactly `cross-ai-runner-management-test`: one use signs the
-verified runtime DSSE and the second use revokes itself. The service queries
+The runtime workload does not receive a static Transit token. Generic Vault
+bootstrap and reconciliation delete both the legacy runner AppRole and the
+`cross-ai-provider-review-runtime` Kubernetes role. A ServiceAccount-only role
+is not sufficient authority because another Pod could reuse that identity.
+Runtime issuance therefore remains `tracked_pending` until a separate reviewed
+admission-bound activation proves the exact immutable workload and denies
+alternate Pod, exec, attach and ephemeral-container use before creating a
+non-renewable, no-default-policy, `num_uses=2`, maximum-ten-minute role. One use
+signs the verified runtime DSSE and the second use revokes itself. The service queries
 its own Pod through the in-cluster Kubernetes API and requires the exact Pod
 UID, ServiceAccount, ready/running container and CRI image digest to match the
 repo-public runtime policy before execution and again before finalization.

@@ -181,29 +181,16 @@ for row in "${APPROLES[@]}"; do
   fi
 done
 
-# Runner-management signing is available only to the measured runtime Pod.
+# Runtime signing remains disabled until a separately reviewed admission-bound
+# activation can prove that no alternate Pod can use the issuer identity.
 K8S_RUNNER_ROLE="cross-ai-provider-review-runtime"
-K8S_RUNNER_BODY='{"bound_service_account_names":["provider-review-issuer"],"bound_service_account_namespaces":["cross-ai"],"audience":"vault","token_policies":["cross-ai-runner-management-test"],"token_ttl":"10m","token_max_ttl":"10m","token_explicit_max_ttl":"10m","token_num_uses":2,"token_no_default_policy":true}'
 if [[ "$DRY_RUN" == "1" ]]; then
-  echo "  DRY   kubernetes-role $K8S_RUNNER_ROLE; delete legacy runner AppRole"
-elif ! api POST "auth/kubernetes/role/$K8S_RUNNER_ROLE" "$K8S_RUNNER_BODY" >/dev/null; then
-  echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE" >&2
+  echo "  DRY   delete unbound Kubernetes role and legacy runner AppRole"
+elif ! api DELETE "auth/kubernetes/role/$K8S_RUNNER_ROLE" >/dev/null; then
+  echo "  FAIL  unbound Kubernetes role deletion" >&2
   APPLY_FAIL=1
-elif ! role_readback=$(api GET "auth/kubernetes/role/$K8S_RUNNER_ROLE"); then
-  echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE readback unavailable" >&2
-  APPLY_FAIL=1
-elif ! jq -e '
-    .data.bound_service_account_names == ["provider-review-issuer"]
-    and .data.bound_service_account_namespaces == ["cross-ai"]
-    and .data.audience == "vault"
-    and .data.token_policies == ["cross-ai-runner-management-test"]
-    and .data.token_ttl == 600
-    and .data.token_max_ttl == 600
-    and .data.token_explicit_max_ttl == 600
-    and .data.token_num_uses == 2
-    and .data.token_no_default_policy == true
-  ' <<<"$role_readback" >/dev/null; then
-  echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE binding differs" >&2
+elif api GET "auth/kubernetes/role/$K8S_RUNNER_ROLE" >/dev/null 2>&1; then
+  echo "  FAIL  unbound Kubernetes role remains readable" >&2
   APPLY_FAIL=1
 elif ! api DELETE "auth/approle/role/cross-ai-runner-management-test" >/dev/null; then
   echo "  FAIL  legacy runner AppRole deletion" >&2
@@ -212,9 +199,8 @@ elif api GET "auth/approle/role/cross-ai-runner-management-test" >/dev/null 2>&1
   echo "  FAIL  legacy runner AppRole remains readable" >&2
   APPLY_FAIL=1
 else
-  echo "  OK    kubernetes-role $K8S_RUNNER_ROLE; legacy runner AppRole absent"
+  echo "  OK    runtime Kubernetes role and legacy runner AppRole absent"
 fi
-unset role_readback
 
 [[ "$APPLY_FAIL" == "1" ]] && {
   echo "ABORT: one or more Vault policy/AppRole writes failed." >&2

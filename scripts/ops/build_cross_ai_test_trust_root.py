@@ -204,6 +204,7 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
         "approle:cross-ai-issuer-minimax-test",
         "policy:cross-ai-issuer-minimax-test",
         "approle:cross-ai-runner-management-test",
+        "kubernetes-role:cross-ai-provider-review-runtime",
         "token-policy:cross-ai-runner-management-test",
     ]:
         raise TrustRootBuildError("retired provider signing authority absence is unverified")

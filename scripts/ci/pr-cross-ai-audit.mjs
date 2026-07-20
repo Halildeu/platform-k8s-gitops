@@ -86,6 +86,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/workflows\/(?:apply-view-only-viewer-pilot-enable|faz22-6-view-only-viewer-[^/]+)\.ya?ml$/,
   /^\.github\/actions\/protected-(?:apply|bootstrap|browser-evidence|rollback)\//,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
+  /^scripts\/ci\/install-pinned-gitleaks\.sh$/,
   /^schema\/cross-ai-[^/]+\.json$/,
   /^schema\/faz22-6-view-only-viewer-product-evidence-(?:root|child)-v2\.schema\.json$/,
   /^\.github\/workflows\/gate-faz22-view-only-evidence-verifier\.yml$/,

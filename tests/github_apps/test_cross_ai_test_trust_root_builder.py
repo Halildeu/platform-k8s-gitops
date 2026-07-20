@@ -78,6 +78,7 @@ def receipt() -> dict[str, object]:
             "approle:cross-ai-issuer-minimax-test",
             "policy:cross-ai-issuer-minimax-test",
             "approle:cross-ai-runner-management-test",
+            "kubernetes-role:cross-ai-provider-review-runtime",
             "token-policy:cross-ai-runner-management-test",
         ],
         "verifiedAt": "2026-07-18T17:59:00Z",
@@ -155,7 +156,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "04159afca2ce9ad11382843131652b2467e99c863fc5a94383567083f4019a36",
+            "e01654a0c308f9f85f6a81ef8a5c878a81d51d67e61f07b20bdd62cb78828855",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:

@@ -369,6 +369,7 @@ const VIEW_ONLY_CODEX_POLICY_PATHS = [
   'docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md',
 ];
 const CROSS_AI_AUTHORITY_PATHS = [
+  'scripts/ci/install-pinned-gitleaks.sh',
   'scripts/ai/cross_ai_runtime_authorization.py',
   'scripts/ai/cross_ai_runtime_attestor.py',
   'scripts/ai/cross_ai_runtime_attestor_service.py',

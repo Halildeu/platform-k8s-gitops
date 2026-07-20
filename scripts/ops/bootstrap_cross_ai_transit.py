@@ -361,6 +361,20 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         raise BootstrapError("legacy runner-management AppRole still exists")
     verified_absent_resources.append(f"approle:{legacy_runner_role}")
 
+    runtime_role = "cross-ai-provider-review-runtime"
+    client.request(
+        "DELETE",
+        f"auth/kubernetes/role/{runtime_role}",
+        expected=decommission_statuses,
+    )
+    if client.request(
+        "GET",
+        f"auth/kubernetes/role/{runtime_role}",
+        expected=frozenset({404}),
+    ).status != 404:
+        raise BootstrapError("unbound runtime Kubernetes role still exists")
+    verified_absent_resources.append(f"kubernetes-role:{runtime_role}")
+
     runner_policy = "cross-ai-runner-management-test"
     accessors = _data(
         client.request("LIST", "auth/token/accessors"),
