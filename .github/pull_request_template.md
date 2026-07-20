@@ -59,33 +59,31 @@ Critical-Fix: no
 
 ## Cross-AI İstişare Modu
 
-> Varsayılan `none`; gerçekten ikinci görüş gerekiyorsa yalnız direct Claude Opus
-> 4.8 ile `single`; yalnız geri döndürülemez/çok yüksek riskli/insan-yetkili
-> kararda Claude + bir provider-distinct kanal ile `dual` (en fazla iki kanal).
+> Varsayılan `none`; inceleme gerektiğinde yalnız ayrı bağlamda direct Codex CLI
+> ile `single`. `dual`, Claude, MiniMax, Cursor, UI ve wrapper fallback yasaktır.
 > Detay: `docs/context-priority-rules.md` §11.
 
 ```yaml
 # CI parser bu structured alanları ## Cross-AI altında okur.
 Implementer AI: Codex
 Consultation mode: none
-Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
-# Risk trigger: <irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority>: <en az üç farklı anlamlı kelimelik somut açıklama; yalnız dual>
-# Verdict: AGREE # yalnız single/dual
-# Consultation base tip: <single/dual exact target tip>
-# Consultation base: <single/dual exact merge-base>
-# Consultation commit: <single/dual exact head>
-# Consultation scope: <single/dual content SHA-256>
-# Claude receipt: <single ve dual için exact receipt>
-# Codex receipt: <dual için zorunlu exact receipt>
+Consultation reason: <neden none|single seçildi; en az 10 karakter>
+# Verdict: AGREE # yalnız single
+# Consultation base tip: <single exact target tip>
+# Consultation base: <single exact merge-base>
+# Consultation commit: <single exact head>
+# Consultation scope: <single content SHA-256>
+# Codex receipt: <single için zorunlu exact receipt>
 ```
 
 **Field semantik**:
 - `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
-- `single`: exact Claude Opus 4.8 receipt + exact base/head/scope + `AGREE`;
-  Claude implementer için provider-distinct olmadığı için kullanılamaz.
-- `dual`: exact Claude + exact Codex receipt; somut `Risk trigger` zorunlu,
-  üçüncü kanal ve MiniMax receipt yasak, publication order zorunlu değil.
+- `single`: routine scope için live exact `gpt-5.3-codex-spark xhigh`;
+  governance/security/migration/production/high-impact scope için exact
+  `gpt-5.6-sol xhigh`; exact base/head/scope + `AGREE`.
+- Claude/MiniMax receipt, `dual`, Cursor/UI/wrapper ve provider/model fallback
+  fail-closed reddedilir.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
   exact model ve redaction kontrolleri fail-closed kalır.
 
