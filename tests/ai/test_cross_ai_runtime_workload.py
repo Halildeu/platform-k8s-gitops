@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from scripts.ai.cross_ai_runtime_workload import KubernetesWorkloadVerifier
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 
 
@@ -23,10 +25,19 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.token = Path(self.directory.name) / "api-token"
-        self.token.write_text("synthetic.jwt." + ("a" * 120), encoding="ascii")
-        self.token.chmod(0o400)
         self.pod_uid = "90000000-0000-4000-8000-000000000001"
         self.digest = "sha256:" + ("b" * 64)
+        self.command = ["python", "-m", "scripts.ai.run_cross_ai_runtime_attestor"]
+        self.args = ["--authority-file", "/app/config/authority.json"]
+        self.security_context = {
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+            "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
+            "runAsUser": 10002,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        }
+        self._write_token(self.pod_uid)
         self.pod = {
             "metadata": {
                 "name": "runtime-attestor-0",
@@ -34,7 +45,19 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
                 "uid": self.pod_uid,
                 "deletionTimestamp": None,
             },
-            "spec": {"serviceAccountName": "provider-review-issuer"},
+            "spec": {
+                "serviceAccountName": "provider-review-issuer",
+                "automountServiceAccountToken": False,
+                "containers": [
+                    {
+                        "name": "runtime-attestor",
+                        "image": "ghcr.io/halildeu/runtime@" + self.digest,
+                        "command": self.command,
+                        "args": self.args,
+                        "securityContext": self.security_context,
+                    }
+                ],
+            },
             "status": {
                 "phase": "Running",
                 "containerStatuses": [
@@ -54,6 +77,30 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.directory.cleanup()
 
+    def _write_token(self, pod_uid: str) -> None:
+        if self.token.exists():
+            self.token.chmod(0o600)
+        encode = lambda value: base64.urlsafe_b64encode(  # noqa: E731
+            json.dumps(value, separators=(",", ":")).encode()
+        ).decode().rstrip("=")
+        claims = {
+            "aud": ["https://kubernetes.default.svc.cluster.local"],
+            "sub": "system:serviceaccount:cross-ai:provider-review-issuer",
+            "kubernetes.io": {
+                "namespace": "cross-ai",
+                "pod": {"name": "runtime-attestor-0", "uid": pod_uid},
+                "serviceaccount": {
+                    "name": "provider-review-issuer",
+                    "uid": "91000000-0000-4000-8000-000000000001",
+                },
+            },
+        }
+        self.token.write_text(
+            f"{encode({'alg': 'RS256'})}.{encode(claims)}." + ("a" * 86),
+            encoding="ascii",
+        )
+        self.token.chmod(0o400)
+
     def verifier(self, pod=None):
         return KubernetesWorkloadVerifier(
             namespace="cross-ai",
@@ -61,6 +108,10 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
             pod_uid=self.pod_uid,
             service_account="provider-review-issuer",
             container_name="runtime-attestor",
+            expected_image_digest=self.digest,
+            expected_command=self.command,
+            expected_args_sha256=sha256_digest(self.args),
+            expected_security_context_sha256=sha256_digest(self.security_context),
             api_token_file=self.token,
             transport=StaticPodTransport(pod or self.pod),
         )
@@ -88,6 +139,10 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
                 {"deletionTimestamp": "2026-07-20T00:01:00Z"}
             ),
             lambda pod: pod["spec"].update({"serviceAccountName": "default"}),
+            lambda pod: pod["spec"]["containers"][0].update({"command": ["sh"]}),
+            lambda pod: pod["spec"]["containers"][0]["securityContext"].update(
+                {"allowPrivilegeEscalation": True}
+            ),
         ]
         for mutate in mutations:
             with self.subTest(mutate=mutate):
@@ -115,6 +170,10 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
             pod_uid=self.pod_uid,
             service_account="provider-review-issuer",
             container_name="runtime-attestor",
+            expected_image_digest=self.digest,
+            expected_command=self.command,
+            expected_args_sha256=sha256_digest(self.args),
+            expected_security_context_sha256=sha256_digest(self.security_context),
             api_token_file=alias,
             transport=StaticPodTransport(self.pod),
         )
@@ -123,6 +182,14 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
             "KUBERNETES_WORKLOAD_TOKEN_UNAVAILABLE",
         ):
             verifier.measure()
+
+    def test_rejects_token_bound_to_another_pod(self) -> None:
+        self._write_token("90000000-0000-4000-8000-000000000099")
+        with self.assertRaisesRegex(
+            PolicyError,
+            "KUBERNETES_WORKLOAD_TOKEN_BINDING_MISMATCH",
+        ):
+            self.verifier().measure()
 
 
 if __name__ == "__main__":

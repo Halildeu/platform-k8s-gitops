@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import os
 import re
 import ssl
@@ -15,6 +18,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from scripts.github_apps.cross_ai_deployment_policy.errors import reject
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.jsonutil import loads_json_bytes
 
 
@@ -22,6 +26,7 @@ DIGEST = re.compile(r"sha256:[a-f0-9]{64}$")
 K8S_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$")
 MAX_TOKEN_BYTES = 16384
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+KUBERNETES_API_AUDIENCE = "https://kubernetes.default.svc.cluster.local"
 
 
 class PodTransport(Protocol):
@@ -114,6 +119,50 @@ def _projected_token(path: Path) -> str:
         )
 
 
+def _verified_token_binding(
+    token: str,
+    *,
+    namespace: str,
+    pod_name: str,
+    pod_uid: str,
+    service_account: str,
+) -> None:
+    parts = token.split(".")
+    if len(parts) != 3:
+        reject("KUBERNETES_WORKLOAD_TOKEN_INVALID", "projected token is not a JWT")
+    try:
+        payload = parts[1] + ("=" * (-len(parts[1]) % 4))
+        claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+    except (ValueError, UnicodeError, json.JSONDecodeError, binascii.Error):
+        reject(
+            "KUBERNETES_WORKLOAD_TOKEN_INVALID",
+            "projected token claims cannot be decoded",
+        )
+    kubernetes = claims.get("kubernetes.io") if isinstance(claims, dict) else None
+    pod = kubernetes.get("pod") if isinstance(kubernetes, dict) else None
+    account = (
+        kubernetes.get("serviceaccount") if isinstance(kubernetes, dict) else None
+    )
+    if (
+        claims.get("sub")
+        != f"system:serviceaccount:{namespace}:{service_account}"
+        or claims.get("aud") != [KUBERNETES_API_AUDIENCE]
+        or not isinstance(kubernetes, dict)
+        or kubernetes.get("namespace") != namespace
+        or not isinstance(pod, dict)
+        or pod.get("name") != pod_name
+        or pod.get("uid") != pod_uid
+        or not isinstance(account, dict)
+        or account.get("name") != service_account
+        or not isinstance(account.get("uid"), str)
+        or not account["uid"]
+    ):
+        reject(
+            "KUBERNETES_WORKLOAD_TOKEN_BINDING_MISMATCH",
+            "authenticated projected token is not bound to the measured Pod",
+        )
+
+
 @dataclass(frozen=True)
 class WorkloadMeasurement:
     workload_identity: str
@@ -130,6 +179,10 @@ class KubernetesWorkloadVerifier:
         pod_uid: str,
         service_account: str,
         container_name: str,
+        expected_image_digest: str,
+        expected_command: list[str],
+        expected_args_sha256: str,
+        expected_security_context_sha256: str,
         api_token_file: Path,
         transport: PodTransport,
     ) -> None:
@@ -150,6 +203,10 @@ class KubernetesWorkloadVerifier:
         self.pod_uid = pod_uid
         self.service_account = service_account
         self.container_name = container_name
+        self.expected_image_digest = expected_image_digest
+        self.expected_command = list(expected_command)
+        self.expected_args_sha256 = expected_args_sha256
+        self.expected_security_context_sha256 = expected_security_context_sha256
         self.api_token_file = api_token_file
         self.transport = transport
 
@@ -158,10 +215,18 @@ class KubernetesWorkloadVerifier:
             f"/api/v1/namespaces/{quote(self.namespace, safe='')}/pods/"
             f"{quote(self.pod_name, safe='')}"
         )
+        token = _projected_token(self.api_token_file)
+        _verified_token_binding(
+            token,
+            namespace=self.namespace,
+            pod_name=self.pod_name,
+            pod_uid=self.pod_uid,
+            service_account=self.service_account,
+        )
         pod = loads_json_bytes(
             self.transport.get(
                 path=path,
-                token=_projected_token(self.api_token_file),
+                token=token,
             ),
             max_bytes=MAX_RESPONSE_BYTES,
             label="Kubernetes Pod",
@@ -170,6 +235,7 @@ class KubernetesWorkloadVerifier:
         spec = pod.get("spec") if isinstance(pod, dict) else None
         status = pod.get("status") if isinstance(pod, dict) else None
         statuses = status.get("containerStatuses") if isinstance(status, dict) else None
+        specs = spec.get("containers") if isinstance(spec, dict) else None
         matches = (
             [
                 item
@@ -180,6 +246,16 @@ class KubernetesWorkloadVerifier:
             else []
         )
         container = matches[0] if len(matches) == 1 else None
+        spec_matches = (
+            [
+                item
+                for item in specs
+                if isinstance(item, dict) and item.get("name") == self.container_name
+            ]
+            if isinstance(specs, list)
+            else []
+        )
+        container_spec = spec_matches[0] if len(spec_matches) == 1 else None
         image_id = container.get("imageID") if isinstance(container, dict) else None
         digest_match = DIGEST.search(image_id) if isinstance(image_id, str) else None
         if (
@@ -190,6 +266,12 @@ class KubernetesWorkloadVerifier:
             or metadata.get("deletionTimestamp") is not None
             or not isinstance(spec, dict)
             or spec.get("serviceAccountName") != self.service_account
+            or spec.get("automountServiceAccountToken") is not False
+            or not isinstance(container_spec, dict)
+            or container_spec.get("command") != self.expected_command
+            or sha256_digest(container_spec.get("args")) != self.expected_args_sha256
+            or sha256_digest(container_spec.get("securityContext"))
+            != self.expected_security_context_sha256
             or not isinstance(status, dict)
             or status.get("phase") != "Running"
             or not isinstance(container, dict)
@@ -197,6 +279,9 @@ class KubernetesWorkloadVerifier:
             or not isinstance(container.get("state"), dict)
             or not isinstance(container["state"].get("running"), dict)
             or digest_match is None
+            or digest_match.group(0) != self.expected_image_digest
+            or not isinstance(container_spec.get("image"), str)
+            or not container_spec["image"].endswith("@" + self.expected_image_digest)
         ):
             reject(
                 "KUBERNETES_WORKLOAD_INVALID",

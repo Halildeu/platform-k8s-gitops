@@ -30,6 +30,7 @@ from scripts.github_apps.cross_ai_deployment_policy.jsonutil import loads_json_b
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
     ProviderExecutionReceipt,
 )
+from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc
 
 
 SESSION_PATH = "/api/v1/cross-ai/provider-review-runtime/sessions"
@@ -87,6 +88,10 @@ class RemoteRuntimeAttestor:
             "kubernetesNamespace",
             "kubernetesServiceAccount",
             "kubernetesContainerName",
+            "kubernetesApiAudience",
+            "kubernetesContainerCommand",
+            "kubernetesContainerArgsSha256",
+            "kubernetesContainerSecurityContextSha256",
             "vaultKubernetesAuthMount",
             "vaultKubernetesRole",
             "vaultTokenPolicy",
@@ -123,6 +128,20 @@ class RemoteRuntimeAttestor:
         )
         self._session_id: str | None = None
         self._execution_sha256: str | None = None
+        self._review_issued_at: str | None = None
+
+    @property
+    def request_id(self) -> str:
+        return str(self._authorization.request["requestId"])
+
+    @property
+    def review_issued_at(self) -> str:
+        if self._review_issued_at is None:
+            reject(
+                "PROVIDER_RUNTIME_SESSION_MISSING",
+                "runtime review time is unavailable before execution",
+            )
+        return self._review_issued_at
 
     def _post(
         self,
@@ -213,7 +232,8 @@ class RemoteRuntimeAttestor:
             timeout_seconds=timeout_seconds + 120,
         )
         if (
-            set(response) != {"schemaVersion", "sessionId", "execution"}
+            set(response)
+            != {"schemaVersion", "sessionId", "execution", "reviewIssuedAt"}
             or response.get("schemaVersion")
             != "acik.cross-ai-provider-review-runtime-session-response.v1"
         ):
@@ -222,6 +242,8 @@ class RemoteRuntimeAttestor:
                 "runtime attestor session response fields are invalid",
             )
         session_id = _canonical_uuid(response.get("sessionId"), "runtime session")
+        review_issued_at = response.get("reviewIssuedAt")
+        parse_utc(review_issued_at, "runtime.reviewIssuedAt")
         execution = response.get("execution")
         expected_fields = {
             "providerFamily",
@@ -279,6 +301,7 @@ class RemoteRuntimeAttestor:
         _canonical_uuid(receipt.provider_session_id, "provider session")
         self._session_id = session_id
         self._execution_sha256 = sha256_digest(execution)
+        self._review_issued_at = review_issued_at
         return receipt
 
     def attest(

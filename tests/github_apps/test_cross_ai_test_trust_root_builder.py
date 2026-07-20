@@ -29,6 +29,7 @@ ISSUED_AT = "2026-07-18T18:00:00Z"
 EXPIRES_AT = "2026-08-17T18:00:00Z"
 ISSUER_IMAGE_DIGEST = "sha256:" + ("b" * 64)
 LAUNCHER_SOURCE_SHA256 = "sha256:" + ("c" * 64)
+CONTAINER_ARGS_SHA256 = "sha256:" + ("d" * 64)
 
 
 def public_key(seed: int) -> str:
@@ -94,6 +95,7 @@ def build(
         expires_at=expires_at,
         issuer_image_digest=ISSUER_IMAGE_DIGEST,
         launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
+        container_args_sha256=CONTAINER_ARGS_SHA256,
         attestor_api_origin="https://testai.acik.com",
         previous_trust_root=previous_trust_root,
     )
@@ -147,7 +149,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "f489ce5c5109d0beefa63de4d20eb124f18f84ae798a2472fadeb2e908fc95b9",
+            "263a4578f9c79afbce553189c785411b4ac8d737fd1e7ee05e02abbcf1960a09",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:
@@ -262,6 +264,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                     expires_at=invalid,
                     issuer_image_digest=ISSUER_IMAGE_DIGEST,
                     launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
+                    container_args_sha256=CONTAINER_ARGS_SHA256,
                     attestor_api_origin="https://testai.acik.com",
                 )
 
@@ -349,6 +352,8 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                 ISSUER_IMAGE_DIGEST,
                 "--launcher-source-sha256",
                 LAUNCHER_SOURCE_SHA256,
+                "--container-args-sha256",
+                CONTAINER_ARGS_SHA256,
                 "--attestor-api-origin",
                 "https://testai.acik.com",
                 "--out",

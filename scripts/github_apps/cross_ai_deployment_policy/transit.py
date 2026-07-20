@@ -197,6 +197,7 @@ class VaultKubernetesTransitSigner:
         self.key_name = key_name
         self.key_version = key_version
         self.transport = transport or UrllibTransport()
+        self._quarantined = False
 
     @property
     def key_id(self) -> str:
@@ -246,6 +247,11 @@ class VaultKubernetesTransitSigner:
             )
 
     def sign(self, message: bytes) -> bytes:
+        if self._quarantined:
+            reject(
+                "VAULT_SIGNER_QUARANTINED",
+                "Vault signer is quarantined after an ambiguous token lifecycle",
+            )
         if not message or len(message) > 4 * 1024 * 1024:
             reject("VAULT_SIGN_INPUT_INVALID", "signing input size is invalid")
         login = self.transport.request(
@@ -272,22 +278,25 @@ class VaultKubernetesTransitSigner:
         token = auth.get("client_token")
         policies = auth.get("token_policies")
         lease_duration = auth.get("lease_duration")
-        if (
-            not isinstance(token, str)
-            or not 20 <= len(token) <= 4096
-            or auth.get("renewable") is not False
-            or policies != [self.expected_policy]
-            or auth.get("num_uses") != 2
-            or not isinstance(lease_duration, int)
-            or not 1 <= lease_duration <= 600
-        ):
+        if not isinstance(token, str) or not 20 <= len(token) <= 4096:
+            self._quarantined = True
             reject(
                 "VAULT_KUBERNETES_LOGIN_INVALID",
-                "Vault workload token differs from the bounded signing contract",
+                "Vault workload authentication returned an unusable token",
             )
         sign_response = None
         sign_failed = False
+        login_invalid = False
         try:
+            if (
+                auth.get("renewable") is not False
+                or policies != [self.expected_policy]
+                or auth.get("num_uses") != 2
+                or not isinstance(lease_duration, int)
+                or not 1 <= lease_duration <= 600
+            ):
+                login_invalid = True
+                raise ValueError("Vault workload token contract mismatch")
             sign_response = self.transport.request(
                 "POST",
                 f"{self.vault_origin}/v1/{self.mount}/sign/{self.key_name}",
@@ -305,21 +314,28 @@ class VaultKubernetesTransitSigner:
             )
         except Exception:
             sign_failed = True
-        try:
-            revoke = self.transport.request(
-                "POST",
-                f"{self.vault_origin}/v1/auth/token/revoke-self",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Vault-Token": token,
-                    "User-Agent": "acik-cross-ai-runtime-attestor/1",
-                },
-                body=b"{}",
-            )
-        except Exception:
+        finally:
+            try:
+                revoke = self.transport.request(
+                    "POST",
+                    f"{self.vault_origin}/v1/auth/token/revoke-self",
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Vault-Token": token,
+                        "User-Agent": "acik-cross-ai-runtime-attestor/1",
+                    },
+                    body=b"{}",
+                )
+            except Exception:
+                self._quarantined = True
+                reject(
+                    "VAULT_SIGN_FAILED",
+                    "Vault signing token could not be revoked; signer quarantined",
+                )
+        if login_invalid:
             reject(
-                "VAULT_SIGN_FAILED",
-                "Vault signing token could not be revoked",
+                "VAULT_KUBERNETES_LOGIN_INVALID",
+                "Vault workload token differs from the bounded signing contract",
             )
         if (
             sign_failed
@@ -327,6 +343,8 @@ class VaultKubernetesTransitSigner:
             or sign_response.status != 200
             or revoke.status not in {200, 204}
         ):
+            if revoke.status not in {200, 204}:
+                self._quarantined = True
             reject(
                 "VAULT_SIGN_FAILED",
                 "Vault signing or one-use token revocation failed",

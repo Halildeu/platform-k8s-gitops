@@ -21,6 +21,7 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     DirectClaudeRunner,
     DirectCodexRunner,
     MAX_PROMPT_BYTES,
+    MAX_PROMPT_CHARACTERS,
     ProviderExecutionReceipt,
     ProviderReviewIssuer,
     ReviewCoordinates,
@@ -403,6 +404,26 @@ class ProviderExecutionTest(unittest.TestCase):
                 self.wrapper, executable_policy=self.executable_policy
             ).run(prompt=prompt, model=CODEX_MODEL, workspace=self.workspace)
         self.assertEqual(run.call_args_list[2].kwargs["input"], prompt.encode())
+
+    def test_direct_codex_rejects_real_rpc_character_ceiling_before_launch(self) -> None:
+        with (
+            patch("subprocess.run") as run,
+            patch.object(
+                DirectCodexRunner,
+                "_apple_signature_identity",
+                return_value=self.signature,
+            ),
+        ):
+            runner = DirectCodexRunner(
+                self.wrapper, executable_policy=self.executable_policy
+            )
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_PROMPT_INVALID"):
+                runner.run(
+                    prompt="x" * (MAX_PROMPT_CHARACTERS + 1),
+                    model=CODEX_MODEL,
+                    workspace=self.workspace,
+                )
+        run.assert_not_called()
 
     def test_direct_codex_rejects_tool_or_multiple_terminal_messages(self) -> None:
         disallowed_items = (

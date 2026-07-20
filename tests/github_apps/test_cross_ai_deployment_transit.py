@@ -266,6 +266,31 @@ class VaultKubernetesTransitSignerTest(unittest.TestCase):
         self.transport.request = wrong_policy
         with self.assertRaisesRegex(PolicyError, "VAULT_KUBERNETES_LOGIN_INVALID"):
             self.signer.sign(b"message")
+        self.assertTrue(
+            any(call[1].endswith("/v1/auth/token/revoke-self") for call in self.transport.calls)
+        )
+
+    def test_revoke_failure_quarantines_signer_until_workload_restart(self) -> None:
+        original = self.transport.request
+
+        def revoke_fails(method, url, *, headers, body=None, timeout=10.0):
+            if url.endswith("/v1/auth/token/revoke-self"):
+                raise OSError("response lost")
+            return original(
+                method,
+                url,
+                headers=headers,
+                body=body,
+                timeout=timeout,
+            )
+
+        self.transport.request = revoke_fails
+        with self.assertRaisesRegex(PolicyError, "VAULT_SIGN_FAILED"):
+            self.signer.sign(b"message")
+        call_count = len(self.transport.calls)
+        with self.assertRaisesRegex(PolicyError, "VAULT_SIGNER_QUARANTINED"):
+            self.signer.sign(b"another message")
+        self.assertEqual(call_count, len(self.transport.calls))
 
 
 if __name__ == "__main__":

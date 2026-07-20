@@ -60,9 +60,11 @@ class CountingSigner(StaticSigner):
     def __init__(self, factory, key_id) -> None:
         super().__init__(factory, key_id)
         self.calls = 0
+        self.payloads = []
 
     def sign_json_envelope(self, *, payload_type, payload):
         self.calls += 1
+        self.payloads.append(json.loads(json.dumps(payload)))
         return super().sign_json_envelope(
             payload_type=payload_type,
             payload=payload,
@@ -255,6 +257,30 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
         self.assertEqual(first_result, second_result)
         self.assertEqual(1, runner.calls)
 
+    def test_durable_preexecution_claim_blocks_restart_replay(self) -> None:
+        generation = MODULE.RuntimeAuthorityGeneration(
+            trust_root=self.fixture.authority.trust_root,
+            revocations=self.fixture.authority.revocations_envelope,
+            expected_trust_root_sha256=(
+                self.fixture.authority.expected_trust_root_sha256
+            ),
+            runtime_policy=self.fixture.authority.issuer_runtime_policy,
+        )
+        session_id, execution, issued_at = self.store.claim_execution(
+            request=self.request,
+            measurement=self.workload_verifier.measurement,
+            generation=generation,
+        )
+        self.assertIsNone(execution)
+        self.assertIsNone(issued_at)
+        self.assertRegex(session_id, r"^[0-9a-f-]{36}$")
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_EXECUTION_UNCERTAIN",
+        ):
+            self.service.execute(dict(self.request))
+        self.assertEqual(0, self.runner.calls)
+
     def test_concurrent_finalize_signs_once_and_returns_identical_envelope(self) -> None:
         session = self.service.execute(self.request)
         finalize = self._finalize_request(session)
@@ -276,6 +302,101 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
             second_result = second.result(timeout=5)
         self.assertEqual(first_result, second_result)
         self.assertEqual(1, self.signer.calls)
+
+    def test_finalize_response_loss_reuses_durable_deterministic_payload(self) -> None:
+        session = self.service.execute(self.request)
+        finalize = self._finalize_request(session)
+        original_finalize = self.store.finalize
+        finalize_calls = 0
+
+        def lose_first_response(**kwargs):
+            nonlocal finalize_calls
+            finalize_calls += 1
+            if finalize_calls == 1:
+                raise RuntimeError("response lost")
+            return original_finalize(**kwargs)
+
+        with (
+            patch.object(MODULE, "utc_now", return_value=self.fixture.factory.now),
+            patch.object(
+                self.store,
+                "finalize",
+                side_effect=lose_first_response,
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "response lost"):
+                self.service.finalize(session["sessionId"], dict(finalize))
+            result = self.service.finalize(session["sessionId"], dict(finalize))
+        self.assertEqual(2, self.signer.calls)
+        self.assertEqual(self.signer.payloads[0], self.signer.payloads[1])
+        payload = self._payload(result["runtimeAttestationEnvelope"])
+        self.assertEqual(payload, self.signer.payloads[0])
+
+    def test_authority_rotation_uses_history_for_inflight_session(self) -> None:
+        config = self.root / "config/github-apps"
+        config.mkdir(parents=True)
+        current_root = config / "cross-ai-provider-review-trust-root.v2.json"
+        current_revocations = (
+            config / "cross-ai-provider-review-revocations.v1.dsse.json"
+        )
+        current_root.write_bytes(canonical_bytes(self.fixture.authority.trust_root))
+        current_revocations.write_bytes(
+            canonical_bytes(self.fixture.authority.revocations_envelope)
+        )
+        authority_file = config / "cross-ai-provider-review-authority.v1.json"
+        manifest = {
+            "schemaVersion": "acik.cross-ai-provider-review-authority.v1",
+            "status": "active",
+            "trustRootPath": (
+                "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+            ),
+            "revocationsPath": (
+                "config/github-apps/"
+                "cross-ai-provider-review-revocations.v1.dsse.json"
+            ),
+            "expectedTrustRootSha256": (
+                self.fixture.authority.expected_trust_root_sha256
+            ),
+            "issuerRuntimePolicy": self.fixture.authority.issuer_runtime_policy,
+            "historicalAuthorities": [],
+        }
+        authority_file.write_bytes(canonical_bytes(manifest))
+        self.service.authority_file = authority_file
+        self.service.authority_root = self.root
+        session = self.service.execute(self.request)
+
+        old_digest = self.fixture.authority.expected_trust_root_sha256
+        history = config / f"cross-ai-provider-review-history/{old_digest[7:]}"
+        history.mkdir(parents=True)
+        archived_root = history / "trust-root.v2.json"
+        archived_revocations = history / "revocations.v1.dsse.json"
+        archived_root.write_bytes(current_root.read_bytes())
+        archived_revocations.write_bytes(current_revocations.read_bytes())
+        rotated = json.loads(current_root.read_bytes())
+        rotated["trustRootId"] = "10000000-0000-4000-8000-000000000088"
+        current_root.write_bytes(canonical_bytes(rotated))
+        manifest["expectedTrustRootSha256"] = sha256_digest(rotated)
+        manifest["historicalAuthorities"] = [
+            {
+                "trustRootPath": str(archived_root.relative_to(self.root)),
+                "revocationsPath": str(archived_revocations.relative_to(self.root)),
+                "expectedTrustRootSha256": old_digest,
+                "expectedRevocationsSha256": sha256_digest(
+                    self.fixture.authority.revocations_envelope
+                ),
+                "issuerRuntimePolicy": self.fixture.authority.issuer_runtime_policy,
+            }
+        ]
+        authority_file.write_bytes(canonical_bytes(manifest))
+        self.assertEqual(
+            sha256_digest(rotated),
+            self.service._authority_generation().expected_trust_root_sha256,
+        )
+        with patch.object(MODULE, "utc_now", return_value=self.fixture.factory.now):
+            result = self.service.finalize(
+                session["sessionId"], self._finalize_request(session)
+            )
+        self.assertIn("runtimeAttestationEnvelope", result)
 
     def test_request_scope_authorization_and_workload_measurement_fail_closed(
         self,

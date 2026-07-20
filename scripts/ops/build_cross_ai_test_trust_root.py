@@ -328,6 +328,7 @@ def build_trust_root(
     expires_at: str,
     issuer_image_digest: str,
     launcher_source_sha256: str,
+    container_args_sha256: str,
     attestor_api_origin: str,
     previous_trust_root: dict[str, Any] | None = None,
     max_clock_skew_seconds: int = 60,
@@ -355,6 +356,7 @@ def build_trust_root(
     for label, value in (
         ("issuer image digest", issuer_image_digest),
         ("launcher source digest", launcher_source_sha256),
+        ("container args digest", container_args_sha256),
     ):
         if (
             not isinstance(value, str)
@@ -555,6 +557,25 @@ def build_trust_root(
             "kubernetesNamespace": "cross-ai",
             "kubernetesServiceAccount": "provider-review-issuer",
             "kubernetesContainerName": "runtime-attestor",
+            "kubernetesApiAudience": "https://kubernetes.default.svc.cluster.local",
+            "kubernetesContainerCommand": [
+                "python",
+                "-m",
+                "scripts.ai.run_cross_ai_runtime_attestor",
+            ],
+            "kubernetesContainerArgsSha256": container_args_sha256,
+            "kubernetesContainerSecurityContextSha256": "sha256:" + hashlib.sha256(
+                _canonical_bytes(
+                    {
+                        "allowPrivilegeEscalation": False,
+                        "capabilities": {"drop": ["ALL"]},
+                        "readOnlyRootFilesystem": True,
+                        "runAsNonRoot": True,
+                        "runAsUser": 10002,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    }
+                )
+            ).hexdigest(),
             "vaultKubernetesAuthMount": "kubernetes",
             "vaultKubernetesRole": "cross-ai-provider-review-runtime",
             "vaultTokenPolicy": "cross-ai-runner-management-test",
@@ -595,6 +616,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expires-at", required=True)
     parser.add_argument("--issuer-image-digest", required=True)
     parser.add_argument("--launcher-source-sha256", required=True)
+    parser.add_argument("--container-args-sha256", required=True)
     parser.add_argument("--attestor-api-origin", required=True)
     parser.add_argument("--previous-trust-root", type=Path)
     parser.add_argument("--max-clock-skew-seconds", type=int, default=60)
@@ -612,6 +634,7 @@ def main(argv: list[str] | None = None) -> int:
             expires_at=args.expires_at,
             issuer_image_digest=args.issuer_image_digest,
             launcher_source_sha256=args.launcher_source_sha256,
+            container_args_sha256=args.container_args_sha256,
             attestor_api_origin=args.attestor_api_origin,
             previous_trust_root=(
                 _load_previous_trust_root(args.previous_trust_root)

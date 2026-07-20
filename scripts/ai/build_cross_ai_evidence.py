@@ -19,12 +19,13 @@ import re
 import ssl
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Protocol
-from uuid import uuid4
+from uuid import UUID, uuid5
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -58,7 +59,7 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     ReviewCoordinates,
     parse_canonical_review_response,
 )
-from scripts.github_apps.cross_ai_deployment_policy.timeutil import utc_now
+from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
 from scripts.github_apps.cross_ai_deployment_policy.transit import VaultTransitSigner
 
 
@@ -71,6 +72,12 @@ GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 class IssuerRuntimeAttestor(Protocol):
     """Remote executor/attestor; never a local private-key adapter."""
+
+    @property
+    def request_id(self) -> str: ...
+
+    @property
+    def review_issued_at(self) -> str: ...
 
     def execute(
         self,
@@ -235,20 +242,35 @@ def _scope(workspace: Path) -> tuple[dict[str, str], bytes]:
 def _write_exclusive(path: Path, content: bytes) -> None:
     target = path.expanduser().absolute()
     target.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    temporary: Path | None = None
     try:
-        descriptor = os.open(target, flags, 0o600)
-    except OSError:
-        reject("EVIDENCE_OUTPUT_INVALID", "evidence output must be a new writable file")
-    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            dir=target.parent,
+        )
+        temporary = Path(temporary_name)
+        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        # A hard-link publishes complete bytes atomically and fails if the final
+        # name already exists; unlike replace(), it preserves create-once output.
+        os.link(temporary, target, follow_symlinks=False)
+        directory = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     except OSError:
         reject("EVIDENCE_OUTPUT_INVALID", "evidence output write failed")
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def build_signed_evidence(
@@ -356,8 +378,14 @@ def build_signed_evidence(
     # status, root/key validity and the revocation snapshot cannot be frozen at
     # launch time.
     now = utc_now().replace(microsecond=0)
-    expires = now + timedelta(minutes=90)
-    issued_at = now.isoformat().replace("+00:00", "Z")
+    issued = parse_utc(runtime_attestor.review_issued_at, "runtime.reviewIssuedAt")
+    if issued > now or now - issued > timedelta(minutes=30):
+        reject(
+            "PROVIDER_REVIEW_TIME_INVALID",
+            "durable runtime review time is outside the bounded execution window",
+        )
+    expires = issued + timedelta(minutes=90)
+    issued_at = issued.isoformat().replace("+00:00", "Z")
     expires_at = expires.isoformat().replace("+00:00", "Z")
     active_authority = authority or load_review_submission_authority(
         workspace,
@@ -388,8 +416,18 @@ def build_signed_evidence(
     ):
         reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
     coordinates = ReviewCoordinates(
-        review_id=str(uuid4()),
-        review_chain_id=str(uuid4()),
+        review_id=str(
+            uuid5(
+                UUID("d83928d5-c5a4-41d5-9ee0-e693e4bb7811"),
+                f"{runtime_attestor.request_id}:review",
+            )
+        ),
+        review_chain_id=str(
+            uuid5(
+                UUID("e89217a1-7e96-4b1e-8ce6-f04c50bb811c"),
+                f"{runtime_attestor.request_id}:chain",
+            )
+        ),
         subject_sha256=subject_sha256,
         round=1,
         previous_round_sha256=None,
@@ -417,7 +455,7 @@ def build_signed_evidence(
         provider_review_envelope=envelope,
         prompt_sha256=subject["promptSha256"],
         issued_at=issued_at,
-        expires_at=(now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),
+        expires_at=(issued + timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),
     )
     evidence: dict[str, object] = {
         "schema": EVIDENCE_SCHEMA,

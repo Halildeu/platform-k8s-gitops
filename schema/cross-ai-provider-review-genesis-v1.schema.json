@@ -97,7 +97,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["schemaVersion", "workloadIdentity", "issuerImageDigest", "launcherSourceSha256", "attestorKeyId", "maxAttestationLifetimeSeconds", "apiOrigin", "sessionPath", "authAudience", "kubernetesNamespace", "kubernetesServiceAccount", "kubernetesContainerName", "vaultKubernetesAuthMount", "vaultKubernetesRole", "vaultTokenPolicy", "maxReplicas"],
+          "required": ["schemaVersion", "workloadIdentity", "issuerImageDigest", "launcherSourceSha256", "attestorKeyId", "maxAttestationLifetimeSeconds", "apiOrigin", "sessionPath", "authAudience", "kubernetesNamespace", "kubernetesServiceAccount", "kubernetesContainerName", "kubernetesApiAudience", "kubernetesContainerCommand", "kubernetesContainerArgsSha256", "kubernetesContainerSecurityContextSha256", "vaultKubernetesAuthMount", "vaultKubernetesRole", "vaultTokenPolicy", "maxReplicas"],
           "properties": {
             "schemaVersion": {"const": "acik.cross-ai-provider-review-runtime-policy.v1"},
             "workloadIdentity": {"const": "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"},
@@ -111,6 +111,10 @@
             "kubernetesNamespace": {"const": "cross-ai"},
             "kubernetesServiceAccount": {"const": "provider-review-issuer"},
             "kubernetesContainerName": {"const": "runtime-attestor"},
+            "kubernetesApiAudience": {"const": "https://kubernetes.default.svc.cluster.local"},
+            "kubernetesContainerCommand": {"const": ["python", "-m", "scripts.ai.run_cross_ai_runtime_attestor"]},
+            "kubernetesContainerArgsSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+            "kubernetesContainerSecurityContextSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
             "vaultKubernetesAuthMount": {"const": "kubernetes"},
             "vaultKubernetesRole": {"const": "cross-ai-provider-review-runtime"},
             "vaultTokenPolicy": {"const": "cross-ai-runner-management-test"},

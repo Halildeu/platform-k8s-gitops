@@ -233,6 +233,10 @@ class DeterministicDiffTests(unittest.TestCase):
                     os.environ["COLUMNS"] = previous
             self.assertEqual(narrow, wide)
 
+    def test_canonical_patch_uses_one_context_line(self) -> None:
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertIn('"--unified=1"', source)
+
 
 class WorkflowBindingTests(unittest.TestCase):
     ACTION_USES_RE = re.compile(
@@ -276,7 +280,12 @@ class WorkflowBindingTests(unittest.TestCase):
             )
 
     def test_scope_limit_remains_bounded(self) -> None:
-        self.assertEqual(MODULE.MAX_SCOPE_BYTES, 2_000_000)
+        self.assertEqual(MODULE.MAX_SCOPE_BYTES, 1_045_000)
+
+    def test_canonical_diff_omits_redundant_stat_section(self) -> None:
+        source = Path(MODULE.__file__).read_text(encoding="utf-8")
+        self.assertNotIn('"--stat=999,999"', source)
+        self.assertIn('"--patch"', source)
 
 
 if __name__ == "__main__":

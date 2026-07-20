@@ -1,11 +1,4 @@
-"""Fixed-function service for independently attested direct-Codex reviews.
-
-The service owns the runner-management Transit capability and the verified
-Codex executable. Callers can request one canonical review and later submit a
-provider-review DSSE envelope, but they cannot supply an execution receipt or
-runtime payload. The measured execution is retained in a create-once SQLite
-session and is the only source used for the runtime signature.
-"""
+"""Fixed-function, durable attestor for measured direct-Codex reviews."""
 
 from __future__ import annotations
 
@@ -18,12 +11,13 @@ import sqlite3
 import stat
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Iterator, Protocol
 from urllib.parse import quote
-from uuid import UUID, uuid4
+from uuid import UUID, uuid5
 
 from scripts.ai.cross_ai_runtime_authorization import (
     AUTH_AUDIENCE,
@@ -56,13 +50,22 @@ FINALIZE_REQUEST_SCHEMA = "acik.cross-ai-provider-review-runtime-finalize-reques
 FINALIZE_RESPONSE_SCHEMA = "acik.cross-ai-provider-review-runtime-finalize-response.v1"
 GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
-SCOPE_DIGEST = re.compile(r"^[a-f0-9]{64}$")
 MAX_PROMPT_BYTES = 4 * 1024 * 1024
 MAX_REQUEST_BYTES = 5 * 1024 * 1024
 ATTEST_PATH = re.compile(
     r"^/api/v1/cross-ai/provider-review-runtime/sessions/"
     r"([0-9a-f-]{36})/attest$"
 )
+SESSION_NAMESPACE = UUID("7b8af1e4-65dc-4afb-9db4-b07f392f323f")
+ATTESTATION_NAMESPACE = UUID("18f349ce-b329-480d-9c8f-cc7d97666946")
+
+
+@dataclass(frozen=True)
+class RuntimeAuthorityGeneration:
+    trust_root: dict[str, Any]
+    revocations: dict[str, Any]
+    expected_trust_root_sha256: str
+    runtime_policy: dict[str, Any]
 
 
 class ReviewRunner(Protocol):
@@ -231,7 +234,7 @@ def _validate_session_request(document: dict[str, Any]) -> None:
 
 
 class RuntimeSessionStore:
-    """Create-once, idempotent storage for measured runtime sessions."""
+    """Create-once execution and finalization ledger."""
 
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -272,11 +275,16 @@ class RuntimeSessionStore:
               request_id TEXT NOT NULL UNIQUE,
               request_sha256 TEXT NOT NULL,
               request_json BLOB NOT NULL,
-              execution_json BLOB NOT NULL,
+              execution_state TEXT NOT NULL,
+              execution_json BLOB,
+              review_issued_at TEXT,
               workload_identity TEXT NOT NULL,
               image_digest TEXT NOT NULL,
               pod_uid TEXT NOT NULL,
+              trust_root_sha256 TEXT NOT NULL,
+              runtime_policy_json BLOB NOT NULL,
               provider_envelope_sha256 TEXT,
+              finalization_payload_json BLOB,
               runtime_envelope_json BLOB
             )
             """
@@ -292,11 +300,16 @@ class RuntimeSessionStore:
             "request_id",
             "request_sha256",
             "request_json",
+            "execution_state",
             "execution_json",
+            "review_issued_at",
             "workload_identity",
             "image_digest",
             "pod_uid",
+            "trust_root_sha256",
+            "runtime_policy_json",
             "provider_envelope_sha256",
+            "finalization_payload_json",
             "runtime_envelope_json",
         }
         if columns != expected_columns:
@@ -308,67 +321,133 @@ class RuntimeSessionStore:
         self.connection.commit()
         self.lock = threading.Lock()
 
-    def record(
+    def _begin(self) -> None:
+        self.connection.execute("BEGIN IMMEDIATE")
+
+    def claim_execution(
         self,
         *,
         request: dict[str, Any],
-        execution: dict[str, Any],
         measurement: WorkloadMeasurement,
-    ) -> tuple[str, dict[str, Any]]:
+        generation: RuntimeAuthorityGeneration,
+    ) -> tuple[str, dict[str, Any] | None, str | None]:
         request_bytes = canonical_bytes(request)
         request_digest = sha256_digest(request)
-        execution_bytes = canonical_bytes(execution)
         with self.lock:
-            existing = self.connection.execute(
-                """
-                SELECT session_id, request_sha256, execution_json
-                FROM runtime_sessions WHERE request_id = ?
-                """,
-                (request["requestId"],),
-            ).fetchone()
-            if existing is not None:
-                if existing[1] != request_digest:
+            self._begin()
+            try:
+                existing = self.connection.execute(
+                    """
+                    SELECT session_id, request_sha256, execution_state,
+                           execution_json, review_issued_at
+                    FROM runtime_sessions WHERE request_id = ?
+                    """,
+                    (request["requestId"],),
+                ).fetchone()
+                if existing is not None:
+                    if existing[1] != request_digest:
+                        reject(
+                            "PROVIDER_RUNTIME_IDEMPOTENCY_CONFLICT",
+                            "requestId was already used for different bytes",
+                        )
+                    self.connection.commit()
+                    if existing[2] == "COMPLETE" and existing[3] is not None:
+                        return existing[0], json.loads(existing[3]), existing[4]
                     reject(
-                        "PROVIDER_RUNTIME_IDEMPOTENCY_CONFLICT",
-                        "requestId was already used for different bytes",
+                        "PROVIDER_RUNTIME_EXECUTION_UNCERTAIN",
+                        "provider execution claim exists without a durable result",
                     )
-                return existing[0], json.loads(existing[2])
-            session_id = str(uuid4())
+                session_id = str(uuid5(SESSION_NAMESPACE, request["requestId"]))
+                self.connection.execute(
+                    """
+                    INSERT INTO runtime_sessions
+                      (session_id, request_id, request_sha256, request_json,
+                       execution_state, execution_json, workload_identity,
+                       image_digest, pod_uid, trust_root_sha256, runtime_policy_json)
+                    VALUES (?, ?, ?, ?, 'CLAIMED', NULL, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        request["requestId"],
+                        request_digest,
+                        request_bytes,
+                        measurement.workload_identity,
+                        measurement.image_digest,
+                        measurement.pod_uid,
+                        generation.expected_trust_root_sha256,
+                        canonical_bytes(generation.runtime_policy),
+                    ),
+                )
+                self.connection.commit()
+            except Exception:
+                if self.connection.in_transaction:
+                    self.connection.rollback()
+                raise
+        return session_id, None, None
+
+    def complete_execution(
+        self,
+        *,
+        session_id: str,
+        execution: dict[str, Any],
+        review_issued_at: str,
+    ) -> dict[str, Any]:
+        rendered = canonical_bytes(execution)
+        with self.lock:
+            self._begin()
+            try:
+                cursor = self.connection.execute(
+                    """
+                    UPDATE runtime_sessions
+                    SET execution_state = 'COMPLETE', execution_json = ?,
+                        review_issued_at = ?
+                    WHERE session_id = ? AND execution_state = 'CLAIMED'
+                    """,
+                    (rendered, review_issued_at, session_id),
+                )
+                if cursor.rowcount != 1:
+                    reject(
+                        "PROVIDER_RUNTIME_EXECUTION_UNCERTAIN",
+                        "provider execution claim cannot be completed exactly once",
+                    )
+                self.connection.commit()
+            except Exception:
+                if self.connection.in_transaction:
+                    self.connection.rollback()
+                raise
+        return execution
+
+    def mark_execution_uncertain(self, session_id: str) -> None:
+        with self.lock:
             self.connection.execute(
                 """
-                INSERT INTO runtime_sessions
-                  (session_id, request_id, request_sha256, request_json, execution_json,
-                   workload_identity, image_digest, pod_uid)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE runtime_sessions SET execution_state = 'UNCERTAIN'
+                WHERE session_id = ? AND execution_state = 'CLAIMED'
                 """,
-                (
-                    session_id,
-                    request["requestId"],
-                    request_digest,
-                    request_bytes,
-                    execution_bytes,
-                    measurement.workload_identity,
-                    measurement.image_digest,
-                    measurement.pod_uid,
-                ),
+                (session_id,),
             )
             self.connection.commit()
-        return session_id, execution
 
     def get(
         self, session_id: str
-    ) -> tuple[dict[str, Any], dict[str, Any], WorkloadMeasurement]:
+    ) -> tuple[dict[str, Any], dict[str, Any], WorkloadMeasurement, str, dict[str, Any]]:
         with self.lock:
             row = self.connection.execute(
                 """
                 SELECT request_json, execution_json, workload_identity,
-                       image_digest, pod_uid
+                       image_digest, pod_uid, trust_root_sha256, runtime_policy_json,
+                       execution_state
                 FROM runtime_sessions WHERE session_id = ?
                 """,
                 (session_id,),
             ).fetchone()
         if row is None:
             reject("PROVIDER_RUNTIME_SESSION_MISSING", "runtime session is unavailable")
+        if row[7] != "COMPLETE" or row[1] is None:
+            reject(
+                "PROVIDER_RUNTIME_EXECUTION_UNCERTAIN",
+                "runtime session has no durable provider execution",
+            )
         return (
             json.loads(row[0]),
             json.loads(row[1]),
@@ -377,29 +456,57 @@ class RuntimeSessionStore:
                 image_digest=row[3],
                 pod_uid=row[4],
             ),
+            row[5],
+            json.loads(row[6]),
         )
 
-    def by_request(
+    def prepare_finalization(
         self,
-        request_id: str,
-        request_sha256: str,
-    ) -> tuple[str, dict[str, Any]] | None:
+        *,
+        session_id: str,
+        provider_envelope_sha256: str,
+        runtime_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload_bytes = canonical_bytes(runtime_payload)
         with self.lock:
-            row = self.connection.execute(
-                """
-                SELECT session_id, request_sha256, execution_json
-                FROM runtime_sessions WHERE request_id = ?
-                """,
-                (request_id,),
-            ).fetchone()
-        if row is None:
-            return None
-        if row[1] != request_sha256:
-            reject(
-                "PROVIDER_RUNTIME_IDEMPOTENCY_CONFLICT",
-                "requestId was already used for different bytes",
-            )
-        return row[0], json.loads(row[2])
+            self._begin()
+            try:
+                row = self.connection.execute(
+                    """
+                    SELECT provider_envelope_sha256, finalization_payload_json,
+                           runtime_envelope_json
+                    FROM runtime_sessions WHERE session_id = ?
+                    """,
+                    (session_id,),
+                ).fetchone()
+                if row is None:
+                    reject(
+                        "PROVIDER_RUNTIME_SESSION_MISSING",
+                        "runtime session is unavailable",
+                    )
+                if row[0] is not None and (
+                    row[0] != provider_envelope_sha256
+                    or row[1] != payload_bytes
+                ):
+                    reject(
+                        "PROVIDER_RUNTIME_IDEMPOTENCY_CONFLICT",
+                        "runtime finalization intent differs from durable bytes",
+                    )
+                if row[0] is None:
+                    self.connection.execute(
+                        """
+                        UPDATE runtime_sessions
+                        SET provider_envelope_sha256 = ?, finalization_payload_json = ?
+                        WHERE session_id = ?
+                        """,
+                        (provider_envelope_sha256, payload_bytes, session_id),
+                    )
+                self.connection.commit()
+            except Exception:
+                if self.connection.in_transaction:
+                    self.connection.rollback()
+                raise
+        return json.loads(payload_bytes)
 
     def finalized(
         self,
@@ -435,34 +542,47 @@ class RuntimeSessionStore:
     ) -> dict[str, Any]:
         envelope_bytes = canonical_bytes(runtime_envelope)
         with self.lock:
-            row = self.connection.execute(
-                """
-                SELECT provider_envelope_sha256, runtime_envelope_json
-                FROM runtime_sessions WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchone()
-            if row is None:
-                reject(
-                    "PROVIDER_RUNTIME_SESSION_MISSING",
-                    "runtime session is unavailable",
-                )
-            if row[1] is not None:
-                if row[0] != provider_envelope_sha256:
+            self._begin()
+            try:
+                row = self.connection.execute(
+                    """
+                    SELECT provider_envelope_sha256, finalization_payload_json,
+                           runtime_envelope_json
+                    FROM runtime_sessions WHERE session_id = ?
+                    """,
+                    (session_id,),
+                ).fetchone()
+                if row is None:
                     reject(
-                        "PROVIDER_RUNTIME_IDEMPOTENCY_CONFLICT",
-                        "runtime session was finalized for another provider leaf",
+                        "PROVIDER_RUNTIME_SESSION_MISSING",
+                        "runtime session is unavailable",
                     )
-                return json.loads(row[1])
-            self.connection.execute(
-                """
-                UPDATE runtime_sessions
-                SET provider_envelope_sha256 = ?, runtime_envelope_json = ?
-                WHERE session_id = ?
-                """,
-                (provider_envelope_sha256, envelope_bytes, session_id),
-            )
-            self.connection.commit()
+                if row[2] is not None:
+                    if row[0] != provider_envelope_sha256:
+                        reject(
+                            "PROVIDER_RUNTIME_IDEMPOTENCY_CONFLICT",
+                            "runtime session was finalized for another provider leaf",
+                        )
+                    self.connection.commit()
+                    return json.loads(row[2])
+                if row[0] != provider_envelope_sha256 or row[1] is None:
+                    reject(
+                        "PROVIDER_RUNTIME_FINALIZATION_UNPREPARED",
+                        "runtime finalization intent is not durable",
+                    )
+                self.connection.execute(
+                    """
+                    UPDATE runtime_sessions
+                    SET provider_envelope_sha256 = ?, runtime_envelope_json = ?
+                    WHERE session_id = ? AND runtime_envelope_json IS NULL
+                    """,
+                    (provider_envelope_sha256, envelope_bytes, session_id),
+                )
+                self.connection.commit()
+            except Exception:
+                if self.connection.in_transaction:
+                    self.connection.rollback()
+                raise
         return runtime_envelope
 
     def close(self) -> None:
@@ -471,7 +591,7 @@ class RuntimeSessionStore:
 
 
 class FixedRuntimeAttestorService:
-    """Execute, measure, verify and attest one immutable review session."""
+    """Execute and attest an immutable review session."""
 
     def __init__(
         self,
@@ -480,6 +600,8 @@ class FixedRuntimeAttestorService:
         trust_root_file: Path,
         expected_trust_root_sha256: str,
         revocations_file: Path,
+        authority_file: Path | None = None,
+        authority_root: Path | None = None,
         authorization_token_file: Path,
         store: RuntimeSessionStore,
         signer: EnvelopeSigner,
@@ -511,6 +633,8 @@ class FixedRuntimeAttestorService:
         self.trust_root_file = trust_root_file
         self.expected_trust_root_sha256 = expected_trust_root_sha256
         self.revocations_file = revocations_file
+        self.authority_file = authority_file
+        self.authority_root = authority_root
         self._lock_guard = threading.Lock()
         self._request_locks: dict[str, tuple[threading.Lock, int]] = {}
         self._finalize_locks: dict[str, tuple[threading.Lock, int]] = {}
@@ -538,30 +662,131 @@ class FixedRuntimeAttestorService:
                 else:
                     locks[key] = (lock, current_users - 1)
 
-    def _evidence_verifier(self) -> EvidenceVerifier:
-        trust_root = _load_public_json(self.trust_root_file, "runtime trust root")
-        revocations = _load_public_json(
-            self.revocations_file,
-            "runtime revocations",
-        )
-        if sha256_digest(trust_root) != self.expected_trust_root_sha256:
+    def _authority_path(self, relative: object) -> Path:
+        if (
+            self.authority_root is None
+            or not isinstance(relative, str)
+            or not relative.startswith("config/github-apps/")
+            or relative.startswith("/")
+            or ".." in Path(relative).parts
+        ):
             reject(
                 "PROVIDER_RUNTIME_AUTHORITY_INVALID",
-                "runtime trust root differs from the independent pin",
+                "runtime authority path is outside the fixed public root",
             )
+        root = self.authority_root.resolve()
+        candidate = (root / relative).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            reject(
+                "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                "runtime authority path escapes the fixed public root",
+            )
+        return candidate
+
+    def _authority_generation(
+        self,
+        expected_digest: str | None = None,
+    ) -> RuntimeAuthorityGeneration:
+        if self.authority_file is None:
+            trust_root = _load_public_json(self.trust_root_file, "runtime trust root")
+            revocations = _load_public_json(self.revocations_file, "runtime revocations")
+            digest = sha256_digest(trust_root)
+            if digest != self.expected_trust_root_sha256:
+                reject(
+                    "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                    "runtime trust root differs from the independent pin",
+                )
+            generation = RuntimeAuthorityGeneration(
+                trust_root=trust_root,
+                revocations=revocations,
+                expected_trust_root_sha256=digest,
+                runtime_policy=dict(self.runtime_policy),
+            )
+        else:
+            manifest = _load_public_json(self.authority_file, "runtime authority manifest")
+            if (
+                manifest.get("schemaVersion")
+                != "acik.cross-ai-provider-review-authority.v1"
+                or manifest.get("status") != "active"
+                or not isinstance(manifest.get("historicalAuthorities"), list)
+            ):
+                reject(
+                    "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                    "runtime authority manifest is not active",
+                )
+            locators = [manifest, *manifest["historicalAuthorities"]]
+            locator = next(
+                (
+                    item
+                    for item in locators
+                    if item.get("expectedTrustRootSha256") == expected_digest
+                ),
+                manifest if expected_digest is None else None,
+            )
+            if not isinstance(locator, dict):
+                reject(
+                    "PROVIDER_RUNTIME_AUTHORITY_RETIRED",
+                    "session authority generation is not in immutable history",
+                )
+            trust_root = _load_public_json(
+                self._authority_path(locator.get("trustRootPath")),
+                "runtime generation trust root",
+            )
+            revocations = _load_public_json(
+                self._authority_path(locator.get("revocationsPath")),
+                "runtime generation revocations",
+            )
+            digest = sha256_digest(trust_root)
+            runtime_policy = locator.get("issuerRuntimePolicy")
+            if (
+                digest != locator.get("expectedTrustRootSha256")
+                or runtime_policy != trust_root.get("providerReviewRuntimePolicy")
+                or not isinstance(runtime_policy, dict)
+                or (
+                    "expectedRevocationsSha256" in locator
+                    and sha256_digest(revocations)
+                    != locator["expectedRevocationsSha256"]
+                )
+            ):
+                reject(
+                    "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                    "runtime authority generation is internally inconsistent",
+                )
+            generation = RuntimeAuthorityGeneration(
+                trust_root=trust_root,
+                revocations=revocations,
+                expected_trust_root_sha256=digest,
+                runtime_policy=dict(runtime_policy),
+            )
+        if (
+            expected_digest is not None
+            and generation.expected_trust_root_sha256 != expected_digest
+        ):
+            reject(
+                "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                "runtime authority generation digest differs from its session",
+            )
+        return generation
+
+    def _evidence_verifier(
+        self,
+        generation: RuntimeAuthorityGeneration,
+    ) -> EvidenceVerifier:
         return EvidenceVerifier(
-            trust_root=trust_root,
-            revocations_envelope=revocations,
+            trust_root=generation.trust_root,
+            revocations_envelope=generation.revocations,
             now=utc_now(),
-            expected_trust_root_sha256=self.expected_trust_root_sha256,
+            expected_trust_root_sha256=generation.expected_trust_root_sha256,
         )
 
-    def _measurement(self) -> WorkloadMeasurement:
+    def _measurement(self, runtime_policy: dict[str, Any]) -> WorkloadMeasurement:
         measurement = self.workload_verifier.measure()
         if (
             measurement.workload_identity
-            != self.runtime_policy["workloadIdentity"]
-            or measurement.image_digest != self.runtime_policy["issuerImageDigest"]
+            != runtime_policy["workloadIdentity"]
+            or measurement.image_digest != runtime_policy["issuerImageDigest"]
         ):
             reject(
                 "PROVIDER_RUNTIME_WORKLOAD_MISMATCH",
@@ -578,46 +803,57 @@ class FixedRuntimeAttestorService:
     def execute(self, document: dict[str, Any]) -> dict[str, Any]:
         _validate_session_request(document)
         self.authorization.assert_request(document)
-        self._evidence_verifier()
-        measurement = self._measurement()
+        generation = self._authority_generation()
+        self._evidence_verifier(generation)
+        measurement = self._measurement(generation.runtime_policy)
         with self._keyed_lock(self._request_locks, document["requestId"]):
-            existing = self.store.by_request(
-                document["requestId"],
-                sha256_digest(document),
+            session_id, stored_execution, review_issued_at = self.store.claim_execution(
+                request=document,
+                measurement=measurement,
+                generation=generation,
             )
-            if existing is not None:
+            if stored_execution is not None:
                 return {
                     "schemaVersion": SESSION_RESPONSE_SCHEMA,
-                    "sessionId": existing[0],
-                    "execution": existing[1],
+                    "sessionId": session_id,
+                    "execution": stored_execution,
+                    "reviewIssuedAt": review_issued_at,
                 }
-            receipt = self.runner.run(
-                prompt=document["prompt"],
-                model=document["modelId"],
-                workspace=self.workspace,
-                timeout_seconds=document["timeoutSeconds"],
-            )
-            execution = execution_document(receipt)
-            if (
-                execution["inputSha256"] != document["promptSha256"]
-                or execution["modelId"] != document["modelId"]
-                or execution["reasoningEffort"] != "xhigh"
-                or execution["sandbox"] != "read-only"
-                or execution["ephemeral"] is not True
-            ):
-                reject(
-                    "PROVIDER_RUNTIME_BINDING_MISMATCH",
-                    "measured execution differs from the fixed session request",
+            try:
+                receipt = self.runner.run(
+                    prompt=document["prompt"],
+                    model=document["modelId"],
+                    workspace=self.workspace,
+                    timeout_seconds=document["timeoutSeconds"],
                 )
-            session_id, stored_execution = self.store.record(
-                request=document,
+                execution = execution_document(receipt)
+                if (
+                    execution["inputSha256"] != document["promptSha256"]
+                    or execution["modelId"] != document["modelId"]
+                    or execution["reasoningEffort"] != "xhigh"
+                    or execution["sandbox"] != "read-only"
+                    or execution["ephemeral"] is not True
+                ):
+                    reject(
+                        "PROVIDER_RUNTIME_BINDING_MISMATCH",
+                        "measured execution differs from the fixed session request",
+                    )
+            except Exception:
+                self.store.mark_execution_uncertain(session_id)
+                raise
+            review_issued_at = (
+                utc_now().replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            )
+            stored_execution = self.store.complete_execution(
+                session_id=session_id,
                 execution=execution,
-                measurement=measurement,
+                review_issued_at=review_issued_at,
             )
         return {
             "schemaVersion": SESSION_RESPONSE_SCHEMA,
             "sessionId": session_id,
             "execution": stored_execution,
+            "reviewIssuedAt": review_issued_at,
         }
 
     def finalize(self, session_id: str, document: dict[str, Any]) -> dict[str, Any]:
@@ -649,9 +885,17 @@ class FixedRuntimeAttestorService:
                 "runtime finalization request differs from the fixed contract",
             )
         self.authorization.assert_active()
-        verifier = self._evidence_verifier()
-        current_measurement = self._measurement()
-        request, execution, stored_measurement = self.store.get(session_id)
+        request, execution, stored_measurement, trust_root_digest, runtime_policy = (
+            self.store.get(session_id)
+        )
+        generation = self._authority_generation(trust_root_digest)
+        if generation.runtime_policy != runtime_policy:
+            reject(
+                "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                "session runtime policy differs from its archived authority generation",
+            )
+        verifier = self._evidence_verifier(generation)
+        current_measurement = self._measurement(runtime_policy)
         if current_measurement != stored_measurement:
             reject(
                 "PROVIDER_RUNTIME_WORKLOAD_MISMATCH",
@@ -716,11 +960,16 @@ class FixedRuntimeAttestorService:
                 }
             runtime_payload = {
                 "schemaVersion": "acik.cross-ai-provider-review-runtime-attestation.v1",
-                "attestationId": str(uuid4()),
+                "attestationId": str(
+                    uuid5(
+                        ATTESTATION_NAMESPACE,
+                        f"{session_id}:{provider_digest}",
+                    )
+                ),
                 "keyId": self.signer.key_id,
                 "workloadIdentity": stored_measurement.workload_identity,
                 "issuerImageDigest": stored_measurement.image_digest,
-                "launcherSourceSha256": self.runtime_policy["launcherSourceSha256"],
+                "launcherSourceSha256": runtime_policy["launcherSourceSha256"],
                 "providerReviewEnvelopeSha256": provider_digest,
                 "promptSha256": request["promptSha256"],
                 "responseSha256": execution["outputSha256"],
@@ -729,9 +978,14 @@ class FixedRuntimeAttestorService:
                 "issuedAt": document["issuedAt"],
                 "expiresAt": document["expiresAt"],
             }
+            durable_payload = self.store.prepare_finalization(
+                session_id=session_id,
+                provider_envelope_sha256=provider_digest,
+                runtime_payload=runtime_payload,
+            )
             runtime_envelope = self.signer.sign_json_envelope(
                 payload_type=PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
-                payload=runtime_payload,
+                payload=durable_payload,
             )
             stored = self.store.finalize(
                 session_id=session_id,

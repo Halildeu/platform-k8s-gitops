@@ -117,6 +117,12 @@ def main() -> int:
             "kubernetesServiceAccount"
         ],
         container_name=args.container_name,
+        expected_image_digest=authority["issuerRuntimePolicy"]["issuerImageDigest"],
+        expected_command=authority["issuerRuntimePolicy"]["kubernetesContainerCommand"],
+        expected_args_sha256=authority["issuerRuntimePolicy"]["kubernetesContainerArgsSha256"],
+        expected_security_context_sha256=authority["issuerRuntimePolicy"][
+            "kubernetesContainerSecurityContextSha256"
+        ],
         api_token_file=args.kubernetes_api_token_file,
         transport=KubernetesPodTransport(
             api_origin="https://kubernetes.default.svc",
@@ -138,6 +144,8 @@ def main() -> int:
         trust_root_file=args.trust_root_file,
         expected_trust_root_sha256=authority["expectedTrustRootSha256"],
         revocations_file=args.revocations_file,
+        authority_file=args.authority_file,
+        authority_root=args.authority_file.resolve().parents[2],
         authorization_token_file=args.authorization_token_file,
         store=store,
         signer=signer,

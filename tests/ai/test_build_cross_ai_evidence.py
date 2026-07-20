@@ -44,6 +44,8 @@ class StaticRuntimeAttestor:
         self.fixture = fixture
         self.execute_calls = 0
         self.calls = 0
+        self.request_id = "70000000-0000-4000-8000-000000000077"
+        self.review_issued_at = fixture.factory.now.isoformat().replace("+00:00", "Z")
 
     def execute(
         self, *, prompt, model, bindings, subject_sha256, timeout_seconds,
@@ -277,12 +279,15 @@ class EvidenceBuilderTests(unittest.TestCase):
             base64.b64decode(evidence["review_envelope"]["payload"], validate=True)
         )
         self.assertEqual(
-            leaf["issuedAt"], completed_at.isoformat().replace("+00:00", "Z")
+            leaf["issuedAt"], self.runtime_attestor.review_issued_at
         )
 
         self.output.unlink()
         runtime_attestor = StaticRuntimeAttestor(self.fixture)
         stale_time = self.fixture.factory.now + timedelta(hours=2)
+        runtime_attestor.review_issued_at = stale_time.isoformat().replace(
+            "+00:00", "Z"
+        )
         with (
             patch.object(
                 MODULE,
@@ -436,6 +441,15 @@ class EvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(self.output.read_text(encoding="utf-8"), "occupied")
         self.assertEqual(self.runtime_attestor.execute_calls, 0)
 
+    def test_evidence_publish_failure_leaves_no_partial_final_file(self) -> None:
+        with (
+            patch.object(MODULE.os, "link", side_effect=OSError("publish failed")),
+            self.assertRaisesRegex(PolicyError, "EVIDENCE_OUTPUT_INVALID"),
+        ):
+            MODULE._write_exclusive(self.output, b'{"complete":true}')
+        self.assertFalse(self.output.exists())
+        self.assertEqual(list(self.output.parent.glob(f".{self.output.name}.*.tmp")), [])
+
 
 class RemoteRuntimeAttestorTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -498,6 +512,7 @@ class RemoteRuntimeAttestorTests(unittest.TestCase):
                     "schemaVersion": "acik.cross-ai-provider-review-runtime-session-response.v1",
                     "sessionId": "60000000-0000-4000-8000-000000000099",
                     "execution": self.execution_document,
+                    "reviewIssuedAt": self.authorization["issuedAt"],
                 },
                 {
                     "schemaVersion": "acik.cross-ai-provider-review-runtime-finalize-response.v1",
@@ -542,6 +557,7 @@ class RemoteRuntimeAttestorTests(unittest.TestCase):
                     "schemaVersion": "acik.cross-ai-provider-review-runtime-session-response.v1",
                     "sessionId": "60000000-0000-4000-8000-000000000099",
                     "execution": forged,
+                    "reviewIssuedAt": self.authorization["issuedAt"],
                 }
             ]
         )
@@ -566,6 +582,7 @@ class RemoteRuntimeAttestorTests(unittest.TestCase):
                     "schemaVersion": "acik.cross-ai-provider-review-runtime-session-response.v1",
                     "sessionId": "60000000-0000-4000-8000-000000000099",
                     "execution": self.execution_document,
+                    "reviewIssuedAt": self.authorization["issuedAt"],
                 }
             ]
         )
