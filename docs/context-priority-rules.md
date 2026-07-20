@@ -340,6 +340,25 @@ Mavis bildirimi **yerine geçmez**:
 
 ## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal + Sağlayıcı/Model Esnek
 
+> **GEÇİCİ ASKI — kullanıcı 2026-07-20:** Cross-AI istişare/review şu an
+> **zorunlu değil, opt-in**. Agent otomatik ikinci-görüş / challenger review
+> AÇMAZ; istişare yalnız kullanıcı açıkça isteyince yapılır ("Codex'e sor",
+> "GLM'e danış", "ikinci görüş al", "cross-AI review yap" vb.). Merge tarafında
+> gate advisory'ye indirildi: main branch protection'dan `cross-ai-audit`
+> required-status-check çıkarıldı (2026-07-20; check hâlâ koşuyor ama
+> bloklamıyor). Bu askı kalkana kadar aşağıdaki 11.1–11.5 mimarisi **referans
+> mimari** olarak korunur ama otomatik zorlanmaz; sabit guard'lar (implementer
+> ≠ reviewer sağlayıcı, Cursor/wrapper-routed yasak, secret/PII prompt/receipt
+> yasağı, kota/auth/boş çıktı = tracked_pending, cross-AI ≠ test/CI/live/human
+> gate) bir istişare *fiilen yapılırsa* geçerliliğini sürdürür.
+>
+> **Geri açma** (tekrar zorunlu hale getirmek için tek komut):
+> ```bash
+> printf '["cross-ai-audit"]' | gh api --method POST \
+>   repos/Halildeu/platform-k8s-gitops/branches/main/protection/required_status_checks/contexts --input -
+> ```
+> ve bu blok kaldırılır.
+
 Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621)
 ve [#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638)
 kararları, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır.
