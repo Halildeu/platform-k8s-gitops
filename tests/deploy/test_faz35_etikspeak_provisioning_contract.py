@@ -192,8 +192,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('readonly PROVISIONER_ROLE_NAME="ETIK_SPEAK_PROVISIONER"', self.writer_identity)
         self.assertIn('relation:"can_manage",object:"module:ACCESS"', self.writer_identity)
         self.assertIn('{permissions:[{type:"MODULE",key:"ACCESS",grant:"MANAGE"}]}', self.writer_identity)
-        self.assertIn('.attributes.userId=[$local]', self.writer_identity)
-        self.assertIn('.attributes.subscriberId=[$local]', self.writer_identity)
+        self.assertIn("'.userId=[$local] | .subscriberId=[$local]'", self.writer_identity)
+        self.assertNotIn("'.attributes.userId=[$local]", self.writer_identity)
         self.assertIn("writer-provisioner-granule-conflict", self.writer_identity)
         self.assertIn("writer-provisioner-member-conflict", self.writer_identity)
         self.assertIn("writer-role-catalog-incomplete-or-paged", self.writer_identity)
@@ -223,6 +223,35 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertLess(credential_preflight, identity_alignment)
         self.assertLess(identity_alignment, first_writer_token)
         self.assertLess(first_writer_token, first_role_api)
+
+    def test_permission_writer_expected_attributes_remain_a_flat_keycloak_map(self):
+        attributes = {
+            "org_id": ["default"],
+            "subscriberId": ["1204"],
+            "userId": ["1204"],
+        }
+        result = subprocess.run(
+            [
+                "jq",
+                "--arg",
+                "local",
+                "12",
+                ".userId=[$local] | .subscriberId=[$local]",
+            ],
+            input=json.dumps(attributes),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "org_id": ["default"],
+                "subscriberId": ["12"],
+                "userId": ["12"],
+            },
+        )
+        self.assertNotIn("attributes", json.loads(result.stdout))
 
     def test_runbook_reconciles_and_repairs_writer_before_entitlement(self):
         reconcile = self.activation_runbook.index(
