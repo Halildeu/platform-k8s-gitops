@@ -6,6 +6,18 @@ on:
       - 'kustomize/overlays/**'
       - 'kustomize/base/**'
       - 'scripts/drift-detection/**'
+      - 'scripts/drift_detection/**'
+      - 'scripts/faz35/**'
+      - 'scripts/faz24/repair-d35-permission-writer-credential.sh'
+      - 'bootstrap/vault-policies/test/etik-speak-eso.hcl'
+      - 'bootstrap/openfga/faz35-etik-speak/**'
+      - 'tests/deploy/test_faz35_etikspeak_provisioning_contract.py'
+      - 'docs/faz-35-evidence/**'
+      - 'runtime-artifacts/faz35-etik-speak/**'
+      - 'runtime-artifacts/openfga-model/**'
+      - 'docs/runbooks/RB-faz35-etik-speak-test-activation.md'
+      - 'docs/contracts/faz35-etik-speak-api-mfe-v1.md'
+      - 'docs/adr/0046-faz35-etik-speak-product-cell-topology.md'
       - '.github/workflows/gate-drift-pr-time.yml'
       - 'docs/operations/services.yaml'
 
@@ -39,11 +51,61 @@ jobs:
       - name: Install Python dependencies
         run: python3 -m pip install --quiet PyYAML
 
+      - name: Require cross-repository GHCR reader identity
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${APP_ID:-}" && -n "${APP_PRIVATE_KEY:-}" ]] || {
+            echo "::error title=GHCR verification disabled::AUTOMATION_APP_ID and AUTOMATION_APP_PRIVATE_KEY are required."
+            exit 1
+          }
+
+      - name: Generate least-privilege cross-repository GHCR token
+        id: ghcr-app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          owner: Halildeu
+          permission-packages: read
+
       - name: Drift PR-time check (${{ matrix.env }})
         env:
           PLATFORM_GITOPS_REPO: ${{ github.workspace }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.ghcr-app-token.outputs.token }}
         run: |
           chmod +x scripts/drift-detection/check_pr_time.sh
           chmod +x scripts/drift-detection/verify_ghcr_manifests.py
           bash scripts/drift-detection/check_pr_time.sh ${{ matrix.env }}
+
+  faz35-semantic-contracts:
+    name: Faz 35 — Etik Speak semantic contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup kustomize
+        uses: imranismail/setup-kustomize@v3
+        with:
+          kustomize-version: "5.3.0"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install semantic-test dependencies
+        run: python3 -m pip install --disable-pip-version-check "PyYAML==6.0.3" "pytest==8.3.3"
+
+      # These tests resolve the real Service -> targetPort -> containerPort
+      # chain, verify TEST-only immutable OpenFGA Job hook recreation, and keep the
+      # complete Faz 35 provisioning/manager/quota/rollback contract executable.
+      - name: Run Faz 35 semantic regression suite
+        run: |
+          python3 -m pytest -q \
+            scripts/drift_detection/tests/test_catalog_runtime_contracts.py \
+            tests/deploy/test_faz35_etikspeak_provisioning_contract.py

@@ -32,6 +32,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 8099, protocol: TCP}
+            - {name: management, containerPort: 8081, protocol: TCP}
           envFrom:
             - configMapRef: {name: ethics-service-config}
             - secretRef: {name: ethics-service-secrets, optional: false}
@@ -39,15 +40,15 @@ spec:
             requests: {cpu: 75m, memory: 128Mi}
             limits: {cpu: 400m, memory: 384Mi}
           startupProbe:
-            httpGet: {path: /actuator/health, port: http}
+            httpGet: {path: /actuator/health, port: management}
             periodSeconds: 5
             failureThreshold: 30
           livenessProbe:
-            httpGet: {path: /actuator/health/liveness, port: http}
+            httpGet: {path: /actuator/health/liveness, port: management}
             periodSeconds: 15
             failureThreshold: 3
           readinessProbe:
-            httpGet: {path: /actuator/health/readiness, port: http}
+            httpGet: {path: /actuator/health/readiness, port: management}
             periodSeconds: 10
             failureThreshold: 3
           securityContext:

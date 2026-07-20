@@ -313,7 +313,7 @@ jq -S '{id,username,email,firstName,lastName,emailVerified,enabled,requiredActio
   "${KC_WRITER_JSON}" > "${TMP_DIR}/profile-before.json"
 jq -S '.attributes // {}' "${KC_WRITER_JSON}" > "${TMP_DIR}/attributes-before.json"
 jq --arg local "${WRITER_LOCAL_USER_ID}" \
-  '.attributes.userId=[$local] | .attributes.subscriberId=[$local]' \
+  '.userId=[$local] | .subscriberId=[$local]' \
   "${TMP_DIR}/attributes-before.json" > "${TMP_DIR}/attributes-expected.json"
 if ! cmp -s "${TMP_DIR}/attributes-before.json" "${TMP_DIR}/attributes-expected.json"; then
   jq --slurpfile attrs "${TMP_DIR}/attributes-expected.json" '

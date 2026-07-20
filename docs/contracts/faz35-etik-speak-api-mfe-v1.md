@@ -247,7 +247,31 @@ Initial event types:
 - `ethics.evidence.reveal.recorded`
 - `ethics.retention.action.requested`
 
-## 7. MFE contract
+## 7. Manager UI contract
+
+### ES-1 TEST isolated manager
+
+ES-1'in canonical staff yüzeyi `testai.acik.com/ethic` üzerindeki ayrı
+`etik-speak-manager` artifact/deployment/service'tir. Shared suite frontend
+digest'i bu aktivasyonda değişmez. Manager:
+
+- Keycloak `frontend` client ile same-origin `check-sso` ve PKCE S256 kullanır;
+- login/upgrade isteğinde `openid ethics-manager-audience ethics:case:manage`
+  scope'unu ister ve redirect'i yalnız same-origin `/ethic` deep-link'ine bağlar;
+- hassas UI'yi yalnız token `aud=ethics-manager`, scope
+  `ethics:case:manage` ve realm role `ethics-manager` üçlüsünün tamamıyla
+  render eder;
+- staff API bearer'ını kendi token provider'ından ekler, `credentials: omit`
+  kullanır ve caller-supplied `Authorization`/`Cookie` başlığını reddeder;
+- logout, refresh error, eksik claim veya API `401/403` halinde token
+  provider'ını temizler ve protected case content'i derhal unmount eder;
+- source workflow unit testleri ve digest-içi Chromium smoke; deployment sonrası
+  ise wrong-org/OpenFGA-deny ve kapalı-döngü browser acceptance ile kanıtlanır.
+
+Bu isolated TEST kararı bir production promotion yetkisi değildir. Production
+route'u ayrı değişiklik, secret-owner ve live acceptance kapılarına tabidir.
+
+### ES-4 optional suite integration adapter
 
 Staff remote:
 
@@ -271,9 +295,10 @@ remoteEntry: /remotes/ethic/remoteEntry.js
 - public reporter artifact is not a federation remote and imports no shell auth
   runtime.
 
-Compatibility gate exercises shell N with remote N/N-1 and remote N with API
+ES-4 etkinleştirilirse compatibility gate shell N ile remote N/N-1 ve remote N ile API
 N/N-1. Breaking remote expose/shared singleton changes require a new expose key
-or coordinated shell major; silent replacement is forbidden.
+or coordinated shell major; silent replacement is forbidden. Bu remote kontratı
+ES-1 isolated manager acceptance'ının ön koşulu değildir.
 
 ## 8. Security and privacy negative contract
 

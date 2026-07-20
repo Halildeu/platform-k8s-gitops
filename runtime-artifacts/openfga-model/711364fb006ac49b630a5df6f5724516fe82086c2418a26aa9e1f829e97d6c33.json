@@ -4,7 +4,7 @@
   "artifact_content_digest": "sha256:711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33",
   "source": {
     "kind": "openfga-server",
-    "canonical_source_ref": "openfga://pending/platform-test/etik-speak/authorization-model-v1"
+    "canonical_source_ref": "openfga://platform-test/authorization-models/01KXYKECVDKPK3B45A8RNXKS4X"
   },
   "runtime_selector": {
     "selector_kind": "kubernetes-configmap",
@@ -16,16 +16,38 @@
   },
   "promotion": {
     "test": {
-      "status": "pending",
+      "status": "verified",
       "method": "pr-promotion",
       "store_ref": "platform-test/etik-speak",
-      "verified_at": null,
+      "verified_at": "2026-07-20T02:18:48Z",
       "promoted_at": null,
       "verified_by_pr": null,
       "promoted_by_pr": null,
-      "model_id_env": null,
-      "evidence": null,
-      "evidence_completeness": "unverified",
+      "model_id_env": "01KXYKECVDKPK3B45A8RNXKS4X",
+      "evidence": {
+        "required_types_present": [
+          "user",
+          "team",
+          "ethics_product",
+          "ethics_case"
+        ],
+        "type_count": 4,
+        "tuple_backfill_count": 4,
+        "list_objects_count": null,
+        "allow_proof": {
+          "user": "user:f8a3b6f6-a984-49d1-b666-c535b11c742f",
+          "relation": "case_handler",
+          "object": "ethics_product:00000000-0000-0000-0000-000000000001",
+          "expected": "allow"
+        },
+        "deny_proof": {
+          "user": "user:9204d823-0f26-436e-9ffe-5f53868f29cb",
+          "relation": "case_handler",
+          "object": "ethics_product:00000000-0000-0000-0000-000000000001",
+          "expected": "deny"
+        }
+      },
+      "evidence_completeness": "complete",
       "source_docs": [
         "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
         "bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json",
@@ -63,8 +85,8 @@
   },
   "audit": {
     "implementer": "Codex",
-    "reviewer": "Direct OpenAI Codex gpt-5.6-sol; post-fix exact head, refreshed base-tip, recomputed merge-base and canonical-scope re-review tracked_pending",
-    "codex_thread_id": "019f766f-10ca-7d11-8234-aad6eaf62a96",
+    "reviewer": "Direct OpenAI Codex gpt-5.6-sol xhigh AGREE; session 019f7d47-43f5-7d73-a3cd-aafa2367d9cd; exact head 322d4950fd85604da3d9af2139c766e43b0bf678",
+    "codex_thread_id": "019f7d47-43f5-7d73-a3cd-aafa2367d9cd",
     "created_at": "2026-07-19T00:13:12Z",
     "approval_pathway": "owner-approved"
   }

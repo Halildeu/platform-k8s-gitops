@@ -152,6 +152,10 @@ services:
     jwt_validates: false  # internal grpc, no Bearer
     route_external: false
     third_party: true
+    # Legacy PROD desired-state still uses v1.11.2. Faz 35 pins the identical
+    # imageID in TEST only; PROD pinning is a separate owner-gated promotion.
+    image_digest_required:
+      prod: false
     workload_kind: StatefulSet
     runtime_class: openfga
     probe_contract: http-healthz   # /healthz default
@@ -170,6 +174,42 @@ services:
     environments:
       test: enabled    # variant: platform-web-frontend-testai
       prod: enabled    # variant: platform-web-frontend
+
+  - name: ethics-service
+    repo: platform-backend
+    description: Faz 35 Etik Speak durable report, mailbox and authorized case workflow API
+    jwt_validates: true
+    route_external: true
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    environments:
+      test: enabled
+      prod: deferred
+
+  - name: etik-speak-public
+    repo: platform-web
+    description: Faz 35 anonymous report and reporter mailbox test surface
+    jwt_validates: false
+    route_external: true
+    workload_kind: Deployment
+    runtime_class: nginx
+    probe_contract: http-healthz
+    environments:
+      test: enabled
+      prod: deferred
+
+  - name: etik-speak-manager
+    repo: platform-web
+    description: Faz 35 isolated Keycloak-authenticated manager SPA at /ethic
+    jwt_validates: false
+    route_external: true
+    workload_kind: Deployment
+    runtime_class: nginx
+    probe_contract: http-healthz
+    environments:
+      test: enabled
+      prod: deferred
 
   - name: artifact-host
     repo: platform-agent

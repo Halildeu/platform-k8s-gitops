@@ -29,13 +29,15 @@ Before provisioning or root-overlay activation, record all of the following:
    Claude-first repository text is not applied to Faz 35 and no Claude receipt
    is requested. Test/CI/live evidence and real human or production gates remain
    independent and cannot be replaced by this review.
-3. Backend, public-web and `platform-web-frontend-testai` workflows published
-   immutable image digests from their exact source heads.
+3. Backend, public-web and the dedicated `platform-web-etik-speak-manager`
+   workflows published immutable image digests from their exact source heads.
+   The shared `platform-web-frontend-testai` digest remains unchanged.
 4. The public image pinned-container smoke proves `/healthz`, CSP,
    `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`.
 5. The GitOps activation overlay contains no all-zero digest and renders with
-   no `OVERLAY_MUST_OVERRIDE` value; the root test overlay separately pins the
-   exact manager/testai frontend digest. `PENDING_FAZ35_*` values are allowed
+   no `OVERLAY_MUST_OVERRIDE` value; the same overlay pins the dedicated
+   manager image while the root shared frontend stays on its prior reviewed
+   digest. `PENDING_FAZ35_*` values are allowed
    only in the provisioning-stage review and block activation preflight.
 
 ## Gate 2: test product-cell provisioning
@@ -54,9 +56,9 @@ It binds the current host-container IPs to the Kubernetes Endpoints and the
 reviewed NetworkPolicy, verifies ESO/OpenFGA availability, checks the external
 Sectigo wildcard TLS path for both public hosts, renders the immutable
 activation, and reports whether the root overlay/live resource set is still
-inactive. It also requires object-count quota for the simultaneous two-pod
-surge plus a bounded repair reserve; an exact-fit quota is rejected because it
-would block rollback or recovery resources. The test overlay raises only the
+inactive. It also requires object-count quota for the six-pod rollout peak of
+the three deployments plus a bounded repair reserve; an exact-fit quota is
+rejected because it would block rollback or recovery resources. The test overlay raises only the
 test object ceilings to `services=40`, `secrets=44`, `pods=34`, and
 `configmaps=35`; production quota is unchanged. The cluster TLS Secret may be
 absent because TLS terminates at the
@@ -179,38 +181,74 @@ In the GitOps PR:
 1. Verify backend and public digests in
    `kustomize/overlays/test/activation/etik-speak/kustomization.yaml` against
    their exact reviewed source heads.
-2. Pin the exact reviewed `platform-web-frontend-testai` digest in the root
-   test overlay so `/ethic` contains ES-204; a public image does not prove this.
+2. Pin the exact reviewed `platform-web-etik-speak-manager` digest in the Faz 35
+   activation overlay and verify the shared `platform-web-frontend-testai`
+   digest did not change.
 3. Add `activation/etik-speak` to the root test overlay resources.
 4. Render the root test overlay and run the repository CI gates.
 5. Merge only after the exact-head review receipt and normal CI are valid.
 6. Let ArgoCD reconcile; do not apply the activation directory selectively.
+
+### Fail-closed TEST deactivation and rollback
+
+`platform-test` intentionally uses `prune: false`. Removing
+`activation/etik-speak` from the root overlay therefore is **not** a rollback:
+the last-applied Deployments and Ingresses would remain live but unmanaged.
+
+Rollback uses a reviewed GitOps fix-forward commit instead:
+
+1. Replace the root resource `activation/etik-speak` with
+   `deactivation/etik-speak`; restore a prior reviewed dedicated manager digest
+   in the same commit only when manager artifact rollback is required.
+2. Render the root TEST overlay, run normal CI, derive a fresh exact scope and
+   obtain the required exact-head review before merge.
+3. Let normal ArgoCD self-heal update the same object identities. The
+   deactivation overlay retains every object under GitOps ownership, sets all three
+   product Deployments to `replicas: 0`, and replaces all public/staff Ingress
+   hosts with DNS-reserved `.invalid` names. It does not depend on pruning.
+4. Verify desired/live replicas are zero, `etik.acik.com`, `speakup.acik.com`
+   and the `testai.acik.com` staff API no longer match a Faz 35 Ingress, and
+   record the ArgoCD revision. Cleanup/deletion, if later desired, is a separate
+   controlled change after this fail-closed tombstone is live.
+
+Never roll back by only deleting the root resource line, and never use direct
+`kubectl patch`, `set image`, `edit` or workload apply for deactivation.
 
 After reconciliation, verify ExternalSecret and immutable image identity:
 
 ```bash
 kubectl --context k3d-test -n platform-test get externalsecret \
   ethics-service-secrets etik-speak-public-gate
-kubectl --context k3d-test -n platform-test get deploy ethics-service etik-speak-public
+kubectl --context k3d-test -n platform-test get deploy \
+  ethics-service etik-speak-public etik-speak-manager
 kubectl --context k3d-test -n platform-test get pods \
   -l app.kubernetes.io/part-of=etik-speak \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
 ```
 
-Also record the manager deployment image identity and the exact in-container
-ethic remote artifact hash; a healthy shell that serves an older remote is not
-manager acceptance:
+Also record the dedicated manager deployment image identity. A healthy shared
+suite shell is not Etik Speak manager acceptance:
 
 ```bash
-kubectl --context k3d-test -n platform-test get pods -l app=frontend \
+kubectl --context k3d-test -n platform-test get pods \
+  -l app.kubernetes.io/name=etik-speak-manager \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
-kubectl --context k3d-test -n platform-test exec deploy/frontend -- \
-  sha256sum /usr/share/nginx/html/remotes/ethic/remoteEntry.js
+kubectl --context k3d-test -n platform-test exec deploy/etik-speak-manager -- \
+  sha256sum /usr/share/nginx/html/ethic/index.html
 ```
 
 Backend, public UI and manager pod `imageID` values must match the reviewed
-digests, and the manager remote hash must be recorded against the same immutable
+digests, and the manager entrypoint hash must be recorded against the same immutable
 image. `Up` alone is not functional acceptance.
+
+The ES-1 manager is intentionally an isolated SPA, not the shared suite shell.
+Its trusted source workflow must bind the exact source head and image digest
+while passing the Keycloak check-sso/PKCE smoke and the source tests that require
+the audience + scope + realm-role triple, reject caller-supplied Cookie/Bearer
+headers and unmount protected content on logout, refresh error or API `401/403`.
+GitOps preflight verifies that source/workflow/SLSA binding; Gate 4 then proves
+the same boundary against the running TEST environment, including wrong-org and
+OpenFGA-denied personas. Neither source tests nor attestation replace Gate 4.
 
 ## Gate 4: customer closed-loop acceptance
 
@@ -253,8 +291,11 @@ customer delivery.
 
 ## Rollback
 
-Rollback is a reviewed GitOps revert to the previous immutable digests and/or
-removal of the test activation resource. The database migration is additive;
+Rollback is a reviewed GitOps fix-forward replacement of
+`activation/etik-speak` with `deactivation/etik-speak`, optionally combined
+with a re-pin to a previous immutable dedicated product digest. Removing only
+the activation resource is forbidden because `prune: false` would leave live,
+unmanaged workloads and public Ingresses. The database migration is additive;
 do not drop the `ethics` database, schema, receipt grants, messages, or audit
 outbox during rollback. OpenFGA model versions remain append-only. Production
 workloads are not stopped by this runbook.

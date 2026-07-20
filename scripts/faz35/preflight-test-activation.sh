@@ -13,17 +13,26 @@ SCRIPT_DIR="$REPO_ROOT/scripts/faz35"
 source "$SCRIPT_DIR/lib-activation-artifacts.sh"
 # shellcheck source=scripts/faz35/lib-image-attestation.sh
 source "$SCRIPT_DIR/lib-image-attestation.sh"
+# shellcheck source=scripts/faz35/lib-openfga-model-normalization.sh
+source "$SCRIPT_DIR/lib-openfga-model-normalization.sh"
 ACTIVATION="$REPO_ROOT/kustomize/overlays/test/activation/etik-speak"
 NETPOL="$ACTIVATION/netpol.yaml"
 ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
 SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.yaml"
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
 EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
+EXPECTED_MODEL_JSON="$REPO_ROOT/bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
 MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SHA256.json"
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/fb830fe4f94d04eb63758ce1be8607f2a6bd9e7ba7c3cc065eb7515b575703d3.json"
+IMAGE_SET_DIR="$REPO_ROOT/docs/faz-35-evidence/image-set"
+image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print | wc -l | tr -d ' ')
+[ "$image_set_count" -eq 1 ] || {
+  echo "FATAL: expected exactly one Faz 35 image-set ledger" >&2
+  exit 1
+}
+IMAGE_SET=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print)
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
@@ -38,7 +47,7 @@ case "$PREFLIGHT_STAGE" in
   *) echo "FATAL: PREFLIGHT_STAGE must be foundation or activation" >&2; exit 1 ;;
 esac
 
-for command_name in ssh curl jq kustomize gh grep awk sed; do
+for command_name in ssh curl dig jq kustomize gh grep awk sed; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "FATAL: required command missing: $command_name" >&2
     exit 1
@@ -60,6 +69,11 @@ sha256_stream() {
   else
     shasum -a 256 | awk '{print $1}'
   fi
+}
+image_set_digest=$(jq -cS . "$IMAGE_SET" | sha256_stream)
+[ "$(basename "$IMAGE_SET" .json)" = "$image_set_digest" ] || {
+  echo "FATAL: Faz 35 image-set filename is not content-addressed" >&2
+  exit 1
 }
 
 container_state=$(remote \
@@ -142,17 +156,48 @@ if [ "$PREFLIGHT_STAGE" = foundation ]; then
   # foundation provisioning depend on workload quotas that activation owns.
   check_object_headroom secrets 1 1
 else
-  check_object_headroom services 2 2
+  check_object_headroom services 3 2
   check_object_headroom configmaps 2 2
   check_object_headroom secrets 2 2
-  check_object_headroom pods 4 2
+  check_object_headroom pods 6 2
 fi
 [ "$quota_failures" -eq 0 ] || exit 1
 
 public_ip=""
 for host in etik.acik.com speakup.acik.com; do
-  edge=$(curl --connect-timeout 5 --max-time 10 -sS -o /dev/null \
-    -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' "https://$host/")
+  resolve_args=()
+  if ! edge=$(curl --connect-timeout 5 --max-time 10 -sS -o /dev/null \
+      -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' "https://$host/"); then
+    # FortiClient split-DNS can omit newly-created public records even while
+    # authoritative public DNS is live. Bind only this TLS request to the
+    # externally resolved edge; certificate/hostname verification stays on.
+    public_dns_ip=$(dig +time=3 +tries=1 +short "$host" @1.1.1.1 | \
+      awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print; exit}')
+    [ -n "$public_dns_ip" ] || {
+      echo "FATAL: $host is absent from both system and public DNS" >&2
+      exit 1
+    }
+    resolve_args=(--resolve "$host:443:$public_dns_ip")
+    if ! edge=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 -sS \
+        -o /dev/null -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' \
+        "https://$host/"); then
+      # The VPN intentionally has no hairpin route to the public WAN address.
+      # The product hosts terminate on the same internal edge as testai.
+      vpn_edge_ip=$(dig +time=3 +tries=1 +short testai.acik.com | \
+        awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print; exit}')
+      [ -n "$vpn_edge_ip" ] || {
+        echo "FATAL: public DNS exists but no VPN edge is resolvable via testai.acik.com" >&2
+        exit 1
+      }
+      resolve_args=(--resolve "$host:443:$vpn_edge_ip")
+      edge=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 -sS \
+        -o /dev/null -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' \
+        "https://$host/")
+      echo "DNS: $host public=$public_dns_ip; VPN split-edge=$vpn_edge_ip"
+    else
+      echo "DNS: $host system split-DNS missing; public edge proof uses $public_dns_ip"
+    fi
+  fi
   IFS='|' read -r http_code verify_result remote_ip <<<"$edge"
   [ "$verify_result" = 0 ] || {
     echo "FATAL: $host TLS verification failed" >&2
@@ -162,7 +207,8 @@ for host in etik.acik.com speakup.acik.com; do
     echo "FATAL: $host did not resolve to a reachable edge" >&2
     exit 1
   }
-  edge_headers=$(curl --connect-timeout 5 --max-time 10 -sSI "https://$host/")
+  edge_headers=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 \
+    -sSI "https://$host/")
   printf '%s\n' "$edge_headers" | grep -Eqi \
     '^strict-transport-security:[[:space:]]*max-age=31536000(;|$)' || {
     echo "FATAL: $host lacks the required one-year HSTS header" >&2
@@ -245,12 +291,13 @@ image_set_sha=$(jq -cS . "$IMAGE_SET" | sha256_stream)
   exit 1
 }
 jq -e '
-  .schema_version == "faz35-test-image-set-v1" and
+  .schema_version == "faz35-test-image-set-v2" and
   (.source_heads.backend | test("^[0-9a-f]{40}$")) and
-  (.source_heads.web | test("^[0-9a-f]{40}$")) and
+  (.source_heads.web_public | test("^[0-9a-f]{40}$")) and
+  (.source_heads.web_manager | test("^[0-9a-f]{40}$")) and
   (.images.ethics_service.source_head == .source_heads.backend) and
-  (.images.public_web.source_head == .source_heads.web) and
-  (.images.manager_web.source_head == .source_heads.web) and
+  (.images.public_web.source_head == .source_heads.web_public) and
+  (.images.manager_web.source_head == .source_heads.web_manager) and
   ([.images[] |
     (.repository | test("^ghcr\\.io/halildeu/[a-z0-9-]+$")) and
     (.digest | test("^sha256:[0-9a-f]{64}$")) and
@@ -276,10 +323,11 @@ faz35_verify_image_attestation "$expected_public" \
   Halildeu/platform-web .github/workflows/ci-etik-speak-public-image.yml \
   "$public_source_head" "$public_workflow_run"
 faz35_verify_image_attestation "$expected_manager" \
-  Halildeu/platform-web .github/workflows/ci-web-image-push.yml \
+  Halildeu/platform-web .github/workflows/release-etik-speak-manager-image.yml \
   "$manager_source_head" "$manager_workflow_run"
 faz35_assert_rendered_deployment_image "$rendered" ethics-service "$expected_backend"
 faz35_assert_rendered_deployment_image "$rendered" etik-speak-public "$expected_public"
+faz35_assert_rendered_deployment_image "$rendered" etik-speak-manager "$expected_manager"
 
 if [ "$PREFLIGHT_STAGE" = activation ]; then
   store_id=$(awk '$1 == "ERP_OPENFGA_STORE_ID:" {gsub(/"/, "", $2); print $2; exit}' "$SERVICE_CONFIG")
@@ -314,13 +362,37 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   }
   live_model=$(remote \
     "kubectl --request-timeout=10s --context k3d-test -n platform-test exec deploy/meeting-service -- curl --connect-timeout 5 --max-time 10 -fsS 'http://openfga:8080/stores/$store_id/authorization-models/$model_id'")
-  # -j is part of the content-address contract: jq's default trailing LF is
-  # transport formatting and must not become part of the canonical model bytes.
-  live_model_sha=$(printf '%s' "$live_model" | jq -j -cS '.authorization_model | del(.id)' | sha256_stream)
-  [ "$live_model_sha" = "$EXPECTED_MODEL_JSON_SHA256" ] || {
+  expected_model_sha=$(jq -j -cS . "$EXPECTED_MODEL_JSON" | sha256_stream)
+  [ "$expected_model_sha" = "$EXPECTED_MODEL_JSON_SHA256" ] || {
+    echo "FATAL: reviewed local OpenFGA model digest is invalid" >&2
+    exit 1
+  }
+  ledger_content_sha=$(jq -r '.artifact_content_digest | sub("^sha256:"; "")' \
+    "$MODEL_LEDGER")
+  [ "$ledger_content_sha" = "$expected_model_sha" ] || {
+    echo "FATAL: local OpenFGA model is not content-bound to the runtime ledger" >&2
+    exit 1
+  }
+  printf '%s' "$live_model" | \
+    faz35_assert_openfga_model_response_id "$model_id" || {
+    echo "FATAL: pinned OpenFGA model response ID is missing or mismatched" >&2
+    exit 1
+  }
+  expected_model_normalized=$(jq -cS . "$EXPECTED_MODEL_JSON" | \
+    faz35_normalize_openfga_model)
+  live_model_normalized=$(printf '%s' "$live_model" | \
+    jq -cS '.authorization_model | del(.id)' | \
+    faz35_normalize_openfga_model)
+  [ "$live_model_normalized" = "$expected_model_normalized" ] || {
     echo "FATAL: pinned live OpenFGA model differs from the reviewed canonical model" >&2
     exit 1
   }
+  # Caller-authored ledger fields are metadata, not acceptance. Re-resolve the
+  # fixed TEST personas from live Keycloak and prove the exact allow/deny tuple
+  # matrix against the pinned store/model without mutating either system.
+  # shellcheck disable=SC2029 # validated ULIDs are the only remote arguments.
+  remote "bash -s -- '$store_id' '$model_id'" \
+    <"$SCRIPT_DIR/verify-test-openfga-authz.sh"
 fi
 
 if grep -Fq 'activation/etik-speak' "$ROOT_OVERLAY"; then
@@ -334,17 +406,16 @@ root_frontend_pin=$(awk '
   found && $1 == "newTag:" { tag=$2 }
   found && $1 == "digest:" { print tag "|" $2; exit }
 ' "$ROOT_OVERLAY")
-if [ "$PREFLIGHT_STAGE" = foundation ]; then
-  [ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
-    echo "FATAL: foundation provisioning refuses an early shared test frontend pin" >&2
-    exit 1
-  }
-else
+[ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
+  echo "FATAL: Faz 35 must not mutate the shared test frontend pin" >&2
+  exit 1
+}
+if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_root_activation_binding "$ROOT_OVERLAY"
   kustomize build "$REPO_ROOT/kustomize/overlays/test" >"$rendered_root"
   faz35_assert_rendered_deployment_image "$rendered_root" ethics-service "$expected_backend"
   faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-public "$expected_public"
-  faz35_assert_rendered_deployment_image "$rendered_root" frontend "$expected_manager"
+  faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-manager "$expected_manager"
 fi
 
 # Variables in this single-quoted program intentionally expand on staging-sw.
@@ -352,12 +423,12 @@ fi
 live_activation_resources=$(remote '
   set -eu
   for target in \
-    deployment/ethics-service deployment/etik-speak-public \
-    service/ethics-service service/etik-speak-public \
-    serviceaccount/ethics-service serviceaccount/etik-speak-public \
+    deployment/ethics-service deployment/etik-speak-public deployment/etik-speak-manager \
+    service/ethics-service service/etik-speak-public service/etik-speak-manager \
+    serviceaccount/ethics-service serviceaccount/etik-speak-public serviceaccount/etik-speak-manager \
     configmap/ethics-service-config configmap/etik-speak-public-upstream-headers \
-    ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api \
-    networkpolicy/etik-speak-public networkpolicy/ethics-service \
+    ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api ingress/etik-speak-manager-ui \
+    networkpolicy/etik-speak-public networkpolicy/etik-speak-manager networkpolicy/ethics-service \
     externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
     secret/ethics-service-secrets secret/etik-speak-public-gate \
     secretstore/etik-speak-vault resourcequota/etik-speak-budget; do

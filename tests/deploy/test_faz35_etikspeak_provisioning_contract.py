@@ -32,6 +32,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.openfga = (
             ROOT / "scripts/faz35/provision-test-openfga.sh"
         ).read_text()
+        cls.openfga_normalization_lib_path = (
+            ROOT / "scripts/faz35/lib-openfga-model-normalization.sh"
+        )
+        cls.openfga_normalization_lib = cls.openfga_normalization_lib_path.read_text()
         cls.entitlement = (
             ROOT / "scripts/faz35/provision-test-ethic-entitlement.sh"
         ).read_text()
@@ -49,6 +53,15 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         ).read_text()
         cls.activation_runbook = (
             ROOT / "docs/runbooks/RB-faz35-etik-speak-test-activation.md"
+        ).read_text()
+        cls.topology_adr = (
+            ROOT / "docs/adr/0046-faz35-etik-speak-product-cell-topology.md"
+        ).read_text()
+        cls.api_ui_contract = (
+            ROOT / "docs/contracts/faz35-etik-speak-api-mfe-v1.md"
+        ).read_text()
+        cls.semantic_gate_workflow = (
+            ROOT / ".github/workflows/gate-drift-pr-time.yml"
         ).read_text()
         cls.authz_projection_lib_path = (
             ROOT / "scripts/faz35/lib-authz-projection.sh"
@@ -73,6 +86,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/secretstore.yaml"
         ).read_text()
+        cls.deactivation = (
+            ROOT
+            / "kustomize/overlays/test/deactivation/etik-speak/kustomization.yaml"
+        ).read_text()
         cls.service_config = (
             ROOT / "kustomize/base/apps/etik-speak/ethics-service-config.yaml"
         ).read_text()
@@ -94,6 +111,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.public_ui_ingress = (
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/ingress-public-ui.yaml"
+        ).read_text()
+        cls.manager_ui_ingress = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/ingress-manager-ui.yaml"
         ).read_text()
         cls.netpol = (
             ROOT / "kustomize/overlays/test/activation/etik-speak/netpol.yaml"
@@ -192,8 +213,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('readonly PROVISIONER_ROLE_NAME="ETIK_SPEAK_PROVISIONER"', self.writer_identity)
         self.assertIn('relation:"can_manage",object:"module:ACCESS"', self.writer_identity)
         self.assertIn('{permissions:[{type:"MODULE",key:"ACCESS",grant:"MANAGE"}]}', self.writer_identity)
-        self.assertIn('.attributes.userId=[$local]', self.writer_identity)
-        self.assertIn('.attributes.subscriberId=[$local]', self.writer_identity)
+        self.assertIn("'.userId=[$local] | .subscriberId=[$local]'", self.writer_identity)
+        self.assertNotIn("'.attributes.userId=[$local]", self.writer_identity)
         self.assertIn("writer-provisioner-granule-conflict", self.writer_identity)
         self.assertIn("writer-provisioner-member-conflict", self.writer_identity)
         self.assertIn("writer-role-catalog-incomplete-or-paged", self.writer_identity)
@@ -223,6 +244,35 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertLess(credential_preflight, identity_alignment)
         self.assertLess(identity_alignment, first_writer_token)
         self.assertLess(first_writer_token, first_role_api)
+
+    def test_permission_writer_expected_attributes_remain_a_flat_keycloak_map(self):
+        attributes = {
+            "org_id": ["default"],
+            "subscriberId": ["1204"],
+            "userId": ["1204"],
+        }
+        result = subprocess.run(
+            [
+                "jq",
+                "--arg",
+                "local",
+                "12",
+                ".userId=[$local] | .subscriberId=[$local]",
+            ],
+            input=json.dumps(attributes),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "org_id": ["default"],
+                "subscriberId": ["12"],
+                "userId": ["12"],
+            },
+        )
+        self.assertNotIn("attributes", json.loads(result.stdout))
 
     def test_runbook_reconciles_and_repairs_writer_before_entitlement(self):
         reconcile = self.activation_runbook.index(
@@ -677,7 +727,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "canonical OpenFGA model digest does not match runtime ledger",
             self.openfga,
         )
-        self.assertIn("select(del(.id) == $desired)", self.openfga)
+        self.assertIn("faz35_select_equivalent_openfga_models", self.openfga)
+        self.assertIn("faz35_normalize_openfga_model", self.preflight)
         self.assertNotIn("tojson) ==", self.openfga)
 
         compiled_model = json.loads(
@@ -702,10 +753,20 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             f'EXPECTED_MODEL_JSON_SHA256="{canonical_digest}"',
             self.preflight,
         )
+        self.assertIn("expected_model_normalized", self.preflight)
         self.assertIn(
-            "jq -j -cS '.authorization_model | del(.id)'",
+            'expected_model_sha=$(jq -j -cS . "$EXPECTED_MODEL_JSON" | sha256_stream)',
             self.preflight,
         )
+        self.assertIn(
+            '[ "$expected_model_sha" = "$EXPECTED_MODEL_JSON_SHA256" ]',
+            self.preflight,
+        )
+        self.assertIn(
+            '[ "$ledger_content_sha" = "$expected_model_sha" ]',
+            self.preflight,
+        )
+        self.assertIn("faz35_assert_openfga_model_response_id", self.preflight)
 
         # Exercise the exact OpenFGA GET response envelope. The server's JSON
         # whitespace and jq's normal output newline are transport details; only
@@ -728,6 +789,128 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             hashlib.sha256(canonicalized_live).hexdigest(),
             canonical_digest,
         )
+
+        # OpenFGA's protobuf JSON readback adds empty/default fields that were
+        # not present in the reviewed write payload. Those exact defaults are
+        # transport representation, not a different authorization model.
+        server_readback = json.loads(json.dumps(compiled_model))
+        server_readback["conditions"] = {}
+        server_readback["type_definitions"][0]["metadata"] = None
+        server_readback["type_definitions"][0]["relations"] = {}
+        server_readback["type_definitions"][1]["metadata"]["module"] = ""
+        server_readback["type_definitions"][1]["metadata"]["source_info"] = None
+        member_metadata = server_readback["type_definitions"][1]["metadata"]["relations"]["member"]
+        member_metadata["module"] = ""
+        member_metadata["source_info"] = None
+        member_metadata["directly_related_user_types"][0]["condition"] = ""
+        normalized_desired = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{self.openfga_normalization_lib_path}"; '
+                "faz35_normalize_openfga_model",
+            ],
+            input=json.dumps(compiled_model),
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        normalized_readback = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "{self.openfga_normalization_lib_path}"; '
+                "faz35_normalize_openfga_model",
+            ],
+            input=json.dumps(server_readback),
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        self.assertEqual(normalized_readback, normalized_desired)
+        self.assertIn("del(.condition | select(. == \"\"))", self.openfga_normalization_lib)
+        self.assertIn("del(.object | select(. == \"\"))", self.openfga_normalization_lib)
+
+        materially_different = json.loads(json.dumps(server_readback))
+        materially_different["type_definitions"][1]["relations"]["member"] = {
+            "computedUserset": {"relation": "member", "object": ""}
+        }
+
+        def select_matches(models):
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; '
+                    'desired=$(printf "%s" "$2" | faz35_normalize_openfga_model); '
+                    'printf "%s" "$3" | '
+                    'faz35_select_equivalent_openfga_models "$desired"',
+                    "bash",
+                    str(self.openfga_normalization_lib_path),
+                    json.dumps(compiled_model),
+                    json.dumps(models),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            return json.loads(result.stdout)
+
+        equivalent_one = {"id": "01KW0EJTM60YGZTEKNGS7PDPNP", **server_readback}
+        different_one = {"id": "01KW0EJTM60YGZTEKNGS7PDPNQ", **materially_different}
+        self.assertEqual(
+            [model["id"] for model in select_matches([equivalent_one, different_one])],
+            [equivalent_one["id"]],
+        )
+        equivalent_two = {"id": "01KW0EJTM60YGZTEKNGS7PDPNR", **server_readback}
+        self.assertEqual(
+            len(select_matches([equivalent_one, equivalent_two])),
+            2,
+        )
+
+        valid_response = {"authorization_model": equivalent_one}
+        valid_id = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; printf "%s" "$3" | '
+                'faz35_assert_openfga_model_response_id "$2"',
+                "bash",
+                str(self.openfga_normalization_lib_path),
+                equivalent_one["id"],
+                json.dumps(valid_response),
+            ],
+            check=False,
+        )
+        wrong_id = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; printf "%s" "$3" | '
+                'faz35_assert_openfga_model_response_id "$2"',
+                "bash",
+                str(self.openfga_normalization_lib_path),
+                different_one["id"],
+                json.dumps(valid_response),
+            ],
+            check=False,
+        )
+        missing_id = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; printf "%s" "$3" | '
+                'faz35_assert_openfga_model_response_id "$2"',
+                "bash",
+                str(self.openfga_normalization_lib_path),
+                equivalent_one["id"],
+                json.dumps({"authorization_model": compiled_model}),
+            ],
+            check=False,
+        )
+        self.assertEqual(valid_id.returncode, 0)
+        self.assertNotEqual(wrong_id.returncode, 0)
+        self.assertNotEqual(missing_id.returncode, 0)
 
         fga_source = (
             ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
@@ -761,8 +944,30 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('"name": "ethics-service-config"', self.model_ledger)
         self.assertIn('"store_id_field": "ERP_OPENFGA_STORE_ID"', self.model_ledger)
         self.assertIn('"model_id_field": "ERP_OPENFGA_MODEL_ID"', self.model_ledger)
-        self.assertIn("PENDING_FAZ35_OPENFGA_STORE_ID", self.service_config)
-        self.assertIn("PENDING_FAZ35_OPENFGA_MODEL_ID", self.service_config)
+        self.assertNotIn("PENDING_FAZ35_OPENFGA_", self.service_config)
+        store_match = re.search(
+            r'^  ERP_OPENFGA_STORE_ID: "([0-9A-HJKMNP-TV-Z]{26})"$',
+            self.service_config,
+            re.MULTILINE,
+        )
+        model_match = re.search(
+            r'^  ERP_OPENFGA_MODEL_ID: "([0-9A-HJKMNP-TV-Z]{26})"$',
+            self.service_config,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(store_match)
+        self.assertIsNotNone(model_match)
+        ledger = json.loads(self.model_ledger)
+        model_id = model_match.group(1)
+        self.assertEqual(
+            model_id,
+            ledger["promotion"]["test"]["model_id_env"],
+        )
+        self.assertTrue(
+            ledger["source"]["canonical_source_ref"].endswith(
+                f"/authorization-models/{model_id}"
+            )
+        )
         self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 2)
         self.assertEqual(self.external_secret.count("kind: SecretStore"), 2)
         self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 2)
@@ -779,7 +984,14 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_namespaced_secret_store_uses_dedicated_least_privilege_approle(self):
         self.assertIn("kind: SecretStore", self.secret_store)
-        self.assertIn("roleId: PENDING_FAZ35_VAULT_ROLE_ID", self.secret_store)
+        self.assertNotIn("PENDING_FAZ35_VAULT_ROLE_ID", self.secret_store)
+        role_id_match = re.search(
+            r"^          roleId: "
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+            self.secret_store,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(role_id_match)
         self.assertIn("name: etik-speak-vault-approle", self.secret_store)
         self.assertNotIn("vault-platform-gitops", self.secret_store)
         self.assertIn('path "kv/data/platform/etik-speak"', self.eso_policy)
@@ -955,6 +1167,21 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("RECUSAL_SENTINEL_CASE_ID", self.openfga)
         self.assertIn("explicit recusal sentinel did not fail closed", self.openfga)
 
+    def test_activation_preflight_reproves_live_openfga_authorization(self):
+        verifier = (
+            ROOT / "scripts/faz35/verify-test-openfga-authz.sh"
+        ).read_text()
+        self.assertIn('verify-test-openfga-authz.sh', self.preflight)
+        self.assertIn('remote "bash -s --', self.preflight)
+        self.assertIn("resolve_persona_subject ethics-manager-test", verifier)
+        self.assertIn("resolve_persona_subject ethics-manager-wrong-org-test", verifier)
+        self.assertIn("resolve_persona_subject ethics-manager-denied-test", verifier)
+        self.assertIn("case_viewer case_triager case_handler", verifier)
+        self.assertIn("wrong-org-canonical", verifier)
+        self.assertIn("denied-persona", verifier)
+        self.assertIn("assert_exact_tuple", verifier)
+        self.assertIn("recusal-sentinel", verifier)
+
     def test_all_vault_json_credentials_use_single_document_classification(self):
         self.assertIn("vault_json_document_classify", self.pg_vault)
         self.assertIn("vault_kv_document_classify", self.pg_vault)
@@ -1115,15 +1342,15 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "--max-time 10",
             'if [ "$PREFLIGHT_STAGE" = foundation ]',
             "check_object_headroom secrets 1 1",
-            "check_object_headroom services 2 2",
+            "check_object_headroom services 3 2",
             "check_object_headroom configmaps 2 2",
             "check_object_headroom secrets 2 2",
-            "check_object_headroom pods 4 2",
+            "check_object_headroom pods 6 2",
             "activation must render exactly two ExternalSecrets",
             "both public ingresses must use the synthetic test access gate",
             "one-year HSTS header",
             "foundation provisioning refuses an included Etik Speak activation root",
-            "foundation provisioning refuses an early shared test frontend pin",
+            "Faz 35 must not mutate the shared test frontend pin",
             "foundation provisioning refuses existing or partial Etik Speak activation resources",
             "secretstore/etik-speak-vault",
             "secret/ethics-service-secrets",
@@ -1133,6 +1360,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "faz35_assert_rendered_deployment_image",
             "image set content does not match its content-addressed filename",
             "image set schema/source-head binding is invalid",
+            ".github/workflows/release-etik-speak-manager-image.yml",
             'kustomize build "$REPO_ROOT/kustomize/overlays/test"',
             'EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"',
             'EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"',
@@ -1263,16 +1491,19 @@ spec:
             json.dumps(self.image_set, sort_keys=True, separators=(",", ":")) + "\n"
         ).encode()
         self.assertEqual(hashlib.sha256(canonical).hexdigest(), self.image_set_path.stem)
-        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v1")
+        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v2")
         self.assertEqual(
             self.image_set["images"]["ethics_service"]["source_head"],
             self.image_set["source_heads"]["backend"],
         )
-        for name in ("public_web", "manager_web"):
-            self.assertEqual(
-                self.image_set["images"][name]["source_head"],
-                self.image_set["source_heads"]["web"],
-            )
+        self.assertEqual(
+            self.image_set["images"]["public_web"]["source_head"],
+            self.image_set["source_heads"]["web_public"],
+        )
+        self.assertEqual(
+            self.image_set["images"]["manager_web"]["source_head"],
+            self.image_set["source_heads"]["web_manager"],
+        )
 
         rendered = subprocess.run(
             ["kustomize", "build", str(ROOT / "kustomize/overlays/test/activation/etik-speak")],
@@ -1286,6 +1517,7 @@ spec:
             for deployment, image_key in (
                 ("ethics-service", "ethics_service"),
                 ("etik-speak-public", "public_web"),
+                ("etik-speak-manager", "manager_web"),
             ):
                 image = self.image_set["images"][image_key]
                 result = subprocess.run(
@@ -1303,6 +1535,20 @@ spec:
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0)
+
+    def test_semantic_gate_triggers_for_every_authoritative_external_input(self):
+        for required_path in (
+            "scripts/faz35/**",
+            "scripts/faz24/repair-d35-permission-writer-credential.sh",
+            "bootstrap/vault-policies/test/etik-speak-eso.hcl",
+            "bootstrap/openfga/faz35-etik-speak/**",
+            "runtime-artifacts/faz35-etik-speak/**",
+            "runtime-artifacts/openfga-model/**",
+            "docs/faz-35-evidence/**",
+            "tests/deploy/test_faz35_etikspeak_provisioning_contract.py",
+        ):
+            with self.subTest(required_path=required_path):
+                self.assertIn(f"- '{required_path}'", self.semantic_gate_workflow)
 
     def test_image_attestation_binds_digest_source_workflow_and_run(self):
         digest = "a" * 64
@@ -1393,16 +1639,137 @@ spec:
         self.assertIn("X-Etik-Speak-Transport: https", self.public_upstream_headers)
         self.assertNotIn("api-gateway", self.netpol)
 
+    def test_manager_ui_is_isolated_at_the_exact_test_path(self):
+        self.assertIn("name: etik-speak-manager-ui", self.manager_ui_ingress)
+        self.assertIn("host: testai.acik.com", self.manager_ui_ingress)
+        self.assertIn("path: /ethic", self.manager_ui_ingress)
+        self.assertIn("name: etik-speak-manager", self.manager_ui_ingress)
+        self.assertIn("name: etik-speak-manager", self.netpol)
+        self.assertIn("Faz 35 must not mutate the shared test frontend pin", self.preflight)
+
+    def test_manager_route_matches_canonical_isolated_auth_contract(self):
+        for expected in (
+            "ES-1 isolated etik-speak-manager",
+            "check-sso",
+            "PKCE S256",
+            "credentials: omit",
+            "401/403",
+            "308a2777e79d1a54ee367d47f19c39cc513db42d",
+            "sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da",
+        ):
+            self.assertIn(expected, self.topology_adr)
+        for expected in (
+            "ES-1 TEST isolated manager",
+            "aud=ethics-manager",
+            "ethics:case:manage",
+            "realm role `ethics-manager`",
+            "credentials: omit",
+            "Authorization`/`Cookie",
+            "wrong-org/OpenFGA-deny",
+        ):
+            self.assertIn(expected, self.api_ui_contract)
+        self.assertIn("intentionally an isolated SPA", self.activation_runbook)
+        self.assertIn("Neither source tests nor attestation replace Gate 4", self.activation_runbook)
+
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
             'requests.cpu: "500m"',
             "requests.memory: 896Mi",
             'limits.cpu: "2500m"',
             "limits.memory: 2Gi",
-            'pods: "6"',
         ):
             self.assertIn(expected, self.product_quota)
+
+        rendered = subprocess.run(
+            [
+                "kustomize",
+                "build",
+                str(ROOT / "kustomize/overlays/test/activation/etik-speak"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        documents = rendered.split("---\n")
+        deployment_documents = [
+            document
+            for document in documents
+            if re.search(r"(?m)^kind: Deployment$", document)
+        ]
+        service_count = sum(
+            bool(re.search(r"(?m)^kind: Service$", document))
+            for document in documents
+        )
+        rollout_peak = 0
+        for document in deployment_documents:
+            replicas = re.search(r"(?m)^  replicas: ([0-9]+)$", document)
+            max_surge = re.search(r"(?m)^      maxSurge: ([0-9]+)$", document)
+            self.assertIsNotNone(replicas)
+            self.assertIsNotNone(max_surge)
+            rollout_peak += int(replicas.group(1)) + int(max_surge.group(1))
+
+        repair_reserve = 2
+        self.assertEqual(len(deployment_documents), 3)
+        self.assertEqual(service_count, 3)
+        self.assertIn(f'pods: "{rollout_peak + repair_reserve}"', self.product_quota)
+        self.assertIn(
+            f"check_object_headroom pods {rollout_peak} {repair_reserve}",
+            self.preflight,
+        )
+        self.assertIn(
+            f"check_object_headroom services {service_count} {repair_reserve}",
+            self.preflight,
+        )
         self.assertNotIn("api-gateway-to-ethics-service", self.netpol)
+
+    def test_prune_false_rollback_uses_fail_closed_gitops_tombstone(self):
+        self.assertIn("../../activation/etik-speak", self.deactivation)
+        self.assertEqual(self.deactivation.count("value: 0"), 1)
+        for disabled_host in (
+            "etik-speak-disabled.invalid",
+            "speakup-disabled.invalid",
+            "etik-speak-manager-disabled.invalid",
+        ):
+            self.assertIn(disabled_host, self.deactivation)
+
+        rendered = subprocess.run(
+            [
+                "kustomize",
+                "build",
+                str(ROOT / "kustomize/overlays/test/deactivation/etik-speak"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertEqual(rendered.count("replicas: 0"), 3)
+        for active_host in (
+            "host: etik.acik.com",
+            "host: speakup.acik.com",
+            "host: testai.acik.com",
+        ):
+            self.assertNotIn(active_host, rendered)
+        for resource_name in (
+            "name: ethics-service",
+            "name: etik-speak-public",
+            "name: etik-speak-manager",
+            "name: etik-speak-public-api",
+            "name: etik-speak-public-ui",
+            "name: etik-speak-staff-api",
+            "name: etik-speak-manager-ui",
+            "name: ethics-service-secrets",
+            "name: etik-speak-vault",
+        ):
+            self.assertIn(resource_name, rendered)
+
+        for required in (
+            "prune: false",
+            "deactivation/etik-speak",
+            "replicas: 0",
+            ".invalid",
+            "Never roll back by only deleting the root resource line",
+        ):
+            self.assertIn(required, self.activation_runbook)
 
     def test_test_quota_preserves_etikspeak_activation_and_repair_reserve(self):
         quota_patch = re.search(
