@@ -31,8 +31,10 @@ yerine geçmez.
 
 ## Context
 
-Etik Speak'in public reporter yüzeyi hesap/SSO gerektirmemeli; suite yönetici
-yüzeyi ise mevcut identity, shell ve entitlement altyapısıyla çalışmalıdır.
+Etik Speak'in public reporter yüzeyi hesap/SSO gerektirmemeli; yönetici yüzeyi
+ise mevcut identity ve entitlement altyapısıyla çalışmalıdır. ES-1'in temel
+müşteri yolunu ortak suite image'larına bağlamadan açmak için yönetici
+artifact'i de ayrı bir product-cell workload'udur.
 Public bildirim içeriği ve reporter credential'ı diğer ürünlerden daha dar bir
 güven alanı gerektirir. Ürün aynı zamanda tek başına satılabilmeli ve ETS,
 Meeting, Endpoint veya suite arızasından etkilenmemelidir.
@@ -45,12 +47,20 @@ Meeting, Endpoint veya suite arızasından etkilenmemelidir.
 - `speakup.acik.com` aynı public Service'e ve aynı immutable image digest'e
   giden tam işlevli alias'tır. Submit, receipt ve mailbox iki hostta da çalışır.
 - Public uygulama ayrı `etik-speak-public` artifact/deployment/service'tir.
-- Staff uygulaması mevcut `mfe-ethic` remote artifact'ıdır; testte
-  `testai.acik.com/ethic`, productionda `ai.acik.com/ethic` üzerinden shell'e
-  yüklenir.
-- Test manager remote, exact source head'ten üretilmiş immutable
-  `platform-web-frontend-testai` image'ının içindedir. Public image digest'i
-  staff image digest'inin yerine geçmez; ikisi ayrı provenance taşır.
+- ES-1 TEST staff uygulaması ayrı `etik-speak-manager`
+  artifact/deployment/service'tir ve `testai.acik.com/ethic` üzerinde çalışır.
+  Shared `platform-web-frontend-testai` image'ı değiştirilmez. Bu, ürün
+  izolasyonu ve hızlı temel yol kararıdır; suite shell bypass'ı gizlenmez.
+- Manager, mevcut `platform-test` Keycloak ve `ETHIC=MANAGE` entitlement
+  altyapısını doğrudan kullanır. `check-sso` + PKCE S256 sonrası `aud` içinde
+  `ethics-manager`, scope içinde `ethics:case:manage` ve realm role içinde
+  `ethics-manager` üçlüsünün tamamı yoksa hassas UI render edilmez.
+- TEST manager image'ı exact source head `308a2777e79d1a54ee367d47f19c39cc513db42d`
+  ve digest `sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da`
+  ile ayrı provenance taşır. Trusted main release workflow'u source auth
+  unit testlerini, container HTTP/browser smoke'u ve SLSA attestation'ı
+  image yayınından önce çalıştırır; GitOps preflight exact signer/source/digest
+  zincirini yeniden doğrular.
 - Public artifact staff MFE bundle'ını, Keycloak adapter'ını veya suite shared
   singleton'larını içermez.
 
@@ -63,7 +73,7 @@ etik.acik.com|speakup.acik.com
 
 testai.acik.com|ai.acik.com
   /api/v1/ethics/*         -> dedicated product ingress -> ethics-service staff filter chain
-  /ethic                   -> shell -> mfe-ethic remote
+  /ethic                   -> ES-1 isolated etik-speak-manager
 ```
 
 Public ve staff endpoint mapping'leri aynı wildcard route altında toplanmaz.
@@ -73,7 +83,7 @@ internal note veya sealed evidence okumaz.
 
 ### 3. Test-first target modeli
 
-`testai.acik.com` yönetici MFE için authoritative test yüzeyidir. İlk test
+`testai.acik.com/ethic` izole yönetici SPA için authoritative test yüzeyidir. İlk test
 diliminde iki public host da sentetik test product cell'e route edilir. Production
 public cell hazır olduğunda weighted DNS kullanılmaz: exact ingress backend
 referansı tek değişiklikle atomik olarak prod Service'e geçirilir. Önceki test
@@ -115,8 +125,12 @@ etki/rollback kanıtı ve operator yetkisi gerektirir.
 
 ### 6. Failure isolation
 
-- `mfe-ethic` remote yüklenmezse shell sınıflandırılmış product error boundary
-  gösterir; suite'in diğer route'ları çalışır.
+- `etik-speak-manager` yüklenmezse yalnız `/ethic` yönetici yolu etkilenir;
+  shared suite frontend ve diğer ürün route'ları aynı workload'u paylaşmaz.
+- Keycloak oturumu geçersizleşir, token refresh başarısız olur veya staff API
+  `401/403` dönerse manager bearer provider'ı temizler ve hassas vaka içeriğini
+  derhal unmount eder. API istekleri `credentials: omit` kullanır; caller
+  `Authorization` veya `Cookie` enjekte edemez.
 - Suite/Keycloak down olduğunda public intake/mailbox own-DB commit yolu çalışır.
 - Notification, WORM sink veya scanner outage intake success'ini ancak ilgili
   user promise gerektiriyorsa etkiler; aksi halde durable outbox/backlog oluşur.
@@ -134,8 +148,8 @@ flowchart LR
   P --> PA["/api/v1/public/ethics"]
   PA --> B["ethics-service public chain"]
 
-  U["Authorized staff browser"] --> T["testai.acik.com shell"]
-  T --> M["mfe-ethic remote"]
+  U["Authorized staff browser"] --> T["testai.acik.com/ethic"]
+  T --> M["isolated etik-speak-manager"]
   M --> GA["/api/v1/ethics dedicated ingress"]
   GA --> B
 
@@ -163,7 +177,7 @@ Positive:
 
 - public confidentiality boundary suite auth/session boundary'sinden ayrılır;
 - iki marka adresi tek artifact ile drift üretmeden sunulur;
-- mevcut suite yatırımı manager UX'te kullanılır;
+- mevcut Keycloak ve entitlement yatırımı manager UX'te kullanılır;
 - ürün ayrı satılabilir, bağımsız ölçeklenebilir ve geri alınabilir;
 - public, staff ve downstream adapter arızaları ayrı ölçülür.
 
@@ -172,7 +186,8 @@ Costs/trade-offs:
 - iki frontend pipeline ve iki route policy yönetilir;
 - product-local DB/authz/storage daha çok kaynak ve operasyon gerektirir;
 - alias host parity, cookie non-leak ve N/N-1 contract testleri kalıcı gate olur;
-- standalone staff shell ES-4'e ertelenir.
+- suite-shell/MFE paketleme adaptörü ES-4'e ertelenir; ES-1 isolated manager
+  artifact'i temel kapalı döngünün canonical TEST yüzeyidir.
 
 ## Rejected alternatives
 
@@ -185,5 +200,7 @@ Costs/trade-offs:
 4. **Shared application schema/authz store:** cross-product blast radius ve
    deletion/retention coupling nedeniyle reddedildi.
 5. **Weighted DNS cutover:** D30 atomic cutover ve rollback sözleşmesine aykırı.
-6. **İlk sürümde standalone manager shell:** müşteri kapalı döngüsünü
-   geciktirdiği için ES-4'e ertelendi.
+6. **ES-1'i shared suite image'ı içinde yayınlamak:** ortak frontend
+   promotion'ı ve bağımsız ürün blast-radius'ı temel kapalı döngüyü
+   geciktirdiği için reddedildi. ES-4, isolated manager'ın yerine geçmek
+   zorunda olmayan ayrı bir suite-integration packaging adaptörüdür.

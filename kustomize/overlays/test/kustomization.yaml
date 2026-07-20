@@ -42,6 +42,10 @@ resources:
   # Faz 25 #2526: Full ATS aday + recruiter dikeyi kalıcı test ürünü.
   # Önceden manuel activation overlay'iydi; artık ArgoCD self-heal kapsamındadır.
   - activation/ats-interview-evidence
+  # Faz 35 Etik Speak TEST product slice: public anonymous report/mailbox plus
+  # authenticated manager workflow. Provisioning IDs and immutable artifacts
+  # are pinned in the same activation commit; production remains untouched.
+  - activation/etik-speak
   # Faz 22.6 #2502 Phase 1: receive-only GitHub webhook observer. No evaluator
   # App key, callback client, Kubernetes token or egress; Environment custom
   # rule remains disabled until replay/negative-matrix acceptance.
@@ -106,6 +110,12 @@ configMapGenerator:
       - default.conf=frontend-nginx-default.conf
 
 images:
+  # Faz 35 TEST activation: pin the existing OpenFGA v1.11.2 imageID without
+  # changing PROD desired-state. The migration Job receives TEST-only hook
+  # lifecycle annotations in the patches section below.
+  - name: openfga/openfga
+    newName: openfga/openfga
+    digest: sha256:e5891e4676e5a8b4659c010c50aabf487397844b18f66ef7510e5ad00935949f
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
   # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
   # Dev repo PR #510/#511/#512 merge sonrası CI GHCR sha-60611fa push.
@@ -4281,9 +4291,9 @@ images:
     # list/detail/apply routes on the minimal public shell so auth bootstrap
     # cannot reload and erase the candidate's browser-local PDF draft.
     # Build run 29645789815 testai job 88083697225.
-    # Faz 35 foundation deliberately preserves the pre-existing root image.
-    # The exact reviewed Etik manager image is pinned atomically with root
-    # activation only after provisioning IDs and current-head artifacts exist.
+    # Faz 35 manager is a dedicated workload and deliberately leaves the
+    # shared suite image unchanged. This preserves Full ATS/ETS rollback and
+    # prevents an Etik Speak release from mutating another product cell.
     # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
     newTag: sha-eee1310
     digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
@@ -7179,6 +7189,19 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+  # TEST auto-sync only: the immutable Job template must be recreated safely.
+  # PROD keeps its pre-existing non-hook Job and moving-tag desired-state until
+  # a separately reviewed, owner-gated PROD promotion changes it.
+  - target:
+      kind: Job
+      name: openfga-migrate
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          argocd.argoproj.io/hook: PreSync
+          argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+          argocd.argoproj.io/sync-wave: "-1"
   # 2026-04-20: testai.acik.com authoritative live (e2e kanıtlı: curl 212.115.26.190
   # → HTTP 200 2899B Module Federation HTML). Frontend always-on (replicas=1); D17
   # scale-to-zero exception: UI public entrypoint her zaman erişilebilir olmalı.
@@ -8263,9 +8286,9 @@ patches:
       # reconcile. 2026-07-03: Faz 24 #2186 meeting-ai test bridge found live
       # services=32/32 after Endpoints/NetPolicy synced; keep small test-only
       # headroom so the selectorless Service can reconcile via GitOps.
-      # 2026-07-19: Faz 35 Etik Speak adds two Services. Live was 34/36, which
-      # would leave zero rollback/repair headroom; 40 leaves four slots after
-      # the product cell is active. Test-only; prod quota is unchanged.
+      # 2026-07-19: Faz 35 Etik Speak adds three Services. Live was 34/36, so
+      # the old ceiling could not admit the product cell; 40 leaves three slots
+      # after activation. Test-only; prod quota is unchanged.
       - op: replace
         path: /spec/hard/services
         value: "40"
@@ -8277,8 +8300,8 @@ patches:
       - op: replace
         path: /spec/hard/secrets
         value: "44"
-      # Faz 35 steady state adds two pods; simultaneous maxSurge adds four.
-      # Live was 26/30, so 34 preserves four slots after worst-case surge.
+      # Faz 35 steady state adds three pods; simultaneous maxSurge adds three.
+      # Live was 26/30, so 34 preserves two slots at the six-pod rollout peak.
       - op: replace
         path: /spec/hard/pods
         value: "34"

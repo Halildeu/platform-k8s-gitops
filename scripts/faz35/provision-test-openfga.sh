@@ -10,6 +10,8 @@ umask 077
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
 source "$SCRIPT_DIR/lib-test-keycloak-binding.sh"
+# shellcheck source=scripts/faz35/lib-openfga-model-normalization.sh
+source "$SCRIPT_DIR/lib-openfga-model-normalization.sh"
 EXPECTED_MODEL_JSON="$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
 EXPECTED_MODEL_FGA="$SCRIPT_DIR/../../runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
 MODEL_LEDGER="$SCRIPT_DIR/../../runtime-artifacts/openfga-model/711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33.json"
@@ -320,9 +322,10 @@ fi
 [ -n "$store_id" ] || { echo "FATAL: OpenFGA store id unresolved" >&2; exit 1; }
 
 desired=$(jq -cS . "$MODEL_JSON")
+desired_normalized=$(printf '%s' "$desired" | faz35_normalize_openfga_model)
 models=$(collect_pages "$OPENFGA_BASE/stores/$store_id/authorization-models" authorization_models)
-model_matches=$(printf '%s' "$models" | jq -c --argjson desired "$desired" \
-  '[.[] | select(del(.id) == $desired)]')
+model_matches=$(printf '%s' "$models" | \
+  faz35_select_equivalent_openfga_models "$desired_normalized")
 [ "$(printf '%s' "$model_matches" | jq 'length')" -le 1 ] || {
   echo "FATAL: multiple exact Etik Speak authorization models exist in the canonical store" >&2
   exit 1
@@ -338,8 +341,8 @@ if [ -z "$model_id" ]; then
   }
   model_id=$(printf '%s' "$body" | jq -r '.authorization_model_id // empty')
   models=$(collect_pages "$OPENFGA_BASE/stores/$store_id/authorization-models" authorization_models)
-  model_matches=$(printf '%s' "$models" | jq -c --argjson desired "$desired" \
-    '[.[] | select(del(.id) == $desired)]')
+  model_matches=$(printf '%s' "$models" | \
+    faz35_select_equivalent_openfga_models "$desired_normalized")
   [ "$(printf '%s' "$model_matches" | jq 'length')" -eq 1 ] && \
     [ "$(printf '%s' "$model_matches" | jq -r '.[0].id')" = "$model_id" ] || {
     echo "FATAL: OpenFGA model uniqueness postcondition failed" >&2

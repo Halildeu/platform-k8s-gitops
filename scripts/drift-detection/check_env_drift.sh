@@ -102,6 +102,7 @@ done
 ENV="${ENV:-prod}"
 CONTEXT="k3d-${ENV}"
 NAMESPACE="platform-${ENV}"
+CATALOG_CONTRACT_PYTHON="${CATALOG_CONTRACT_PYTHON:-python3}"
 
 # ArgoCD hub context — single ArgoCD hub on k3d-prod manages BOTH
 # platform-prod + platform-test Applications (Codex 019e44b9 iter-1 must_fix #1).
@@ -306,28 +307,38 @@ RENDER=$(kubectl kustomize "$OVERLAY" 2>/dev/null) || {
 }
 
 declare -A YAML_DIGESTS
-while IFS=$'\t' read -r svc digest; do
-  [[ -n "$svc" && -n "$digest" ]] && YAML_DIGESTS["$svc"]="$digest"
-done < <(echo "$RENDER" | awk '
-  /name: (auth-service|api-gateway|user-service|variant-service|core-data-service|report-service|schema-service|permission-service|frontend|endpoint-admin-service|openfga|workcube-mssql-bridge)$/ {
-    svc=$2
-    next
-  }
-  /image:.*@sha256:/ {
-    n=split($2, p, "@")
-    if (n==2 && svc!="") {
-      img_path=p[1]
-      digest=p[2]
-      # match by image short name suffix
-      n2=split(img_path, q, "/")
-      img_short=q[n2]
-      sub(/^platform-(backend|web)-/, "", img_short)
-      sub(/-testai$/, "", img_short)
-      printf "%s\t%s\n", img_short, digest
-    }
-    svc=""
-  }
-')
+declare -A CATALOG_WORKLOADS
+image_contract_rc=0
+image_contract_output=$(printf '%s' "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
+  "$CATALOG_CONTRACT_PYTHON" -c '
+import sys, yaml
+from lib.catalog_runtime_contracts import desired_image_digests, image_contract_findings
+from lib.services_catalog import ServicesCatalog
+
+catalog = ServicesCatalog.from_yaml(sys.argv[2])
+documents = list(yaml.safe_load_all(sys.stdin))
+for service in catalog.enabled_in(sys.argv[1]):
+    if service.workload_kind in {"Deployment", "StatefulSet"}:
+        print("M", service.name, "managed", sep=chr(9))
+for finding in image_contract_findings(documents, catalog, sys.argv[1]):
+    print(f"F\t{finding.code}\t{finding.message}")
+digests = desired_image_digests(documents, catalog, sys.argv[1])
+for name, digest in sorted(digests.items()):
+    print(f"D\t{name}\t{digest}")
+' "$ENV" "$REPO_ROOT/docs/operations/services.yaml" 2>&1) || image_contract_rc=$?
+if [[ $image_contract_rc -ne 0 ]]; then
+  add_finding P1 image_contract_exec_error \
+    "catalog image contract execution failed" "rc=$image_contract_rc; output=$image_contract_output"
+  mark_exec_error
+else
+  while IFS=$'\t' read -r record field value; do
+    case "$record" in
+      M) [[ -n "$field" ]] && CATALOG_WORKLOADS["$field"]=1 ;;
+      D) [[ -n "$field" && -n "$value" ]] && YAML_DIGESTS["$field"]="$value" ;;
+      F) add_finding P1 "$field" "$value"; mark_p1 ;;
+    esac
+  done <<< "$image_contract_output"
+fi
 
 # Live pod imageIDs
 declare -A POD_DIGESTS
@@ -356,23 +367,46 @@ done
 
 # Services in cluster but not in yaml (e.g. endpoint-admin-service test only)
 for svc in "${!POD_DIGESTS[@]}"; do
-  if [[ -z "${YAML_DIGESTS[$svc]:-}" ]]; then
+  if [[ -z "${CATALOG_WORKLOADS[$svc]:-}" ]]; then
     add_finding P2 service_unmanaged "Live service $svc has no yaml entry (gitops untracked)"
     mark_p2
   fi
 done
 set -u
 
-# ---- 3. ConfigMap KC issuer parity (services that validate JWT) -------------
-JWT_SERVICES=(api-gateway user-service variant-service permission-service schema-service report-service)
-for svc in "${JWT_SERVICES[@]}"; do
-  iss=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get configmap "${svc}-config" \
-    -o jsonpath='{.data.KEYCLOAK_ISSUER_URI}' 2>/dev/null || echo "")
-  if [[ -z "$iss" ]]; then
-    add_finding P1 configmap_kc_missing "$svc: KEYCLOAK_ISSUER_URI not set"
-    mark_p1
+# ---- 3. Catalog-driven JWT issuer/JWKS parity -------------------------------
+live_configmaps_rc=0
+LIVE_CONFIGMAPS=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get configmaps -o yaml 2>&1) || \
+  live_configmaps_rc=$?
+if [[ $live_configmaps_rc -ne 0 ]]; then
+  add_finding P1 configmap_query_exec_error \
+    "live ConfigMap query failed" "rc=$live_configmaps_rc; output=$LIVE_CONFIGMAPS"
+  mark_exec_error
+else
+  jwt_rc=0
+  jwt_output=$(printf '%s' "$LIVE_CONFIGMAPS" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
+  "$CATALOG_CONTRACT_PYTHON" -c '
+import sys, yaml
+from lib.catalog_runtime_contracts import jwt_config_findings
+from lib.services_catalog import ServicesCatalog
+
+catalog = ServicesCatalog.from_yaml(sys.argv[2])
+for finding in jwt_config_findings(yaml.safe_load_all(sys.stdin), catalog, sys.argv[1]):
+    print(f"{finding.code}\t{finding.message}")
+' "$ENV" "$REPO_ROOT/docs/operations/services.yaml" 2>&1) || jwt_rc=$?
+  if [[ $jwt_rc -ne 0 ]]; then
+    add_finding P1 jwt_contract_exec_error \
+      "catalog JWT contract execution failed" "rc=$jwt_rc; output=$jwt_output"
+    mark_exec_error
+  else
+    while IFS=$'\t' read -r code message; do
+      if [[ -n "$code" ]]; then
+        add_finding P1 "$code" "$message"
+        mark_p1
+      fi
+    done <<< "$jwt_output"
   fi
-done
+fi
 
 # ---- 4. ResourceQuota headroom (P2 if surge pod won't fit) ------------------
 QUOTA_RAW=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get resourcequota platform-quota \

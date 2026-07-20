@@ -8,8 +8,10 @@ Codex 019e2319 iter-3 AGREE — Single CLI consumed by both bash orchestrators:
 Both modes share the same contract motor (lib/deploy_normalizer +
 lib/probe_contract_rules + lib/services_catalog). Modes differ in inputs:
   pr-time : --render-source <overlay-dir>  → enforce probe contract +
-             catalog↔render parity (Codex iter-3 note #2 — scope filter via
-             part-of=platform label to avoid metrics-server / lab-deps noise).
+             catalog↔render parity. Workloads are in scope when they either
+             carry part-of=platform or have an exact name in services.yaml;
+             this keeps lab dependencies out while covering isolated product
+             cells such as Etik Speak.
   runtime : --render-source <overlay-dir> + --live-source <kubectl-context>
              → semantic template drift + RS-split detection.
 
@@ -70,6 +72,20 @@ def _err(msg: str) -> None:
 def _is_platform_scoped(deploy: dict) -> bool:
     labels = (deploy.get("metadata") or {}).get("labels") or {}
     return labels.get(SCOPE_LABEL) == SCOPE_VALUE
+
+
+def _is_contract_scoped(workload: dict, catalog_names: set[str] | None = None) -> bool:
+    """Return whether a workload belongs to the deployment contract gate.
+
+    The historical ``part-of=platform`` boundary remains the default for
+    discovering unmanaged platform workloads. A workload whose exact name is
+    present in the service catalog is also in scope, allowing separately
+    packaged product cells to keep their truthful ``part-of`` label without
+    escaping render, probe, runtime-drift, or ReplicaSet-split checks.
+    """
+    return _is_platform_scoped(workload) or _deploy_name(workload) in (
+        catalog_names or set()
+    )
 
 
 def _deploy_name(deploy: dict) -> str:
@@ -149,13 +165,15 @@ def _kubectl_get_replicasets(context: str, namespace: str) -> list[dict]:
     return json.loads(proc.stdout).get("items", [])
 
 
-def _filter_template_workloads(docs: list[dict]) -> list[dict]:
-    """Codex 019e2327 review #3 — accept Deployment AND StatefulSet."""
+def _filter_template_workloads(
+    docs: list[dict], catalog_names: set[str] | None = None
+) -> list[dict]:
+    """Accept contract-scoped Deployment and StatefulSet resources."""
     out = []
     for d in docs:
         if d.get("kind") not in TEMPLATE_WORKLOAD_KINDS:
             continue
-        if not _is_platform_scoped(d):
+        if not _is_contract_scoped(d, catalog_names):
             continue
         out.append(d)
     return out
@@ -185,7 +203,7 @@ def run_pr_time(
             )
         ], None
 
-    rendered = _filter_template_workloads(docs)
+    rendered = _filter_template_workloads(docs, catalog.all_names())
     rendered_by_name = {_deploy_name(d): d for d in rendered}
 
     # 1. enabled template-workload service → must render in overlay
@@ -266,11 +284,15 @@ def run_runtime(
     except RuntimeError as exc:
         return [], str(exc)
 
-    rendered_by_name = {_deploy_name(d): d for d in _filter_template_workloads(docs)}
+    catalog_names = catalog.all_names()
+    rendered_by_name = {
+        _deploy_name(d): d
+        for d in _filter_template_workloads(docs, catalog_names)
+    }
     live_by_name = {
         _deploy_name(d): d
         for d in live_deployments
-        if _is_platform_scoped(d)
+        if _is_contract_scoped(d, catalog_names)
     }
 
     # 6. Workload spec drift — semantic template diff (Deployment + StatefulSet)
@@ -316,7 +338,14 @@ def run_runtime(
             )
 
     # 7. ReplicaSet split detection (ownerReferences authoritative)
-    findings.extend(_check_rs_split(live_deployments, replicasets, rs_split_grace_seconds))
+    findings.extend(
+        _check_rs_split(
+            live_deployments,
+            replicasets,
+            rs_split_grace_seconds,
+            contract_names=catalog_names,
+        )
+    )
 
     return findings, None
 
@@ -332,11 +361,12 @@ def _check_rs_split(
     live_deployments: list[dict],
     replicasets: list[dict],
     grace_seconds: int,
+    contract_names: set[str] | None = None,
 ) -> list[dict]:
     findings: list[dict] = []
     deploy_uid_to_name: dict[str, str] = {}
     for d in live_deployments:
-        if not _is_platform_scoped(d):
+        if not _is_contract_scoped(d, contract_names):
             continue
         uid = (d.get("metadata") or {}).get("uid")
         name = _deploy_name(d)

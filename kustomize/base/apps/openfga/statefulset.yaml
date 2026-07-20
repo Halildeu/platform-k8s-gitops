@@ -33,6 +33,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: openfga
+          # Environment overlays own immutable promotion. Keeping the legacy
+          # base tag avoids coupling TEST activation to a PROD desired-state change.
           image: openfga/openfga:v1.11.2
           imagePullPolicy: IfNotPresent
           args:
