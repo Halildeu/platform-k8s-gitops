@@ -56,9 +56,9 @@ It binds the current host-container IPs to the Kubernetes Endpoints and the
 reviewed NetworkPolicy, verifies ESO/OpenFGA availability, checks the external
 Sectigo wildcard TLS path for both public hosts, renders the immutable
 activation, and reports whether the root overlay/live resource set is still
-inactive. It also requires object-count quota for the simultaneous two-pod
-surge plus a bounded repair reserve; an exact-fit quota is rejected because it
-would block rollback or recovery resources. The test overlay raises only the
+inactive. It also requires object-count quota for the six-pod rollout peak of
+the three deployments plus a bounded repair reserve; an exact-fit quota is
+rejected because it would block rollback or recovery resources. The test overlay raises only the
 test object ceilings to `services=40`, `secrets=44`, `pods=34`, and
 `configmaps=35`; production quota is unchanged. The cluster TLS Secret may be
 absent because TLS terminates at the

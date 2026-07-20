@@ -84,6 +84,59 @@ class TestStatefulSetSupport(unittest.TestCase):
         self.assertTrue(any("livenessProbe.httpGet.path" in d[0] for d in diffs))
 
 
+class TestIndependentProductCellScope(unittest.TestCase):
+    """Catalogued product cells remain covered without a false platform label."""
+
+    def test_catalogued_non_platform_workload_is_in_scope(self):
+        from check_deployment_contracts import _filter_template_workloads
+
+        ethics = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "ethics-service",
+                "labels": {"app.kubernetes.io/part-of": "etik-speak"},
+            },
+        }
+        self.assertEqual(
+            _filter_template_workloads([ethics], {"ethics-service"}),
+            [ethics],
+        )
+
+    def test_uncatalogued_non_platform_workload_stays_out_of_scope(self):
+        from check_deployment_contracts import _filter_template_workloads
+
+        lab = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": "unmanaged-lab",
+                "labels": {"app.kubernetes.io/part-of": "lab"},
+            },
+        }
+        self.assertEqual(_filter_template_workloads([lab], {"ethics-service"}), [])
+
+    def test_catalogued_non_platform_workload_gets_rs_split_check(self):
+        from check_deployment_contracts import _check_rs_split
+
+        ethics = {
+            "metadata": {
+                "name": "ethics-service",
+                "uid": "ethics-uid",
+                "labels": {"app.kubernetes.io/part-of": "etik-speak"},
+            }
+        }
+        old = _rs("ethics-old", "ethics-uid", replicas=1, ready=1, age_s=3600)
+        stalled = _rs("ethics-new", "ethics-uid", replicas=1, ready=0, age_s=600)
+        findings = _check_rs_split(
+            [ethics],
+            [old, stalled],
+            grace_seconds=300,
+            contract_names={"ethics-service"},
+        )
+        self.assertTrue(any(f["service"] == "ethics-service" for f in findings))
+
+
 class TestPodLevelContractSurface(unittest.TestCase):
     """Codex 019e2327 review #5 — pod-level securityContext +
     terminationGracePeriodSeconds must be part of the diff surface.
