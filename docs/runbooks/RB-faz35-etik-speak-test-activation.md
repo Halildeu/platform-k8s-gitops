@@ -186,6 +186,31 @@ In the GitOps PR:
 5. Merge only after the exact-head review receipt and normal CI are valid.
 6. Let ArgoCD reconcile; do not apply the activation directory selectively.
 
+### Fail-closed TEST deactivation and rollback
+
+`platform-test` intentionally uses `prune: false`. Removing
+`activation/etik-speak` from the root overlay therefore is **not** a rollback:
+the last-applied Deployments and Ingresses would remain live but unmanaged.
+
+Rollback uses a reviewed GitOps fix-forward commit instead:
+
+1. Replace the root resource `activation/etik-speak` with
+   `deactivation/etik-speak` and restore the prior reviewed manager image digest
+   in the same commit when the manager shell also needs rollback.
+2. Render the root TEST overlay, run normal CI, derive a fresh exact scope and
+   obtain the required exact-head review before merge.
+3. Let normal ArgoCD self-heal update the same object identities. The
+   deactivation overlay retains every object under GitOps ownership, sets both
+   product Deployments to `replicas: 0`, and replaces all public/staff Ingress
+   hosts with DNS-reserved `.invalid` names. It does not depend on pruning.
+4. Verify desired/live replicas are zero, `etik.acik.com`, `speakup.acik.com`
+   and the `testai.acik.com` staff API no longer match a Faz 35 Ingress, and
+   record the ArgoCD revision. Cleanup/deletion, if later desired, is a separate
+   controlled change after this fail-closed tombstone is live.
+
+Never roll back by only deleting the root resource line, and never use direct
+`kubectl patch`, `set image`, `edit` or workload apply for deactivation.
+
 After reconciliation, verify ExternalSecret and immutable image identity:
 
 ```bash

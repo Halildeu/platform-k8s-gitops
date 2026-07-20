@@ -77,6 +77,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/secretstore.yaml"
         ).read_text()
+        cls.deactivation = (
+            ROOT
+            / "kustomize/overlays/test/deactivation/etik-speak/kustomization.yaml"
+        ).read_text()
         cls.service_config = (
             ROOT / "kustomize/base/apps/etik-speak/ethics-service-config.yaml"
         ).read_text()
@@ -1598,6 +1602,53 @@ spec:
         ):
             self.assertIn(expected, self.product_quota)
         self.assertNotIn("api-gateway-to-ethics-service", self.netpol)
+
+    def test_prune_false_rollback_uses_fail_closed_gitops_tombstone(self):
+        self.assertIn("../../activation/etik-speak", self.deactivation)
+        self.assertEqual(self.deactivation.count("value: 0"), 1)
+        for disabled_host in (
+            "etik-speak-disabled.invalid",
+            "speakup-disabled.invalid",
+            "etik-speak-manager-disabled.invalid",
+        ):
+            self.assertIn(disabled_host, self.deactivation)
+
+        rendered = subprocess.run(
+            [
+                "kustomize",
+                "build",
+                str(ROOT / "kustomize/overlays/test/deactivation/etik-speak"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        self.assertEqual(rendered.count("replicas: 0"), 2)
+        for active_host in (
+            "host: etik.acik.com",
+            "host: speakup.acik.com",
+            "host: testai.acik.com",
+        ):
+            self.assertNotIn(active_host, rendered)
+        for resource_name in (
+            "name: ethics-service",
+            "name: etik-speak-public",
+            "name: etik-speak-public-api",
+            "name: etik-speak-public-ui",
+            "name: etik-speak-staff-api",
+            "name: ethics-service-secrets",
+            "name: etik-speak-vault",
+        ):
+            self.assertIn(resource_name, rendered)
+
+        for required in (
+            "prune: false",
+            "deactivation/etik-speak",
+            "replicas: 0",
+            ".invalid",
+            "Never roll back by only deleting the root resource line",
+        ):
+            self.assertIn(required, self.activation_runbook)
 
     def test_test_quota_preserves_etikspeak_activation_and_repair_reserve(self):
         quota_patch = re.search(
