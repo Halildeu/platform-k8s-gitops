@@ -563,37 +563,40 @@ rastgele token'a bağlı `cross-ai-publication-lock` body lease'ini alır; audit
 lease varken fail-closed kalır. Var olan lease, digest aynı olsa bile başka bir
 publisher tarafından devralınamaz; retry/operator recovery açıkça reconcile
 edilmeden yeni yayın reddedilir. Yeni binding evidence veya PR body mutation'ı görünür
-olmadan lease altında exact-head `cross-ai-audit` commit status'unu `pending` yapar; eski event
-marker'ları bu yeni status ID ile eşleşemediği için onu success'e çeviremez.
+olmadan lease altında exact-head `cross-ai/evidence-publication` fencing status'unu
+`pending` yapar; bu context merge gate değildir ve yalnız generation sıralamasını
+bağlar. Eski event marker'ları bu yeni status ID ile eşleşemediği için yeni
+generation'ı current kabul edemez.
 Status ID'sini ETag/`If-Match` ile güncellenen generation marker'ına hemen bağlar;
 eşzamanlı insan/agent body değişiklikleri kaybolmaz. Ardından immutable status ledger'ını
 owner comment'ten önce üretir ve exact pending-id/ledger-id/digest taşıyan final
 marker'la lease'i atomik bırakıp trusted-base `pull_request_target: edited`
-audit'ini yeniden tetikler. Draft audit generation'ı success'e çeviremez;
-`ready_for_review` olayı aynı canlı binding'i yeniden denetler ve poster artık
-ready PR üzerinde çalışamadığı için success yazarıyla yarışamaz.
+audit'ini yeniden tetikler. Draft audit transportu doğruladıktan sonra bilinçli
+olarak fail-closed çıkar; böylece aynı head üzerinde eski bir başarılı required
+check bırakmaz. `ready_for_review` olayı aynı canlı binding için tek merge-authoritative
+native check'i üretir ve poster ready PR üzerinde çalışamaz.
 Trusted completion helper event body/head ile canlı açık PR body/head'ini,
-marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
+marker'daki pending ID ile owner publication status'unu ve marker'daki ledger ID ile
 exact digest/PR/owner ledger'ını yeniden doğrulamadan ve ledger ID pending
-ID'den kesin büyük olmadan success yazamaz. Seçili Codex receipt ref'indeki
-owner comment'i success'ten hemen önce yeniden okuyup exact body digest, OWNER
-association ve `created_at == updated_at` immutability koşulunu korur; success
-bu workflow'un son dış yazımıdır ve telafi amaçlı success-sonrası pending
-penceresi oluşturulmaz. Daha sonraki seçili-comment `edited` / `deleted`
-olayları; owner tarafından oluşturulan v1/v3/v4 veya evidence-like yorumlar ve
-seçilmemiş evidence yorumlarının sonradan düzenlenmesi/silinmesi trusted
-`issue_comment` guard ile güncel PR head'ini yeniden pending yapar. Yalnız zaten
-seçilmiş immutable v4 `AGREE` yorumunun gecikmiş `created` olayı idempotenttir.
+ID'den kesin büyük olmadan başarılı çıkamaz. Seçili Codex receipt ref'indeki
+owner comment'i job sonucu üretilmeden hemen önce yeniden okuyup exact body
+digest, OWNER association ve `created_at == updated_at` immutability koşulunu
+korur. Helper required commit-status yazmaz; başarılı çıkışı trusted-base
+workflow'un native, exact-head `cross-ai-audit` job check'ini sonuçlandırır.
+Mutable PR body/comment yalnız bu snapshot'ın taşıma girdisidir; job success
+sonrasında yeni merge otoritesi veya revocation otoritesi üretmez. Yeni review
+generation'ı yalnız draft-only trusted poster ile başlar ve `ready_for_review`
+üzerinde yeni native job check'i gerektirir; düz challenger metni veya owner'ın
+elle yazdığı `VERDICT: REVISE` gate yetkisi kazanmaz.
 Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
-`Consultation commit` SHA'sında doğrular, ancak success'i güncel PR head SHA'sına
-yazar; böylece metadata-only yeni head de required status kazanır. Success
-sonrasında daha yeni owner generation/body/head görülürse trusted workflow retry
-pending'ini yeniden okunan canlı PR head SHA'sına kurar; yeni generation bu
-fail-closed kaydı tüketebilir. Audit
-ancak tüm receipt/ledger/comment/lineage kontrolleri geçince exact generation
-için status'u `success` yapar. Ledger, comment veya body update başarısız kalırsa
-pending status fail-closed korunur; aynı evidence digest'iyle
-retry güvenlidir. CI receipt, GitHub comment gövdesi ve status-ledger bağını
+`Consultation commit` SHA'sında doğrular; metadata-only güncel head için merge
+otoritesi yine o head'de sonuçlanan native workflow job check'idir. Completion
+öncesinde daha yeni owner generation/body/head görülürse helper fail eder ve job
+check başarılı olamaz; yalnız non-required publication context'inde retry fencing
+kaydı bırakılabilir. Audit ancak tüm receipt/ledger/comment/lineage kontrolleri
+geçince başarılı çıkar. Ledger, comment veya body update başarısız kalırsa job
+check fail-closed kalır; süreç-tekil lease nedeniyle stale retry otomatik takeover
+yapmaz ve açık reconciliation ister. CI receipt, GitHub comment gövdesi ve status-ledger bağını
 digest üzerinden birlikte doğrular. CI provider credential'ı kullanmaz ve
 deterministik güvenlik-negatiflerinde fake binary çalıştırır; bootstrap'taki ham
 exact pinned native SOL turu gerçek CLI bayrak/JSONL yaşam döngüsünü doğrular,

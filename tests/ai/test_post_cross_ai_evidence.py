@@ -200,7 +200,7 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertIn("/statuses/", calls[2][2])
         self.assertEqual(
             status_contexts,
-            ["cross-ai-audit", f"cross-ai/evidence/{digest}"],
+            ["cross-ai/evidence-publication", f"cross-ai/evidence/{digest}"],
         )
         self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
         self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
@@ -325,7 +325,7 @@ class EvidenceValidationTests(unittest.TestCase):
                         "head": {"sha": payload["head_sha"]},
                     }),
                 )
-            if posted.get("context") == "cross-ai-audit":
+            if posted.get("context") == "cross-ai/evidence-publication":
                 return subprocess.CompletedProcess(
                     command,
                     0,
@@ -560,19 +560,18 @@ class EvidenceValidationTests(unittest.TestCase):
             )
         self.assertEqual(len(calls), 1)
 
-    def test_trusted_workflow_can_clear_pending_audit_only_after_success(self) -> None:
+    def test_trusted_workflow_uses_native_job_check_as_merge_authority(self) -> None:
         workflow = (
             ROOT / ".github/workflows/gate-cross-ai-audit.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("statuses: write", workflow)
-        self.assertIn("Mark exact-head Cross-AI audit status current", workflow)
+        self.assertIn("Validate exact-head publication generation", workflow)
         self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
-        self.assertIn("issue_comment:", workflow)
-        self.assertIn("- created", workflow)
+        self.assertNotIn("issue_comment:", workflow)
         self.assertIn("- ready_for_review", workflow)
         self.assertIn("- converted_to_draft", workflow)
-        self.assertIn("cross-ai-evidence-mutation-guard", workflow)
-        self.assertIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
+        self.assertNotIn("cross-ai-evidence-mutation-guard", workflow)
+        self.assertNotIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()

@@ -23,8 +23,9 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #     PR head. A malicious PR that ships a tampered `pr-cross-ai-audit.mjs` in
 #     its head no longer weakens its own audit — the trusted main copy runs.
 #   * `pull_request_target` is the more privileged event variant. Read grants
-#     remain minimal; `statuses: write` is narrowly required so the trusted
-#     exact-head audit can clear the poster's fail-closed pending status.
+#     remain minimal; `statuses: write` is restricted to non-required
+#     publication-generation fencing on validation failures. The native job
+#     check, not a custom commit-status success POST, is merge authority.
 #   * Job name `cross-ai-audit` is preserved so the branch-protection ruleset
 #     context (PMD §2.10 must-pass list) matches without rename.
 #   * `concurrency` block cancels superseded runs on the same PR — guards
@@ -69,17 +70,6 @@ on:
       # When the audit script gains genuine label-aware semantics, this
       # block should be re-added with the matching script logic in the
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
-  # Evidence comments remain mutable GitHub objects. Any owner-created
-  # evidence-like comment (including retired schemas/REVISE) and later
-  # edit/deletion of selected or unselected evidence restore the fail-closed
-  # status on the open PR's current head. A delayed `created` event for the
-  # already-selected immutable v4 AGREE is idempotent.
-  issue_comment:
-    types:
-      - created
-      - edited
-      - deleted
-
 permissions:
   actions: read
   contents: read
@@ -88,10 +78,10 @@ permissions:
   statuses: write
 
 # #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
-# Per-PR concurrency group; superseded runs are cancelled on `synchronize`
+# Per-PR concurrency group; superseded runs are cancelled on new PR events
 # so rapid push churn does not exhaust CI minutes.
 concurrency:
-  group: cross-ai-audit-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: cross-ai-audit-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -267,7 +257,7 @@ jobs:
           fi
           node scripts/ci/pr-cross-ai-audit.mjs "${args[@]}"
 
-      - name: Mark exact-head Cross-AI audit status current
+      - name: Validate exact-head publication generation
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -277,24 +267,3 @@ jobs:
             --repo "$GH_REPO" \
             --issue "$PR_NUMBER" \
             --event-path "$GITHUB_EVENT_PATH"
-
-  evidence-mutation-guard:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request != null
-    name: cross-ai-evidence-mutation-guard
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Checkout exact trusted default-branch event SHA
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-
-      - name: Restore pending status for selected evidence mutation
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          python3 scripts/ai/complete_cross_ai_audit_status.py \
-            --repo "$GH_REPO" \
-            --comment-event-path "$GITHUB_EVENT_PATH"

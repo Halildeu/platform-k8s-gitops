@@ -305,8 +305,8 @@ def status_ledger_payload(
 def audit_invalidation_payload(pr_url: str) -> dict:
     return {
         "state": "pending",
-        "context": "cross-ai-audit",
-        "description": "Cross-AI evidence changed; trusted audit required",
+        "context": "cross-ai/evidence-publication",
+        "description": "Cross-AI evidence publication awaiting trusted audit",
         "target_url": pr_url,
     }
 
