@@ -38,6 +38,21 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
+      # Faz 35 test-only transport gate bypass. ingress-nginx v1.9+
+      # `proxy-set-headers` ConfigMap yalnızca ilk (alfabetik) header'ı
+      # render ediyor — `X-Etik-Speak-Transport: https` atlanıyor + backend
+      # `SECURE_TRANSPORT_REQUIRED` reddediyor. Backend'in built-in
+      # `ETHICS_SECURE_TRANSPORT_REQUIRED` env toggle'ı yalnız TEST'te devre
+      # dışı bırakılıyor. ES-3 prod pilot öncesi kalıcı fix gerek: (a)
+      # ingress-nginx `configuration-snippet` + cluster `allow-snippet-
+      # annotations` + `annotations-risk-level: Critical` ya da (b) backend
+      # `PublicCredentialBoundaryFilter.hasAuthorization` empty-string bypass
+      # + `X-Forwarded-Proto: https` fallback kabul.
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: ETHICS_SECURE_TRANSPORT_REQUIRED
+            value: "false"
   - target: {kind: Deployment, name: etik-speak-public}
     patch: |-
       - op: replace
