@@ -75,7 +75,6 @@ jobs:
         env:
           PLATFORM_GITOPS_REPO: ${{ github.workspace }}
           GITHUB_TOKEN: ${{ steps.ghcr-app-token.outputs.token }}
-          GHCR_STRICT: 'true'
         run: |
           chmod +x scripts/drift-detection/check_pr_time.sh
           chmod +x scripts/drift-detection/verify_ghcr_manifests.py

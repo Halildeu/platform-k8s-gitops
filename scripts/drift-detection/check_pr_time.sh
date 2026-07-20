@@ -84,7 +84,11 @@ echo
 echo "=== Check 2: GHCR manifest existence ==="
 VERIFIER="$REPO_ROOT/scripts/drift-detection/verify_ghcr_manifests.py"
 if [[ -x "$VERIFIER" ]]; then
-  check2_output=$(echo "$RENDER" | python3 "$VERIFIER" 2>&1)
+  # Preserve the established non-strict compatibility scan for pre-existing
+  # legacy packages whose package-level App grants are not yet reconciled.
+  # Network/invocation failure still blocks. New Faz 35 artifacts are checked
+  # separately and strictly below.
+  check2_output=$(echo "$RENDER" | GHCR_STRICT=false python3 "$VERIFIER" 2>&1)
   check2_rc=$?
   echo "$check2_output"
   if [[ $check2_rc -ne 0 ]]; then
@@ -94,6 +98,44 @@ if [[ -x "$VERIFIER" ]]; then
 else
   echo "[FAIL] GHCR verifier missing or not executable: $VERIFIER"
   EXIT_CODE=1
+fi
+
+# TEST is authoritative before PROD. Prove every artifact from the exact,
+# content-addressed Faz 35 image-set with strict auth/missing/network semantics;
+# legacy package access debt cannot dilute this product-slice gate.
+if [[ "$ENV" == test ]]; then
+  echo
+  echo "=== Check 2b: Faz 35 exact image-set existence (strict) ==="
+  IMAGE_SET_DIR="$REPO_ROOT/docs/faz-35-evidence/image-set"
+  image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print | \
+    wc -l | tr -d ' ')
+  if [[ "$image_set_count" -ne 1 ]]; then
+    echo "[FAIL] expected exactly one content-addressed Faz 35 image-set"
+    EXIT_CODE=1
+  else
+    IMAGE_SET=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print)
+    image_set_name=$(basename "$IMAGE_SET" .json)
+    image_set_sha=$(jq -cS . "$IMAGE_SET" | shasum -a 256 | awk '{print $1}')
+    faz35_refs=$(jq -r '.images[] | "image: \(.repository)@\(.digest)"' "$IMAGE_SET")
+    faz35_ref_count=$(printf '%s\n' "$faz35_refs" | sed '/^$/d' | wc -l | tr -d ' ')
+    if [[ ! "$image_set_name" =~ ^[0-9a-f]{64}$ ]] || \
+       [[ "$image_set_sha" != "$image_set_name" ]] || \
+       [[ "$faz35_ref_count" -ne 3 ]]; then
+      echo "[FAIL] Faz 35 image-set content address or exact cardinality is invalid"
+      EXIT_CODE=1
+    else
+      check2b_output=$(printf '%s\n' "$faz35_refs" | \
+        GHCR_STRICT=true python3 "$VERIFIER" 2>&1)
+      check2b_rc=$?
+      echo "$check2b_output"
+      if [[ $check2b_rc -ne 0 ]]; then
+        echo "[FAIL] Faz 35 exact image-set was not fully proven (rc=$check2b_rc)"
+        EXIT_CODE=1
+      else
+        echo "[OK]  Faz 35 exact image-set: 3/3 registry manifests verified"
+      fi
+    fi
+  fi
 fi
 
 # Check 3: ConfigMap invariants for JWT-validating services

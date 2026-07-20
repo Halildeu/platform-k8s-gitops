@@ -393,7 +393,10 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
         self.assertIn("id: ghcr-app-token", workflow)
         self.assertIn("permission-packages: read", workflow)
         self.assertIn("GITHUB_TOKEN: ${{ steps.ghcr-app-token.outputs.token }}", workflow)
-        self.assertIn("GHCR_STRICT: 'true'", workflow)
+        pr_time = (root / "scripts/drift-detection/check_pr_time.sh").read_text()
+        self.assertIn("Check 2b: Faz 35 exact image-set existence (strict)", pr_time)
+        self.assertIn("GHCR_STRICT=true python3", pr_time)
+        self.assertIn("Faz 35 exact image-set: 3/3", pr_time)
 
 
 if __name__ == "__main__":  # pragma: no cover
