@@ -5,7 +5,7 @@
 > açıklaması için korunur; cutoff sonrası aktif verifier MiniMax taşıyan trust
 > root veya bundle'ı doğrulamaz. Yeni review, trust root, deployment grant veya
 > activation bu sözleşmeyle üretilemez; yeni aktif sürüm ayrı versioned contract
-> altında Claude Opus 4.8 + OpenAI Codex 5.6 SOL kullanmalıdır.
+> altında Claude Opus 4.7 + OpenAI Codex 5.6 SOL kullanmalıdır.
 
 > **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
 > registration, the Phase-1 receive-only test observer, outbound failed-delivery
@@ -174,7 +174,7 @@ requiredFinalVerdict: AGREE
 openMustFixFindings: 0
 ```
 
-The trust root also pins the exact model IDs `claude-opus-4-8`,
+The trust root also pins the exact model IDs `claude-opus-4-7`,
 `minimax/MiniMax-M3` and `gpt-5.6-sol`. A missing provider, alias, wrapper,
 unselected alternate chain, non-AGREE chain tip or unknown fourth provider is
 a rejection. Provider outage or model retirement becomes `tracked_pending`;

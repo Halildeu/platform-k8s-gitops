@@ -64,7 +64,7 @@ const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
 const EVIDENCE = {
-  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
+  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-7', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
   [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
@@ -158,7 +158,7 @@ const legacyPeerBody =
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n` +
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-7; actual=claude-opus-4-7; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n` +
   `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
 
 const explicitNoneBody =
@@ -176,7 +176,7 @@ const explicitSingleBody =
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n`;
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-7; actual=claude-opus-4-7; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n`;
 const explicitDualBody =
   explicitSingleBody
     .replace('Consultation mode: single', 'Consultation mode: dual')
@@ -558,7 +558,7 @@ const cases = [
   ['field-aware selection prefers a complete explicit-mode section',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit single mode accepts exact direct Claude Opus 4.8 evidence',
+  ['explicit single mode accepts exact direct Claude Opus 4.7 evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GOVERNANCE_PATH] }, 0],

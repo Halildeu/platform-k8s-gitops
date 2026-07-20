@@ -81,8 +81,8 @@ mavis communication peers
   eksikse, consultation governance dosyası değişiyorsa veya branch
   `auto-promotion/` ise gate `none` kabul etmez; en az `single` gerekir.
 - İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal doğrudan
-  `claude --model claude-opus-4-8` olur: `Consultation mode: single`.
-  JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz;
+  `claude --model claude-opus-4-7` olur: `Consultation mode: single`.
+  JSON `modelUsage` exact `claude-opus-4-7` değilse gerçek görüş sayılmaz;
   Claude implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz.
 - Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
   gerektiren noktada Claude'a doğrudan OpenAI Codex 5.6 SOL ekle:
@@ -159,7 +159,7 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 
 **Karar verme kuralı**:
 - Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
-- Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.8 kullan.
+- Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.7 kullan.
 - Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
   provider-distinct kanal kullan; bu kanal implementer sağlayıcısıyla aynı
   olamaz, mümkünse iki çağrıyı paralel yürüt.

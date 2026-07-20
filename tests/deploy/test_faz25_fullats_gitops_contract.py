@@ -1170,7 +1170,7 @@ fi
         self.assertIn("`Consultation mode: none`", self.agents)
         self.assertIn("(`single`)", self.agents)
         self.assertIn("(`dual`)", self.agents)
-        self.assertIn("`claude-opus-4-8`", self.agents)
+        self.assertIn("`claude-opus-4-7`", self.agents)
         self.assertIn("`gpt-5.6-sol`", self.agents)
         self.assertIn("toplam iki kanal aşılmaz", self.agents)
         self.assertIn("MiniMax yeni istişarelerde çağrılmaz", self.agents)
@@ -1195,7 +1195,7 @@ fi
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
         self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
         self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
-        self.assertIn("**`claude-opus-4-8`**", self.context_rules)
+        self.assertIn("**`claude-opus-4-7`**", self.context_rules)
         self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
         self.assertIn(
             "İstişare bir teslimat ritüeli değil, yalnız karar",

@@ -66,7 +66,7 @@ const DOCS_ONLY_EXEMPT_ALLOWLIST = [
 const CONSULTATION_RECEIPTS = {
   'claude receipt': {
     provider: 'anthropic',
-    model: 'claude-opus-4-8',
+    model: 'claude-opus-4-7',
   },
   'codex receipt': {
     provider: 'openai',
@@ -960,7 +960,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     findings.push({
       check: 'consultation_single_exact_channel_count',
       pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
-      detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
+      detail: 'single mode exact direct Claude Opus 4.7 channel requires one receipt',
     });
     findings.push({
       check: 'consultation_single_is_provider_distinct',
@@ -978,7 +978,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
   } else if (mode === 'dual') {
     const riskTrigger = (fields['risk trigger'] || '').trim();
-    // Forward policy: dual = exactly Claude Opus 4.8 + Codex gpt-5.6-sol.
+    // Forward policy: dual = exactly Claude Opus 4.7 + Codex gpt-5.6-sol.
     // The only accepted secondary channel is Codex; no third channel exists.
     const exactChannels = presentReceipts.length === 2
       && Boolean(fields['claude receipt'])
@@ -998,8 +998,8 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       check: 'consultation_dual_exact_channel_count',
       pass: exactChannels,
       detail: exactChannels
-        ? 'dual mode exact Claude Opus 4.8 + Codex gpt-5.6-sol iki kanal taşıyor'
-        : 'dual mode yalnız Claude Opus 4.8 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
+        ? 'dual mode exact Claude Opus 4.7 + Codex gpt-5.6-sol iki kanal taşıyor'
+        : 'dual mode yalnız Claude Opus 4.7 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
     });
     findings.push({
       check: 'consultation_dual_provider_distinct_from_implementer',
