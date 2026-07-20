@@ -445,6 +445,16 @@ class TransitBootstrapTests(unittest.TestCase):
             reconciler,
             r"cross-ai-(?:issuer-[a-z]+|coordinator)-test\|[^\n]*token_num_uses=0",
         )
+        runner_row = next(
+            line
+            for line in routine_approles.splitlines()
+            if "cross-ai-runner-management-test|" in line
+        )
+        self.assertIn("token_num_uses=1", runner_row)
+        self.assertNotIn("token_num_uses=0", runner_row)
+        self.assertIn('.data.token_num_uses == 1', reconciler)
+        self.assertIn('approle $rname readback unavailable', reconciler)
+        self.assertIn('approle $rname is not one-use and fail-closed', reconciler)
 
 
 if __name__ == "__main__":

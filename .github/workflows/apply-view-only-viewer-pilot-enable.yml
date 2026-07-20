@@ -50,7 +50,7 @@ env:
 jobs:
   authorize-live-apply:
     name: Verify owner/AI-advisory bounded pilot authorization
-    if: inputs.action == 'apply'
+    if: github.ref == 'refs/heads/main' && inputs.action == 'apply'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -65,6 +65,8 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Install signed authority verifier dependencies
         run: |
@@ -179,9 +181,12 @@ jobs:
   viewer-pilot-surface:
     name: "Apply or rollback owner-gated #2373 VIEW_ONLY viewer product pilot surface"
     needs: [authorize-live-apply]
-    if: always() && (inputs.action != 'apply' || needs.authorize-live-apply.result == 'success')
+    if: github.ref == 'refs/heads/main' && always() && (inputs.action != 'apply' || needs.authorize-live-apply.result == 'success')
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 20
+    environment:
+      name: faz22-view-only-pilot
+      url: https://github.com/Halildeu/platform-k8s-gitops/issues/2373
 
     steps:
       - name: Validate dispatch inputs
@@ -232,6 +237,10 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Reconcile least-privilege VIEW_ONLY audit DB role
         if: inputs.action == 'apply'

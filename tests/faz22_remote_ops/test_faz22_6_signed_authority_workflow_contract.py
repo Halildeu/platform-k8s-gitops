@@ -32,7 +32,8 @@ def verify_dependency_lock_contract(text: str) -> None:
 
 
 def verify_history_contract(text: str) -> None:
-    if text.count("fetch-depth: 0") != 1:
+    checkout_count = text.count("uses: actions/checkout@")
+    if checkout_count < 1 or text.count("fetch-depth: 0") != checkout_count:
         raise ValueError("signed authority checkout must retain complete git history")
 
 
@@ -60,6 +61,24 @@ def verify_runtime_advisory_contract(text: str) -> None:
         raise ValueError("runtime advisory binding contract is missing")
     if "jq -er '.aiAdvisory.commentId'" in text:
         raise ValueError("circular policy advisory binding is forbidden")
+
+
+def verify_privileged_workflow_boundary(text: str) -> None:
+    required_counts = {
+        "environment:\n      name: faz22-view-only-pilot": 2,
+        "ref: ${{ github.sha }}": 2,
+        "persist-credentials: false": 2,
+        "fetch-depth: 0": 2,
+    }
+    if any(text.count(token) != count for token, count in required_counts.items()):
+        raise ValueError("privileged workflow boundary is missing")
+    required = (
+        "if: github.ref == 'refs/heads/main' && inputs.action == 'apply'",
+        "if: github.ref == 'refs/heads/main' && always()",
+        "runs-on: [self-hosted, staging-sw, testai-deploy]",
+    )
+    if any(token not in text for token in required):
+        raise ValueError("privileged workflow boundary is missing")
 
 
 def verify_legacy_archive_contract(text: str) -> None:
@@ -109,6 +128,7 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
         for text in rendered.values():
             verify_history_contract(text)
         verify_runtime_advisory_contract(rendered["apply"])
+        verify_privileged_workflow_boundary(rendered["apply"])
 
     def test_each_dependency_lock_omission_fails_closed(self):
         for name, path in WORKFLOWS.items():
@@ -148,6 +168,21 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
             verify_runtime_advisory_contract(
                 original + "\njq -er '.aiAdvisory.commentId'\n"
             )
+
+    def test_privileged_workflow_boundary_omission_fails_closed(self):
+        original = WORKFLOWS["apply"].read_text(encoding="utf-8")
+        for token in (
+            "environment:\n      name: faz22-view-only-pilot",
+            "ref: ${{ github.sha }}",
+            "persist-credentials: false",
+            "if: github.ref == 'refs/heads/main' && inputs.action == 'apply'",
+            "if: github.ref == 'refs/heads/main' && always()",
+        ):
+            with self.subTest(omitted=token):
+                with self.assertRaisesRegex(ValueError, "boundary is missing"):
+                    verify_privileged_workflow_boundary(
+                        original.replace(token, "", 1)
+                    )
 
     def test_termination_accepts_only_exact_legacy_or_current_archive_sets(self):
         original = TERMINATION_WORKFLOW.read_text(encoding="utf-8")
