@@ -103,6 +103,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/ingress-public-ui.yaml"
         ).read_text()
+        cls.manager_ui_ingress = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/ingress-manager-ui.yaml"
+        ).read_text()
         cls.netpol = (
             ROOT / "kustomize/overlays/test/activation/etik-speak/netpol.yaml"
         ).read_text()
@@ -1322,7 +1326,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "both public ingresses must use the synthetic test access gate",
             "one-year HSTS header",
             "foundation provisioning refuses an included Etik Speak activation root",
-            "foundation provisioning refuses an early shared test frontend pin",
+            "Faz 35 must not mutate the shared test frontend pin",
             "foundation provisioning refuses existing or partial Etik Speak activation resources",
             "secretstore/etik-speak-vault",
             "secret/ethics-service-secrets",
@@ -1332,6 +1336,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "faz35_assert_rendered_deployment_image",
             "image set content does not match its content-addressed filename",
             "image set schema/source-head binding is invalid",
+            ".github/workflows/release-etik-speak-manager-image.yml",
             'kustomize build "$REPO_ROOT/kustomize/overlays/test"',
             'EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"',
             'EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"',
@@ -1462,16 +1467,19 @@ spec:
             json.dumps(self.image_set, sort_keys=True, separators=(",", ":")) + "\n"
         ).encode()
         self.assertEqual(hashlib.sha256(canonical).hexdigest(), self.image_set_path.stem)
-        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v1")
+        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v2")
         self.assertEqual(
             self.image_set["images"]["ethics_service"]["source_head"],
             self.image_set["source_heads"]["backend"],
         )
-        for name in ("public_web", "manager_web"):
-            self.assertEqual(
-                self.image_set["images"][name]["source_head"],
-                self.image_set["source_heads"]["web"],
-            )
+        self.assertEqual(
+            self.image_set["images"]["public_web"]["source_head"],
+            self.image_set["source_heads"]["web_public"],
+        )
+        self.assertEqual(
+            self.image_set["images"]["manager_web"]["source_head"],
+            self.image_set["source_heads"]["web_manager"],
+        )
 
         rendered = subprocess.run(
             ["kustomize", "build", str(ROOT / "kustomize/overlays/test/activation/etik-speak")],
@@ -1485,6 +1493,7 @@ spec:
             for deployment, image_key in (
                 ("ethics-service", "ethics_service"),
                 ("etik-speak-public", "public_web"),
+                ("etik-speak-manager", "manager_web"),
             ):
                 image = self.image_set["images"][image_key]
                 result = subprocess.run(
@@ -1592,6 +1601,14 @@ spec:
         self.assertIn("X-Etik-Speak-Transport: https", self.public_upstream_headers)
         self.assertNotIn("api-gateway", self.netpol)
 
+    def test_manager_ui_is_isolated_at_the_exact_test_path(self):
+        self.assertIn("name: etik-speak-manager-ui", self.manager_ui_ingress)
+        self.assertIn("host: testai.acik.com", self.manager_ui_ingress)
+        self.assertIn("path: /ethic", self.manager_ui_ingress)
+        self.assertIn("name: etik-speak-manager", self.manager_ui_ingress)
+        self.assertIn("name: etik-speak-manager", self.netpol)
+        self.assertIn("Faz 35 must not mutate the shared test frontend pin", self.preflight)
+
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
             'requests.cpu: "500m"',
@@ -1623,7 +1640,7 @@ spec:
             capture_output=True,
             text=True,
         ).stdout
-        self.assertEqual(rendered.count("replicas: 0"), 2)
+        self.assertEqual(rendered.count("replicas: 0"), 3)
         for active_host in (
             "host: etik.acik.com",
             "host: speakup.acik.com",
@@ -1633,9 +1650,11 @@ spec:
         for resource_name in (
             "name: ethics-service",
             "name: etik-speak-public",
+            "name: etik-speak-manager",
             "name: etik-speak-public-api",
             "name: etik-speak-public-ui",
             "name: etik-speak-staff-api",
+            "name: etik-speak-manager-ui",
             "name: ethics-service-secrets",
             "name: etik-speak-vault",
         ):

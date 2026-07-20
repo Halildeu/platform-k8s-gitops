@@ -26,7 +26,13 @@ MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SH
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/fb830fe4f94d04eb63758ce1be8607f2a6bd9e7ba7c3cc065eb7515b575703d3.json"
+IMAGE_SET_DIR="$REPO_ROOT/docs/faz-35-evidence/image-set"
+image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print | wc -l | tr -d ' ')
+[ "$image_set_count" -eq 1 ] || {
+  echo "FATAL: expected exactly one Faz 35 image-set ledger" >&2
+  exit 1
+}
+IMAGE_SET=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print)
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
@@ -63,6 +69,11 @@ sha256_stream() {
   else
     shasum -a 256 | awk '{print $1}'
   fi
+}
+image_set_digest=$(jq -cS . "$IMAGE_SET" | sha256_stream)
+[ "$(basename "$IMAGE_SET" .json)" = "$image_set_digest" ] || {
+  echo "FATAL: Faz 35 image-set filename is not content-addressed" >&2
+  exit 1
 }
 
 container_state=$(remote \
@@ -248,12 +259,13 @@ image_set_sha=$(jq -cS . "$IMAGE_SET" | sha256_stream)
   exit 1
 }
 jq -e '
-  .schema_version == "faz35-test-image-set-v1" and
+  .schema_version == "faz35-test-image-set-v2" and
   (.source_heads.backend | test("^[0-9a-f]{40}$")) and
-  (.source_heads.web | test("^[0-9a-f]{40}$")) and
+  (.source_heads.web_public | test("^[0-9a-f]{40}$")) and
+  (.source_heads.web_manager | test("^[0-9a-f]{40}$")) and
   (.images.ethics_service.source_head == .source_heads.backend) and
-  (.images.public_web.source_head == .source_heads.web) and
-  (.images.manager_web.source_head == .source_heads.web) and
+  (.images.public_web.source_head == .source_heads.web_public) and
+  (.images.manager_web.source_head == .source_heads.web_manager) and
   ([.images[] |
     (.repository | test("^ghcr\\.io/halildeu/[a-z0-9-]+$")) and
     (.digest | test("^sha256:[0-9a-f]{64}$")) and
@@ -279,10 +291,11 @@ faz35_verify_image_attestation "$expected_public" \
   Halildeu/platform-web .github/workflows/ci-etik-speak-public-image.yml \
   "$public_source_head" "$public_workflow_run"
 faz35_verify_image_attestation "$expected_manager" \
-  Halildeu/platform-web .github/workflows/ci-web-image-push.yml \
+  Halildeu/platform-web .github/workflows/release-etik-speak-manager-image.yml \
   "$manager_source_head" "$manager_workflow_run"
 faz35_assert_rendered_deployment_image "$rendered" ethics-service "$expected_backend"
 faz35_assert_rendered_deployment_image "$rendered" etik-speak-public "$expected_public"
+faz35_assert_rendered_deployment_image "$rendered" etik-speak-manager "$expected_manager"
 
 if [ "$PREFLIGHT_STAGE" = activation ]; then
   store_id=$(awk '$1 == "ERP_OPENFGA_STORE_ID:" {gsub(/"/, "", $2); print $2; exit}' "$SERVICE_CONFIG")
@@ -355,17 +368,16 @@ root_frontend_pin=$(awk '
   found && $1 == "newTag:" { tag=$2 }
   found && $1 == "digest:" { print tag "|" $2; exit }
 ' "$ROOT_OVERLAY")
-if [ "$PREFLIGHT_STAGE" = foundation ]; then
-  [ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
-    echo "FATAL: foundation provisioning refuses an early shared test frontend pin" >&2
-    exit 1
-  }
-else
+[ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
+  echo "FATAL: Faz 35 must not mutate the shared test frontend pin" >&2
+  exit 1
+}
+if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_root_activation_binding "$ROOT_OVERLAY"
   kustomize build "$REPO_ROOT/kustomize/overlays/test" >"$rendered_root"
   faz35_assert_rendered_deployment_image "$rendered_root" ethics-service "$expected_backend"
   faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-public "$expected_public"
-  faz35_assert_rendered_deployment_image "$rendered_root" frontend "$expected_manager"
+  faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-manager "$expected_manager"
 fi
 
 # Variables in this single-quoted program intentionally expand on staging-sw.
@@ -373,12 +385,12 @@ fi
 live_activation_resources=$(remote '
   set -eu
   for target in \
-    deployment/ethics-service deployment/etik-speak-public \
-    service/ethics-service service/etik-speak-public \
-    serviceaccount/ethics-service serviceaccount/etik-speak-public \
+    deployment/ethics-service deployment/etik-speak-public deployment/etik-speak-manager \
+    service/ethics-service service/etik-speak-public service/etik-speak-manager \
+    serviceaccount/ethics-service serviceaccount/etik-speak-public serviceaccount/etik-speak-manager \
     configmap/ethics-service-config configmap/etik-speak-public-upstream-headers \
-    ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api \
-    networkpolicy/etik-speak-public networkpolicy/ethics-service \
+    ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api ingress/etik-speak-manager-ui \
+    networkpolicy/etik-speak-public networkpolicy/etik-speak-manager networkpolicy/ethics-service \
     externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
     secret/ethics-service-secrets secret/etik-speak-public-gate \
     secretstore/etik-speak-vault resourcequota/etik-speak-budget; do

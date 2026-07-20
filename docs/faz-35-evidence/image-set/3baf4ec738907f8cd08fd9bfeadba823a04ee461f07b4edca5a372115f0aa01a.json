@@ -1,8 +1,9 @@
 {
-  "schema_version": "faz35-test-image-set-v1",
+  "schema_version": "faz35-test-image-set-v2",
   "source_heads": {
     "backend": "8302e3a10da4f8265f6255be4b2c2c87aefb0021",
-    "web": "4eaf02bf5357ff733b6afb7baad4840e317a1c23"
+    "web_public": "4eaf02bf5357ff733b6afb7baad4840e317a1c23",
+    "web_manager": "308a2777e79d1a54ee367d47f19c39cc513db42d"
   },
   "images": {
     "ethics_service": {
@@ -18,10 +19,10 @@
       "workflow_run": 29710051185
     },
     "manager_web": {
-      "repository": "ghcr.io/halildeu/platform-web-frontend-testai",
-      "digest": "sha256:31fa1e6c733b16f21730315bbaead914d979dbadddbf0fab63d49f8e3059d19d",
-      "source_head": "4eaf02bf5357ff733b6afb7baad4840e317a1c23",
-      "workflow_run": 29710056755
+      "repository": "ghcr.io/halildeu/platform-web-etik-speak-manager",
+      "digest": "sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da",
+      "source_head": "308a2777e79d1a54ee367d47f19c39cc513db42d",
+      "workflow_run": 29716679615
     }
   }
 }

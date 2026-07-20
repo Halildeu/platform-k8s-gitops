@@ -4285,11 +4285,12 @@ images:
     # list/detail/apply routes on the minimal public shell so auth bootstrap
     # cannot reload and erase the candidate's browser-local PDF draft.
     # Build run 29645789815 testai job 88083697225.
-    # 2026-07-20 Faz 35 Etik Speak TEST activation: platform-web source
-    # 4eaf02bf5357ff733b6afb7baad4840e317a1c23, manager image build run
-    # 29710056755. Signed provenance is bound in the Faz 35 image-set ledger.
-    # Digest-only output is required by the activation preflight and D30.
-    digest: sha256:31fa1e6c733b16f21730315bbaead914d979dbadddbf0fab63d49f8e3059d19d
+    # Faz 35 manager is a dedicated workload and deliberately leaves the
+    # shared suite image unchanged. This preserves Full ATS/ETS rollback and
+    # prevents an Etik Speak release from mutating another product cell.
+    # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
+    newTag: sha-eee1310
+    digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

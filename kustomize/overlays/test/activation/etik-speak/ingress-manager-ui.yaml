@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: etik-speak-manager-ui
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [testai.acik.com]
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: testai.acik.com
+      http:
+        paths:
+          - path: /ethic
+            pathType: Prefix
+            backend:
+              service: {name: etik-speak-manager, port: {number: 80}}

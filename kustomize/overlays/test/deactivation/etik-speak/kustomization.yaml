@@ -12,7 +12,7 @@ resources:
 patches:
   - target:
       kind: Deployment
-      name: ethics-service|etik-speak-public
+      name: ethics-service|etik-speak-public|etik-speak-manager
     patch: |-
       - op: replace
         path: /spec/replicas
@@ -34,7 +34,7 @@ patches:
           - speakup-disabled.invalid
   - target:
       kind: Ingress
-      name: etik-speak-staff-api
+      name: etik-speak-staff-api|etik-speak-manager-ui
     patch: |-
       - op: replace
         path: /spec/rules/0/host

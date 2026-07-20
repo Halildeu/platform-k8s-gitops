@@ -29,13 +29,15 @@ Before provisioning or root-overlay activation, record all of the following:
    Claude-first repository text is not applied to Faz 35 and no Claude receipt
    is requested. Test/CI/live evidence and real human or production gates remain
    independent and cannot be replaced by this review.
-3. Backend, public-web and `platform-web-frontend-testai` workflows published
-   immutable image digests from their exact source heads.
+3. Backend, public-web and the dedicated `platform-web-etik-speak-manager`
+   workflows published immutable image digests from their exact source heads.
+   The shared `platform-web-frontend-testai` digest remains unchanged.
 4. The public image pinned-container smoke proves `/healthz`, CSP,
    `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`.
 5. The GitOps activation overlay contains no all-zero digest and renders with
-   no `OVERLAY_MUST_OVERRIDE` value; the root test overlay separately pins the
-   exact manager/testai frontend digest. `PENDING_FAZ35_*` values are allowed
+   no `OVERLAY_MUST_OVERRIDE` value; the same overlay pins the dedicated
+   manager image while the root shared frontend stays on its prior reviewed
+   digest. `PENDING_FAZ35_*` values are allowed
    only in the provisioning-stage review and block activation preflight.
 
 ## Gate 2: test product-cell provisioning
@@ -179,8 +181,9 @@ In the GitOps PR:
 1. Verify backend and public digests in
    `kustomize/overlays/test/activation/etik-speak/kustomization.yaml` against
    their exact reviewed source heads.
-2. Pin the exact reviewed `platform-web-frontend-testai` digest in the root
-   test overlay so `/ethic` contains ES-204; a public image does not prove this.
+2. Pin the exact reviewed `platform-web-etik-speak-manager` digest in the Faz 35
+   activation overlay and verify the shared `platform-web-frontend-testai`
+   digest did not change.
 3. Add `activation/etik-speak` to the root test overlay resources.
 4. Render the root test overlay and run the repository CI gates.
 5. Merge only after the exact-head review receipt and normal CI are valid.
@@ -195,12 +198,12 @@ the last-applied Deployments and Ingresses would remain live but unmanaged.
 Rollback uses a reviewed GitOps fix-forward commit instead:
 
 1. Replace the root resource `activation/etik-speak` with
-   `deactivation/etik-speak` and restore the prior reviewed manager image digest
-   in the same commit when the manager shell also needs rollback.
+   `deactivation/etik-speak`; restore a prior reviewed dedicated manager digest
+   in the same commit only when manager artifact rollback is required.
 2. Render the root TEST overlay, run normal CI, derive a fresh exact scope and
    obtain the required exact-head review before merge.
 3. Let normal ArgoCD self-heal update the same object identities. The
-   deactivation overlay retains every object under GitOps ownership, sets both
+   deactivation overlay retains every object under GitOps ownership, sets all three
    product Deployments to `replicas: 0`, and replaces all public/staff Ingress
    hosts with DNS-reserved `.invalid` names. It does not depend on pruning.
 4. Verify desired/live replicas are zero, `etik.acik.com`, `speakup.acik.com`
@@ -216,21 +219,22 @@ After reconciliation, verify ExternalSecret and immutable image identity:
 ```bash
 kubectl --context k3d-test -n platform-test get externalsecret \
   ethics-service-secrets etik-speak-public-gate
-kubectl --context k3d-test -n platform-test get deploy ethics-service etik-speak-public
+kubectl --context k3d-test -n platform-test get deploy \
+  ethics-service etik-speak-public etik-speak-manager
 kubectl --context k3d-test -n platform-test get pods \
   -l app.kubernetes.io/part-of=etik-speak \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
 ```
 
-Also record the manager deployment image identity and the exact in-container
-ethic remote artifact hash; a healthy shell that serves an older remote is not
-manager acceptance:
+Also record the dedicated manager deployment image identity. A healthy shared
+suite shell is not Etik Speak manager acceptance:
 
 ```bash
-kubectl --context k3d-test -n platform-test get pods -l app=frontend \
+kubectl --context k3d-test -n platform-test get pods \
+  -l app.kubernetes.io/name=etik-speak-manager \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
-kubectl --context k3d-test -n platform-test exec deploy/frontend -- \
-  sha256sum /usr/share/nginx/html/remotes/ethic/remoteEntry.js
+kubectl --context k3d-test -n platform-test exec deploy/etik-speak-manager -- \
+  sha256sum /usr/share/nginx/html/ethic/index.html
 ```
 
 Backend, public UI and manager pod `imageID` values must match the reviewed
