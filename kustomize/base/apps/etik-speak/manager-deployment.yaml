@@ -35,7 +35,7 @@ spec:
           ports:
             - {name: http, containerPort: 8080, protocol: TCP}
           resources:
-            requests: {cpu: 10m, memory: 24Mi}
+            requests: {cpu: 10m, memory: 32Mi}
             limits: {cpu: 150m, memory: 96Mi}
           livenessProbe:
             httpGet: {path: /healthz, port: http}
