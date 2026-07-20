@@ -61,6 +61,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT / "scripts/faz35/lib-activation-artifacts.sh"
         )
         cls.activation_artifact_lib = cls.activation_artifact_lib_path.read_text()
+        cls.image_attestation_lib_path = (
+            ROOT / "scripts/faz35/lib-image-attestation.sh"
+        )
+        cls.image_attestation_lib = cls.image_attestation_lib_path.read_text()
         cls.external_secret = (
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
@@ -1300,6 +1304,78 @@ spec:
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0)
+
+    def test_image_attestation_binds_digest_source_workflow_and_run(self):
+        digest = "a" * 64
+        source_head = "b" * 40
+        run_url = "https://github.com/Halildeu/platform-backend/actions/runs/123"
+        run_json = {
+            "databaseId": 123,
+            "headSha": source_head,
+            "status": "completed",
+            "conclusion": "success",
+            "event": "workflow_dispatch",
+            "url": run_url,
+        }
+
+        def verify(subject_digest: str, invocation_id: str):
+            attestation_json = [{
+                "verificationResult": {
+                    "statement": {
+                        "predicateType": "https://slsa.dev/provenance/v1",
+                        "subject": [{
+                            "name": "ghcr.io/halildeu/platform-backend-ethics-service",
+                            "digest": {"sha256": subject_digest},
+                        }],
+                        "predicate": {
+                            "runDetails": {"metadata": {"invocationId": invocation_id}}
+                        },
+                    }
+                }
+            }]
+            return subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; '
+                    'gh() { '
+                    'if [ "$1" = api ]; then printf "%s" "$RUN_JSON"; '
+                    'else printf "%s" "$ATTESTATION_JSON"; fi; '
+                    '}; '
+                    'faz35_verify_image_attestation '
+                    '"ghcr.io/halildeu/platform-backend-ethics-service@sha256:$2" '
+                    'Halildeu/platform-backend .github/workflows/ci-image-push.yml "$3" 123',
+                    "bash",
+                    str(self.image_attestation_lib_path),
+                    digest,
+                    source_head,
+                ],
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
+                    "RUN_JSON": json.dumps(run_json, separators=(",", ":")),
+                    "ATTESTATION_JSON": json.dumps(attestation_json, separators=(",", ":")),
+                },
+                capture_output=True,
+                text=True,
+            )
+
+        valid = verify(digest, f"{run_url}/attempts/1")
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        self.assertNotEqual(verify("c" * 64, f"{run_url}/attempts/1").returncode, 0)
+        self.assertNotEqual(
+            verify(
+                digest,
+                "https://github.com/Halildeu/platform-backend/actions/runs/999/attempts/1",
+            ).returncode,
+            0,
+        )
+        for required in (
+            "--signer-workflow",
+            "--source-digest",
+            "--deny-self-hosted-runners",
+            "https://slsa.dev/provenance/v1",
+        ):
+            self.assertIn(required, self.image_attestation_lib)
 
     def test_public_test_hosts_are_gated_and_redirect_to_https(self):
         for ingress in (self.public_api_ingress, self.public_ui_ingress):

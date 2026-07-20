@@ -11,6 +11,8 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SCRIPT_DIR="$REPO_ROOT/scripts/faz35"
 # shellcheck source=scripts/faz35/lib-activation-artifacts.sh
 source "$SCRIPT_DIR/lib-activation-artifacts.sh"
+# shellcheck source=scripts/faz35/lib-image-attestation.sh
+source "$SCRIPT_DIR/lib-image-attestation.sh"
 ACTIVATION="$REPO_ROOT/kustomize/overlays/test/activation/etik-speak"
 NETPOL="$ACTIVATION/netpol.yaml"
 ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
@@ -21,7 +23,7 @@ MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SH
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/5ba8fa8cda63d8769cb16bbe415d6331d304c72d7499cc70352a0b0c925f0472.json"
+IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/70188fd548a2814246aebdef6456c095a48033bc84113dced704143d24a905ca.json"
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
@@ -36,7 +38,7 @@ case "$PREFLIGHT_STAGE" in
   *) echo "FATAL: PREFLIGHT_STAGE must be foundation or activation" >&2; exit 1 ;;
 esac
 
-for command_name in ssh curl jq kustomize grep awk sed; do
+for command_name in ssh curl jq kustomize gh grep awk sed; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "FATAL: required command missing: $command_name" >&2
     exit 1
@@ -261,6 +263,21 @@ jq -e '
 expected_backend=$(jq -r '.images.ethics_service | .repository + "@" + .digest' "$IMAGE_SET")
 expected_public=$(jq -r '.images.public_web | .repository + "@" + .digest' "$IMAGE_SET")
 expected_manager=$(jq -r '.images.manager_web | .repository + "@" + .digest' "$IMAGE_SET")
+backend_source_head=$(jq -r '.images.ethics_service.source_head' "$IMAGE_SET")
+public_source_head=$(jq -r '.images.public_web.source_head' "$IMAGE_SET")
+manager_source_head=$(jq -r '.images.manager_web.source_head' "$IMAGE_SET")
+backend_workflow_run=$(jq -r '.images.ethics_service.workflow_run' "$IMAGE_SET")
+public_workflow_run=$(jq -r '.images.public_web.workflow_run' "$IMAGE_SET")
+manager_workflow_run=$(jq -r '.images.manager_web.workflow_run' "$IMAGE_SET")
+faz35_verify_image_attestation "$expected_backend" \
+  Halildeu/platform-backend .github/workflows/ci-image-push.yml \
+  "$backend_source_head" "$backend_workflow_run"
+faz35_verify_image_attestation "$expected_public" \
+  Halildeu/platform-web .github/workflows/ci-etik-speak-public-image.yml \
+  "$public_source_head" "$public_workflow_run"
+faz35_verify_image_attestation "$expected_manager" \
+  Halildeu/platform-web .github/workflows/ci-web-image-push.yml \
+  "$manager_source_head" "$manager_workflow_run"
 faz35_assert_rendered_deployment_image "$rendered" ethics-service "$expected_backend"
 faz35_assert_rendered_deployment_image "$rendered" etik-speak-public "$expected_public"
 
