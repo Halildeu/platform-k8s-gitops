@@ -64,17 +64,23 @@ const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/archive\/[^/]+\.md$/,
 ];
 const CONSULTATION_RECEIPTS = {
-  'claude receipt': {
-    provider: 'anthropic',
-    model: 'claude-opus-4-8',
-  },
   'codex receipt': {
     provider: 'openai',
-    model: 'gpt-5.6-sol',
+    routineModel: 'gpt-5.3-codex-spark',
+    highImpactModel: 'gpt-5.6-sol',
+  },
+  'claude receipt': {
+    provider: 'anthropic',
+    routineModel: 'claude-opus-4-8',
+    highImpactModel: 'claude-opus-4-8',
+  },
+  'minimax receipt': {
+    provider: 'minimax',
+    routineModel: 'minimax/MiniMax-M3',
+    highImpactModel: 'minimax/MiniMax-M3',
   },
 };
-const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
-const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
+const CONSULTATION_MODES = new Set(['none', 'single']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
   /^CLAUDE\.md$/,
@@ -82,18 +88,12 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  // Tombstone: deleting the retired wrapper remains a governance change, and
-  // any future MiniMax-named review helper cannot be reintroduced under none.
+  // Provider helpers remain governance changes and therefore cannot bypass
+  // the single-review floor merely by using a MiniMax-named path.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
   /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
-];
-const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
-  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
-  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
@@ -101,19 +101,6 @@ const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:db\/migration|migrations?)(?:\/|$)/i,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
-const DUAL_RISK_CATEGORIES = [
-  'irreversible-production',
-  'security-authz',
-  'privacy-retention',
-  'data-migration',
-  'concurrency',
-  'production-cutover',
-  'human-authority',
-];
-const DUAL_RISK_TRIGGER_RE = new RegExp(
-  `^(${DUAL_RISK_CATEGORIES.join('|')}):\\s+(.+)$`,
-  'i',
-);
 const PLACEHOLDER_WORD_RE = /\b(?:todo|tbd|fixme|placeholder|dummy|example|unknown)\b/i;
 const NON_ACTIONABLE_SENTINEL_RE = /^(?:n\/a|none)$/i;
 const EXPLICIT_MODE_LEGACY_FIELDS = [
@@ -506,23 +493,12 @@ function meaningfulStatement(value) {
     && new Set(words).size >= 3;
 }
 
-function meaningfulRiskTrigger(value) {
-  const match = (value || '').trim().match(DUAL_RISK_TRIGGER_RE);
-  return Boolean(match && meaningfulStatement(match[2]));
-}
-
 function minimumConsultationMode(prMeta) {
   const files = prMeta?.changedFiles;
   // Missing event-bound scope metadata must never silently authorize `none`.
   // Raising the floor to `single` is the intentional fail-closed fallback.
   if (!Array.isArray(files) || files.length === 0) {
     return { mode: 'single', reason: 'changed-files metadata missing' };
-  }
-  const dualGovernancePath = files.find((path) =>
-    CONSULTATION_DUAL_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
-  );
-  if (dualGovernancePath) {
-    return { mode: 'dual', reason: `consultation enforcement path: ${dualGovernancePath}` };
   }
   const governancePath = files.find((path) =>
     CONSULTATION_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
@@ -793,7 +769,13 @@ async function appendConsultationFindings(
 
   const refs = [];
   for (const field of receiptFields) {
-    const expected = CONSULTATION_RECEIPTS[field];
+    const policy = CONSULTATION_RECEIPTS[field];
+    const expected = {
+      provider: policy.provider,
+      model: minimumConsultationMode(prMeta).mode === 'single'
+        ? policy.highImpactModel
+        : policy.routineModel,
+    };
     const receipt = parseReceipt(fields[field]);
     if (receipt?.ref) refs.push(receipt.ref);
     const shapePass = Boolean(
@@ -838,11 +820,8 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
-  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
-    Object.hasOwn(fields, field)
-  );
   const requiredFloor = minimumConsultationMode(prMeta);
-  const modeRank = { none: 0, single: 1, dual: 2 };
+  const modeRank = { none: 0, single: 1 };
   const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
     Object.hasOwn(fields, field)
   );
@@ -852,7 +831,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     pass: CONSULTATION_MODES.has(mode),
     detail: CONSULTATION_MODES.has(mode)
       ? `consultation mode ${mode}`
-      : 'Consultation mode yalnız none, single veya dual olabilir',
+      : 'Consultation mode yalnız none veya single olabilir',
   });
   findings.push({
     check: 'consultation_reason_present',
@@ -871,7 +850,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     pass: implementerAllowed,
     detail: implementerAllowed
       ? `implementer ${implementer}`
-      : 'Implementer AI canonical provider enum içinde olmalıdır; single/dual modunda belirsiz other kullanılamaz',
+      : 'Implementer AI canonical provider enum içinde olmalıdır; single modunda belirsiz other kullanılamaz',
   });
   findings.push({
     check: 'consultation_changed_files_present',
@@ -894,18 +873,6 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? 'explicit mode legacy control field taşımıyor'
       : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
   });
-  // Forward policy: MiniMax is retired as an accepted consultation channel.
-  // The parser still recognizes a `MiniMax receipt` field so it can be detected,
-  // but any explicit-mode PR carrying it is fail-closed rejected in every mode.
-  const minimaxRejected = !Object.hasOwn(fields, 'minimax receipt');
-  findings.push({
-    check: 'consultation_minimax_receipt_rejected',
-    pass: minimaxRejected,
-    detail: minimaxRejected
-      ? 'MiniMax kanalı emekliye ayrıldı; hiçbir modda receipt taşınmıyor'
-      : 'MiniMax receipt hiçbir consultation modunda kabul edilmez; fail-closed reddedildi',
-  });
-
   if (mode === 'none') {
     const outcomeFields = [
       'verdict',
@@ -952,79 +919,40 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     pass: fields.verdict === 'AGREE',
     detail: fields.verdict === 'AGREE'
       ? 'consultation verdict AGREE'
-      : 'single/dual consultation yalnız AGREE ile geçer',
+      : 'single consultation yalnız AGREE ile geçer',
   });
 
-  let selectedReceipts = ['claude receipt'];
+  let selectedReceipts = presentReceipts;
   if (mode === 'single') {
     findings.push({
       check: 'consultation_single_exact_channel_count',
-      pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
-      detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
+      pass: presentReceipts.length === 1,
+      detail: presentReceipts.length === 1
+        ? `single mode selected ${presentReceipts[0]}; Codex ilk tercih, Claude/MiniMax opsiyonel alternatif`
+        : `single mode tam bir provider receipt ister; bulunan: ${presentReceipts.length}`,
     });
     findings.push({
-      check: 'consultation_single_is_provider_distinct',
-      pass: implementer !== 'claude',
-      detail: implementer !== 'claude'
-        ? 'direct Claude reviewer implementer providerından farklı'
-        : 'Claude implementer kendi Claude receiptini bağımsız single görüş sayamaz; dual gerekir',
+      check: 'consultation_single_authority_is_honest',
+      pass: true,
+      detail: presentReceipts[0] === 'codex receipt' && implementer === 'codex'
+        ? 'Codex self-review kalite kapısıdır; bağımsız-provider veya insan onayı sayılmaz'
+        : 'seçilen tek provider review kalite kapısıdır; insan onayı yerine geçmez',
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',
       pass: !Object.hasOwn(fields, 'risk trigger'),
       detail: !Object.hasOwn(fields, 'risk trigger')
-        ? 'single mode high-risk trigger iddiası taşımıyor'
-        : 'Risk trigger yalnız dual modda bulunabilir',
+        ? 'single mode kaldırılmış dual risk-trigger alanını taşımıyor'
+        : 'Risk trigger kaldırılan dual sözleşmesine aittir ve kabul edilmez',
     });
-  } else if (mode === 'dual') {
-    const riskTrigger = (fields['risk trigger'] || '').trim();
-    // Forward policy: dual = exactly Claude Opus 4.8 + Codex gpt-5.6-sol.
-    // The only accepted secondary channel is Codex; no third channel exists.
-    const exactChannels = presentReceipts.length === 2
-      && Boolean(fields['claude receipt'])
-      && Boolean(fields['codex receipt']);
-    // Because the two channels are fixed (Claude + Codex), at least one provider
-    // always differs from the implementer regardless of whether the implementer
-    // is Claude or Codex. This preserves provider-distinct review.
-    const providerDistinct = ['claude', 'codex'].some((provider) => provider !== implementer);
-    findings.push({
-      check: 'consultation_dual_high_risk_trigger',
-      pass: meaningfulRiskTrigger(riskTrigger),
-      detail: meaningfulRiskTrigger(riskTrigger)
-        ? `canonical high-risk trigger recorded (${riskTrigger.length}c)`
-        : 'Risk trigger canonical kategori ve somut açıklama taşımalıdır',
-    });
-    findings.push({
-      check: 'consultation_dual_exact_channel_count',
-      pass: exactChannels,
-      detail: exactChannels
-        ? 'dual mode exact Claude Opus 4.8 + Codex gpt-5.6-sol iki kanal taşıyor'
-        : 'dual mode yalnız Claude Opus 4.8 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
-    });
-    findings.push({
-      check: 'consultation_dual_provider_distinct_from_implementer',
-      pass: providerDistinct,
-      detail: providerDistinct
-        ? `dual kanallardan en az biri implementer ${implementer} providerından farklı`
-        : 'dual kanalların en az biri implementer sağlayıcısıyla farklı olmalıdır',
-    });
-    // Even an invalid dual combination must still validate every present,
-    // allowlisted receipt. Retired MiniMax receipts are rejected above and are
-    // never fetched or treated as evidence.
-    selectedReceipts = ['claude receipt', 'codex receipt'].filter(
-      (field) => Boolean(fields[field]),
-    );
   }
 
   // Run strict provider/evidence checks even when a binding field is missing.
   // The missing-field finding already fails the PR; this additionally prevents
   // a malformed or fabricated receipt from escaping diagnostics on that path.
   if (
-    ['single', 'dual'].includes(mode)
-    && (
-      (mode === 'single' && selectedReceipts.length === 1)
-      || (mode === 'dual' && selectedReceipts.length > 0)
-    )
+    mode === 'single'
+    && selectedReceipts.length === 1
   ) {
     await appendConsultationFindings(
       findings,
@@ -1052,16 +980,6 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
 
   const fields = extractFields(section);
   appendDuplicateFieldFinding(findings, fields);
-  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
-    Object.hasOwn(fields, field)
-  );
-  findings.push({
-    check: 'consultation_has_no_forbidden_minimax_receipt',
-    pass: forbiddenFields.length === 0,
-    detail: forbiddenFields.length === 0
-      ? 'MiniMax yeni istişare ve receipt zincirinde bulunmuyor'
-      : 'MiniMax receipt yeni istişarelerde yasaktır; historical evidence yalnız read-only kalır',
-  });
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
     return findings;
@@ -1070,8 +988,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   // Forward policy has no current legacy lane. Only the narrowly allowlisted
   // docs-only exemption may retain the old body shape; it produces no provider
   // receipt or acceptance authority. Every other PR must declare an explicit
-  // none|single|dual mode so legacy Claude+Codex fields cannot bypass the mode
-  // floor or the dual risk trigger.
+  // none|single mode so legacy multi-channel controls cannot bypass the floor.
   const exemption = docsOnlyExemption(fields, prMeta);
   if (!exemption.pass) {
     if (exemption.requested) {
@@ -1084,7 +1001,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
     findings.push({
       check: 'consultation_explicit_mode_required',
       pass: false,
-      detail: 'Yeni PR yalnız explicit Consultation mode: none|single|dual ile değerlendirilebilir; legacy receipt gövdesi acceptance üretmez',
+      detail: 'Yeni PR yalnız explicit Consultation mode: none|single ile değerlendirilebilir; legacy receipt gövdesi acceptance üretmez',
     });
     return findings;
   }

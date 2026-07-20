@@ -423,11 +423,11 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
     def test_fullats_rollback_is_bound_to_reviewed_tree_and_trusted_content_attestation(self):
         for required in (
             'require_exact_body_line "Consultation commit: $promotion_head"',
-            'require_exact_body_line "Consultation mode: dual"',
+            'require_exact_body_line "Consultation mode: single"',
             'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
-            "exact $receipt_label binding is missing or invalid",
-            "MiniMax receipt is forbidden by forward policy",
+            "exactly one Codex/Claude/MiniMax receipt is required",
+            "exact selected provider receipt binding is missing or invalid",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
@@ -545,12 +545,10 @@ if [[ "$*" == *"/pulls/2636"* ]]; then
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
-    "Consultation mode: dual" \
-    "Consultation reason: Protected rollback enforcement requires two independent provider reviews." \
-    "Risk trigger: security-authz: Trusted rollback exemption changes the protected review boundary." \
+    "Consultation mode: single" \
+    "Consultation reason: Protected rollback enforcement requires one exact selected provider review." \
     "Verdict: AGREE" \
-    "Claude receipt: provider=anthropic; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 6)" \
-    "Codex receipt: provider=openai; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
+    "Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
@@ -1164,23 +1162,25 @@ fi
         self.assertEqual(desired.group(1), workflow.group(1))
         self.assertEqual(workflow.group(1), runtime.group(1))
 
-    def test_consultation_defaults_to_none_then_single_claude_and_max_two(self):
-        rule = "Durumsal Cross-AI istişare — varsayılan az kanal"
+    def test_consultation_defaults_to_none_then_single_codex_first(self):
+        rule = "Durumsal Cross-AI istişare — Codex-first, varsayılan az kanal"
         self.assertIn(rule, self.agents)
         self.assertIn("`Consultation mode: none`", self.agents)
-        self.assertIn("(`single`)", self.agents)
-        self.assertIn("(`dual`)", self.agents)
-        self.assertIn("`claude-opus-4-8`", self.agents)
+        self.assertIn("`single`, ayrı bağlamda tek seçilmiş", self.agents)
+        self.assertIn("otomatik `dual`/üçlü mutabakat yoktur", self.agents)
+        self.assertIn("`gpt-5.3-codex-spark`", self.agents)
         self.assertIn("`gpt-5.6-sol`", self.agents)
-        self.assertIn("toplam iki kanal aşılmaz", self.agents)
-        self.assertIn("MiniMax yeni istişarelerde çağrılmaz", self.agents)
-        self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
+        self.assertIn("Claude Opus 4.8 ve MiniMax M3", self.agents)
+        self.assertIn("Mavis transport'u tek başına ayrı provider verdict'i değildir", self.agents)
+        self.assertIn("bağımsız sağlayıcı veya insan onayı olarak sunulmaz", self.agents)
         self.assertIn("consultation governance dosyası", self.agents)
-        self.assertIn("audit/evidence enforcement kodunun kendisi `dual` ister", self.agents)
-        self.assertIn("Claude implementer kendi receipt'ini", self.agents)
-        self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
-        self.assertIn("exact Claude + exact Codex", self.context_rules)
-        self.assertIn("`other` bu iki modda", self.context_rules)
+        self.assertIn("enforcement kodunun kendisi de `single` ister", self.context_rules)
+        self.assertIn("ilk tercihi doğrudan OpenAI Codex CLI'dır", self.context_rules)
+        self.assertIn("Claude ve MiniMax global olarak yasak değildir", self.context_rules)
+        self.assertIn("İki açık mod vardır", self.context_rules)
+        self.assertIn("gpt-5.3-codex-spark", self.context_rules)
+        self.assertIn("gpt-5.6-sol", self.context_rules)
+        self.assertIn("provider-distinct", self.context_rules)
         self.assertIn("Varsayımsal istişare karar kanıtı değildir", self.agents)
         self.assertIn("non-authoritative direction exploration", self.context_rules)
         self.assertIn("tracked_pending", self.context_rules)
@@ -1193,22 +1193,20 @@ fi
             self.context_rules,
         )
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
-        self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
-        self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
-        self.assertIn("**`claude-opus-4-8`**", self.context_rules)
-        self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
+        self.assertIn("**`single` — inceleme gerektiğinde:**", self.context_rules)
         self.assertIn(
             "İstişare bir teslimat ritüeli değil, yalnız karar",
             self.context_rules,
         )
-        self.assertIn("JSON `modelUsage`", self.context_rules)
-        self.assertIn("Tek ve birincil kanal", self.context_rules)
-        self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
-        self.assertIn("AI uygulama pencereleri istişare kanalı değildir", self.context_rules)
-        self.assertIn("irreversible-production", self.context_rules)
+        current_policy = self.context_rules.split("<details>", 1)[0]
+        self.assertNotIn("Consultation mode: none|single|dual", current_policy)
+        self.assertIn("Claude receipt:", current_policy)
+        self.assertIn("MiniMax receipt:", current_policy)
+        self.assertIn("AI uygulama penceresi istişare yüzeyi", self.context_rules)
         self.assertIn("Path/branch sınıflandırıcısı", self.context_rules)
         self.assertIn("`none` receipt", self.context_rules)
-        self.assertIn("`dual` yayın sırası zorunlu değildir", self.context_rules)
+        self.assertIn("Codex'i ilk tercih, Claude ve", self.context_rules)
+        self.assertNotIn("**`dual` — istisnai yüksek risk:**", current_policy)
 
 if __name__ == "__main__":
     unittest.main()
