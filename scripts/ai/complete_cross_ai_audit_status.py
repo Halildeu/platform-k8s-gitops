@@ -24,6 +24,7 @@ PUBLICATION_LOCK_RE = re.compile(
 CONSULTATION_COMMIT_RE = re.compile(
     r"(?mi)^Consultation commit:\s*([0-9a-f]{40})\s*$"
 )
+CONSULTATION_MODE_RE = re.compile(r"(?mi)^Consultation mode:\s*([^\r\n]+?)\s*$")
 CODEX_RECEIPT_RE = re.compile(r"(?mi)^Codex receipt:\s*(.+?)\s*$")
 RECEIPT_KEYS = frozenset({
     "provider",
@@ -264,6 +265,135 @@ def protect_live_pr_generation(repo: str, current: object, url: str) -> dict | N
     return post_retry_pending(repo, head, url, generation)
 
 
+def requires_publication_marker(body: str) -> bool:
+    modes = [value.strip().lower() for value in CONSULTATION_MODE_RE.findall(body)]
+    return "single" in modes or CODEX_RECEIPT_RE.search(body) is not None
+
+
+def selected_comment_id(body: str, repo: str) -> int | None:
+    fields = parse_selected_evidence_fields(body)
+    if fields is None:
+        return None
+    match = re.fullmatch(
+        rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
+        fields.get("ref", ""),
+    )
+    return int(match.group(1)) if match is not None else None
+
+
+def failed_check_payload(head: str, url: str, comment_id: int, action: str) -> dict:
+    external_id = f"cross-ai-evidence-comment-{comment_id}-{action}"
+    return {
+        "name": "cross-ai-audit",
+        "head_sha": head,
+        "status": "completed",
+        "conclusion": "failure",
+        "details_url": url,
+        "external_id": external_id,
+        "output": {
+            "title": "Selected Cross-AI evidence changed",
+            "summary": "Publish a new exact-scope review generation while the PR is draft.",
+        },
+    }
+
+
+def valid_failed_check(
+    payload: object,
+    *,
+    head: str,
+    url: str,
+    comment_id: int,
+    action: str,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    app = payload.get("app")
+    returned_head = payload.get("head_sha")
+    return bool(
+        isinstance(payload.get("id"), int)
+        and payload.get("name") == "cross-ai-audit"
+        and isinstance(returned_head, str)
+        and returned_head.lower() == head
+        and payload.get("status") == "completed"
+        and payload.get("conclusion") == "failure"
+        and payload.get("details_url") == url
+        and payload.get("external_id")
+        == f"cross-ai-evidence-comment-{comment_id}-{action}"
+        and isinstance(app, dict)
+        and app.get("slug") == "github-actions"
+    )
+
+
+def invalidate_selected_comment_mutation(repo: str, event_path: Path) -> dict:
+    if REPO_RE.fullmatch(repo) is None or shutil.which("gh") is None:
+        fail("invalid_audit_mutation_target")
+    try:
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        action = event["action"]
+        comment = event["comment"]
+        comment_id = comment["id"]
+        comment_author = comment["user"]["login"].lower()
+        comment_association = comment["author_association"]
+        issue = event["issue"]
+        issue_number = issue["number"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("invalid_audit_mutation_event")
+    if (
+        action not in {"edited", "deleted"}
+        or not isinstance(comment_id, int)
+        or not isinstance(issue_number, int)
+        or issue_number < 1
+    ):
+        fail("invalid_audit_mutation_event")
+    if not isinstance(issue.get("pull_request"), dict):
+        return {"ok": True, "action": "ignored-non-pr-comment"}
+
+    current = gh_json([f"repos/{repo}/pulls/{issue_number}", "--method", "GET"])
+    expected_url = f"https://github.com/{repo}/pull/{issue_number}"
+    try:
+        head = current["head"]["sha"].lower()
+        body = current.get("body") or ""
+    except (KeyError, TypeError, AttributeError):
+        fail("github_pr_mutation_guard_invalid")
+    if (
+        current.get("state") != "open"
+        or current.get("html_url") != expected_url
+        or SHA_RE.fullmatch(head) is None
+        or not isinstance(body, str)
+    ):
+        return {"ok": True, "action": "ignored-non-open-pr"}
+
+    owner = repo.split("/", 1)[0].lower()
+    selected_id = selected_comment_id(body, repo)
+    if (
+        selected_id != comment_id
+        or comment_author != owner
+        or comment_association != "OWNER"
+    ):
+        return {"ok": True, "action": "ignored-unselected-comment"}
+
+    request = failed_check_payload(head, expected_url, comment_id, action)
+    created = gh_json(
+        [f"repos/{repo}/check-runs", "--method", "POST", "--input", "-"],
+        input_text=json.dumps(request, separators=(",", ":")),
+    )
+    if not valid_failed_check(
+        created,
+        head=head,
+        url=expected_url,
+        comment_id=comment_id,
+        action=action,
+    ):
+        fail("audit_mutation_check_invalid")
+    return {
+        "ok": True,
+        "action": "selected-evidence-mutation-invalidated",
+        "comment_action": action,
+        "check_run_id": created["id"],
+        "head_sha": head,
+    }
+
+
 def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     if REPO_RE.fullmatch(repo) is None or issue < 1 or shutil.which("gh") is None:
         fail("invalid_audit_generation_target")
@@ -313,6 +443,8 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
 
     markers = MARKER_RE.findall(event_body)
     if not markers:
+        if requires_publication_marker(event_body):
+            fail("audit_generation_marker_missing")
         statuses = status_history(repo, event_head)
         publication_statuses = [
             status for status in statuses
@@ -508,10 +640,21 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--issue", type=int, required=True)
-    parser.add_argument("--event-path", type=Path, required=True)
+    parser.add_argument("--issue", type=int)
+    events = parser.add_mutually_exclusive_group(required=True)
+    events.add_argument("--event-path", type=Path)
+    events.add_argument("--comment-event-path", type=Path)
     args = parser.parse_args()
-    result = complete_status(args.repo, args.issue, args.event_path)
+    if args.event_path is not None:
+        if args.issue is None:
+            fail("invalid_audit_generation_target")
+        result = complete_status(args.repo, args.issue, args.event_path)
+    else:
+        if args.issue is not None:
+            fail("invalid_audit_mutation_target")
+        result = invalidate_selected_comment_mutation(
+            args.repo, args.comment_event_path
+        )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 

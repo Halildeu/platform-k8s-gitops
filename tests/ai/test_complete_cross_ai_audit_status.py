@@ -78,6 +78,26 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         )
         return value
 
+    def write_comment_event(self, action: str, comment_id: int) -> None:
+        self.event_path.write_text(
+            json.dumps({
+                "action": action,
+                "comment": {
+                    "id": comment_id,
+                    "body": "mutated evidence",
+                    "user": {"login": "Halildeu"},
+                    "author_association": "OWNER",
+                },
+                "issue": {
+                    "number": self.issue,
+                    "pull_request": {
+                        "url": f"https://api.github.com/repos/{self.repo}/pulls/{self.issue}"
+                    },
+                },
+            }),
+            encoding="utf-8",
+        )
+
     def current_pr(
         self,
         body: str,
@@ -222,6 +242,33 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_scope_equivalent_head_cannot_remove_required_generation_marker(self) -> None:
+        review_head = "c" * 40
+        body = self.body(review_head=review_head).split(
+            "<!-- cross-ai-audit-recheck:", 1
+        )[0]
+        self.write_event(body)
+        calls: list[list[str]] = []
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(self.current_pr(body)),
+                stderr="",
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+        self.assertEqual(len(calls), 1)
 
     def test_stale_event_body_or_force_push_cannot_clear_pending(self) -> None:
         event_body = self.write_event()
@@ -718,6 +765,109 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_selected_comment_mutation_appends_failure_check_to_exact_pr_head(self) -> None:
+        for action in ("edited", "deleted"):
+            with self.subTest(action=action):
+                self.write_comment_event(action, self.comment_id)
+                failed_check = {
+                    "id": 501,
+                    "name": "cross-ai-audit",
+                    "head_sha": self.head,
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "details_url": self.url,
+                    "external_id": (
+                        f"cross-ai-evidence-comment-{self.comment_id}-{action}"
+                    ),
+                    "app": {"slug": "github-actions"},
+                }
+                calls: list[tuple[list[str], str | None]] = []
+                responses = [self.current_pr(self.body()), failed_check]
+
+                def runner(
+                    command: list[str], **kwargs: object
+                ) -> subprocess.CompletedProcess[str]:
+                    input_text = kwargs.get("input")
+                    calls.append(
+                        (command, input_text if isinstance(input_text, str) else None)
+                    )
+                    return subprocess.CompletedProcess(
+                        command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+                    )
+
+                with (
+                    mock.patch.object(
+                        MODULE.shutil, "which", return_value="/usr/bin/gh"
+                    ),
+                    mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+                ):
+                    result = MODULE.invalidate_selected_comment_mutation(
+                        self.repo, self.event_path
+                    )
+                self.assertEqual(
+                    result["action"], "selected-evidence-mutation-invalidated"
+                )
+                self.assertEqual(result["check_run_id"], 501)
+                self.assertIn(f"repos/{self.repo}/check-runs", calls[-1][0])
+                self.assertIsNotNone(calls[-1][1])
+                request = json.loads(calls[-1][1] or "")
+                self.assertEqual(request["name"], "cross-ai-audit")
+                self.assertEqual(request["head_sha"], self.head)
+                self.assertEqual(request["conclusion"], "failure")
+
+    def test_invalid_failure_check_response_fails_closed(self) -> None:
+        self.write_comment_event("edited", self.comment_id)
+        invalid_check = {
+            "id": 501,
+            "name": "cross-ai-audit",
+            "head_sha": 123,
+            "status": "completed",
+            "conclusion": "failure",
+            "details_url": self.url,
+            "external_id": f"cross-ai-evidence-comment-{self.comment_id}-edited",
+            "app": {"slug": "github-actions"},
+        }
+        responses = [self.current_pr(self.body()), invalid_check]
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.invalidate_selected_comment_mutation(self.repo, self.event_path)
+
+    def test_unselected_comment_mutation_has_no_gate_authority(self) -> None:
+        self.write_comment_event("deleted", self.comment_id + 1)
+        calls: list[list[str]] = []
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(self.current_pr(self.body())),
+                stderr="",
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.invalidate_selected_comment_mutation(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["action"], "ignored-unselected-comment")
+        self.assertEqual(len(calls), 1)
 
 if __name__ == "__main__":
     unittest.main()

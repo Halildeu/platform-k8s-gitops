@@ -584,10 +584,12 @@ digest, OWNER association ve `created_at == updated_at` immutability koşulunu
 korur. Helper required commit-status yazmaz; başarılı çıkışı trusted-base
 workflow'un native, exact-head `cross-ai-audit` job check'ini sonuçlandırır.
 Mutable PR body/comment yalnız bu snapshot'ın taşıma girdisidir; job success
-sonrasında yeni merge otoritesi veya revocation otoritesi üretmez. Yeni review
-generation'ı yalnız draft-only trusted poster ile başlar ve `ready_for_review`
-üzerinde yeni native job check'i gerektirir; düz challenger metni veya owner'ın
-elle yazdığı `VERDICT: REVISE` gate yetkisi kazanmaz.
+sonrasında seçili owner comment'inin edit/silinmesi trusted `issue_comment`
+guard tarafından shared concurrency altında yakalanır ve exact PR head'ine
+`cross-ai-audit` adlı completed/failure check-run ekler. Guard unselected comment'i,
+düz challenger metnini veya owner'ın elle yazdığı `VERDICT: REVISE` metnini
+otorite saymaz. Yeni review generation'ı yalnız draft-only trusted poster ile
+başlar ve `ready_for_review` üzerinde yeni native job check'i gerektirir.
 Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
 `Consultation commit` SHA'sında doğrular; metadata-only güncel head için merge
 otoritesi yine o head'de sonuçlanan native workflow job check'idir. Completion

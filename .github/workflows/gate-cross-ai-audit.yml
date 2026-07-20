@@ -70,8 +70,17 @@ on:
       # When the audit script gains genuine label-aware semantics, this
       # block should be re-added with the matching script logic in the
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
+  # Selected owner evidence is mutable even after a successful PR-head check.
+  # Edit/delete events run on the trusted default branch and append a failing
+  # `cross-ai-audit` check-run to that exact PR head after shared concurrency
+  # has cancelled any older audit run. Unselected comments have no authority.
+  issue_comment:
+    types:
+      - edited
+      - deleted
 permissions:
   actions: read
+  checks: write
   contents: read
   issues: read
   pull-requests: read
@@ -81,7 +90,7 @@ permissions:
 # Per-PR concurrency group; superseded runs are cancelled on new PR events
 # so rapid push churn does not exhaust CI minutes.
 concurrency:
-  group: cross-ai-audit-${{ github.event.pull_request.number || github.run_id }}
+  group: cross-ai-audit-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -267,3 +276,24 @@ jobs:
             --repo "$GH_REPO" \
             --issue "$PR_NUMBER" \
             --event-path "$GITHUB_EVENT_PATH"
+
+  evidence-mutation-guard:
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request != null
+    name: cross-ai-evidence-mutation-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout exact trusted default-branch event SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Invalidate selected evidence mutation on exact PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 scripts/ai/complete_cross_ai_audit_status.py \
+            --repo "$GH_REPO" \
+            --comment-event-path "$GITHUB_EVENT_PATH"
