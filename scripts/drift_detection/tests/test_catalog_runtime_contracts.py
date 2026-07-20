@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -206,27 +207,115 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
             )
             self.assertEqual(policy["ingress"][0]["ports"], [{"port": port, "protocol": "TCP"}])
 
-    def test_openfga_and_migration_job_use_exact_digest_with_safe_job_recreation(self):
+    def test_openfga_digest_and_safe_job_recreation_are_test_only(self):
         root = Path(__file__).resolve().parents[3]
         expected = (
             "openfga/openfga@sha256:"
             "e5891e4676e5a8b4659c010c50aabf487397844b18f66ef7510e5ad00935949f"
         )
-        for relative in (
-            "kustomize/base/apps/openfga/statefulset.yaml",
-            "kustomize/base/apps/openfga/migrate-job.yaml",
-        ):
-            self.assertIn(f"image: {expected}", (root / relative).read_text())
-        migration_job = yaml.safe_load(
+        base_statefulset = yaml.safe_load(
+            (root / "kustomize/base/apps/openfga/statefulset.yaml").read_text()
+        )
+        base_job = yaml.safe_load(
             (root / "kustomize/base/apps/openfga/migrate-job.yaml").read_text()
         )
-        annotations = migration_job["metadata"]["annotations"]
+        self.assertEqual(
+            base_statefulset["spec"]["template"]["spec"]["containers"][0]["image"],
+            "openfga/openfga:v1.11.2",
+        )
+        self.assertEqual(
+            base_job["spec"]["template"]["spec"]["containers"][0]["image"],
+            "openfga/openfga:v1.11.2",
+        )
+        self.assertNotIn("annotations", base_job["metadata"])
+
+        def rendered(env: str) -> dict[tuple[str, str], dict]:
+            output = subprocess.run(
+                ["kustomize", "build", str(root / f"kustomize/overlays/{env}")],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            return {
+                (document["kind"], document["metadata"]["name"]): document
+                for document in yaml.safe_load_all(output)
+                if isinstance(document, dict)
+            }
+
+        test_documents = rendered("test")
+        test_statefulset = test_documents[("StatefulSet", "openfga")]
+        test_job = test_documents[("Job", "openfga-migrate")]
+        self.assertEqual(
+            test_statefulset["spec"]["template"]["spec"]["containers"][0]["image"],
+            expected,
+        )
+        self.assertEqual(
+            test_job["spec"]["template"]["spec"]["containers"][0]["image"],
+            expected,
+        )
+        annotations = test_job["metadata"]["annotations"]
         self.assertEqual(annotations["argocd.argoproj.io/hook"], "PreSync")
         self.assertEqual(
             set(annotations["argocd.argoproj.io/hook-delete-policy"].split(",")),
             {"BeforeHookCreation", "HookSucceeded"},
         )
         self.assertEqual(annotations["argocd.argoproj.io/sync-wave"], "-1")
+
+        prod_documents = rendered("prod")
+        prod_statefulset = prod_documents[("StatefulSet", "openfga")]
+        prod_job = prod_documents[("Job", "openfga-migrate")]
+        self.assertEqual(
+            prod_statefulset["spec"]["template"]["spec"]["containers"][0]["image"],
+            "openfga/openfga:v1.11.2",
+        )
+        self.assertEqual(
+            prod_job["spec"]["template"]["spec"]["containers"][0]["image"],
+            "openfga/openfga:v1.11.2",
+        )
+        self.assertNotIn("annotations", prod_job["metadata"])
+
+    def test_digest_exception_is_explicit_third_party_and_environment_scoped(self):
+        openfga_catalog = ServicesCatalog.from_dict(
+            {
+                "services": [
+                    {
+                        "name": "openfga",
+                        "workload_kind": "StatefulSet",
+                        "runtime_class": "openfga",
+                        "probe_contract": "http-healthz",
+                        "third_party": True,
+                        "jwt_validates": False,
+                        "image_digest_required": {"prod": False},
+                        "environments": {"test": "enabled", "prod": "enabled"},
+                    }
+                ]
+            }
+        )
+        documents = [
+            {
+                "kind": "StatefulSet",
+                "metadata": {
+                    "name": "openfga",
+                    "labels": {"app.kubernetes.io/name": "openfga"},
+                },
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {"name": "openfga", "image": "openfga/openfga:v1.11.2"}
+                            ]
+                        }
+                    }
+                },
+            }
+        ]
+        self.assertEqual(image_contract_findings(documents, openfga_catalog, "prod"), [])
+        self.assertTrue(
+            any(
+                finding.code == "image_digest_unpinned"
+                for finding in image_contract_findings(documents, openfga_catalog, "test")
+            )
+        )
 
     def test_rollback_contract_forbids_activation_resource_removal(self):
         root = Path(__file__).resolve().parents[3]

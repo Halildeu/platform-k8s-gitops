@@ -110,6 +110,12 @@ configMapGenerator:
       - default.conf=frontend-nginx-default.conf
 
 images:
+  # Faz 35 TEST activation: pin the existing OpenFGA v1.11.2 imageID without
+  # changing PROD desired-state. The migration Job receives TEST-only hook
+  # lifecycle annotations in the patches section below.
+  - name: openfga/openfga
+    newName: openfga/openfga
+    digest: sha256:e5891e4676e5a8b4659c010c50aabf487397844b18f66ef7510e5ad00935949f
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
   # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
   # Dev repo PR #510/#511/#512 merge sonrası CI GHCR sha-60611fa push.
@@ -7183,6 +7189,19 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+  # TEST auto-sync only: the immutable Job template must be recreated safely.
+  # PROD keeps its pre-existing non-hook Job and moving-tag desired-state until
+  # a separately reviewed, owner-gated PROD promotion changes it.
+  - target:
+      kind: Job
+      name: openfga-migrate
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          argocd.argoproj.io/hook: PreSync
+          argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+          argocd.argoproj.io/sync-wave: "-1"
   # 2026-04-20: testai.acik.com authoritative live (e2e kanıtlı: curl 212.115.26.190
   # → HTTP 200 2899B Module Federation HTML). Frontend always-on (replicas=1); D17
   # scale-to-zero exception: UI public entrypoint her zaman erişilebilir olmalı.

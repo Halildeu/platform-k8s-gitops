@@ -72,7 +72,14 @@ def image_contract_findings(
 
     flattened = _flatten_documents(documents)
     primary_images, findings = _catalog_primary_images(flattened, catalog, env)
+    digest_required = {
+        service.name
+        for service in catalog.enabled_in(env)
+        if service.requires_image_digest_in(env)
+    }
     for name, image in sorted(primary_images.items()):
+        if name not in digest_required:
+            continue
         if not image or "@sha256:" not in image:
             findings.append(
                 ContractFinding(

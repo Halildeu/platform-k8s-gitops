@@ -1,19 +1,10 @@
 # OpenFGA schema migration — StatefulSet ayağa kalkmadan önce DB schema'yı
-# hazırlar. İlk deploy'da elle tetiklenebilir; ideali Argo CD sync wave -1
-# veya init-container, ancak Dilim 3 kapsamında basit Job bırakıldı.
+# hazırlar. Environment-specific lifecycle annotations belong in overlays so
+# TEST auto-sync cannot silently change the human-gated PROD migration path.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: openfga-migrate
-  annotations:
-    # The Job pod template is immutable. Treat migrations as an explicit
-    # PreSync hook so a new immutable image pin never attempts an in-place Job
-    # patch. TEST may run the idempotent migration during auto-sync; PROD can
-    # run it only through the existing human-gated full-sync workflow (hooks
-    # are deliberately skipped by selective resource syncs).
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "-1"
   labels:
     app.kubernetes.io/name: openfga
     app.kubernetes.io/component: authz
@@ -36,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: openfga/openfga@sha256:e5891e4676e5a8b4659c010c50aabf487397844b18f66ef7510e5ad00935949f
+          image: openfga/openfga:v1.11.2
           imagePullPolicy: IfNotPresent
           args:
             - "migrate"

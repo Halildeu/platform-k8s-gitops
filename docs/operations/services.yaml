@@ -152,6 +152,10 @@ services:
     jwt_validates: false  # internal grpc, no Bearer
     route_external: false
     third_party: true
+    # Legacy PROD desired-state still uses v1.11.2. Faz 35 pins the identical
+    # imageID in TEST only; PROD pinning is a separate owner-gated promotion.
+    image_digest_required:
+      prod: false
     workload_kind: StatefulSet
     runtime_class: openfga
     probe_contract: http-healthz   # /healthz default

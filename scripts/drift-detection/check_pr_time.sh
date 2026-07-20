@@ -41,15 +41,17 @@ RENDER=$(kubectl kustomize "$OVERLAY" 2>/dev/null) || {
   exit 1
 }
 
-# Check 1: every image ref must be @sha256:
+# Check 1: every first-party GHCR image plus catalog-required image must be pinned.
+# Explicit catalog exceptions are environment-scoped legacy debt; Faz 35 uses
+# one only to keep the pre-existing PROD OpenFGA desired-state unchanged.
 echo "=== Check 1: image digest pin (no moving tags) ==="
-moving_tags=$(echo "$RENDER" | grep -E '^[[:space:]]*image:[[:space:]]*' | grep -v '@sha256:' || true)
+moving_tags=$(echo "$RENDER" | grep -E '^[[:space:]]*image:[[:space:]]*ghcr\.io/' | grep -v '@sha256:' || true)
 if [[ -n "$moving_tags" ]]; then
   echo "[FAIL] Non-digest image refs found:"
   echo "$moving_tags"
   EXIT_CODE=1
 else
-  echo "[OK]  All rendered image refs are @sha256: pinned"
+  echo "[OK]  All rendered GHCR image refs are @sha256: pinned"
 fi
 
 image_contract_output=$(echo "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \

@@ -60,6 +60,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.api_ui_contract = (
             ROOT / "docs/contracts/faz35-etik-speak-api-mfe-v1.md"
         ).read_text()
+        cls.semantic_gate_workflow = (
+            ROOT / ".github/workflows/gate-drift-pr-time.yml"
+        ).read_text()
         cls.authz_projection_lib_path = (
             ROOT / "scripts/faz35/lib-authz-projection.sh"
         )
@@ -1517,6 +1520,20 @@ spec:
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0)
+
+    def test_semantic_gate_triggers_for_every_authoritative_external_input(self):
+        for required_path in (
+            "scripts/faz35/**",
+            "scripts/faz24/repair-d35-permission-writer-credential.sh",
+            "bootstrap/vault-policies/test/etik-speak-eso.hcl",
+            "bootstrap/openfga/faz35-etik-speak/**",
+            "runtime-artifacts/faz35-etik-speak/**",
+            "runtime-artifacts/openfga-model/**",
+            "docs/faz-35-evidence/**",
+            "tests/deploy/test_faz35_etikspeak_provisioning_contract.py",
+        ):
+            with self.subTest(required_path=required_path):
+                self.assertIn(f"- '{required_path}'", self.semantic_gate_workflow)
 
     def test_image_attestation_binds_digest_source_workflow_and_run(self):
         digest = "a" * 64

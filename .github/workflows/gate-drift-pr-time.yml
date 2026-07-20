@@ -8,8 +8,12 @@ on:
       - 'scripts/drift-detection/**'
       - 'scripts/drift_detection/**'
       - 'scripts/faz35/**'
+      - 'scripts/faz24/repair-d35-permission-writer-credential.sh'
+      - 'bootstrap/vault-policies/test/etik-speak-eso.hcl'
+      - 'bootstrap/openfga/faz35-etik-speak/**'
       - 'tests/deploy/test_faz35_etikspeak_provisioning_contract.py'
       - 'docs/faz-35-evidence/**'
+      - 'runtime-artifacts/faz35-etik-speak/**'
       - 'runtime-artifacts/openfga-model/**'
       - 'docs/runbooks/RB-faz35-etik-speak-test-activation.md'
       - 'docs/contracts/faz35-etik-speak-api-mfe-v1.md'
@@ -78,7 +82,7 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check "PyYAML==6.0.3" "pytest==8.3.3"
 
       # These tests resolve the real Service -> targetPort -> containerPort
-      # chain, verify safe immutable OpenFGA Job hook recreation, and keep the
+      # chain, verify TEST-only immutable OpenFGA Job hook recreation, and keep the
       # complete Faz 35 provisioning/manager/quota/rollback contract executable.
       - name: Run Faz 35 semantic regression suite
         run: |
