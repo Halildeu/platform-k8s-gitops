@@ -69,8 +69,17 @@ const CONSULTATION_RECEIPTS = {
     routineModel: 'gpt-5.3-codex-spark',
     highImpactModel: 'gpt-5.6-sol',
   },
+  'claude receipt': {
+    provider: 'anthropic',
+    routineModel: 'claude-opus-4-8',
+    highImpactModel: 'claude-opus-4-8',
+  },
+  'minimax receipt': {
+    provider: 'minimax',
+    routineModel: 'minimax/MiniMax-M3',
+    highImpactModel: 'minimax/MiniMax-M3',
+  },
 };
-const FORBIDDEN_CONSULTATION_FIELDS = new Set(['claude receipt', 'minimax receipt']);
 const CONSULTATION_MODES = new Set(['none', 'single']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
@@ -79,8 +88,8 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  // Tombstone: deleting the retired wrapper remains a governance change, and
-  // any future MiniMax-named review helper cannot be reintroduced under none.
+  // Provider helpers remain governance changes and therefore cannot bypass
+  // the single-review floor merely by using a MiniMax-named path.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
   /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
@@ -811,9 +820,6 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
-  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
-    Object.hasOwn(fields, field)
-  );
   const requiredFloor = minimumConsultationMode(prMeta);
   const modeRank = { none: 0, single: 1 };
   const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
@@ -867,17 +873,6 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? 'explicit mode legacy control field taşımıyor'
       : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
   });
-  // #2688 forward policy accepts only direct Codex evidence. Claude and MiniMax
-  // fields remain parseable solely so stale/forbidden receipts fail closed.
-  const forbiddenReceiptsRejected = forbiddenFields.length === 0;
-  findings.push({
-    check: 'consultation_forbidden_receipts_rejected',
-    pass: forbiddenReceiptsRejected,
-    detail: forbiddenReceiptsRejected
-      ? 'Claude ve MiniMax kanalları yeni receipt zincirinde bulunmuyor'
-      : `Yasak consultation receipt alanı fail-closed reddedildi: ${forbiddenFields.join(', ')}`,
-  });
-
   if (mode === 'none') {
     const outcomeFields = [
       'verdict',
@@ -927,21 +922,21 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       : 'single consultation yalnız AGREE ile geçer',
   });
 
-  let selectedReceipts = ['codex receipt'];
+  let selectedReceipts = presentReceipts;
   if (mode === 'single') {
     findings.push({
       check: 'consultation_single_exact_channel_count',
-      pass: presentReceipts.length === 1 && presentReceipts[0] === 'codex receipt',
-      detail: requiredFloor.mode === 'single'
-        ? 'single mode high-impact scope için exact direct Codex gpt-5.6-sol receipt ister'
-        : 'single mode routine scope için exact direct Codex gpt-5.3-codex-spark receipt ister',
+      pass: presentReceipts.length === 1,
+      detail: presentReceipts.length === 1
+        ? `single mode selected ${presentReceipts[0]}; Codex ilk tercih, Claude/MiniMax opsiyonel alternatif`
+        : `single mode tam bir provider receipt ister; bulunan: ${presentReceipts.length}`,
     });
     findings.push({
       check: 'consultation_single_authority_is_honest',
       pass: true,
-      detail: implementer === 'codex'
+      detail: presentReceipts[0] === 'codex receipt' && implementer === 'codex'
         ? 'Codex self-review kalite kapısıdır; bağımsız-provider veya insan onayı sayılmaz'
-        : 'direct Codex review kalite kapısıdır; bağımsız-provider veya insan onayı sayılmaz',
+        : 'seçilen tek provider review kalite kapısıdır; insan onayı yerine geçmez',
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',
@@ -985,16 +980,6 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
 
   const fields = extractFields(section);
   appendDuplicateFieldFinding(findings, fields);
-  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
-    Object.hasOwn(fields, field)
-  );
-  findings.push({
-    check: 'consultation_has_no_forbidden_provider_receipt',
-    pass: forbiddenFields.length === 0,
-    detail: forbiddenFields.length === 0
-      ? 'Claude ve MiniMax yeni istişare ve receipt zincirinde bulunmuyor'
-      : `Yasak provider receipt alanı bulundu: ${forbiddenFields.join(', ')}`,
-  });
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
     return findings;
@@ -1003,7 +988,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   // Forward policy has no current legacy lane. Only the narrowly allowlisted
   // docs-only exemption may retain the old body shape; it produces no provider
   // receipt or acceptance authority. Every other PR must declare an explicit
-  // none|single mode so legacy Claude/MiniMax fields cannot bypass the floor.
+  // none|single mode so legacy multi-channel controls cannot bypass the floor.
   const exemption = docsOnlyExemption(fields, prMeta);
   if (!exemption.pass) {
     if (exemption.requested) {

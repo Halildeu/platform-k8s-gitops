@@ -3,11 +3,12 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (Codex-only durumsal az-kanal governance, #2688):
+# Required check (Codex-first durumsal az-kanal governance, #2688):
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
-# - single: direct Codex CLI + exact scope + AGREE; routine exact Spark,
-#   governance/security/migration/production/high-impact exact gpt-5.6-sol
-# - dual/Claude/MiniMax/Cursor/UI/wrapper/model-provider fallback forbidden
+# - single: one selected exact headless provider receipt + exact scope + AGREE;
+#   first choice direct Codex (routine Spark, high-impact gpt-5.6-sol)
+# - Claude/MiniMax are optional alternatives, never mandatory extra channels
+# - dual/multiple receipts and silent UI/wrapper/model-provider fallback rejected
 # - Codex self-review is a quality gate, not provider-distinct or human approval
 # - Fetched owner evidence, model, freshness, digest and redaction remain strict
 #

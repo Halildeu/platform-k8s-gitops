@@ -144,6 +144,8 @@ const renderedRollbackBody = rollbackBodyMatch[1]
 
 const MINIMAX_RECEIPT_LINE =
   `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF].body)}`;
+const CLAUDE_RECEIPT_LINE =
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}`;
 const legacyPeerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
   `Implementer AI: Claude\nReviewer AI: Codex\n` +
@@ -194,18 +196,19 @@ const explicitDualClaudeImplementerBody = explicitDualBody.replace(
   'Implementer AI: Codex',
   'Implementer AI: Claude',
 );
-// Claude + Codex (the valid dual pair) plus a retired MiniMax receipt appended.
-// The forward policy fail-closes on the MiniMax field regardless of the two
-// otherwise-valid channels.
+// Historical multi-channel bodies remain invalid because current mode is
+// none|single; each provider remains eligible as the one selected channel.
 const explicitDualClaudeCodexMiniMaxBody =
   `${explicitDualBody}${MINIMAX_RECEIPT_LINE}\n`;
-// none / single explicit-mode bodies carrying a retired MiniMax receipt.
+// none cannot carry evidence; single accepts exactly one selected provider.
 const explicitNoneMiniMaxBody =
   `${explicitNoneBody}${MINIMAX_RECEIPT_LINE}\n`;
 const explicitSingleMiniMaxBody =
-  `${explicitSingleBody}${MINIMAX_RECEIPT_LINE}\n`;
+  explicitSingleBody.replace(/^Codex receipt:.*$/m, MINIMAX_RECEIPT_LINE);
 const explicitSingleClaudeBody =
-  `${explicitSingleBody}Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n`;
+  explicitSingleBody.replace(/^Codex receipt:.*$/m, CLAUDE_RECEIPT_LINE);
+const explicitSingleCodexAndClaudeBody =
+  `${explicitSingleBody}${CLAUDE_RECEIPT_LINE}\n`;
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'AGENTS.md';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
@@ -543,7 +546,7 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GOVERNANCE_PATH], expectedFailureCheck: 'codex_receipt' }, 1],
   ['explicit single mode accepts consultation enforcement changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitHighImpactBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
-  ['retired MiniMax wrapper tombstone accepts exact Codex single review',
+  ['MiniMax-named governance path accepts exact Codex-first single review',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitHighImpactBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 0],
   ['removed dual mode fails closed on consultation enforcement changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ENFORCEMENT_PATH] }, 1],
@@ -578,24 +581,37 @@ const cases = [
   ['explicit single mode rejects missing exact scope binding',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace(/^Consultation scope:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit single mode rejects a forbidden Claude consultation channel',
+  ['explicit single mode accepts Claude as one optional alternative',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitSingleClaudeBody, changedFiles: [ROUTINE_PATH] }, 1],
+      body: explicitSingleClaudeBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode accepts MiniMax as one optional alternative',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['governance scope accepts Claude as one optional alternative',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleClaudeBody, changedFiles: [GOVERNANCE_PATH] }, 0],
+  ['governance scope accepts MiniMax as one optional alternative',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleMiniMaxBody, changedFiles: [GOVERNANCE_PATH] }, 0],
+  ['MiniMax alternative rejects an actual-model mismatch',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleMiniMaxBody.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7'), changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'minimax_receipt' }, 1],
+  ['explicit single mode rejects multiple provider receipts',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleCodexAndClaudeBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_single_exact_channel_count' }, 1],
   ['explicit single mode rejects an empty risk-trigger key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitSingleBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode is removed and fails closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects MiniMax as a retired secondary channel',
+  ['explicit dual mode rejects MiniMax because dual mode is removed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['removed dual mode rejects the historical Claude plus Codex pair',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode rejects a Claude+Codex+MiniMax three-channel mixture',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_forbidden_receipts_rejected' }, 1],
-  ['explicit none mode rejects a retired MiniMax receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_mode_valid' }, 1],
+  ['explicit none mode rejects a MiniMax receipt',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit single mode rejects a retired MiniMax receipt',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode rejects an empty third receipt key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],
@@ -615,7 +631,7 @@ const cases = [
   ['normal PR + receipt commit differs from PR head -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       headSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],
-  ['normal PR + MiniMax receipt is forbidden even with an actual-model mismatch',
+  ['normal PR + multiple receipts and MiniMax actual-model mismatch fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7')}\n` }, 1],
   ['normal PR + Codex non-AGREE receipt -> fail closed',
@@ -651,7 +667,7 @@ const cases = [
   ['normal PR + owner login without OWNER association -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: wrongAssociationEvidence }, 1],
-  ['Codex AGREE plus forbidden MiniMax REVISE -> fail closed',
+  ['Codex AGREE plus a second MiniMax REVISE receipt -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace(sha256(EVIDENCE[MINIMAX_REF].body), sha256(minimaxReviseBody))}\n`, evidence: minimaxReviseEvidence }, 1],
   ['provider response with empty P0/P1/P2 sections -> fail closed',

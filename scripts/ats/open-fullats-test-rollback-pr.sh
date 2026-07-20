@@ -66,7 +66,7 @@ require_exact_body_line() {
 
 require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation commit: $promotion_head"
-require_exact_body_line "Consultation mode: dual"
+require_exact_body_line "Consultation mode: single"
 require_exact_body_line "Verdict: AGREE"
 consultation_reason="$(sed -nE 's/^Consultation reason:[[:space:]]*(.{10,})[[:space:]]*$/\1/p' <<<"$promotion_body")"
 [[ -n "$consultation_reason" ]] || {
@@ -78,23 +78,37 @@ consultation_scope="$(sed -nE 's/^Consultation scope:[[:space:]]*([0-9a-f]{64})[
   echo "[fullats-rollback] promotion consultation scope is missing or duplicated" >&2
   exit 1
 }
-risk_trigger="$(sed -nE 's/^Risk trigger:[[:space:]]*(security-authz|production-cutover):[[:space:]]*(.{10,})[[:space:]]*$/\1: \2/p' <<<"$promotion_body")"
-[[ -n "$risk_trigger" ]] || {
-  echo "[fullats-rollback] dual consultation risk trigger is missing or invalid" >&2
+[[ "$(grep -Ec '^Risk trigger:' <<<"$promotion_body" || true)" == "0" ]] || {
+  echo "[fullats-rollback] single review must not carry a legacy risk trigger" >&2
   exit 1
 }
-for receipt_label in "Claude receipt" "Codex receipt"; do
-  receipt_line="$(grep -E "^${receipt_label}: " <<<"$promotion_body" || true)"
-  [[ "$(grep -Ec "^${receipt_label}: " <<<"$promotion_body" || true)" == "1" && \
-     "$receipt_line" == *"head=$promotion_head;"* && \
-     "$receipt_line" == *"scope=$consultation_scope;"* && \
-     "$receipt_line" == *"verdict=AGREE;"* ]] || {
-    echo "[fullats-rollback] exact $receipt_label binding is missing or invalid" >&2
-    exit 1
-  }
-done
-[[ "$(grep -Fc "MiniMax receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
-  echo "[fullats-rollback] MiniMax receipt is forbidden by forward policy" >&2
+receipt_count="$(grep -Ec '^(Codex|Claude|MiniMax) receipt: ' <<<"$promotion_body" || true)"
+[[ "$receipt_count" == "1" ]] || {
+  echo "[fullats-rollback] exactly one Codex/Claude/MiniMax receipt is required" >&2
+  exit 1
+}
+receipt_line="$(grep -E '^(Codex|Claude|MiniMax) receipt: ' <<<"$promotion_body")"
+case "$receipt_line" in
+  "Codex receipt: "*)
+    expected_provider="openai"
+    expected_model="gpt-5.6-sol"
+    ;;
+  "Claude receipt: "*)
+    expected_provider="anthropic"
+    expected_model="claude-opus-4-8"
+    ;;
+  "MiniMax receipt: "*)
+    expected_provider="minimax"
+    expected_model="minimax/MiniMax-M3"
+    ;;
+esac
+[[ "$receipt_line" == *"provider=$expected_provider;"* && \
+   "$receipt_line" == *"requested=$expected_model;"* && \
+   "$receipt_line" == *"actual=$expected_model;"* && \
+   "$receipt_line" == *"head=$promotion_head;"* && \
+   "$receipt_line" == *"scope=$consultation_scope;"* && \
+   "$receipt_line" == *"verdict=AGREE;"* ]] || {
+  echo "[fullats-rollback] exact selected provider receipt binding is missing or invalid" >&2
   exit 1
 }
 git fetch origin main --quiet

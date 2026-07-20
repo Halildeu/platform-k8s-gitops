@@ -59,8 +59,9 @@ Critical-Fix: no
 
 ## Cross-AI İstişare Modu
 
-> Varsayılan `none`; inceleme gerektiğinde yalnız ayrı bağlamda direct Codex CLI
-> ile `single`. `dual`, Claude, MiniMax, Cursor, UI ve wrapper fallback yasaktır.
+> Varsayılan `none`; inceleme gerektiğinde `single` ve ilk tercih ayrı bağlamda
+> direct Codex CLI'dır. Claude ve MiniMax/Mavis zorunlu olmayan alternatif
+> headless kanallardır; otomatik `dual`/üçlü mutabakat yoktur.
 > Detay: `docs/context-priority-rules.md` §11.
 
 ```yaml
@@ -73,17 +74,21 @@ Consultation reason: <neden none|single seçildi; en az 10 karakter>
 # Consultation base: <single exact merge-base>
 # Consultation commit: <single exact head>
 # Consultation scope: <single content SHA-256>
-# Codex receipt: <single için zorunlu exact receipt>
+# Codex receipt: <single için ilk tercih exact receipt>
+# Claude receipt: <opsiyonel alternatif exact receipt>
+# MiniMax receipt: <opsiyonel alternatif exact receipt>
 ```
 
 **Field semantik**:
 - `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
-- `single`: routine scope için live exact `gpt-5.3-codex-spark xhigh`;
+- `single`: seçilen provider'dan tam bir exact receipt; ilk tercih Codex'tir.
+  Codex routine scope için live exact `gpt-5.3-codex-spark xhigh`;
   governance/security/migration/production/high-impact scope için exact
   `gpt-5.6-sol xhigh`; exact base/head/scope + `AGREE`.
-- Claude/MiniMax receipt, `dual`, Cursor/UI/wrapper ve provider/model fallback
-  fail-closed reddedilir.
+- Claude Opus 4.8 veya MiniMax M3 açıkça seçilmiş tek alternatif olabilir;
+  Mavis transport'u alttaki exact provider/model kimliğini korumalıdır. Birden
+  fazla receipt ve sessiz provider/model/UI fallback fail-closed reddedilir.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
   exact model ve redaction kontrolleri fail-closed kalır.
 
