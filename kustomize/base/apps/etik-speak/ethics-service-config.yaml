@@ -23,11 +23,10 @@ data:
   ETHICS_PERMISSION_SERVICE_TIMEOUT: "PT3S"
   ERP_OPENFGA_ENABLED: "true"
   ERP_OPENFGA_API_URL: "http://openfga:8080"
-  # The reviewed provisioner creates the isolated test store/model first.
-  # Their non-secret immutable IDs are then pinned here in a new commit before
-  # this activation is allowed into the root test overlay.
-  ERP_OPENFGA_STORE_ID: "PENDING_FAZ35_OPENFGA_STORE_ID"
-  ERP_OPENFGA_MODEL_ID: "PENDING_FAZ35_OPENFGA_MODEL_ID"
+  # Isolated TEST store/model created, semantically read back and exercised by
+  # the reviewed provisioner before root activation. These IDs are non-secret.
+  ERP_OPENFGA_STORE_ID: "01KXYKEBVTSGEDYJ5GJ0TY67JD"
+  ERP_OPENFGA_MODEL_ID: "01KXYKECVDKPK3B45A8RNXKS4X"
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
   SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"

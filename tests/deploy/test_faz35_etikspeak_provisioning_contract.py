@@ -927,8 +927,30 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('"name": "ethics-service-config"', self.model_ledger)
         self.assertIn('"store_id_field": "ERP_OPENFGA_STORE_ID"', self.model_ledger)
         self.assertIn('"model_id_field": "ERP_OPENFGA_MODEL_ID"', self.model_ledger)
-        self.assertIn("PENDING_FAZ35_OPENFGA_STORE_ID", self.service_config)
-        self.assertIn("PENDING_FAZ35_OPENFGA_MODEL_ID", self.service_config)
+        self.assertNotIn("PENDING_FAZ35_OPENFGA_", self.service_config)
+        store_match = re.search(
+            r'^  ERP_OPENFGA_STORE_ID: "([0-9A-HJKMNP-TV-Z]{26})"$',
+            self.service_config,
+            re.MULTILINE,
+        )
+        model_match = re.search(
+            r'^  ERP_OPENFGA_MODEL_ID: "([0-9A-HJKMNP-TV-Z]{26})"$',
+            self.service_config,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(store_match)
+        self.assertIsNotNone(model_match)
+        ledger = json.loads(self.model_ledger)
+        model_id = model_match.group(1)
+        self.assertEqual(
+            model_id,
+            ledger["promotion"]["test"]["model_id_env"],
+        )
+        self.assertTrue(
+            ledger["source"]["canonical_source_ref"].endswith(
+                f"/authorization-models/{model_id}"
+            )
+        )
         self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 2)
         self.assertEqual(self.external_secret.count("kind: SecretStore"), 2)
         self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 2)
@@ -945,7 +967,14 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_namespaced_secret_store_uses_dedicated_least_privilege_approle(self):
         self.assertIn("kind: SecretStore", self.secret_store)
-        self.assertIn("roleId: PENDING_FAZ35_VAULT_ROLE_ID", self.secret_store)
+        self.assertNotIn("PENDING_FAZ35_VAULT_ROLE_ID", self.secret_store)
+        role_id_match = re.search(
+            r"^          roleId: "
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+            self.secret_store,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(role_id_match)
         self.assertIn("name: etik-speak-vault-approle", self.secret_store)
         self.assertNotIn("vault-platform-gitops", self.secret_store)
         self.assertIn('path "kv/data/platform/etik-speak"', self.eso_policy)

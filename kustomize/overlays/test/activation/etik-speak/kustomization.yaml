@@ -16,8 +16,8 @@ images:
   # Exact branch artifacts: backend source 8302e3a1 / run 29710031015 and
   # public-web source 4eaf02bf / run 29710051185. Their immutable identities
   # are content-bound by signed provenance in the Faz 35 image-set ledger.
-  # Root activation remains
-  # forbidden until the exact-head review and provisioning gates are satisfied.
+  # Root activation is included only by the post-provisioning commit that pins
+  # the reviewed Vault role and OpenFGA store/model IDs.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
     digest: sha256:f06b45b2884684222f566a67c5400a7e2dba0a00a325921f14314dc9f192aca3
