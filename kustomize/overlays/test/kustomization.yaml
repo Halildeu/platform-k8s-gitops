@@ -680,7 +680,7 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
-    digest: sha256:f8c13bfd0e39914f58998120a72ff8bd3b44ff7d5bf6eea8c16fc7cf9dbfa25e
+    digest: sha256:b2f446eed46dfc1500cfb3a45d618999b92ed0557e0ece34cced5d51e5482a58
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -5781,7 +5781,7 @@ images:
     # board #2559 — sha-780a95c (platform-backend 780a95c29, PR #853): the resolver learns to
     # apply an explicit org -> tenant alias, which is what makes the ConfigMap key above mean
     # anything. Digest read from the registry manifest (linux/amd64), not from the tag.
-    digest: sha256:bde478e9a0dd2aaf7cc8ced72592a4bf90b0920ac1feba5d51ec9b296fbcef82
+    digest: sha256:a766945a08909a9727fb75d81c14cdbfc0f86e6aff1fa62fa9cfbc79a41c42fb
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
