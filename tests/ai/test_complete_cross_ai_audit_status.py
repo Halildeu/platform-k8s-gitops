@@ -182,6 +182,22 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             "updated_at": timestamp,
         }
 
+    def required_failure_status(self, action: str, comment_id: int) -> dict:
+        timestamp = "2026-07-19T18:00:00Z"
+        return {
+            "id": 701,
+            "sha": self.head,
+            "state": "failure",
+            "context": "cross-ai-audit",
+            "description": (
+                f"owner comment {comment_id} {action}; trusted rerun required"
+            ),
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+
     def mutation_failed_check(self, action: str, comment_id: int) -> dict:
         return {
             **self.mutation_pending_check(action, comment_id),
@@ -1098,6 +1114,146 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         self.assertEqual(result["action"], "owner-comment-history-change-invalidated")
         self.assertEqual(len(calls), 4)
         self.assertIn(f"statuses/{self.head}", calls[2][2])
+
+    def test_pr_rest_failure_uses_graphql_snapshot_before_invalidation(self) -> None:
+        self.write_comment_event("deleted", self.comment_id)
+        graphql_snapshot = {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "state": "OPEN",
+                        "url": self.url,
+                        "isDraft": False,
+                        "mergedAt": None,
+                        "body": self.body(),
+                        "headRefOid": self.head,
+                        "baseRefOid": self.base,
+                    }
+                }
+            }
+        }
+        responses = [
+            subprocess.CompletedProcess(["gh"], 1, stdout="", stderr="REST failed"),
+            subprocess.CompletedProcess(
+                ["gh"], 0, stdout=json.dumps(graphql_snapshot), stderr=""
+            ),
+            subprocess.CompletedProcess(
+                ["gh"],
+                0,
+                stdout=json.dumps(
+                    self.mutation_pending_check("deleted", self.comment_id)
+                ),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ["gh"],
+                0,
+                stdout=json.dumps(self.mutation_status("deleted", self.comment_id)),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ["gh"],
+                0,
+                stdout=json.dumps(
+                    self.mutation_failed_check("deleted", self.comment_id)
+                ),
+                stderr="",
+            ),
+        ]
+        calls: list[list[str]] = []
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            response = responses.pop(0)
+            return subprocess.CompletedProcess(
+                command,
+                response.returncode,
+                stdout=response.stdout,
+                stderr=response.stderr,
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["action"], "owner-comment-history-change-invalidated")
+        self.assertEqual(result["required_invalidation"], "check-run")
+        self.assertIn(f"repos/{self.repo}/pulls/{self.issue}", calls[0])
+        self.assertIn("graphql", calls[1])
+        self.assertIn(f"repos/{self.repo}/check-runs", calls[2])
+        self.assertEqual(responses, [])
+
+    def test_check_run_post_failure_falls_back_to_required_failure_status(self) -> None:
+        self.write_comment_event("edited", self.comment_id)
+        calls: list[tuple[list[str], str | None]] = []
+        responses = [
+            subprocess.CompletedProcess(
+                ["gh"],
+                0,
+                stdout=json.dumps(self.current_pr(self.body())),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ["gh"], 1, stdout="", stderr="Checks API unavailable"
+            ),
+            subprocess.CompletedProcess(
+                ["gh"],
+                0,
+                stdout=json.dumps(
+                    self.required_failure_status("edited", self.comment_id)
+                ),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ["gh"],
+                0,
+                stdout=json.dumps(self.mutation_status("edited", self.comment_id)),
+                stderr="",
+            ),
+        ]
+
+        def runner(
+            command: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            input_text = kwargs.get("input")
+            calls.append(
+                (command, input_text if isinstance(input_text, str) else None)
+            )
+            response = responses.pop(0)
+            return subprocess.CompletedProcess(
+                command,
+                response.returncode,
+                stdout=response.stdout,
+                stderr=response.stderr,
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["required_invalidation"], "commit-status")
+        self.assertEqual(result["required_invalidation_id"], 701)
+        self.assertIsNone(result["check_run_id"])
+        self.assertEqual(result["mutation_status_id"], 601)
+        self.assertIn(f"repos/{self.repo}/check-runs", calls[1][0])
+        self.assertIn(f"repos/{self.repo}/statuses/{self.head}", calls[2][0])
+        required_request = json.loads(calls[2][1] or "")
+        self.assertEqual(required_request["context"], "cross-ai-audit")
+        self.assertEqual(required_request["state"], "failure")
+        mutation_request = json.loads(calls[3][1] or "")
+        self.assertEqual(
+            mutation_request["context"],
+            f"cross-ai/mutation/{self.comment_id}/edited",
+        )
+        self.assertEqual(responses, [])
 
     def test_merged_pr_comment_mutation_has_no_reopen_authority(self) -> None:
         self.write_comment_event("deleted", self.comment_id)

@@ -59,11 +59,11 @@ def fail(code: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def gh_json(
+def try_gh_json(
     arguments: list[str],
     *,
     input_text: str | None = None,
-) -> object:
+) -> object | None:
     try:
         result = subprocess.run(
             ["gh", "api", *arguments],
@@ -75,13 +75,24 @@ def gh_json(
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
-        fail("github_audit_generation_unverifiable")
+        return None
     if result.returncode != 0:
-        fail("github_audit_generation_unverifiable")
+        return None
     try:
         return json.loads(result.stdout)
     except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def gh_json(
+    arguments: list[str],
+    *,
+    input_text: str | None = None,
+) -> object:
+    payload = try_gh_json(arguments, input_text=input_text)
+    if payload is None:
         fail("github_audit_generation_unverifiable")
+    return payload
 
 
 def flatten_status_pages(payload: object) -> list[dict]:
@@ -105,6 +116,51 @@ def status_history(repo: str, head: str) -> list[dict]:
         "GET",
     ])
     return flatten_status_pages(pages)
+
+
+def mutation_pr_snapshot(repo: str, issue_number: int) -> object:
+    rest_arguments = [f"repos/{repo}/pulls/{issue_number}", "--method", "GET"]
+    current = try_gh_json(rest_arguments)
+    if isinstance(current, dict):
+        return current
+
+    owner, name = repo.split("/", 1)
+    query = (
+        "query($owner:String!,$name:String!,$number:Int!){"
+        "repository(owner:$owner,name:$name){pullRequest(number:$number){"
+        "state url isDraft mergedAt body headRefOid baseRefOid}}}"
+    )
+    graphql = try_gh_json([
+        "graphql",
+        "-f",
+        f"query={query}",
+        "-F",
+        f"owner={owner}",
+        "-F",
+        f"name={name}",
+        "-F",
+        f"number={issue_number}",
+    ])
+    try:
+        pull_request = graphql["data"]["repository"]["pullRequest"]
+        normalized = {
+            "state": pull_request["state"].lower(),
+            "html_url": pull_request["url"],
+            "draft": pull_request["isDraft"],
+            "merged_at": pull_request.get("mergedAt"),
+            "body": pull_request.get("body") or "",
+            "head": {"sha": pull_request["headRefOid"]},
+            "base": {"sha": pull_request["baseRefOid"]},
+        }
+    except (KeyError, TypeError, AttributeError):
+        normalized = None
+    if normalized is not None:
+        return normalized
+
+    current = try_gh_json(rest_arguments)
+    if isinstance(current, dict):
+        return current
+    fail("github_pr_mutation_guard_unverifiable")
 
 
 def consultation_commit(body: str) -> str:
@@ -392,6 +448,87 @@ def valid_pending_check(
     )
 
 
+def required_failure_status_payload(
+    head: str,
+    url: str,
+    comment_id: int,
+    action: str,
+) -> dict:
+    return {
+        "sha": head,
+        "state": "failure",
+        "context": "cross-ai-audit",
+        "description": f"owner comment {comment_id} {action}; trusted rerun required",
+        "target_url": url,
+    }
+
+
+def valid_required_failure_status(
+    payload: object,
+    *,
+    head: str,
+    url: str,
+    comment_id: int,
+    action: str,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    creator = payload.get("creator")
+    return bool(
+        isinstance(payload.get("id"), int)
+        and isinstance(payload.get("sha"), str)
+        and payload["sha"].lower() == head
+        and payload.get("state") == "failure"
+        and payload.get("context") == "cross-ai-audit"
+        and payload.get("description")
+        == f"owner comment {comment_id} {action}; trusted rerun required"
+        and payload.get("target_url") == url
+        and isinstance(creator, dict)
+        and creator.get("login") == TRUSTED_WORKFLOW_STATUS_CREATOR
+        and payload.get("created_at") == payload.get("updated_at")
+    )
+
+
+def post_required_invalidation(
+    repo: str,
+    *,
+    head: str,
+    url: str,
+    comment_id: int,
+    action: str,
+) -> tuple[str, dict]:
+    pending_request = pending_check_payload(head, url, comment_id, action)
+    pending = try_gh_json(
+        [f"repos/{repo}/check-runs", "--method", "POST", "--input", "-"],
+        input_text=json.dumps(pending_request, separators=(",", ":")),
+    )
+    if valid_pending_check(
+        pending,
+        head=head,
+        url=url,
+        comment_id=comment_id,
+        action=action,
+    ):
+        return "check-run", pending
+
+    failure_request = required_failure_status_payload(
+        head, url, comment_id, action
+    )
+    failure = gh_json(
+        [f"repos/{repo}/statuses/{head}", "--method", "POST", "--input", "-"],
+        input_text=json.dumps(failure_request, separators=(",", ":")),
+    )
+    if not valid_required_failure_status(
+        failure,
+        head=head,
+        url=url,
+        comment_id=comment_id,
+        action=action,
+    ):
+        fail("audit_mutation_required_status_invalid")
+    return "commit-status", failure
+
+
 def failed_check_payload(url: str, comment_id: int, action: str) -> dict:
     return {
         "status": "completed",
@@ -513,7 +650,7 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
     if not isinstance(issue.get("pull_request"), dict):
         return {"ok": True, "action": "ignored-non-pr-comment"}
 
-    current = gh_json([f"repos/{repo}/pulls/{issue_number}", "--method", "GET"])
+    current = mutation_pr_snapshot(repo, issue_number)
     expected_url = f"https://github.com/{repo}/pull/{issue_number}"
     try:
         head = current["head"]["sha"].lower()
@@ -545,19 +682,13 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
     if action == "created" and comment_digest in trusted_publication_digests:
         return {"ok": True, "action": "trusted-evidence-publication"}
 
-    pending_request = pending_check_payload(head, expected_url, comment_id, action)
-    pending = gh_json(
-        [f"repos/{repo}/check-runs", "--method", "POST", "--input", "-"],
-        input_text=json.dumps(pending_request, separators=(",", ":")),
-    )
-    if not valid_pending_check(
-        pending,
+    invalidation_kind, invalidation = post_required_invalidation(
+        repo,
         head=head,
         url=expected_url,
         comment_id=comment_id,
         action=action,
-    ):
-        fail("audit_mutation_pending_check_invalid")
+    )
 
     mutation_request = mutation_status_payload(
         head, expected_url, issue_number, comment_id, action
@@ -576,32 +707,36 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
     ):
         fail("audit_mutation_status_invalid")
 
-    check_run_id = pending["id"]
-    failed_request = failed_check_payload(expected_url, comment_id, action)
-    failed = gh_json(
-        [
-            f"repos/{repo}/check-runs/{check_run_id}",
-            "--method",
-            "PATCH",
-            "--input",
-            "-",
-        ],
-        input_text=json.dumps(failed_request, separators=(",", ":")),
-    )
-    if not valid_failed_check(
-        failed,
-        head=head,
-        url=expected_url,
-        comment_id=comment_id,
-        action=action,
-        check_run_id=check_run_id,
-    ):
-        fail("audit_mutation_check_invalid")
+    failed = invalidation
+    if invalidation_kind == "check-run":
+        check_run_id = invalidation["id"]
+        failed_request = failed_check_payload(expected_url, comment_id, action)
+        failed = gh_json(
+            [
+                f"repos/{repo}/check-runs/{check_run_id}",
+                "--method",
+                "PATCH",
+                "--input",
+                "-",
+            ],
+            input_text=json.dumps(failed_request, separators=(",", ":")),
+        )
+        if not valid_failed_check(
+            failed,
+            head=head,
+            url=expected_url,
+            comment_id=comment_id,
+            action=action,
+            check_run_id=check_run_id,
+        ):
+            fail("audit_mutation_check_invalid")
     return {
         "ok": True,
         "action": "owner-comment-history-change-invalidated",
         "comment_action": action,
-        "check_run_id": failed["id"],
+        "required_invalidation": invalidation_kind,
+        "required_invalidation_id": failed["id"],
+        "check_run_id": failed["id"] if invalidation_kind == "check-run" else None,
         "mutation_status_id": mutation["id"],
         "head_sha": head,
     }

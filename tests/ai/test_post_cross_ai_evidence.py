@@ -741,12 +741,12 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertIn("cross-ai-evidence-mutation-guard", workflow)
         self.assertIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
         self.assertIn(
-            "github.event.comment.author_association == 'OWNER'",
+            "format('{0}-{1}', github.event.issue.number, github.run_id)",
             workflow,
         )
         self.assertIn("|| github.run_id", workflow)
         self.assertIn(
-            "cancel-in-progress: ${{ github.event_name == 'issue_comment' }}",
+            "cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}",
             workflow,
         )
 
