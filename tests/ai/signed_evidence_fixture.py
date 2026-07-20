@@ -66,6 +66,13 @@ def issuer_runtime_policy(factory: FixtureFactory) -> dict[str, Any]:
         "apiOrigin": "https://testai.acik.com",
         "sessionPath": "/api/v1/cross-ai/provider-review-runtime/sessions",
         "authAudience": "acik-cross-ai-provider-review-runtime",
+        "kubernetesNamespace": "cross-ai",
+        "kubernetesServiceAccount": "provider-review-issuer",
+        "kubernetesContainerName": "runtime-attestor",
+        "vaultKubernetesAuthMount": "kubernetes",
+        "vaultKubernetesRole": "cross-ai-provider-review-runtime",
+        "vaultTokenPolicy": "cross-ai-runner-management-test",
+        "maxReplicas": 1,
     }
 
 

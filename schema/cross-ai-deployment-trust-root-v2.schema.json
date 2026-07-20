@@ -82,7 +82,14 @@
         "maxAttestationLifetimeSeconds",
         "apiOrigin",
         "sessionPath",
-        "authAudience"
+        "authAudience",
+        "kubernetesNamespace",
+        "kubernetesServiceAccount",
+        "kubernetesContainerName",
+        "vaultKubernetesAuthMount",
+        "vaultKubernetesRole",
+        "vaultTokenPolicy",
+        "maxReplicas"
       ],
       "properties": {
         "schemaVersion": {
@@ -113,7 +120,14 @@
         },
         "authAudience": {
           "const": "acik-cross-ai-provider-review-runtime"
-        }
+        },
+        "kubernetesNamespace": {"const": "cross-ai"},
+        "kubernetesServiceAccount": {"const": "provider-review-issuer"},
+        "kubernetesContainerName": {"const": "runtime-attestor"},
+        "vaultKubernetesAuthMount": {"const": "kubernetes"},
+        "vaultKubernetesRole": {"const": "cross-ai-provider-review-runtime"},
+        "vaultTokenPolicy": {"const": "cross-ai-runner-management-test"},
+        "maxReplicas": {"const": 1}
       }
     },
     "key": {

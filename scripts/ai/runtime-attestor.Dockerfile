@@ -51,9 +51,9 @@ COPY --from=codex /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex /usr/local/lib/node_modules/@openai/codex /usr/local/lib/node_modules/@openai/codex
 RUN ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
 WORKDIR /app
-COPY --chown=10002:10002 scripts/ai /app/scripts/ai
-COPY --chown=10002:10002 scripts/github_apps /app/scripts/github_apps
-COPY --chown=10002:10002 schema/cross-ai-*.schema.json /app/schema/
+COPY scripts/ai /app/scripts/ai
+COPY scripts/github_apps /app/scripts/github_apps
+COPY schema/cross-ai-*.schema.json /app/schema/
 RUN codex --version | grep -Fx 'codex-cli 0.144.1'
 USER 10002:10002
 EXPOSE 8081

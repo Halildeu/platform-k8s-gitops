@@ -15,17 +15,21 @@ import json
 import os
 import re
 import sqlite3
+import stat
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from contextlib import contextmanager
 from datetime import timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Iterator, Protocol
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from scripts.ai.cross_ai_runtime_authorization import (
     AUTH_AUDIENCE,
     load_runtime_authorization,
 )
+from scripts.ai.cross_ai_runtime_workload import WorkloadMeasurement
 from scripts.ai.trusted_cross_ai_evidence import (
     build_prompt,
     build_subject,
@@ -70,6 +74,41 @@ class ReviewRunner(Protocol):
         workspace: Path,
         timeout_seconds: int,
     ) -> ProviderExecutionReceipt: ...
+
+
+class WorkloadVerifier(Protocol):
+    def measure(self) -> WorkloadMeasurement: ...
+
+
+def _load_public_json(path: Path, label: str) -> dict[str, Any]:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        reject("PROVIDER_RUNTIME_AUTHORITY_UNAVAILABLE", f"{label} cannot be opened")
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_mode & 0o022
+            or not 1 <= metadata.st_size <= MAX_REQUEST_BYTES
+        ):
+            reject(
+                "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                f"{label} permissions or size are invalid",
+            )
+        raw = os.read(descriptor, metadata.st_size + 1)
+    except OSError:
+        reject("PROVIDER_RUNTIME_AUTHORITY_UNAVAILABLE", f"{label} cannot be read")
+    finally:
+        os.close(descriptor)
+    if len(raw) != metadata.st_size:
+        reject("PROVIDER_RUNTIME_AUTHORITY_INVALID", f"{label} changed while reading")
+    document = loads_json_bytes(raw, max_bytes=MAX_REQUEST_BYTES, label=label)
+    if not isinstance(document, dict):
+        reject("PROVIDER_RUNTIME_AUTHORITY_INVALID", f"{label} is not an object")
+    return document
 
 
 def _canonical_uuid(value: object, label: str) -> str:
@@ -196,8 +235,34 @@ class RuntimeSessionStore:
 
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(path, check_same_thread=False)
-        os.chmod(path, 0o600)
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, flags, 0o600)
+        except OSError:
+            reject(
+                "PROVIDER_RUNTIME_STORE_INVALID",
+                "runtime session ledger cannot be opened safely",
+            )
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or metadata.st_nlink != 1
+                or metadata.st_mode & 0o077
+            ):
+                reject(
+                    "PROVIDER_RUNTIME_STORE_INVALID",
+                    "runtime session ledger must be owner-only regular storage",
+                )
+        finally:
+            os.close(descriptor)
+        database_uri = f"file:{quote(str(path.resolve()), safe='/')}?mode=rw"
+        self.connection = sqlite3.connect(
+            database_uri,
+            uri=True,
+            check_same_thread=False,
+        )
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA synchronous=FULL")
         self.connection.execute(
@@ -208,11 +273,38 @@ class RuntimeSessionStore:
               request_sha256 TEXT NOT NULL,
               request_json BLOB NOT NULL,
               execution_json BLOB NOT NULL,
+              workload_identity TEXT NOT NULL,
+              image_digest TEXT NOT NULL,
+              pod_uid TEXT NOT NULL,
               provider_envelope_sha256 TEXT,
               runtime_envelope_json BLOB
             )
             """
         )
+        columns = {
+            row[1]
+            for row in self.connection.execute(
+                "PRAGMA table_info(runtime_sessions)"
+            ).fetchall()
+        }
+        expected_columns = {
+            "session_id",
+            "request_id",
+            "request_sha256",
+            "request_json",
+            "execution_json",
+            "workload_identity",
+            "image_digest",
+            "pod_uid",
+            "provider_envelope_sha256",
+            "runtime_envelope_json",
+        }
+        if columns != expected_columns:
+            self.connection.close()
+            reject(
+                "PROVIDER_RUNTIME_STORE_INVALID",
+                "runtime session ledger schema differs from the fixed contract",
+            )
         self.connection.commit()
         self.lock = threading.Lock()
 
@@ -221,6 +313,7 @@ class RuntimeSessionStore:
         *,
         request: dict[str, Any],
         execution: dict[str, Any],
+        measurement: WorkloadMeasurement,
     ) -> tuple[str, dict[str, Any]]:
         request_bytes = canonical_bytes(request)
         request_digest = sha256_digest(request)
@@ -244,8 +337,9 @@ class RuntimeSessionStore:
             self.connection.execute(
                 """
                 INSERT INTO runtime_sessions
-                  (session_id, request_id, request_sha256, request_json, execution_json)
-                VALUES (?, ?, ?, ?, ?)
+                  (session_id, request_id, request_sha256, request_json, execution_json,
+                   workload_identity, image_digest, pod_uid)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -253,23 +347,37 @@ class RuntimeSessionStore:
                     request_digest,
                     request_bytes,
                     execution_bytes,
+                    measurement.workload_identity,
+                    measurement.image_digest,
+                    measurement.pod_uid,
                 ),
             )
             self.connection.commit()
         return session_id, execution
 
-    def get(self, session_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    def get(
+        self, session_id: str
+    ) -> tuple[dict[str, Any], dict[str, Any], WorkloadMeasurement]:
         with self.lock:
             row = self.connection.execute(
                 """
-                SELECT request_json, execution_json
+                SELECT request_json, execution_json, workload_identity,
+                       image_digest, pod_uid
                 FROM runtime_sessions WHERE session_id = ?
                 """,
                 (session_id,),
             ).fetchone()
         if row is None:
             reject("PROVIDER_RUNTIME_SESSION_MISSING", "runtime session is unavailable")
-        return json.loads(row[0]), json.loads(row[1])
+        return (
+            json.loads(row[0]),
+            json.loads(row[1]),
+            WorkloadMeasurement(
+                workload_identity=row[2],
+                image_digest=row[3],
+                pod_uid=row[4],
+            ),
+        )
 
     def by_request(
         self,
@@ -369,13 +477,14 @@ class FixedRuntimeAttestorService:
         self,
         *,
         runtime_policy: dict[str, Any],
-        trust_root: dict[str, Any],
+        trust_root_file: Path,
         expected_trust_root_sha256: str,
-        revocations_envelope: dict[str, Any],
+        revocations_file: Path,
         authorization_token_file: Path,
         store: RuntimeSessionStore,
         signer: EnvelopeSigner,
         runner: ReviewRunner,
+        workload_verifier: WorkloadVerifier,
         workspace: Path,
     ) -> None:
         if (
@@ -384,6 +493,7 @@ class FixedRuntimeAttestorService:
             or runtime_policy.get("sessionPath")
             != "/api/v1/cross-ai/provider-review-runtime/sessions"
             or runtime_policy.get("maxAttestationLifetimeSeconds") != 600
+            or runtime_policy.get("maxReplicas") != 1
         ):
             reject(
                 "PROVIDER_RUNTIME_POLICY_INVALID",
@@ -396,14 +506,68 @@ class FixedRuntimeAttestorService:
         self.store = store
         self.signer = signer
         self.runner = runner
+        self.workload_verifier = workload_verifier
         self.workspace = workspace
-        self.trust_root = trust_root
+        self.trust_root_file = trust_root_file
         self.expected_trust_root_sha256 = expected_trust_root_sha256
-        self.revocations_envelope = revocations_envelope
-        # One fixed workload replica owns one Codex runner. Serializing the
-        # lookup-execute-record sequence prevents concurrent retries for the
-        # same request from consuming the provider twice.
-        self.execution_lock = threading.Lock()
+        self.revocations_file = revocations_file
+        self._lock_guard = threading.Lock()
+        self._request_locks: dict[str, tuple[threading.Lock, int]] = {}
+        self._finalize_locks: dict[str, tuple[threading.Lock, int]] = {}
+
+    @contextmanager
+    def _keyed_lock(
+        self,
+        locks: dict[str, tuple[threading.Lock, int]],
+        key: str,
+    ) -> Iterator[None]:
+        with self._lock_guard:
+            lock, users = locks.get(key, (threading.Lock(), 0))
+            locks[key] = (lock, users + 1)
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
+            with self._lock_guard:
+                current_lock, current_users = locks[key]
+                if current_lock is not lock:
+                    raise RuntimeError("runtime lock identity changed")
+                if current_users == 1:
+                    del locks[key]
+                else:
+                    locks[key] = (lock, current_users - 1)
+
+    def _evidence_verifier(self) -> EvidenceVerifier:
+        trust_root = _load_public_json(self.trust_root_file, "runtime trust root")
+        revocations = _load_public_json(
+            self.revocations_file,
+            "runtime revocations",
+        )
+        if sha256_digest(trust_root) != self.expected_trust_root_sha256:
+            reject(
+                "PROVIDER_RUNTIME_AUTHORITY_INVALID",
+                "runtime trust root differs from the independent pin",
+            )
+        return EvidenceVerifier(
+            trust_root=trust_root,
+            revocations_envelope=revocations,
+            now=utc_now(),
+            expected_trust_root_sha256=self.expected_trust_root_sha256,
+        )
+
+    def _measurement(self) -> WorkloadMeasurement:
+        measurement = self.workload_verifier.measure()
+        if (
+            measurement.workload_identity
+            != self.runtime_policy["workloadIdentity"]
+            or measurement.image_digest != self.runtime_policy["issuerImageDigest"]
+        ):
+            reject(
+                "PROVIDER_RUNTIME_WORKLOAD_MISMATCH",
+                "measured workload identity or image differs from public policy",
+            )
+        return measurement
 
     def authorize(self, header: str | None) -> None:
         self.authorization.assert_active()
@@ -413,7 +577,10 @@ class FixedRuntimeAttestorService:
 
     def execute(self, document: dict[str, Any]) -> dict[str, Any]:
         _validate_session_request(document)
-        with self.execution_lock:
+        self.authorization.assert_request(document)
+        self._evidence_verifier()
+        measurement = self._measurement()
+        with self._keyed_lock(self._request_locks, document["requestId"]):
             existing = self.store.by_request(
                 document["requestId"],
                 sha256_digest(document),
@@ -445,6 +612,7 @@ class FixedRuntimeAttestorService:
             session_id, stored_execution = self.store.record(
                 request=document,
                 execution=execution,
+                measurement=measurement,
             )
         return {
             "schemaVersion": SESSION_RESPONSE_SCHEMA,
@@ -480,7 +648,15 @@ class FixedRuntimeAttestorService:
                 "PROVIDER_RUNTIME_REQUEST_INVALID",
                 "runtime finalization request differs from the fixed contract",
             )
-        request, execution = self.store.get(session_id)
+        self.authorization.assert_active()
+        verifier = self._evidence_verifier()
+        current_measurement = self._measurement()
+        request, execution, stored_measurement = self.store.get(session_id)
+        if current_measurement != stored_measurement:
+            reject(
+                "PROVIDER_RUNTIME_WORKLOAD_MISMATCH",
+                "runtime workload changed between execution and finalization",
+            )
         provider_envelope = document["providerReviewEnvelope"]
         provider_digest = sha256_digest(provider_envelope)
         if (
@@ -492,12 +668,6 @@ class FixedRuntimeAttestorService:
                 "PROVIDER_RUNTIME_BINDING_MISMATCH",
                 "runtime finalization differs from the stored execution",
             )
-        verifier = EvidenceVerifier(
-            trust_root=self.trust_root,
-            revocations_envelope=self.revocations_envelope,
-            now=utc_now(),
-            expected_trust_root_sha256=self.expected_trust_root_sha256,
-        )
         verified = verifier.verify_provider_review(
             provider_envelope,
             request["subjectSha256"],
@@ -534,39 +704,40 @@ class FixedRuntimeAttestorService:
                 "PROVIDER_RUNTIME_LIFETIME_INVALID",
                 "runtime finalization lifetime differs from the provider leaf",
             )
-        existing_runtime = self.store.finalized(
-            session_id=session_id,
-            provider_envelope_sha256=provider_digest,
-        )
-        if existing_runtime is not None:
-            return {
-                "schemaVersion": FINALIZE_RESPONSE_SCHEMA,
-                "runtimeAttestationEnvelope": existing_runtime,
+        with self._keyed_lock(self._finalize_locks, session_id):
+            existing_runtime = self.store.finalized(
+                session_id=session_id,
+                provider_envelope_sha256=provider_digest,
+            )
+            if existing_runtime is not None:
+                return {
+                    "schemaVersion": FINALIZE_RESPONSE_SCHEMA,
+                    "runtimeAttestationEnvelope": existing_runtime,
+                }
+            runtime_payload = {
+                "schemaVersion": "acik.cross-ai-provider-review-runtime-attestation.v1",
+                "attestationId": str(uuid4()),
+                "keyId": self.signer.key_id,
+                "workloadIdentity": stored_measurement.workload_identity,
+                "issuerImageDigest": stored_measurement.image_digest,
+                "launcherSourceSha256": self.runtime_policy["launcherSourceSha256"],
+                "providerReviewEnvelopeSha256": provider_digest,
+                "promptSha256": request["promptSha256"],
+                "responseSha256": execution["outputSha256"],
+                "capabilitySnapshotSha256": execution["capabilitySnapshotSha256"],
+                "providerSessionId": execution["providerSessionId"],
+                "issuedAt": document["issuedAt"],
+                "expiresAt": document["expiresAt"],
             }
-        runtime_payload = {
-            "schemaVersion": "acik.cross-ai-provider-review-runtime-attestation.v1",
-            "attestationId": str(uuid4()),
-            "keyId": self.signer.key_id,
-            "workloadIdentity": self.runtime_policy["workloadIdentity"],
-            "issuerImageDigest": self.runtime_policy["issuerImageDigest"],
-            "launcherSourceSha256": self.runtime_policy["launcherSourceSha256"],
-            "providerReviewEnvelopeSha256": provider_digest,
-            "promptSha256": request["promptSha256"],
-            "responseSha256": execution["outputSha256"],
-            "capabilitySnapshotSha256": execution["capabilitySnapshotSha256"],
-            "providerSessionId": execution["providerSessionId"],
-            "issuedAt": document["issuedAt"],
-            "expiresAt": document["expiresAt"],
-        }
-        runtime_envelope = self.signer.sign_json_envelope(
-            payload_type=PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
-            payload=runtime_payload,
-        )
-        stored = self.store.finalize(
-            session_id=session_id,
-            provider_envelope_sha256=provider_digest,
-            runtime_envelope=runtime_envelope,
-        )
+            runtime_envelope = self.signer.sign_json_envelope(
+                payload_type=PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+                payload=runtime_payload,
+            )
+            stored = self.store.finalize(
+                session_id=session_id,
+                provider_envelope_sha256=provider_digest,
+                runtime_envelope=runtime_envelope,
+            )
         return {
             "schemaVersion": FINALIZE_RESPONSE_SCHEMA,
             "runtimeAttestationEnvelope": stored,

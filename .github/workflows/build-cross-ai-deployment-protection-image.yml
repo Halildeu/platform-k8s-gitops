@@ -4,10 +4,7 @@ on:
   pull_request:
     paths:
       - "scripts/github_apps/**"
-      - "scripts/ai/cross_ai_runtime_authorization.py"
-      - "scripts/ai/cross_ai_runtime_attestor_service.py"
-      - "scripts/ai/run_cross_ai_runtime_attestor.py"
-      - "scripts/ai/runtime-attestor.Dockerfile"
+      - "scripts/ai/**"
       - "schema/cross-ai-deployment-*.schema.json"
       - "schema/cross-ai-provider-review-*.schema.json"
       - ".github/workflows/build-cross-ai-deployment-protection-image.yml"
@@ -15,10 +12,7 @@ on:
     branches: [main]
     paths:
       - "scripts/github_apps/**"
-      - "scripts/ai/cross_ai_runtime_authorization.py"
-      - "scripts/ai/cross_ai_runtime_attestor_service.py"
-      - "scripts/ai/run_cross_ai_runtime_attestor.py"
-      - "scripts/ai/runtime-attestor.Dockerfile"
+      - "scripts/ai/**"
       - "schema/cross-ai-deployment-*.schema.json"
       - "schema/cross-ai-provider-review-*.schema.json"
       - ".github/workflows/build-cross-ai-deployment-protection-image.yml"
@@ -98,11 +92,24 @@ jobs:
       - name: Verify fixed runtime entrypoint and pinned Codex bytes
         run: |
           set -euo pipefail
-          docker run --rm cross-ai-runtime-attestor:contract --help >/tmp/runtime-attestor-help.txt
-          grep -F -- '--runner-token-file' /tmp/runtime-attestor-help.txt
+          docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            cross-ai-runtime-attestor:contract --help >/tmp/runtime-attestor-help.txt
+          grep -F -- '--vault-kubernetes-jwt-file' /tmp/runtime-attestor-help.txt
+          grep -F -- '--kubernetes-api-token-file' /tmp/runtime-attestor-help.txt
           grep -F -- '--authorization-token-file' /tmp/runtime-attestor-help.txt
-          docker run --rm --entrypoint python cross-ai-runtime-attestor:contract \
+          docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --entrypoint python cross-ai-runtime-attestor:contract \
             -c 'import os,pwd; account=pwd.getpwuid(os.getuid()); assert os.getuid() == 10002 and account.pw_dir == "/var/lib/cross-ai-runtime"'
+          docker run --rm --entrypoint sh cross-ai-runtime-attestor:contract -c \
+            'test "$(stat -c %u /app/scripts/ai/cross_ai_runtime_attestor_service.py)" = 0 && test "$(stat -c %a /app/scripts/ai/cross_ai_runtime_attestor_service.py)" = 644'
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

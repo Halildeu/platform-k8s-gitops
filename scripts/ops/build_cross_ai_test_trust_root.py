@@ -552,6 +552,13 @@ def build_trust_root(
             "apiOrigin": attestor_api_origin,
             "sessionPath": "/api/v1/cross-ai/provider-review-runtime/sessions",
             "authAudience": "acik-cross-ai-provider-review-runtime",
+            "kubernetesNamespace": "cross-ai",
+            "kubernetesServiceAccount": "provider-review-issuer",
+            "kubernetesContainerName": "runtime-attestor",
+            "vaultKubernetesAuthMount": "kubernetes",
+            "vaultKubernetesRole": "cross-ai-provider-review-runtime",
+            "vaultTokenPolicy": "cross-ai-runner-management-test",
+            "maxReplicas": 1,
         },
         "keys": provider_entries
         + [

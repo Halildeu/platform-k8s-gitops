@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -16,6 +17,7 @@ from scripts.ai.cross_ai_runtime_authorization import (
     AUTH_AUDIENCE,
 )
 from scripts.ai.trusted_cross_ai_evidence import canonical_bytes
+from scripts.ai.cross_ai_runtime_workload import WorkloadMeasurement
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
@@ -67,53 +69,72 @@ class CountingSigner(StaticSigner):
         )
 
 
+class StaticWorkloadVerifier:
+    def __init__(self, policy) -> None:
+        self.measurement = WorkloadMeasurement(
+            workload_identity=policy["workloadIdentity"],
+            image_digest=policy["issuerImageDigest"],
+            pod_uid="90000000-0000-4000-8000-000000000001",
+        )
+        self.calls = 0
+
+    def measure(self):
+        self.calls += 1
+        return self.measurement
+
+
+def write_authorization(path, request) -> None:
+    now = utc_now()
+    bound = {
+        key: request[key]
+        for key in (
+            "requestId",
+            "baseTipSha",
+            "baseSha",
+            "headSha",
+            "scopeSha256",
+            "subjectSha256",
+            "promptSha256",
+            "modelId",
+            "timeoutSeconds",
+        )
+    }
+    path.write_bytes(
+        canonical_bytes(
+            {
+                "schemaVersion": AUTHORIZATION_SCHEMA,
+                "audience": AUTH_AUDIENCE,
+                "token": "attestor." + ("a" * 64),
+                "issuedAt": (now - timedelta(minutes=1))
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "expiresAt": (now + timedelta(minutes=30))
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "maxUses": 1,
+                **bound,
+            }
+        )
+    )
+    path.chmod(0o600)
+
+
 class FixedRuntimeAttestorServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
         self.fixture = make_signed_evidence()
-        self.token = self.root / "authorization"
-        now = utc_now()
-        self.token.write_bytes(
-            canonical_bytes(
-                {
-                    "schemaVersion": AUTHORIZATION_SCHEMA,
-                    "audience": AUTH_AUDIENCE,
-                    "token": "attestor." + ("a" * 64),
-                    "issuedAt": (now - timedelta(minutes=1))
-                    .isoformat()
-                    .replace("+00:00", "Z"),
-                    "expiresAt": (now + timedelta(minutes=30))
-                    .isoformat()
-                    .replace("+00:00", "Z"),
-                }
-            )
+        self.now_patcher = patch.object(
+            MODULE,
+            "utc_now",
+            return_value=self.fixture.factory.now,
         )
-        self.token.chmod(0o600)
+        self.now_patcher.start()
         self.workspace = self.root / "workspace"
         self.workspace.mkdir(mode=0o700)
         self.receipt = execution_receipt(
             self.fixture.prompt,
             executable_policy=self.fixture.authority.codex_executable_policy,
-        )
-        self.runner = StaticRunner(self.receipt)
-        self.signer = CountingSigner(
-            self.fixture.factory,
-            self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
-        )
-        self.store = MODULE.RuntimeSessionStore(self.root / "sessions.sqlite3")
-        self.service = MODULE.FixedRuntimeAttestorService(
-            runtime_policy=self.fixture.authority.issuer_runtime_policy,
-            trust_root=self.fixture.authority.trust_root,
-            expected_trust_root_sha256=(
-                self.fixture.authority.expected_trust_root_sha256
-            ),
-            revocations_envelope=self.fixture.authority.revocations_envelope,
-            authorization_token_file=self.token,
-            store=self.store,
-            signer=self.signer,
-            runner=self.runner,
-            workspace=self.workspace,
         )
         self.request = {
             "schemaVersion": MODULE.SESSION_REQUEST_SCHEMA,
@@ -133,9 +154,43 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
             "toolPolicy": "none-pre-execution",
             "timeoutSeconds": 600,
         }
+        self.token = self.root / "authorization"
+        write_authorization(self.token, self.request)
+        self.trust_root = self.root / "trust-root.json"
+        self.trust_root.write_bytes(
+            canonical_bytes(self.fixture.authority.trust_root)
+        )
+        self.revocations = self.root / "revocations.json"
+        self.revocations.write_bytes(
+            canonical_bytes(self.fixture.authority.revocations_envelope)
+        )
+        self.runner = StaticRunner(self.receipt)
+        self.signer = CountingSigner(
+            self.fixture.factory,
+            self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
+        )
+        self.store = MODULE.RuntimeSessionStore(self.root / "sessions.sqlite3")
+        self.workload_verifier = StaticWorkloadVerifier(
+            self.fixture.authority.issuer_runtime_policy
+        )
+        self.service = MODULE.FixedRuntimeAttestorService(
+            runtime_policy=self.fixture.authority.issuer_runtime_policy,
+            trust_root_file=self.trust_root,
+            expected_trust_root_sha256=(
+                self.fixture.authority.expected_trust_root_sha256
+            ),
+            revocations_file=self.revocations,
+            authorization_token_file=self.token,
+            store=self.store,
+            signer=self.signer,
+            runner=self.runner,
+            workload_verifier=self.workload_verifier,
+            workspace=self.workspace,
+        )
 
     def tearDown(self) -> None:
         self.store.close()
+        self.now_patcher.stop()
         self.directory.cleanup()
 
     @staticmethod
@@ -200,6 +255,62 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
         self.assertEqual(first_result, second_result)
         self.assertEqual(1, runner.calls)
 
+    def test_concurrent_finalize_signs_once_and_returns_identical_envelope(self) -> None:
+        session = self.service.execute(self.request)
+        finalize = self._finalize_request(session)
+        with (
+            patch.object(MODULE, "utc_now", return_value=self.fixture.factory.now),
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            first = pool.submit(
+                self.service.finalize,
+                session["sessionId"],
+                dict(finalize),
+            )
+            second = pool.submit(
+                self.service.finalize,
+                session["sessionId"],
+                dict(finalize),
+            )
+            first_result = first.result(timeout=5)
+            second_result = second.result(timeout=5)
+        self.assertEqual(first_result, second_result)
+        self.assertEqual(1, self.signer.calls)
+
+    def test_request_scope_authorization_and_workload_measurement_fail_closed(
+        self,
+    ) -> None:
+        changed = dict(self.request)
+        changed["modelId"] = "gpt-5.3-codex-spark"
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_AUTH_SCOPE_MISMATCH",
+        ):
+            self.service.execute(changed)
+
+        self.workload_verifier.measurement = WorkloadMeasurement(
+            workload_identity=self.workload_verifier.measurement.workload_identity,
+            image_digest="sha256:" + ("f" * 64),
+            pod_uid=self.workload_verifier.measurement.pod_uid,
+        )
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_WORKLOAD_MISMATCH",
+        ):
+            self.service.execute(self.request)
+        self.assertEqual(0, self.runner.calls)
+
+    def test_revocation_authority_is_reloaded_before_finalize(self) -> None:
+        session = self.service.execute(self.request)
+        self.revocations.write_bytes(canonical_bytes({"invalid": True}))
+        finalize = self._finalize_request(session)
+        with (
+            patch.object(MODULE, "utc_now", return_value=self.fixture.factory.now),
+            self.assertRaises(PolicyError),
+        ):
+            self.service.finalize(session["sessionId"], finalize)
+        self.assertEqual(0, self.signer.calls)
+
     def test_caller_execution_and_forged_provider_leaf_are_rejected(self) -> None:
         injected = dict(self.request)
         injected["execution"] = MODULE.execution_document(self.receipt)
@@ -256,6 +367,32 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
         for value in (None, "Bearer wrong", "Basic token"):
             with self.assertRaisesRegex(PolicyError, "PROVIDER_RUNTIME_AUTH_DENIED"):
                 self.service.authorize(value)
+
+    def test_session_store_rejects_symlink_and_legacy_schema(self) -> None:
+        target = self.root / "target.sqlite3"
+        target.write_bytes(b"")
+        target.chmod(0o600)
+        alias = self.root / "alias.sqlite3"
+        alias.symlink_to(target)
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_STORE_INVALID",
+        ):
+            MODULE.RuntimeSessionStore(alias)
+
+        legacy = self.root / "legacy.sqlite3"
+        connection = sqlite3.connect(legacy)
+        connection.execute(
+            "CREATE TABLE runtime_sessions (session_id TEXT PRIMARY KEY)"
+        )
+        connection.commit()
+        connection.close()
+        legacy.chmod(0o600)
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_STORE_INVALID",
+        ):
+            MODULE.RuntimeSessionStore(legacy)
 
     def test_container_release_pins_match_public_executable_authority(self) -> None:
         root = Path(__file__).resolve().parents[2]

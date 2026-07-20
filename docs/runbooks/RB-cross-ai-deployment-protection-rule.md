@@ -352,6 +352,19 @@ owner-only session authorization, public Codex-only trust root and signed
 revocations are deployed and independently pinned, enforcement remains
 `tracked_pending`.
 
+The runtime workload does not receive a static Transit token. It authenticates
+to Vault through the `cross-ai-provider-review-runtime` Kubernetes role bound
+to namespace `cross-ai` and ServiceAccount `provider-review-issuer`. The role
+must issue a non-renewable, no-default-policy, `num_uses=2`, maximum-ten-minute
+token containing exactly `cross-ai-runner-management-test`: one use signs the
+verified runtime DSSE and the second use revokes itself. The service queries
+its own Pod through the in-cluster Kubernetes API and requires the exact Pod
+UID, ServiceAccount, ready/running container and CRI image digest to match the
+repo-public runtime policy before execution and again before finalization.
+Kubernetes RBAC must grant only `get` for the fixed runtime Pod; list/watch and
+mutation verbs are forbidden. A static runner token, caller-authored workload
+identity or policy-copied image digest is not acceptance evidence.
+
 The session authorization is a canonical JSON file with schema
 `acik.cross-ai-provider-review-runtime-authorization.v1`, the exact
 `acik-cross-ai-provider-review-runtime` audience, a non-empty bearer, and
@@ -359,6 +372,13 @@ RFC3339 `issuedAt`/`expiresAt` values no more than one hour apart. Both
 client and service open it with no-follow, regular-file, one-link, same-owner
 and `0600` checks; a non-canonical, future, expired or overlong credential is
 rejected before provider execution.
+It additionally binds `maxUses=1`, one canonical request UUID, exact
+base-tip/base/head Git SHAs, scope/subject/prompt SHA-256 values, model and
+timeout. Repeating the same UUID and canonical request is an idempotent
+transport recovery and returns the stored session; changing any bound field
+returns a conflict and never invokes the provider. Trust-root and signed
+revocation files are reopened and independently verified at each execution and
+finalization boundary, so an authority update takes effect without restart.
 
 ### One-time provider-review authority genesis and activation
 

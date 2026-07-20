@@ -443,25 +443,32 @@ class RemoteRuntimeAttestorTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.fixture = make_signed_evidence()
         self.token = self.root / "attestor-auth"
-        now = utc_now()
-        self.token.write_bytes(
-            canonical_bytes(
-                {
-                    "schemaVersion": AUTHORIZATION_SCHEMA,
-                    "audience": AUTH_AUDIENCE,
-                    "token": "attestor." + ("a" * 64),
-                    "issuedAt": (now - timedelta(minutes=1))
-                    .isoformat()
-                    .replace("+00:00", "Z"),
-                    "expiresAt": (now + timedelta(minutes=30))
-                    .isoformat()
-                    .replace("+00:00", "Z"),
-                }
-            )
-        )
-        self.token.chmod(0o600)
         self.prompt = "canonical review prompt"
         self.execution = execution_receipt(self.prompt)
+        now = utc_now()
+        self.authorization = {
+            "schemaVersion": AUTHORIZATION_SCHEMA,
+            "audience": AUTH_AUDIENCE,
+            "token": "attestor." + ("a" * 64),
+            "issuedAt": (now - timedelta(minutes=1))
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "expiresAt": (now + timedelta(minutes=30))
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "maxUses": 1,
+            "requestId": "60000000-0000-4000-8000-000000000098",
+            "baseTipSha": self.fixture.bindings["base_tip_sha"],
+            "baseSha": self.fixture.bindings["base_sha"],
+            "headSha": self.fixture.bindings["head_sha"],
+            "scopeSha256": "sha256:" + self.fixture.bindings["scope_sha256"],
+            "subjectSha256": "sha256:" + ("b" * 64),
+            "promptSha256": self.execution.input_sha256,
+            "modelId": "gpt-5.6-sol",
+            "timeoutSeconds": 600,
+        }
+        self.token.write_bytes(canonical_bytes(self.authorization))
+        self.token.chmod(0o600)
         self.execution_document = {
             "providerFamily": self.execution.provider_family,
             "channel": self.execution.channel,

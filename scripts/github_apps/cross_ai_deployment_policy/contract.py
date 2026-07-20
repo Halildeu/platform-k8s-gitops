@@ -1116,6 +1116,13 @@ class EvidenceVerifier:
             "apiOrigin",
             "sessionPath",
             "authAudience",
+            "kubernetesNamespace",
+            "kubernetesServiceAccount",
+            "kubernetesContainerName",
+            "vaultKubernetesAuthMount",
+            "vaultKubernetesRole",
+            "vaultTokenPolicy",
+            "maxReplicas",
         }
         if (
             not isinstance(runtime_policy, dict)
@@ -1127,6 +1134,7 @@ class EvidenceVerifier:
             != "/api/v1/cross-ai/provider-review-runtime/sessions"
             or runtime_policy.get("authAudience")
             != "acik-cross-ai-provider-review-runtime"
+            or runtime_policy.get("maxReplicas") != 1
         ):
             reject(
                 "PROVIDER_RUNTIME_POLICY_INVALID",

@@ -147,7 +147,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "faa8781bb34fbce357dde97e8bc0598be1a51f9e556e43eecae838371cc9402e",
+            "f489ce5c5109d0beefa63de4d20eb124f18f84ae798a2472fadeb2e908fc95b9",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:

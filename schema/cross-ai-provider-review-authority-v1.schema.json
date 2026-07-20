@@ -180,7 +180,14 @@
         "maxAttestationLifetimeSeconds",
         "apiOrigin",
         "sessionPath",
-        "authAudience"
+        "authAudience",
+        "kubernetesNamespace",
+        "kubernetesServiceAccount",
+        "kubernetesContainerName",
+        "vaultKubernetesAuthMount",
+        "vaultKubernetesRole",
+        "vaultTokenPolicy",
+        "maxReplicas"
       ],
       "properties": {
         "schemaVersion": {"const": "acik.cross-ai-provider-review-runtime-policy.v1"},
@@ -191,7 +198,14 @@
         "maxAttestationLifetimeSeconds": {"const": 600},
         "apiOrigin": {"type": "string", "pattern": "^https://[a-z0-9.-]+(?::[1-9][0-9]{0,4})?$"},
         "sessionPath": {"const": "/api/v1/cross-ai/provider-review-runtime/sessions"},
-        "authAudience": {"const": "acik-cross-ai-provider-review-runtime"}
+        "authAudience": {"const": "acik-cross-ai-provider-review-runtime"},
+        "kubernetesNamespace": {"const": "cross-ai"},
+        "kubernetesServiceAccount": {"const": "provider-review-issuer"},
+        "kubernetesContainerName": {"const": "runtime-attestor"},
+        "vaultKubernetesAuthMount": {"const": "kubernetes"},
+        "vaultKubernetesRole": {"const": "cross-ai-provider-review-runtime"},
+        "vaultTokenPolicy": {"const": "cross-ai-runner-management-test"},
+        "maxReplicas": {"const": 1}
       }
     },
     "historicalAuthority": {

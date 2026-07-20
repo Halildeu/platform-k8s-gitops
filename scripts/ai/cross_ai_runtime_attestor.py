@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from scripts.ai.cross_ai_runtime_authorization import (
     AUTH_AUDIENCE,
@@ -84,6 +84,13 @@ class RemoteRuntimeAttestor:
             "apiOrigin",
             "sessionPath",
             "authAudience",
+            "kubernetesNamespace",
+            "kubernetesServiceAccount",
+            "kubernetesContainerName",
+            "vaultKubernetesAuthMount",
+            "vaultKubernetesRole",
+            "vaultTokenPolicy",
+            "maxReplicas",
         }
         origin = runtime_policy.get("apiOrigin")
         parsed = urlsplit(origin) if isinstance(origin, str) else None
@@ -101,6 +108,7 @@ class RemoteRuntimeAttestor:
             or parsed.fragment
             or runtime_policy.get("sessionPath") != SESSION_PATH
             or runtime_policy.get("authAudience") != AUTH_AUDIENCE
+            or runtime_policy.get("maxReplicas") != 1
         ):
             reject(
                 "PROVIDER_RUNTIME_POLICY_INVALID",
@@ -182,7 +190,7 @@ class RemoteRuntimeAttestor:
             )
         request = {
             "schemaVersion": "acik.cross-ai-provider-review-runtime-session-request.v1",
-            "requestId": str(uuid4()),
+            "requestId": self._authorization.request["requestId"],
             "authAudience": self.runtime_policy["authAudience"],
             "baseTipSha": bindings["base_tip_sha"],
             "baseSha": bindings["base_sha"],
@@ -198,10 +206,11 @@ class RemoteRuntimeAttestor:
             "toolPolicy": "none-pre-execution",
             "timeoutSeconds": timeout_seconds,
         }
+        self._authorization.assert_request(request)
         response = self._post(
             self.runtime_policy["sessionPath"],
             request,
-            timeout_seconds=timeout_seconds + 90,
+            timeout_seconds=timeout_seconds + 120,
         )
         if (
             set(response) != {"schemaVersion", "sessionId", "execution"}

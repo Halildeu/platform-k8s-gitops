@@ -507,6 +507,17 @@ session API authorization ile bağlanır; attestor direct Codex'i kendisi çalı
 ölçülen transcript'i saklar ve ancak provider leaf aynı session ile exact
 eşleşirse runtime leaf'i imzalar. Caller-authored execution receipt, yerel
 runtime signer, gevşek izinli veya symlink auth dosyası fail-closed reddedilir.
+Authorization tek canonical request UUID'sini, base-tip/base/head/scope,
+subject/prompt digestlerini, exact modeli ve timeout'u bağlar; aynı UUID ile
+aynı canonical bytes yalnız network retry olarak idempotent döner, farklı bytes
+reddedilir. Attestor Pod kimliği, ServiceAccount, Pod UID, Running/ready durumu
+ve CRI `imageID` digestini in-cluster Kubernetes API'den ölçer ve public policy
+ile exact karşılaştırır. Transit imzası için statik token taşımaz: projected
+ServiceAccount JWT ile dar Vault Kubernetes role'üne login olur, yalnız mevcut
+`cross-ai-runner-management-test` sign policy'sini ve iki kullanımlık en fazla
+10 dakikalık non-renewable tokenı kabul eder, bir imzadan sonra `revoke-self`
+zorunludur. Public trust root ve signed revocations her execute ve finalize
+sınırında bağımsız digest pinine karşı yeniden okunur; service restart gerekmez.
 Canonical servis, entrypoint ve pinned non-root image sözleşmesi sırasıyla
 `scripts/ai/cross_ai_runtime_attestor_service.py`,
 `scripts/ai/run_cross_ai_runtime_attestor.py` ve

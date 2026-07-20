@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 from scripts.github_apps.cross_ai_deployment_policy.canonical import canonical_bytes
 from scripts.github_apps.cross_ai_deployment_policy.errors import reject
@@ -18,18 +20,44 @@ AUTHORIZATION_SCHEMA = "acik.cross-ai-provider-review-runtime-authorization.v1"
 AUTH_AUDIENCE = "acik-cross-ai-provider-review-runtime"
 MAX_AUTH_BYTES = 4096
 MAX_AUTH_LIFETIME = timedelta(hours=1)
+GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
+DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
+
+
+def _is_canonical_uuid(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(UUID(value)) == value
+    except (ValueError, AttributeError):
+        return False
 
 
 @dataclass(frozen=True)
 class RuntimeAuthorization:
     token: str
     expires_at: datetime
+    request: dict[str, object]
 
     def assert_active(self) -> None:
         if utc_now() >= self.expires_at:
             reject(
                 "PROVIDER_RUNTIME_AUTH_EXPIRED",
                 "runtime authorization is expired",
+            )
+
+    def assert_request(self, document: dict[str, object]) -> None:
+        self.assert_active()
+        expected = {
+            key: value
+            for key, value in self.request.items()
+            if key not in {"schemaVersion", "audience", "token", "issuedAt", "expiresAt", "maxUses"}
+        }
+        actual = {key: document.get(key) for key in expected}
+        if actual != expected:
+            reject(
+                "PROVIDER_RUNTIME_AUTH_SCOPE_MISMATCH",
+                "runtime request differs from its one-use authorization",
             )
 
 
@@ -64,17 +92,49 @@ def load_runtime_authorization(path: Path) -> RuntimeAuthorization:
         max_bytes=MAX_AUTH_BYTES,
         label="runtime authorization",
     )
-    required = {"schemaVersion", "audience", "token", "issuedAt", "expiresAt"}
+    required = {
+        "schemaVersion",
+        "audience",
+        "token",
+        "issuedAt",
+        "expiresAt",
+        "maxUses",
+        "requestId",
+        "baseTipSha",
+        "baseSha",
+        "headSha",
+        "scopeSha256",
+        "subjectSha256",
+        "promptSha256",
+        "modelId",
+        "timeoutSeconds",
+    }
     token = document.get("token") if isinstance(document, dict) else None
     if (
         not isinstance(document, dict)
         or set(document) != required
         or document.get("schemaVersion") != AUTHORIZATION_SCHEMA
         or document.get("audience") != AUTH_AUDIENCE
+        or document.get("maxUses") != 1
         or not isinstance(token, str)
         or not 32 <= len(token) <= 512
         or not token.isascii()
         or any(character.isspace() for character in token)
+        or not _is_canonical_uuid(document.get("requestId"))
+        or not isinstance(document.get("modelId"), str)
+        or document.get("modelId") not in {"gpt-5.3-codex-spark", "gpt-5.6-sol"}
+        or not isinstance(document.get("timeoutSeconds"), int)
+        or not 30 <= document["timeoutSeconds"] <= 1200
+        or any(
+            not isinstance(document.get(field), str)
+            or GIT_SHA.fullmatch(document[field]) is None
+            for field in ("baseTipSha", "baseSha", "headSha")
+        )
+        or any(
+            not isinstance(document.get(field), str)
+            or DIGEST.fullmatch(document[field]) is None
+            for field in ("scopeSha256", "subjectSha256", "promptSha256")
+        )
         or canonical_bytes(document) != raw
     ):
         reject(
@@ -94,7 +154,11 @@ def load_runtime_authorization(path: Path) -> RuntimeAuthorization:
             "PROVIDER_RUNTIME_AUTH_EXPIRED",
             "runtime authorization lifetime is invalid or expired",
         )
-    return RuntimeAuthorization(token=token, expires_at=expires_at)
+    return RuntimeAuthorization(
+        token=token,
+        expires_at=expires_at,
+        request=document,
+    )
 
 
 __all__ = [
