@@ -1479,7 +1479,7 @@ async function appendPriorRevisionFinding(
       || parsed.evidence.verdict !== status.verdict
       || parsed.evidence.head_sha?.toLowerCase() !== status.sha?.toLowerCase()
       || parsed.evidence.execution_provenance?.thread_id?.toLowerCase() !== status.threadId
-      || parsed.createdAtMs < status.createdAtMs
+      || parsed.createdAtMs <= status.createdAtMs
     ) {
       invalidCandidates.push(`${status.ref || 'missing-ledger-ref'} (status ledger payload mismatch)`);
       continue;

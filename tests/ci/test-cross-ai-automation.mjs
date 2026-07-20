@@ -224,8 +224,8 @@ const evidenceLedgerFromMap = (evidenceMap) => Object.entries(evidenceMap)
       description: `v4 openai ${body.verdict} pr=${comment.issueNumber} thread=${body.execution_provenance?.thread_id}`,
       targetUrl: `https://github.com/${REPO}/pull/${comment.issueNumber}`,
       creator: comment.author,
-      createdAt: comment.createdAt,
-      updatedAt: comment.createdAt,
+      createdAt: new Date(Date.parse(comment.createdAt) - 1_000).toISOString(),
+      updatedAt: new Date(Date.parse(comment.createdAt) - 1_000).toISOString(),
       ref: `https://api.github.com/repos/${REPO}/statuses/${index + 1}`,
     }];
   });
@@ -1476,6 +1476,30 @@ const cases = [
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
       evidenceLedger: [],
       expectedFailureCheck: 'consultation_selected_receipts_ledgered' }, 1],
+  ['selected receipt rejects an equal-timestamp ledger with unproven publication order',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidenceLedger: evidenceLedgerFromMap(EVIDENCE).map((status) => (
+        status.context === `cross-ai/evidence/${sha256(EVIDENCE[CODEX_REF].body)}`
+          ? { ...status,
+              createdAt: EVIDENCE[CODEX_REF].createdAt,
+              updatedAt: EVIDENCE[CODEX_REF].createdAt }
+          : status
+      )),
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['selected receipt rejects a ledger created after its owner comment',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidenceLedger: evidenceLedgerFromMap(EVIDENCE).map((status) => {
+        if (status.context !== `cross-ai/evidence/${sha256(EVIDENCE[CODEX_REF].body)}`) {
+          return status;
+        }
+        const afterComment = new Date(
+          Date.parse(EVIDENCE[CODEX_REF].createdAt) + 1_000,
+        ).toISOString();
+        return { ...status, createdAt: afterComment, updatedAt: afterComment };
+      }),
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['explicit single mode rejects a missing consultation tier',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace(/^Consultation tier:.*\n/m, ''), changedFiles: [ROUTINE_PATH],

@@ -78,15 +78,22 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         )
         return value
 
-    def write_comment_event(self, action: str, comment_id: int) -> None:
+    def write_comment_event(
+        self,
+        action: str,
+        comment_id: int,
+        *,
+        author: str = "Halildeu",
+        association: str = "OWNER",
+    ) -> None:
         self.event_path.write_text(
             json.dumps({
                 "action": action,
                 "comment": {
                     "id": comment_id,
                     "body": "mutated evidence",
-                    "user": {"login": "Halildeu"},
-                    "author_association": "OWNER",
+                    "user": {"login": author},
+                    "author_association": association,
                 },
                 "issue": {
                     "number": self.issue,
@@ -766,8 +773,8 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
 
-    def test_selected_comment_mutation_appends_failure_check_to_exact_pr_head(self) -> None:
-        for action in ("edited", "deleted"):
+    def test_owner_comment_history_change_fails_exact_pr_head(self) -> None:
+        for action in ("created", "edited", "deleted"):
             with self.subTest(action=action):
                 self.write_comment_event(action, self.comment_id)
                 failed_check = {
@@ -802,11 +809,11 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                     ),
                     mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
                 ):
-                    result = MODULE.invalidate_selected_comment_mutation(
+                    result = MODULE.invalidate_owner_comment_history_change(
                         self.repo, self.event_path
                     )
                 self.assertEqual(
-                    result["action"], "selected-evidence-mutation-invalidated"
+                    result["action"], "owner-comment-history-change-invalidated"
                 )
                 self.assertEqual(result["check_run_id"], 501)
                 self.assertIn(f"repos/{self.repo}/check-runs", calls[-1][0])
@@ -842,11 +849,26 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
             self.assertRaises(SystemExit),
         ):
-            MODULE.invalidate_selected_comment_mutation(self.repo, self.event_path)
+            MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
 
-    def test_unselected_comment_mutation_has_no_gate_authority(self) -> None:
-        self.write_comment_event("deleted", self.comment_id + 1)
+    def test_unselected_owner_comment_change_still_invalidates_history(self) -> None:
+        self.write_comment_event("edited", self.comment_id + 1)
+        failed_check = {
+            "id": 502,
+            "name": "cross-ai-audit",
+            "head_sha": self.head,
+            "status": "completed",
+            "conclusion": "failure",
+            "details_url": self.url,
+            "external_id": (
+                f"cross-ai-evidence-comment-{self.comment_id + 1}-edited"
+            ),
+            "app": {"slug": "github-actions"},
+        }
         calls: list[list[str]] = []
+        responses = [self.current_pr(self.body()), failed_check]
 
         def runner(
             command: list[str], **_kwargs: object
@@ -855,7 +877,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             return subprocess.CompletedProcess(
                 command,
                 0,
-                stdout=json.dumps(self.current_pr(self.body())),
+                stdout=json.dumps(responses.pop(0)),
                 stderr="",
             )
 
@@ -863,11 +885,36 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
             mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
         ):
-            result = MODULE.invalidate_selected_comment_mutation(
+            result = MODULE.invalidate_owner_comment_history_change(
                 self.repo, self.event_path
             )
-        self.assertEqual(result["action"], "ignored-unselected-comment")
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["action"], "owner-comment-history-change-invalidated")
+        self.assertEqual(len(calls), 2)
+
+    def test_non_owner_comment_change_has_no_gate_authority(self) -> None:
+        self.write_comment_event(
+            "created",
+            self.comment_id + 1,
+            author="collaborator",
+            association="COLLABORATOR",
+        )
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    ["gh"],
+                    0,
+                    stdout=json.dumps(self.current_pr(self.body())),
+                    stderr="",
+                ),
+            ),
+        ):
+            result = MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["action"], "ignored-untrusted-comment")
 
 if __name__ == "__main__":
     unittest.main()

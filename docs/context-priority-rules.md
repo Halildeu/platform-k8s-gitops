@@ -441,6 +441,9 @@ exact head, body SHA-256, thread ve verdict'e bağlı ayrı create-only commit-s
 ledger kaydı yorumdan önce üretilir ve exact PR URL'sine bağlanır. Gate yorumları
 ledger'a mutable yorum URL'siyle değil body digest'iyle bağlar; aynı digest'in
 exact retry kopyaları tek authority kaydıdır, çelişkili duplicate fail-closed olur.
+Ledger ve owner comment farklı GitHub timestamp saniyelerinde üretilir; ledger
+timestamp'i comment timestamp'inden kesin küçük değilse yayın sırası kanıtlanmış
+sayılmaz ve gate fail-closed kalır.
 GitHub aynı saniye içinde üretilen iki status'a eşit timestamp döndürürse sıra,
 server tarafından verilen monoton numeric status ID ile belirlenir. Yalnız yorum
 timestamp'i olan veya status ID'si doğrulanamayan eş-zamanlı `REVISE`/`AGREE`
@@ -584,11 +587,12 @@ digest, OWNER association ve `created_at == updated_at` immutability koşulunu
 korur. Helper required commit-status yazmaz; başarılı çıkışı trusted-base
 workflow'un native, exact-head `cross-ai-audit` job check'ini sonuçlandırır.
 Mutable PR body/comment yalnız bu snapshot'ın taşıma girdisidir; job success
-sonrasında seçili owner comment'inin edit/silinmesi trusted `issue_comment`
-guard tarafından shared concurrency altında yakalanır ve exact PR head'ine
-`cross-ai-audit` adlı completed/failure check-run ekler. Guard unselected comment'i,
-düz challenger metnini veya owner'ın elle yazdığı `VERDICT: REVISE` metnini
-otorite saymaz. Yeni review generation'ı yalnız draft-only trusted poster ile
+sonrasında herhangi bir owner PR comment'inin create/edit/silinmesi trusted
+`issue_comment` guard tarafından shared concurrency altında yakalanır ve exact
+PR head'ine `cross-ai-audit` adlı completed/failure check-run ekler. Bu geniş
+invalidasyon, tam audit'in seçilmemiş owner evidence adaylarını ve düzenlenmiş
+owner geçmişini fail-closed taramasıyla atomiktir; non-owner comment'ler gate
+otoritesi üretmez. Yeni review generation'ı yalnız draft-only trusted poster ile
 başlar ve `ready_for_review` üzerinde yeni native job check'i gerektirir.
 Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
 `Consultation commit` SHA'sında doğrular; metadata-only güncel head için merge

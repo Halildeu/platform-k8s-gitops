@@ -70,12 +70,13 @@ on:
       # When the audit script gains genuine label-aware semantics, this
       # block should be re-added with the matching script logic in the
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
-  # Selected owner evidence is mutable even after a successful PR-head check.
-  # Edit/delete events run on the trusted default branch and append a failing
-  # `cross-ai-audit` check-run to that exact PR head after shared concurrency
-  # has cancelled any older audit run. Unselected comments have no authority.
+  # Owner-authored PR comment history can add or mutate fail-closed evidence
+  # after a successful PR-head check. Create/edit/delete events run on the
+  # trusted default branch and append a failing `cross-ai-audit` check-run to
+  # that exact PR head after shared concurrency has cancelled any older audit.
   issue_comment:
     types:
+      - created
       - edited
       - deleted
 permissions:
@@ -289,7 +290,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
 
-      - name: Invalidate selected evidence mutation on exact PR head
+      - name: Invalidate owner comment history change on exact PR head
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

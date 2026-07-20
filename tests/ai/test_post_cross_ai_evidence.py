@@ -171,6 +171,8 @@ class EvidenceValidationTests(unittest.TestCase):
                         "id": identifier,
                         "url": f"https://api.github.com/repos/Halildeu/platform-k8s-gitops/statuses/{identifier}",
                         "creator": {"login": "Halildeu"},
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
                     }),
                 )
             if "/comments" in command[2]:
@@ -194,6 +196,7 @@ class EvidenceValidationTests(unittest.TestCase):
             pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
             pr_body="## Cross-AI\nConsultation mode: single\n",
             runner=runner,
+            sleeper=lambda _seconds: None,
         )
         self.assertIn("GET", calls[0])
         self.assertIn("PATCH", calls[1])
@@ -213,6 +216,87 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertTrue(current_body.endswith(result["audit_recheck_marker"] + "\n"))
         self.assertNotIn("cross-ai-publication-lock", current_body)
         self.assertIn("concurrent human edit", current_body)
+
+    def test_comment_timestamp_must_be_strictly_after_ledger(self) -> None:
+        payload = evidence()
+        text = json.dumps(payload, separators=(",", ":"))
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        current_body = "body"
+        etag_version = 0
+        calls: list[list[str]] = []
+        sleeps: list[float] = []
+
+        def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            nonlocal current_body, etag_version
+            calls.append(command)
+            if "/pulls/" in command[2] and "GET" in command:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=included_pr(
+                        current_body, payload["head_sha"], f'"v{etag_version}"'
+                    ),
+                )
+            if "/pulls/" in command[2]:
+                current_body = json.loads(str(kwargs["input"]))["body"]
+                etag_version += 1
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "body": current_body,
+                        "state": "open",
+                        "draft": True,
+                        "head": {"sha": payload["head_sha"]},
+                    }),
+                )
+            if "/statuses/" in command[2]:
+                posted = json.loads(str(kwargs["input"]))
+                identifier = 11 if posted["context"].startswith(
+                    "cross-ai/evidence/"
+                ) else 10
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        **posted,
+                        "id": identifier,
+                        "url": f"https://api.github.com/statuses/{identifier}",
+                        "creator": {"login": "Halildeu"},
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
+                    }),
+                )
+            if "/comments" in command[2]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        "url": "https://api.github.com/comments/1",
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
+                    }),
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.publish_evidence(
+                repo="Halildeu/platform-k8s-gitops",
+                issue_number=2638,
+                evidence=payload,
+                evidence_text=text,
+                body_sha256=digest,
+                pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
+                pr_body="body",
+                runner=runner,
+                sleeper=sleeps.append,
+            )
+        self.assertEqual(sleeps, [MODULE.LEDGER_COMMENT_DELAY_SECONDS])
+        self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
 
     def test_invalidation_failure_never_creates_binding_evidence(self) -> None:
         payload = evidence()
@@ -274,6 +358,8 @@ class EvidenceValidationTests(unittest.TestCase):
                         "id": 10,
                         "url": "https://api.github.com/statuses/10",
                         "creator": {"login": "Halildeu"},
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
                     }),
                 )
             if "GET" in command:
@@ -334,6 +420,8 @@ class EvidenceValidationTests(unittest.TestCase):
                         "id": 1,
                         "url": "https://api.github.com/statuses/1",
                         "creator": {"login": "Halildeu"},
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
                     }),
                 )
             return subprocess.CompletedProcess(command, 1, stdout="")
@@ -379,6 +467,8 @@ class EvidenceValidationTests(unittest.TestCase):
                         "id": len(calls),
                         "url": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/statuses/2",
                         "creator": {"login": "Halildeu"},
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
                     }),
                 )
             if "/pulls/" in command[2]:
@@ -407,6 +497,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
                     pr_body="body",
                     runner=runner,
+                    sleeper=lambda _seconds: None,
                 )
         self.assertEqual(len(calls), 7)
         self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
@@ -440,6 +531,8 @@ class EvidenceValidationTests(unittest.TestCase):
                         "id": len(calls),
                         "url": f"https://api.github.com/statuses/{len(calls)}",
                         "creator": {"login": "Halildeu"},
+                        "created_at": "2026-07-19T18:00:00Z",
+                        "updated_at": "2026-07-19T18:00:00Z",
                     }),
                 )
             if "/comments" in command[2]:
@@ -481,6 +574,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
                     pr_body="body",
                     runner=runner,
+                    sleeper=lambda _seconds: None,
                 )
         self.assertEqual(len(calls), 9)
         self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
@@ -569,9 +663,9 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertIn("Validate exact-head publication generation", workflow)
         self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
         self.assertIn("issue_comment:", workflow)
+        self.assertIn("- created", workflow)
         self.assertIn("- edited", workflow)
         self.assertIn("- deleted", workflow)
-        self.assertNotIn("- created", workflow)
         self.assertIn("- ready_for_review", workflow)
         self.assertIn("- converted_to_draft", workflow)
         self.assertIn("cross-ai-evidence-mutation-guard", workflow)

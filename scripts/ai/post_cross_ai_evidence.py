@@ -15,7 +15,9 @@ import re
 import secrets
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import NoReturn
 
@@ -34,6 +36,7 @@ THREAD_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+LEDGER_COMMENT_DELAY_SECONDS = 1.1
 EMAIL_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
 )
@@ -311,6 +314,18 @@ def audit_invalidation_payload(pr_url: str) -> dict:
     }
 
 
+def github_timestamp_ms(value: object) -> int | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return int(parsed.timestamp() * 1000)
+
+
 def parse_included_pr_response(output: str) -> tuple[dict, str]:
     normalized = output.replace("\r\n", "\n")
     headers, separator, body = normalized.rpartition("\n\n")
@@ -496,6 +511,7 @@ def publish_evidence(
     pr_url: str,
     pr_body: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> dict:
     """Publish evidence under one exact-head audit generation.
 
@@ -600,8 +616,11 @@ def publish_evidence(
         ledger_context = status_record["context"]
         ledger_creator = status_record["creator"]["login"].lower()
         ledger_id = status_record["id"]
+        ledger_created_at = status_record["created_at"]
+        ledger_updated_at = status_record["updated_at"]
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_status_ledger_invalid")
+    ledger_created_at_ms = github_timestamp_ms(ledger_created_at)
     if (
         ledger_context != f"cross-ai/evidence/{body_sha256}"
         or not isinstance(ledger_id, int)
@@ -610,8 +629,16 @@ def publish_evidence(
         or status_record.get("state") != expected_status["state"]
         or status_record.get("description") != expected_status["description"]
         or status_record.get("target_url") != pr_url
+        or ledger_created_at != ledger_updated_at
+        or ledger_created_at_ms is None
     ):
         fail("gh_status_ledger_invalid")
+
+    # GitHub commit-status and issue-comment timestamps have second-level
+    # resolution. Cross that boundary before posting so the immutable ledger's
+    # publication order is externally provable, then verify it from GitHub's
+    # own response rather than trusting the local clock.
+    sleeper(LEDGER_COMMENT_DELAY_SECONDS)
 
     payload = json.dumps(
         {"body": evidence_text}, ensure_ascii=False, separators=(",", ":")
@@ -644,6 +671,13 @@ def publish_evidence(
         updated_at = comment["updated_at"]
     except (json.JSONDecodeError, KeyError, TypeError):
         fail("gh_response_invalid")
+    comment_created_at_ms = github_timestamp_ms(created_at)
+    if (
+        created_at != updated_at
+        or comment_created_at_ms is None
+        or comment_created_at_ms <= ledger_created_at_ms
+    ):
+        fail("gh_response_publication_order_invalid")
 
     recheck_marker = patch_recheck_marker(
         repo=repo,

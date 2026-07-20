@@ -270,17 +270,6 @@ def requires_publication_marker(body: str) -> bool:
     return "single" in modes or CODEX_RECEIPT_RE.search(body) is not None
 
 
-def selected_comment_id(body: str, repo: str) -> int | None:
-    fields = parse_selected_evidence_fields(body)
-    if fields is None:
-        return None
-    match = re.fullmatch(
-        rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
-        fields.get("ref", ""),
-    )
-    return int(match.group(1)) if match is not None else None
-
-
 def failed_check_payload(head: str, url: str, comment_id: int, action: str) -> dict:
     external_id = f"cross-ai-evidence-comment-{comment_id}-{action}"
     return {
@@ -291,8 +280,8 @@ def failed_check_payload(head: str, url: str, comment_id: int, action: str) -> d
         "details_url": url,
         "external_id": external_id,
         "output": {
-            "title": "Selected Cross-AI evidence changed",
-            "summary": "Publish a new exact-scope review generation while the PR is draft.",
+            "title": "Owner PR comment history changed",
+            "summary": "Rerun the trusted exact-head audit before this PR can merge.",
         },
     }
 
@@ -324,7 +313,7 @@ def valid_failed_check(
     )
 
 
-def invalidate_selected_comment_mutation(repo: str, event_path: Path) -> dict:
+def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict:
     if REPO_RE.fullmatch(repo) is None or shutil.which("gh") is None:
         fail("invalid_audit_mutation_target")
     try:
@@ -339,7 +328,7 @@ def invalidate_selected_comment_mutation(repo: str, event_path: Path) -> dict:
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("invalid_audit_mutation_event")
     if (
-        action not in {"edited", "deleted"}
+        action not in {"created", "edited", "deleted"}
         or not isinstance(comment_id, int)
         or not isinstance(issue_number, int)
         or issue_number < 1
@@ -352,25 +341,18 @@ def invalidate_selected_comment_mutation(repo: str, event_path: Path) -> dict:
     expected_url = f"https://github.com/{repo}/pull/{issue_number}"
     try:
         head = current["head"]["sha"].lower()
-        body = current.get("body") or ""
     except (KeyError, TypeError, AttributeError):
         fail("github_pr_mutation_guard_invalid")
     if (
         current.get("state") != "open"
         or current.get("html_url") != expected_url
         or SHA_RE.fullmatch(head) is None
-        or not isinstance(body, str)
     ):
         return {"ok": True, "action": "ignored-non-open-pr"}
 
     owner = repo.split("/", 1)[0].lower()
-    selected_id = selected_comment_id(body, repo)
-    if (
-        selected_id != comment_id
-        or comment_author != owner
-        or comment_association != "OWNER"
-    ):
-        return {"ok": True, "action": "ignored-unselected-comment"}
+    if comment_author != owner or comment_association != "OWNER":
+        return {"ok": True, "action": "ignored-untrusted-comment"}
 
     request = failed_check_payload(head, expected_url, comment_id, action)
     created = gh_json(
@@ -387,7 +369,7 @@ def invalidate_selected_comment_mutation(repo: str, event_path: Path) -> dict:
         fail("audit_mutation_check_invalid")
     return {
         "ok": True,
-        "action": "selected-evidence-mutation-invalidated",
+        "action": "owner-comment-history-change-invalidated",
         "comment_action": action,
         "check_run_id": created["id"],
         "head_sha": head,
@@ -652,7 +634,7 @@ def main() -> None:
     else:
         if args.issue is not None:
             fail("invalid_audit_mutation_target")
-        result = invalidate_selected_comment_mutation(
+        result = invalidate_owner_comment_history_change(
             args.repo, args.comment_event_path
         )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
