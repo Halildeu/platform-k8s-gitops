@@ -3,12 +3,18 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (durumsal az-kanal governance, #2621):
+# Required check (durumsal az-kanal governance, #2621 + kullanıcı 2026-07-20
+# esnetmesi #2708/#2709):
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
-# - single: exact direct Claude Opus 4.8 + exact scope + AGREE + provider-distinct
-# - dual: irreversible/high-risk/human-authority trigger + exact Claude + Codex;
-#   maximum two, MiniMax forbidden, parallel publication allowed
-# - Fetched owner evidence, model, freshness, digest and redaction remain strict
+# - single: exactly one provider receipt from any accepted provider
+#   (Claude/Codex/MiniMax/GLM) + exact scope + AGREE + provider-distinct from
+#   implementer. Model choice is flexible within each provider — no specific
+#   slug is a gate.
+# - dual: irreversible/high-risk/human-authority trigger + exactly two
+#   provider-distinct receipts from the four accepted providers; maximum two,
+#   parallel publication allowed.
+# - Fetched owner evidence, real modelUsage identity, freshness, digest and
+#   redaction remain strict.
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
 # prefix (auto-test-overlay/ · auto-test-frontend/ · auto-verified/) is audited in
