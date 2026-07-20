@@ -693,7 +693,7 @@ fi
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "permission": "sha256:cd15e8777531513c927094cbd5390d147515addcddef257c8eeffc091edd9483",
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
@@ -848,7 +848,7 @@ fi
         self.assertIn("changed-file set escaped two-file contract", self.rollback_script)
         for digest in (
             "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "sha256:cd15e8777531513c927094cbd5390d147515addcddef257c8eeffc091edd9483",
             "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
         ):
@@ -954,7 +954,7 @@ fi
     def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
         current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
-        current_permission = "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
+        current_permission = "sha256:cd15e8777531513c927094cbd5390d147515addcddef257c8eeffc091edd9483"
         promoted = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
             "tag": "sha-eee1310",

@@ -1475,7 +1475,13 @@ images:
     # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
     #          proves the artifact, not the full source lineage. Reconcile the Actions run
     #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
+    # 2026-07-19 update: sha-641bcf7 — platform-backend PR #893 restores the
+    # durable ADMIN -> MODULE:endpoint-admin:MANAGE grant through
+    # PermissionDataInitializer and the existing RoleChangeEvent/outbox/TupleSync
+    # path. ENDPOINT_ADMIN_VIEWER remains the least-privilege read-only role.
+    # Image build run 29689222865; permission-service job 88198872574 succeeded.
+    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:cd15e8777531513c927094cbd5390d147515addcddef257c8eeffc091edd9483
+    digest: sha256:cd15e8777531513c927094cbd5390d147515addcddef257c8eeffc091edd9483
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
