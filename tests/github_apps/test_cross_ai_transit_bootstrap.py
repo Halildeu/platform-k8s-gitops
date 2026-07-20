@@ -483,7 +483,7 @@ class TransitBootstrapTests(unittest.TestCase):
             config_policy,
         )
         self.assertIn('K8S_RUNNER_ROLE="cross-ai-provider-review-runtime"', reconciler)
-        self.assertIn('"token_num_uses":1', reconciler)
+        self.assertIn('"token_num_uses":2', reconciler)
         self.assertIn('legacy runner AppRole remains readable', reconciler)
 
 

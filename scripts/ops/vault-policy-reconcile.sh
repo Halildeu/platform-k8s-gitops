@@ -183,7 +183,7 @@ done
 
 # Runner-management signing is available only to the measured runtime Pod.
 K8S_RUNNER_ROLE="cross-ai-provider-review-runtime"
-K8S_RUNNER_BODY='{"bound_service_account_names":["provider-review-issuer"],"bound_service_account_namespaces":["cross-ai"],"audience":"vault","token_policies":["cross-ai-runner-management-test"],"token_ttl":"10m","token_max_ttl":"10m","token_explicit_max_ttl":"10m","token_num_uses":1,"token_no_default_policy":true}'
+K8S_RUNNER_BODY='{"bound_service_account_names":["provider-review-issuer"],"bound_service_account_namespaces":["cross-ai"],"audience":"vault","token_policies":["cross-ai-runner-management-test"],"token_ttl":"10m","token_max_ttl":"10m","token_explicit_max_ttl":"10m","token_num_uses":2,"token_no_default_policy":true}'
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "  DRY   kubernetes-role $K8S_RUNNER_ROLE; delete legacy runner AppRole"
 elif ! api POST "auth/kubernetes/role/$K8S_RUNNER_ROLE" "$K8S_RUNNER_BODY" >/dev/null; then
@@ -200,7 +200,7 @@ elif ! jq -e '
     and .data.token_ttl == 600
     and .data.token_max_ttl == 600
     and .data.token_explicit_max_ttl == 600
-    and .data.token_num_uses == 1
+    and .data.token_num_uses == 2
     and .data.token_no_default_policy == true
   ' <<<"$role_readback" >/dev/null; then
   echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE binding differs" >&2
