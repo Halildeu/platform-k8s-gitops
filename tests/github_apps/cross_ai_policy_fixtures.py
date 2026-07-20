@@ -261,6 +261,7 @@ class FixtureFactory:
             "kubernetesContainerCommand": ["python", "-m", "scripts.ai.run_cross_ai_runtime_attestor"],
             "kubernetesContainerArgsSha256": digest("provider-review-container-args"),
             "kubernetesContainerSecurityContextSha256": digest("provider-review-security-context"),
+            "kubernetesPodSecurityProjectionSha256": digest("provider-review-pod-spec"),
             "vaultKubernetesAuthMount": "kubernetes",
             "vaultKubernetesRole": "cross-ai-provider-review-runtime",
             "vaultTokenPolicy": "cross-ai-runner-management-test",

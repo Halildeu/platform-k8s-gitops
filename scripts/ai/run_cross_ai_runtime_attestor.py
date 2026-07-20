@@ -123,6 +123,9 @@ def main() -> int:
         expected_security_context_sha256=authority["issuerRuntimePolicy"][
             "kubernetesContainerSecurityContextSha256"
         ],
+        expected_pod_security_projection_sha256=authority["issuerRuntimePolicy"][
+            "kubernetesPodSecurityProjectionSha256"
+        ],
         api_token_file=args.kubernetes_api_token_file,
         transport=KubernetesPodTransport(
             api_origin="https://kubernetes.default.svc",

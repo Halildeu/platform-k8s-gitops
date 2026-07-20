@@ -430,20 +430,27 @@ class RuntimeSessionStore:
 
     def get(
         self, session_id: str
-    ) -> tuple[dict[str, Any], dict[str, Any], WorkloadMeasurement, str, dict[str, Any]]:
+    ) -> tuple[
+        dict[str, Any],
+        dict[str, Any],
+        str,
+        WorkloadMeasurement,
+        str,
+        dict[str, Any],
+    ]:
         with self.lock:
             row = self.connection.execute(
                 """
-                SELECT request_json, execution_json, workload_identity,
-                       image_digest, pod_uid, trust_root_sha256, runtime_policy_json,
-                       execution_state
+                SELECT request_json, execution_json, review_issued_at,
+                       workload_identity, image_digest, pod_uid,
+                       trust_root_sha256, runtime_policy_json, execution_state
                 FROM runtime_sessions WHERE session_id = ?
                 """,
                 (session_id,),
             ).fetchone()
         if row is None:
             reject("PROVIDER_RUNTIME_SESSION_MISSING", "runtime session is unavailable")
-        if row[7] != "COMPLETE" or row[1] is None:
+        if row[8] != "COMPLETE" or row[1] is None or row[2] is None:
             reject(
                 "PROVIDER_RUNTIME_EXECUTION_UNCERTAIN",
                 "runtime session has no durable provider execution",
@@ -451,13 +458,14 @@ class RuntimeSessionStore:
         return (
             json.loads(row[0]),
             json.loads(row[1]),
+            row[2],
             WorkloadMeasurement(
-                workload_identity=row[2],
-                image_digest=row[3],
-                pod_uid=row[4],
+                workload_identity=row[3],
+                image_digest=row[4],
+                pod_uid=row[5],
             ),
-            row[5],
-            json.loads(row[6]),
+            row[6],
+            json.loads(row[7]),
         )
 
     def prepare_finalization(
@@ -885,9 +893,14 @@ class FixedRuntimeAttestorService:
                 "runtime finalization request differs from the fixed contract",
             )
         self.authorization.assert_active()
-        request, execution, stored_measurement, trust_root_digest, runtime_policy = (
-            self.store.get(session_id)
-        )
+        (
+            request,
+            execution,
+            review_issued_at,
+            stored_measurement,
+            trust_root_digest,
+            runtime_policy,
+        ) = self.store.get(session_id)
         generation = self._authority_generation(trust_root_digest)
         if generation.runtime_policy != runtime_policy:
             reject(
@@ -941,6 +954,8 @@ class FixedRuntimeAttestorService:
         expires_at = parse_utc(document.get("expiresAt"), "runtime.expiresAt")
         if (
             issued_at != verified.issued_at
+            or issued_at
+            != parse_utc(review_issued_at, "runtime.reviewIssuedAt")
             or expires_at <= issued_at
             or expires_at - issued_at > timedelta(seconds=600)
         ):

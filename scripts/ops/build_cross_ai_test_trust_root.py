@@ -203,6 +203,8 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
         "policy:cross-ai-issuer-anthropic-test",
         "approle:cross-ai-issuer-minimax-test",
         "policy:cross-ai-issuer-minimax-test",
+        "approle:cross-ai-runner-management-test",
+        "token-policy:cross-ai-runner-management-test",
     ]:
         raise TrustRootBuildError("retired provider signing authority absence is unverified")
     for field in ("vaultOrigin", "vaultClusterId", "vaultClusterName"):
@@ -329,6 +331,7 @@ def build_trust_root(
     issuer_image_digest: str,
     launcher_source_sha256: str,
     container_args_sha256: str,
+    pod_security_projection_sha256: str,
     attestor_api_origin: str,
     previous_trust_root: dict[str, Any] | None = None,
     max_clock_skew_seconds: int = 60,
@@ -357,6 +360,7 @@ def build_trust_root(
         ("issuer image digest", issuer_image_digest),
         ("launcher source digest", launcher_source_sha256),
         ("container args digest", container_args_sha256),
+        ("Pod security projection digest", pod_security_projection_sha256),
     ):
         if (
             not isinstance(value, str)
@@ -576,6 +580,9 @@ def build_trust_root(
                     }
                 )
             ).hexdigest(),
+            "kubernetesPodSecurityProjectionSha256": (
+                pod_security_projection_sha256
+            ),
             "vaultKubernetesAuthMount": "kubernetes",
             "vaultKubernetesRole": "cross-ai-provider-review-runtime",
             "vaultTokenPolicy": "cross-ai-runner-management-test",
@@ -617,6 +624,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--issuer-image-digest", required=True)
     parser.add_argument("--launcher-source-sha256", required=True)
     parser.add_argument("--container-args-sha256", required=True)
+    parser.add_argument("--pod-security-projection-sha256", required=True)
     parser.add_argument("--attestor-api-origin", required=True)
     parser.add_argument("--previous-trust-root", type=Path)
     parser.add_argument("--max-clock-skew-seconds", type=int, default=60)
@@ -635,6 +643,9 @@ def main(argv: list[str] | None = None) -> int:
             issuer_image_digest=args.issuer_image_digest,
             launcher_source_sha256=args.launcher_source_sha256,
             container_args_sha256=args.container_args_sha256,
+            pod_security_projection_sha256=(
+                args.pod_security_projection_sha256
+            ),
             attestor_api_origin=args.attestor_api_origin,
             previous_trust_root=(
                 _load_previous_trust_root(args.previous_trust_root)

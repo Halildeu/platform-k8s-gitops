@@ -200,9 +200,35 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
         return json.loads(base64.b64decode(envelope["payload"], validate=True))
 
     def _finalize_request(self, session):
-        review = self.fixture.evidence["review_envelope"]
+        template = self._payload(self.fixture.evidence["review_envelope"])
+        issued = parse_utc(session["reviewIssuedAt"], "review.issuedAt")
+        review = ProviderReviewIssuer(
+            signer=StaticSigner(
+                self.fixture.factory,
+                self.fixture.factory.OPENAI_KEY_ID,
+            ),
+            provider_family="openai",
+            channel="openai-codex",
+            direct_provider_cli=True,
+            model_identity_class="trusted-launch-attested",
+            allowed_models=(self.receipt.model_id,),
+            issuer="cross-ai-issuer-openai",
+        ).issue(
+            execution=self.receipt,
+            coordinates=ReviewCoordinates(
+                review_id=template["reviewId"],
+                review_chain_id=template["reviewChainId"],
+                subject_sha256=sha256_digest(self.fixture.subject),
+                round=template["round"],
+                previous_round_sha256=template["previousRoundSha256"],
+                closure_root_sha256=template["closureRootSha256"],
+                issued_at=session["reviewIssuedAt"],
+                expires_at=(issued + timedelta(hours=2))
+                .isoformat()
+                .replace("+00:00", "Z"),
+            ),
+        )
         review_payload = self._payload(review)
-        issued = parse_utc(review_payload["issuedAt"], "review.issuedAt")
         return {
             "schemaVersion": MODULE.FINALIZE_REQUEST_SCHEMA,
             "sessionId": session["sessionId"],
@@ -243,6 +269,51 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
             second_result = self.service.finalize(first["sessionId"], dict(finalize))
         self.assertEqual(first_result, second_result)
         self.assertEqual(1, self.signer.calls)
+
+    def test_finalize_rejects_leaf_backdated_before_ledger_review_time(self) -> None:
+        session = self.service.execute(self.request)
+        finalize = self._finalize_request(session)
+        template = self._payload(finalize["providerReviewEnvelope"])
+        issued = parse_utc(session["reviewIssuedAt"], "review.issuedAt") - timedelta(
+            seconds=1
+        )
+        backdated = ProviderReviewIssuer(
+            signer=StaticSigner(
+                self.fixture.factory,
+                self.fixture.factory.OPENAI_KEY_ID,
+            ),
+            provider_family="openai",
+            channel="openai-codex",
+            direct_provider_cli=True,
+            model_identity_class="trusted-launch-attested",
+            allowed_models=(self.receipt.model_id,),
+            issuer="cross-ai-issuer-openai",
+        ).issue(
+            execution=self.receipt,
+            coordinates=ReviewCoordinates(
+                review_id=template["reviewId"],
+                review_chain_id=template["reviewChainId"],
+                subject_sha256=sha256_digest(self.fixture.subject),
+                round=template["round"],
+                previous_round_sha256=template["previousRoundSha256"],
+                closure_root_sha256=template["closureRootSha256"],
+                issued_at=issued.isoformat().replace("+00:00", "Z"),
+                expires_at=(issued + timedelta(minutes=10))
+                .isoformat()
+                .replace("+00:00", "Z"),
+            ),
+        )
+        finalize["providerReviewEnvelope"] = backdated
+        finalize["providerReviewEnvelopeSha256"] = sha256_digest(backdated)
+        finalize["issuedAt"] = issued.isoformat().replace("+00:00", "Z")
+        finalize["expiresAt"] = (issued + timedelta(minutes=10)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_LIFETIME_INVALID",
+        ):
+            self.service.finalize(session["sessionId"], finalize)
 
     def test_concurrent_identical_requests_execute_provider_once(self) -> None:
         runner = BlockingRunner(self.receipt)

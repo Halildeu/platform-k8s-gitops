@@ -133,15 +133,11 @@ path "auth/approle/role/cross-ai-revocation-test/role-id" {
 }
 
 path "auth/approle/role/cross-ai-runner-management-test" {
+  capabilities = ["read", "delete"]
+}
+
+path "auth/kubernetes/role/cross-ai-provider-review-runtime" {
   capabilities = ["create", "update", "read"]
-}
-
-path "auth/approle/role/cross-ai-runner-management-test/role-id" {
-  capabilities = ["read"]
-}
-
-path "auth/approle/role/cross-ai-runner-management-test/secret-id" {
-  capabilities = ["create", "update"]
 }
 
 # Deliberately no cross-ai-revocation-test/secret-id capability. Revocation is

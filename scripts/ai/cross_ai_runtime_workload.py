@@ -27,6 +27,50 @@ K8S_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$")
 MAX_TOKEN_BYTES = 16384
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 KUBERNETES_API_AUDIENCE = "https://kubernetes.default.svc.cluster.local"
+POD_SPEC_FIELDS = frozenset(
+    {
+        "activeDeadlineSeconds",
+        "affinity",
+        "automountServiceAccountToken",
+        "containers",
+        "dnsConfig",
+        "dnsPolicy",
+        "enableServiceLinks",
+        "ephemeralContainers",
+        "hostAliases",
+        "hostIPC",
+        "hostNetwork",
+        "hostPID",
+        "hostUsers",
+        "hostname",
+        "imagePullSecrets",
+        "initContainers",
+        "nodeName",
+        "nodeSelector",
+        "os",
+        "overhead",
+        "preemptionPolicy",
+        "priority",
+        "priorityClassName",
+        "readinessGates",
+        "resourceClaims",
+        "resources",
+        "restartPolicy",
+        "runtimeClassName",
+        "schedulerName",
+        "schedulingGates",
+        "securityContext",
+        "serviceAccount",
+        "serviceAccountName",
+        "setHostnameAsFQDN",
+        "shareProcessNamespace",
+        "subdomain",
+        "terminationGracePeriodSeconds",
+        "tolerations",
+        "topologySpreadConstraints",
+        "volumes",
+    }
+)
 
 
 class PodTransport(Protocol):
@@ -73,6 +117,20 @@ class KubernetesPodTransport:
                 "runtime workload response is oversized",
             )
         return body
+
+
+def pod_security_projection_sha256(spec: object) -> str:
+    if not isinstance(spec, dict) or not set(spec).issubset(POD_SPEC_FIELDS):
+        reject(
+            "KUBERNETES_WORKLOAD_INVALID",
+            "Pod spec contains an unknown security surface",
+        )
+    projection = {
+        key: spec.get(key)
+        for key in sorted(POD_SPEC_FIELDS)
+        if key != "nodeName"
+    }
+    return sha256_digest(projection)
 
 
 def _projected_token(path: Path) -> str:
@@ -183,6 +241,7 @@ class KubernetesWorkloadVerifier:
         expected_command: list[str],
         expected_args_sha256: str,
         expected_security_context_sha256: str,
+        expected_pod_security_projection_sha256: str,
         api_token_file: Path,
         transport: PodTransport,
     ) -> None:
@@ -192,6 +251,7 @@ class KubernetesWorkloadVerifier:
             reject("KUBERNETES_WORKLOAD_INVALID", "pod UID is invalid")
         if (
             canonical_uid != pod_uid
+            or DIGEST.fullmatch(expected_pod_security_projection_sha256) is None
             or any(
                 not isinstance(value, str) or K8S_NAME.fullmatch(value) is None
                 for value in (namespace, pod_name, service_account, container_name)
@@ -207,6 +267,9 @@ class KubernetesWorkloadVerifier:
         self.expected_command = list(expected_command)
         self.expected_args_sha256 = expected_args_sha256
         self.expected_security_context_sha256 = expected_security_context_sha256
+        self.expected_pod_security_projection_sha256 = (
+            expected_pod_security_projection_sha256
+        )
         self.api_token_file = api_token_file
         self.transport = transport
 
@@ -267,6 +330,8 @@ class KubernetesWorkloadVerifier:
             or not isinstance(spec, dict)
             or spec.get("serviceAccountName") != self.service_account
             or spec.get("automountServiceAccountToken") is not False
+            or pod_security_projection_sha256(spec)
+            != self.expected_pod_security_projection_sha256
             or not isinstance(container_spec, dict)
             or container_spec.get("command") != self.expected_command
             or sha256_digest(container_spec.get("args")) != self.expected_args_sha256
@@ -301,4 +366,5 @@ __all__ = [
     "KubernetesPodTransport",
     "KubernetesWorkloadVerifier",
     "WorkloadMeasurement",
+    "pod_security_projection_sha256",
 ]

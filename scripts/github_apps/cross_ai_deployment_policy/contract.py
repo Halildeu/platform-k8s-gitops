@@ -1123,6 +1123,7 @@ class EvidenceVerifier:
             "kubernetesContainerCommand",
             "kubernetesContainerArgsSha256",
             "kubernetesContainerSecurityContextSha256",
+            "kubernetesPodSecurityProjectionSha256",
             "vaultKubernetesAuthMount",
             "vaultKubernetesRole",
             "vaultTokenPolicy",

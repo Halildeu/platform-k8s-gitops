@@ -347,6 +347,62 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         verified_absent_resources.extend(
             (f"approle:{grant_name}", f"policy:{grant_name}")
         )
+    legacy_runner_role = "cross-ai-runner-management-test"
+    client.request(
+        "DELETE",
+        f"auth/approle/role/{legacy_runner_role}",
+        expected=decommission_statuses,
+    )
+    if client.request(
+        "GET",
+        f"auth/approle/role/{legacy_runner_role}",
+        expected=frozenset({404}),
+    ).status != 404:
+        raise BootstrapError("legacy runner-management AppRole still exists")
+    verified_absent_resources.append(f"approle:{legacy_runner_role}")
+
+    runner_policy = "cross-ai-runner-management-test"
+    accessors = _data(
+        client.request("LIST", "auth/token/accessors"),
+        "token accessor list",
+    ).get("keys")
+    if not isinstance(accessors, list) or any(
+        not isinstance(accessor, str) or not accessor for accessor in accessors
+    ):
+        raise BootstrapError("Vault token accessor inventory is invalid")
+    for accessor in accessors:
+        lookup = _data(
+            client.request(
+                "POST",
+                "auth/token/lookup-accessor",
+                {"accessor": accessor},
+            ),
+            "token accessor lookup",
+        )
+        if runner_policy in lookup.get("policies", []):
+            client.request(
+                "POST",
+                "auth/token/revoke-accessor",
+                {"accessor": accessor},
+            )
+    remaining = _data(
+        client.request("LIST", "auth/token/accessors"),
+        "post-revocation token accessor list",
+    ).get("keys")
+    if not isinstance(remaining, list):
+        raise BootstrapError("post-revocation token inventory is invalid")
+    for accessor in remaining:
+        lookup = _data(
+            client.request(
+                "POST",
+                "auth/token/lookup-accessor",
+                {"accessor": accessor},
+            ),
+            "post-revocation token accessor lookup",
+        )
+        if runner_policy in lookup.get("policies", []):
+            raise BootstrapError("legacy runner-management token remains active")
+    verified_absent_resources.append(f"token-policy:{runner_policy}")
 
     key_records: list[dict[str, Any]] = []
     for key_name in KEY_NAMES:

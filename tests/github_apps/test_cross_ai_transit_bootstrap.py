@@ -50,6 +50,7 @@ class FakeVaultClient:
         self.mount_exists = type(self).existing
         self.keys: dict[str, dict[str, object]] = {}
         self.policy: str | None = "already" if type(self).existing else None
+        self.accessors = {"legacy-runner", "unrelated"}
         if type(self).existing:
             for index, name in enumerate(MODULE.KEY_NAMES, start=1):
                 self.keys[name] = self._key(name, index)
@@ -91,6 +92,18 @@ class FakeVaultClient:
             )
         if path == "auth/token/lookup-self":
             return self._response(200, {"data": {"policies": type(self).root_policies}})
+        if path == "auth/token/accessors" and method == "LIST":
+            return self._response(200, {"data": {"keys": sorted(self.accessors)}})
+        if path == "auth/token/lookup-accessor" and method == "POST":
+            policies = (
+                ["cross-ai-runner-management-test"]
+                if payload["accessor"] == "legacy-runner"
+                else ["default"]
+            )
+            return self._response(200, {"data": {"policies": policies}})
+        if path == "auth/token/revoke-accessor" and method == "POST":
+            self.accessors.discard(payload["accessor"])
+            return self._response(204)
         if path == "sys/auth":
             return self._response(200, {"data": {"approle/": {"type": "approle"}}})
         if path == "sys/mounts":
@@ -105,6 +118,7 @@ class FakeVaultClient:
             "sys/policies/acl/cross-ai-issuer-anthropic-test",
             "auth/approle/role/cross-ai-issuer-minimax-test",
             "sys/policies/acl/cross-ai-issuer-minimax-test",
+            "auth/approle/role/cross-ai-runner-management-test",
         }:
             if method == "DELETE":
                 status = type(self).legacy_delete_status
@@ -180,6 +194,8 @@ class TransitBootstrapTests(unittest.TestCase):
                 "policy:cross-ai-issuer-anthropic-test",
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
+                "approle:cross-ai-runner-management-test",
+                "token-policy:cross-ai-runner-management-test",
             ],
         )
         self.assertEqual(
@@ -187,6 +203,7 @@ class TransitBootstrapTests(unittest.TestCase):
         )
         self.assertIn("mount:cross-ai", receipt["createdResources"])
         self.assertIn("policy:vault-config-reconciler", receipt["updatedResources"])
+        self.assertNotIn("legacy-runner", client.accessors)
         for item in receipt["keys"]:
             self.assertEqual(item["keyType"], "ed25519")
             self.assertIs(item["derived"], False)
@@ -236,6 +253,7 @@ class TransitBootstrapTests(unittest.TestCase):
             issuer_image_digest="sha256:" + ("b" * 64),
             launcher_source_sha256="sha256:" + ("c" * 64),
             container_args_sha256="sha256:" + ("d" * 64),
+            pod_security_projection_sha256="sha256:" + ("e" * 64),
             attestor_api_origin="https://testai.acik.com",
         )
         schema = json.loads(
@@ -286,6 +304,8 @@ class TransitBootstrapTests(unittest.TestCase):
                 "policy:cross-ai-issuer-anthropic-test",
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
+                "approle:cross-ai-runner-management-test",
+                "token-policy:cross-ai-runner-management-test",
             ],
         )
 
@@ -398,6 +418,7 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertNotIn("cross-ai-issuer-minimax-test", emission_manifest)
         self.assertNotIn("cross-ai-issuer-openai-test", emission_manifest)
         self.assertNotIn("cross-ai-coordinator-test", emission_manifest)
+        self.assertNotIn("cross-ai-runner-management-test", emission_manifest)
         self.assertIn("secret-id emission is not permitted", reconciler)
         self.assertIn("backup|restore|datakey", reconciler)
         self.assertIn("rewrap|hmac", reconciler)
@@ -447,16 +468,23 @@ class TransitBootstrapTests(unittest.TestCase):
             reconciler,
             r"cross-ai-(?:issuer-[a-z]+|coordinator)-test\|[^\n]*token_num_uses=0",
         )
-        runner_row = next(
-            line
-            for line in routine_approles.splitlines()
-            if "cross-ai-runner-management-test|" in line
+        self.assertNotIn("cross-ai-runner-management-test|", routine_approles)
+        self.assertIn(
+            'path "auth/kubernetes/role/cross-ai-provider-review-runtime"',
+            config_policy,
         )
-        self.assertIn("token_num_uses=1", runner_row)
-        self.assertNotIn("token_num_uses=0", runner_row)
-        self.assertIn('.data.token_num_uses == 1', reconciler)
-        self.assertIn('approle $rname readback unavailable', reconciler)
-        self.assertIn('approle $rname is not one-use and fail-closed', reconciler)
+        self.assertIn(
+            'path "auth/approle/role/cross-ai-runner-management-test"',
+            config_policy,
+        )
+        self.assertIn('capabilities = ["read", "delete"]', config_policy)
+        self.assertNotIn(
+            'path "auth/approle/role/cross-ai-runner-management-test/secret-id"',
+            config_policy,
+        )
+        self.assertIn('K8S_RUNNER_ROLE="cross-ai-provider-review-runtime"', reconciler)
+        self.assertIn('"token_num_uses":1', reconciler)
+        self.assertIn('legacy runner AppRole remains readable', reconciler)
 
 
 if __name__ == "__main__":

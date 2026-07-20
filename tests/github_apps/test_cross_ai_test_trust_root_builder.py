@@ -30,6 +30,9 @@ EXPIRES_AT = "2026-08-17T18:00:00Z"
 ISSUER_IMAGE_DIGEST = "sha256:" + ("b" * 64)
 LAUNCHER_SOURCE_SHA256 = "sha256:" + ("c" * 64)
 CONTAINER_ARGS_SHA256 = "sha256:" + ("d" * 64)
+POD_SECURITY_PROJECTION_SHA256 = "sha256:" + hashlib.sha256(
+    b"provider-review-pod-spec"
+).hexdigest()
 
 
 def public_key(seed: int) -> str:
@@ -74,6 +77,8 @@ def receipt() -> dict[str, object]:
             "policy:cross-ai-issuer-anthropic-test",
             "approle:cross-ai-issuer-minimax-test",
             "policy:cross-ai-issuer-minimax-test",
+            "approle:cross-ai-runner-management-test",
+            "token-policy:cross-ai-runner-management-test",
         ],
         "verifiedAt": "2026-07-18T17:59:00Z",
         "requiresOutOfBandOwnerPin": True,
@@ -96,6 +101,7 @@ def build(
         issuer_image_digest=ISSUER_IMAGE_DIGEST,
         launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
         container_args_sha256=CONTAINER_ARGS_SHA256,
+        pod_security_projection_sha256=POD_SECURITY_PROJECTION_SHA256,
         attestor_api_origin="https://testai.acik.com",
         previous_trust_root=previous_trust_root,
     )
@@ -149,7 +155,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "263a4578f9c79afbce553189c785411b4ac8d737fd1e7ee05e02abbcf1960a09",
+            "04159afca2ce9ad11382843131652b2467e99c863fc5a94383567083f4019a36",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:
@@ -265,6 +271,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                     issuer_image_digest=ISSUER_IMAGE_DIGEST,
                     launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
                     container_args_sha256=CONTAINER_ARGS_SHA256,
+                    pod_security_projection_sha256=POD_SECURITY_PROJECTION_SHA256,
                     attestor_api_origin="https://testai.acik.com",
                 )
 
@@ -354,6 +361,8 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                 LAUNCHER_SOURCE_SHA256,
                 "--container-args-sha256",
                 CONTAINER_ARGS_SHA256,
+                "--pod-security-projection-sha256",
+                POD_SECURITY_PROJECTION_SHA256,
                 "--attestor-api-origin",
                 "https://testai.acik.com",
                 "--out",

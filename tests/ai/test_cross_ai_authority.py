@@ -404,6 +404,8 @@ class GenesisTransitionTests(unittest.TestCase):
                 "policy:cross-ai-issuer-anthropic-test",
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
+                "approle:cross-ai-runner-management-test",
+                "token-policy:cross-ai-runner-management-test",
             ],
             "verifiedAt": "2026-07-18T19:59:00Z",
             "requiresOutOfBandOwnerPin": True,

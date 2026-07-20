@@ -284,12 +284,15 @@ python3 scripts/ops/build_cross_ai_test_trust_root.py \
   --expires-at EXPIRY_UTC \
   --issuer-image-digest sha256:PINNED_ISSUER_IMAGE_DIGEST \
   --launcher-source-sha256 sha256:REVIEWED_LAUNCHER_SOURCE_DIGEST \
+  --container-args-sha256 sha256:RENDERED_CONTAINER_ARGS_DIGEST \
+  --pod-security-projection-sha256 sha256:LIVE_POD_SECURITY_PROJECTION_DIGEST \
   --attestor-api-origin https://testai.acik.com \
   --out /OWNER/LOCAL/cross-ai-deployment-trust-root.json
 ```
 
 The output also binds the fixed provider-review workload image, reviewed
-launcher source and runner-management attestor key into the independently
+launcher source, complete security-relevant Pod-spec projection and
+runner-management attestor key into the independently
 pinned trust-root digest. The output binds a stable `sourcePublicKeysetSha256`
 projection. Operational
 receipt fields such as `verifiedAt` do not move that digest; any key, immutable

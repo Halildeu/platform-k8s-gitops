@@ -6,7 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.ai.cross_ai_runtime_workload import KubernetesWorkloadVerifier
+from scripts.ai.cross_ai_runtime_workload import (
+    KubernetesWorkloadVerifier,
+    pod_security_projection_sha256,
+)
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 
@@ -73,6 +76,9 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
                 ],
             },
         }
+        self.pod_security_projection_sha256 = pod_security_projection_sha256(
+            self.pod["spec"]
+        )
 
     def tearDown(self) -> None:
         self.directory.cleanup()
@@ -112,6 +118,9 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
             expected_command=self.command,
             expected_args_sha256=sha256_digest(self.args),
             expected_security_context_sha256=sha256_digest(self.security_context),
+            expected_pod_security_projection_sha256=(
+                self.pod_security_projection_sha256
+            ),
             api_token_file=self.token,
             transport=StaticPodTransport(pod or self.pod),
         )
@@ -174,6 +183,9 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
             expected_command=self.command,
             expected_args_sha256=sha256_digest(self.args),
             expected_security_context_sha256=sha256_digest(self.security_context),
+            expected_pod_security_projection_sha256=(
+                self.pod_security_projection_sha256
+            ),
             api_token_file=alias,
             transport=StaticPodTransport(self.pod),
         )
@@ -190,6 +202,38 @@ class KubernetesWorkloadVerifierTests(unittest.TestCase):
             "KUBERNETES_WORKLOAD_TOKEN_BINDING_MISMATCH",
         ):
             self.verifier().measure()
+
+    def test_rejects_unpinned_pod_execution_surfaces(self) -> None:
+        mutations = [
+            lambda pod: pod["spec"]["containers"][0].update(
+                {"env": [{"name": "PYTHONPATH", "value": "/host"}]}
+            ),
+            lambda pod: pod["spec"]["containers"][0].update(
+                {"envFrom": [{"secretRef": {"name": "attacker"}}]}
+            ),
+            lambda pod: pod["spec"]["containers"][0].update(
+                {"volumeMounts": [{"name": "host", "mountPath": "/app"}]}
+            ),
+            lambda pod: pod["spec"].update(
+                {"volumes": [{"name": "host", "hostPath": {"path": "/tmp"}}]}
+            ),
+            lambda pod: pod["spec"]["containers"].append(
+                {"name": "sidecar", "image": "example.invalid/sidecar:latest"}
+            ),
+            lambda pod: pod["spec"].update(
+                {"initContainers": [{"name": "init", "image": "busybox"}]}
+            ),
+            lambda pod: pod["spec"].update({"hostNetwork": True}),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                pod = json.loads(json.dumps(self.pod))
+                mutate(pod)
+                with self.assertRaisesRegex(
+                    PolicyError,
+                    "KUBERNETES_WORKLOAD_INVALID",
+                ):
+                    self.verifier(pod).measure()
 
 
 if __name__ == "__main__":

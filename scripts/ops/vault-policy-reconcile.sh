@@ -93,13 +93,11 @@ APPROLES=(
   # This routine reconciler applies their sign-only ACL policies but cannot
   # create, rewrite, inspect or mint credentials for those identities.
   "cross-ai-revocation-test|cross-ai-revocation-test|token_ttl=5m token_max_ttl=5m token_explicit_max_ttl=5m token_num_uses=0 secret_id_ttl=5m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-runner-management-test|cross-ai-runner-management-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
 )
 
 EMITTABLE_APPROLES=(
   "platform-bootstrap-writer-test"
   "audio-gateway-mtls-seeder-test"
-  "cross-ai-runner-management-test"
 )
 
 # ── reconciler AppRole auth ──────────────────────────────────────────────────
@@ -176,30 +174,47 @@ for row in "${APPROLES[@]}"; do
   if [[ "$DRY_RUN" == "1" ]]; then echo "  DRY   approle $rname (${argpairs[*]})"; continue; fi
   body=$(python3 -c 'import json,sys; d={}; [d.update({k:v}) for k,v in (a.split("=",1) for a in sys.argv[1:])]; print(json.dumps(d))' "${argpairs[@]}")
   if api POST "auth/approle/role/$rname" "$body" >/dev/null; then
-    if [[ "$rname" == "cross-ai-runner-management-test" ]]; then
-      if ! role_readback=$(api GET "auth/approle/role/$rname"); then
-        echo "  FAIL  approle $rname readback unavailable" >&2
-        APPLY_FAIL=1
-      elif ! jq -e '
-          .data.token_num_uses == 1
-          and .data.secret_id_num_uses == 1
-          and .data.bind_secret_id == true
-          and .data.token_no_default_policy == true
-        ' <<<"$role_readback" >/dev/null; then
-        echo "  FAIL  approle $rname is not one-use and fail-closed" >&2
-        APPLY_FAIL=1
-      else
-        echo "  OK    approle $rname (one-use readback verified)"
-      fi
-      unset role_readback
-    else
-      echo "  OK    approle $rname"
-    fi
+    echo "  OK    approle $rname"
   else
     echo "  FAIL  approle $rname" >&2
     APPLY_FAIL=1
   fi
 done
+
+# Runner-management signing is available only to the measured runtime Pod.
+K8S_RUNNER_ROLE="cross-ai-provider-review-runtime"
+K8S_RUNNER_BODY='{"bound_service_account_names":["provider-review-issuer"],"bound_service_account_namespaces":["cross-ai"],"audience":"vault","token_policies":["cross-ai-runner-management-test"],"token_ttl":"10m","token_max_ttl":"10m","token_explicit_max_ttl":"10m","token_num_uses":1,"token_no_default_policy":true}'
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "  DRY   kubernetes-role $K8S_RUNNER_ROLE; delete legacy runner AppRole"
+elif ! api POST "auth/kubernetes/role/$K8S_RUNNER_ROLE" "$K8S_RUNNER_BODY" >/dev/null; then
+  echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE" >&2
+  APPLY_FAIL=1
+elif ! role_readback=$(api GET "auth/kubernetes/role/$K8S_RUNNER_ROLE"); then
+  echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE readback unavailable" >&2
+  APPLY_FAIL=1
+elif ! jq -e '
+    .data.bound_service_account_names == ["provider-review-issuer"]
+    and .data.bound_service_account_namespaces == ["cross-ai"]
+    and .data.audience == "vault"
+    and .data.token_policies == ["cross-ai-runner-management-test"]
+    and .data.token_ttl == 600
+    and .data.token_max_ttl == 600
+    and .data.token_explicit_max_ttl == 600
+    and .data.token_num_uses == 1
+    and .data.token_no_default_policy == true
+  ' <<<"$role_readback" >/dev/null; then
+  echo "  FAIL  kubernetes-role $K8S_RUNNER_ROLE binding differs" >&2
+  APPLY_FAIL=1
+elif ! api DELETE "auth/approle/role/cross-ai-runner-management-test" >/dev/null; then
+  echo "  FAIL  legacy runner AppRole deletion" >&2
+  APPLY_FAIL=1
+elif api GET "auth/approle/role/cross-ai-runner-management-test" >/dev/null 2>&1; then
+  echo "  FAIL  legacy runner AppRole remains readable" >&2
+  APPLY_FAIL=1
+else
+  echo "  OK    kubernetes-role $K8S_RUNNER_ROLE; legacy runner AppRole absent"
+fi
+unset role_readback
 
 [[ "$APPLY_FAIL" == "1" ]] && {
   echo "ABORT: one or more Vault policy/AppRole writes failed." >&2
