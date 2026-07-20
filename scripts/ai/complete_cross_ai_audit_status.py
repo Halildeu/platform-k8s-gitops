@@ -47,6 +47,11 @@ RETRY_DESCRIPTION_RE = re.compile(
     rf"^{re.escape(RETRY_DESCRIPTION_PREFIX)}([1-9]\d*)$"
 )
 EVIDENCE_CONTEXT_PREFIX = "cross-ai/evidence/"
+MUTATION_CONTEXT_PREFIX = "cross-ai/mutation/"
+MUTATION_DESCRIPTION_RE = re.compile(
+    r"^owner comment mutation pr=(\d+) comment=(\d+) "
+    r"action=(created|edited|deleted)$"
+)
 
 
 def fail(code: str) -> NoReturn:
@@ -252,7 +257,9 @@ def evidence_ledger_snapshot(statuses: list[dict]) -> tuple[str, ...]:
         json.dumps(status, sort_keys=True, separators=(",", ":"))
         for status in statuses
         if isinstance(status.get("context"), str)
-        and status["context"].startswith(EVIDENCE_CONTEXT_PREFIX)
+        and status["context"].startswith(
+            (EVIDENCE_CONTEXT_PREFIX, MUTATION_CONTEXT_PREFIX)
+        )
     ))
 
 
@@ -300,13 +307,12 @@ def requires_publication_marker(body: str) -> bool:
     return "single" in modes or CODEX_RECEIPT_RE.search(body) is not None
 
 
-def failed_check_payload(head: str, url: str, comment_id: int, action: str) -> dict:
+def pending_check_payload(head: str, url: str, comment_id: int, action: str) -> dict:
     external_id = f"cross-ai-evidence-comment-{comment_id}-{action}"
     return {
         "name": "cross-ai-audit",
         "head_sha": head,
-        "status": "completed",
-        "conclusion": "failure",
+        "status": "in_progress",
         "details_url": url,
         "external_id": external_id,
         "output": {
@@ -316,7 +322,7 @@ def failed_check_payload(head: str, url: str, comment_id: int, action: str) -> d
     }
 
 
-def valid_failed_check(
+def valid_pending_check(
     payload: object,
     *,
     head: str,
@@ -333,6 +339,46 @@ def valid_failed_check(
         and payload.get("name") == "cross-ai-audit"
         and isinstance(returned_head, str)
         and returned_head.lower() == head
+        and payload.get("status") == "in_progress"
+        and payload.get("conclusion") is None
+        and payload.get("details_url") == url
+        and payload.get("external_id")
+        == f"cross-ai-evidence-comment-{comment_id}-{action}"
+        and isinstance(app, dict)
+        and app.get("slug") == "github-actions"
+    )
+
+
+def failed_check_payload(url: str, comment_id: int, action: str) -> dict:
+    return {
+        "status": "completed",
+        "conclusion": "failure",
+        "details_url": url,
+        "output": {
+            "title": "Owner PR comment history changed",
+            "summary": "Rerun the trusted exact-head audit before this PR can merge.",
+        },
+    }
+
+
+def valid_failed_check(
+    payload: object,
+    *,
+    head: str,
+    url: str,
+    comment_id: int,
+    action: str,
+    check_run_id: int,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    app = payload.get("app")
+    returned_head = payload.get("head_sha")
+    return bool(
+        payload.get("id") == check_run_id
+        and payload.get("name") == "cross-ai-audit"
+        and isinstance(returned_head, str)
+        and returned_head.lower() == head
         and payload.get("status") == "completed"
         and payload.get("conclusion") == "failure"
         and payload.get("details_url") == url
@@ -340,6 +386,61 @@ def valid_failed_check(
         == f"cross-ai-evidence-comment-{comment_id}-{action}"
         and isinstance(app, dict)
         and app.get("slug") == "github-actions"
+    )
+
+
+def mutation_status_payload(
+    head: str,
+    url: str,
+    issue_number: int,
+    comment_id: int,
+    action: str,
+) -> dict:
+    return {
+        "sha": head,
+        "state": "failure",
+        "context": f"{MUTATION_CONTEXT_PREFIX}{comment_id}/{action}",
+        "description": (
+            f"owner comment mutation pr={issue_number} "
+            f"comment={comment_id} action={action}"
+        ),
+        "target_url": url,
+    }
+
+
+def valid_mutation_status(
+    payload: object,
+    *,
+    head: str,
+    url: str,
+    issue_number: int,
+    comment_id: int,
+    action: str,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    creator = payload.get("creator")
+    description = payload.get("description")
+    match = (
+        MUTATION_DESCRIPTION_RE.fullmatch(description)
+        if isinstance(description, str)
+        else None
+    )
+    return bool(
+        isinstance(payload.get("id"), int)
+        and isinstance(payload.get("sha"), str)
+        and payload["sha"].lower() == head
+        and payload.get("state") == "failure"
+        and payload.get("context")
+        == f"{MUTATION_CONTEXT_PREFIX}{comment_id}/{action}"
+        and match
+        and int(match[1]) == issue_number
+        and int(match[2]) == comment_id
+        and match[3] == action
+        and payload.get("target_url") == url
+        and isinstance(creator, dict)
+        and creator.get("login") == TRUSTED_WORKFLOW_STATUS_CREATOR
+        and payload.get("created_at") == payload.get("updated_at")
     )
 
 
@@ -351,6 +452,7 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
         action = event["action"]
         comment = event["comment"]
         comment_id = comment["id"]
+        comment_body = comment["body"]
         comment_author = comment["user"]["login"].lower()
         comment_association = comment["author_association"]
         issue = event["issue"]
@@ -360,6 +462,7 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
     if (
         action not in {"created", "edited", "deleted"}
         or not isinstance(comment_id, int)
+        or not isinstance(comment_body, str)
         or not isinstance(issue_number, int)
         or issue_number < 1
     ):
@@ -384,24 +487,77 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
     if comment_author != owner or comment_association != "OWNER":
         return {"ok": True, "action": "ignored-untrusted-comment"}
 
-    request = failed_check_payload(head, expected_url, comment_id, action)
-    created = gh_json(
+    comment_digest = hashlib.sha256(comment_body.encode("utf-8")).hexdigest()
+    current_body = current.get("body")
+    trusted_publication_digests = set()
+    if isinstance(current_body, str):
+        trusted_publication_digests.update(
+            digest for digest, _token in PUBLICATION_LOCK_RE.findall(current_body)
+        )
+        trusted_publication_digests.update(
+            digest for _pending, _ledger, digest in MARKER_RE.findall(current_body)
+        )
+    if action == "created" and comment_digest in trusted_publication_digests:
+        return {"ok": True, "action": "trusted-evidence-publication"}
+
+    pending_request = pending_check_payload(head, expected_url, comment_id, action)
+    pending = gh_json(
         [f"repos/{repo}/check-runs", "--method", "POST", "--input", "-"],
-        input_text=json.dumps(request, separators=(",", ":")),
+        input_text=json.dumps(pending_request, separators=(",", ":")),
     )
-    if not valid_failed_check(
-        created,
+    if not valid_pending_check(
+        pending,
         head=head,
         url=expected_url,
         comment_id=comment_id,
         action=action,
+    ):
+        fail("audit_mutation_pending_check_invalid")
+
+    mutation_request = mutation_status_payload(
+        head, expected_url, issue_number, comment_id, action
+    )
+    mutation = gh_json(
+        [f"repos/{repo}/statuses/{head}", "--method", "POST", "--input", "-"],
+        input_text=json.dumps(mutation_request, separators=(",", ":")),
+    )
+    if not valid_mutation_status(
+        mutation,
+        head=head,
+        url=expected_url,
+        issue_number=issue_number,
+        comment_id=comment_id,
+        action=action,
+    ):
+        fail("audit_mutation_status_invalid")
+
+    check_run_id = pending["id"]
+    failed_request = failed_check_payload(expected_url, comment_id, action)
+    failed = gh_json(
+        [
+            f"repos/{repo}/check-runs/{check_run_id}",
+            "--method",
+            "PATCH",
+            "--input",
+            "-",
+        ],
+        input_text=json.dumps(failed_request, separators=(",", ":")),
+    )
+    if not valid_failed_check(
+        failed,
+        head=head,
+        url=expected_url,
+        comment_id=comment_id,
+        action=action,
+        check_run_id=check_run_id,
     ):
         fail("audit_mutation_check_invalid")
     return {
         "ok": True,
         "action": "owner-comment-history-change-invalidated",
         "comment_action": action,
-        "check_run_id": created["id"],
+        "check_run_id": failed["id"],
+        "mutation_status_id": mutation["id"],
         "head_sha": head,
     }
 

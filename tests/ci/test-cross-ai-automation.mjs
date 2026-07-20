@@ -271,6 +271,14 @@ const CODEX_V3_BODY = (() => {
   };
   return JSON.stringify(body);
 })();
+const CODEX_V3_REVISE_BODY = (() => {
+  const body = JSON.parse(CODEX_V3_BODY);
+  const response = '## P0\nNone\n## P1\nHistorical issue\n## P2\nNone\nVERDICT: REVISE';
+  body.verdict = 'REVISE';
+  body.response = response;
+  body.response_sha256 = sha256(response);
+  return JSON.stringify(body);
+})();
 const HISTORICAL_CODEX_V3_EVIDENCE = {
   [evidenceRef(1015)]: evidenceCommentAt(
     CODEX_V3_BODY,
@@ -280,6 +288,12 @@ const HISTORICAL_CODEX_V3_EVIDENCE = {
 const PRE_ACTIVATION_CODEX_V3_EVIDENCE = {
   [evidenceRef(1016)]: evidenceCommentAt(
     CODEX_V3_BODY,
+    Date.parse('2026-07-19T17:10:00Z'),
+  ),
+};
+const PRE_ACTIVATION_CODEX_V3_REVISE_EVIDENCE = {
+  [evidenceRef(1021)]: evidenceCommentAt(
+    CODEX_V3_REVISE_BODY,
     Date.parse('2026-07-19T17:10:00Z'),
   ),
 };
@@ -350,6 +364,18 @@ const HISTORICAL_CODEX_V1_REVISE_EVIDENCE = {
     HISTORICAL_PROVIDER_V1_MS,
   ),
 };
+const DELETED_V1_MUTATION_LEDGER = [{
+  statusId: 8_001,
+  sha: HEAD_SHA,
+  context: `cross-ai/mutation/1011/deleted`,
+  state: 'failure',
+  description: `owner comment mutation pr=${PR_NUMBER} comment=1011 action=deleted`,
+  targetUrl: `https://github.com/${REPO}/pull/${PR_NUMBER}`,
+  creator: 'github-actions[bot]',
+  createdAt: '2026-07-19T18:20:00.000Z',
+  updatedAt: '2026-07-19T18:20:00.000Z',
+  ref: `https://api.github.com/repos/${REPO}/statuses/8001`,
+}];
 const historicalCodexV4Body = JSON.stringify({
   ...JSON.parse(evidenceBody(
     'openai',
@@ -1288,6 +1314,10 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: PRE_ACTIVATION_CODEX_V3_EVIDENCE }, 0],
+  ['none mode keeps pre-activation OpenAI v3 REVISE as read-only history',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: PRE_ACTIVATION_CODEX_V3_REVISE_EVIDENCE }, 0],
   ['none mode keeps ledgerless OpenAI v4 before verified source activation as read-only history',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -1310,6 +1340,11 @@ const cases = [
         ...EVIDENCE,
         ...unresolvedCodexReviseEvidence,
       }),
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['none mode cannot hide a deleted retired v1 REVISE after mutation guard tombstone',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH], evidence: {},
+      evidenceLedger: DELETED_V1_MUTATION_LEDGER,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['none mode ignores a status tombstone created before verified source activation',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',

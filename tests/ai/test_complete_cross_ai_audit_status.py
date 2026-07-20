@@ -153,6 +153,42 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             "updated_at": created_at if updated_at is None else updated_at,
         }
 
+    def mutation_pending_check(self, action: str, comment_id: int) -> dict:
+        return {
+            "id": 501,
+            "name": "cross-ai-audit",
+            "head_sha": self.head,
+            "status": "in_progress",
+            "conclusion": None,
+            "details_url": self.url,
+            "external_id": f"cross-ai-evidence-comment-{comment_id}-{action}",
+            "app": {"slug": "github-actions"},
+        }
+
+    def mutation_status(self, action: str, comment_id: int) -> dict:
+        timestamp = "2026-07-19T18:00:00Z"
+        return {
+            "id": 601,
+            "sha": self.head,
+            "state": "failure",
+            "context": f"cross-ai/mutation/{comment_id}/{action}",
+            "description": (
+                f"owner comment mutation pr={self.issue} "
+                f"comment={comment_id} action={action}"
+            ),
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+
+    def mutation_failed_check(self, action: str, comment_id: int) -> dict:
+        return {
+            **self.mutation_pending_check(action, comment_id),
+            "status": "completed",
+            "conclusion": "failure",
+        }
+
     def execute(self, responses: list[object]) -> tuple[dict, list[list[str]]]:
         calls: list[list[str]] = []
 
@@ -892,20 +928,13 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         for action in ("created", "edited", "deleted"):
             with self.subTest(action=action):
                 self.write_comment_event(action, self.comment_id)
-                failed_check = {
-                    "id": 501,
-                    "name": "cross-ai-audit",
-                    "head_sha": self.head,
-                    "status": "completed",
-                    "conclusion": "failure",
-                    "details_url": self.url,
-                    "external_id": (
-                        f"cross-ai-evidence-comment-{self.comment_id}-{action}"
-                    ),
-                    "app": {"slug": "github-actions"},
-                }
                 calls: list[tuple[list[str], str | None]] = []
-                responses = [self.current_pr(self.body()), failed_check]
+                responses = [
+                    self.current_pr(self.body()),
+                    self.mutation_pending_check(action, self.comment_id),
+                    self.mutation_status(action, self.comment_id),
+                    self.mutation_failed_check(action, self.comment_id),
+                ]
 
                 def runner(
                     command: list[str], **kwargs: object
@@ -931,26 +960,33 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                     result["action"], "owner-comment-history-change-invalidated"
                 )
                 self.assertEqual(result["check_run_id"], 501)
-                self.assertIn(f"repos/{self.repo}/check-runs", calls[-1][0])
-                self.assertIsNotNone(calls[-1][1])
-                request = json.loads(calls[-1][1] or "")
-                self.assertEqual(request["name"], "cross-ai-audit")
-                self.assertEqual(request["head_sha"], self.head)
-                self.assertEqual(request["conclusion"], "failure")
+                self.assertEqual(result["mutation_status_id"], 601)
+                self.assertIn(f"repos/{self.repo}/check-runs", calls[1][0])
+                pending_request = json.loads(calls[1][1] or "")
+                self.assertEqual(pending_request["status"], "in_progress")
+                self.assertEqual(pending_request["head_sha"], self.head)
+                self.assertIn(f"repos/{self.repo}/statuses/{self.head}", calls[2][0])
+                mutation_request = json.loads(calls[2][1] or "")
+                self.assertEqual(
+                    mutation_request["context"],
+                    f"cross-ai/mutation/{self.comment_id}/{action}",
+                )
+                self.assertIn(f"repos/{self.repo}/check-runs/501", calls[3][0])
+                failed_request = json.loads(calls[3][1] or "")
+                self.assertEqual(failed_request["conclusion"], "failure")
 
     def test_invalid_failure_check_response_fails_closed(self) -> None:
         self.write_comment_event("edited", self.comment_id)
         invalid_check = {
-            "id": 501,
-            "name": "cross-ai-audit",
+            **self.mutation_failed_check("edited", self.comment_id),
             "head_sha": 123,
-            "status": "completed",
-            "conclusion": "failure",
-            "details_url": self.url,
-            "external_id": f"cross-ai-evidence-comment-{self.comment_id}-edited",
-            "app": {"slug": "github-actions"},
         }
-        responses = [self.current_pr(self.body()), invalid_check]
+        responses = [
+            self.current_pr(self.body()),
+            self.mutation_pending_check("edited", self.comment_id),
+            self.mutation_status("edited", self.comment_id),
+            invalid_check,
+        ]
 
         def runner(
             command: list[str], **_kwargs: object
@@ -969,21 +1005,15 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             )
 
     def test_unselected_owner_comment_change_still_invalidates_history(self) -> None:
-        self.write_comment_event("edited", self.comment_id + 1)
-        failed_check = {
-            "id": 502,
-            "name": "cross-ai-audit",
-            "head_sha": self.head,
-            "status": "completed",
-            "conclusion": "failure",
-            "details_url": self.url,
-            "external_id": (
-                f"cross-ai-evidence-comment-{self.comment_id + 1}-edited"
-            ),
-            "app": {"slug": "github-actions"},
-        }
+        other_comment_id = self.comment_id + 1
+        self.write_comment_event("edited", other_comment_id)
         calls: list[list[str]] = []
-        responses = [self.current_pr(self.body()), failed_check]
+        responses = [
+            self.current_pr(self.body()),
+            self.mutation_pending_check("edited", other_comment_id),
+            self.mutation_status("edited", other_comment_id),
+            self.mutation_failed_check("edited", other_comment_id),
+        ]
 
         def runner(
             command: list[str], **_kwargs: object
@@ -1004,7 +1034,69 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                 self.repo, self.event_path
             )
         self.assertEqual(result["action"], "owner-comment-history-change-invalidated")
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 4)
+
+    def test_failed_finalization_leaves_exact_head_check_in_progress(self) -> None:
+        self.write_comment_event("deleted", self.comment_id)
+        calls: list[tuple[list[str], str | None]] = []
+        responses = [
+            self.current_pr(self.body()),
+            self.mutation_pending_check("deleted", self.comment_id),
+            self.mutation_status("deleted", self.comment_id),
+        ]
+
+        def runner(
+            command: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            input_text = kwargs.get("input")
+            calls.append(
+                (command, input_text if isinstance(input_text, str) else None)
+            )
+            if len(calls) == 4:
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        pending_request = json.loads(calls[1][1] or "")
+        self.assertEqual(pending_request["status"], "in_progress")
+        self.assertIn(f"repos/{self.repo}/check-runs/501", calls[3][0])
+
+    def test_trusted_evidence_publication_creation_does_not_self_tombstone(self) -> None:
+        self.write_comment_event("created", self.comment_id)
+        event = json.loads(self.event_path.read_text(encoding="utf-8"))
+        event["comment"]["body"] = self.evidence_body
+        self.event_path.write_text(json.dumps(event), encoding="utf-8")
+        calls: list[list[str]] = []
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(self.current_pr(self.body())),
+                stderr="",
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["action"], "trusted-evidence-publication")
+        self.assertEqual(len(calls), 1)
 
     def test_non_owner_comment_change_has_no_gate_authority(self) -> None:
         self.write_comment_event(

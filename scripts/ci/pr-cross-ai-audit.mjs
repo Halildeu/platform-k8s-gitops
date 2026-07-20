@@ -41,6 +41,9 @@ const EVIDENCE_HISTORY_POLICY_INTRODUCED_MS = Date.parse('2026-07-19T01:09:35Z')
 // deleting an unreferenced REVISE payload cannot erase the tombstone.
 const EVIDENCE_STATUS_LEDGER_POLICY_INTRODUCED_MS = Date.parse('2026-07-19T17:06:35Z');
 const EVIDENCE_LEDGER_CONTEXT_PREFIX = 'cross-ai/evidence/';
+const MUTATION_LEDGER_CONTEXT_PREFIX = 'cross-ai/mutation/';
+const MUTATION_LEDGER_CONTEXT_RE = /^cross-ai\/mutation\/(\d+)\/(created|edited|deleted)$/;
+const MUTATION_LEDGER_DESCRIPTION_RE = /^owner comment mutation pr=(\d+) comment=(\d+) action=(created|edited|deleted)$/;
 const PUBLICATION_LOCK_RE = /<!-- cross-ai-publication-lock:([0-9a-f]{64}):([0-9a-f]{64}) -->/g;
 const EVIDENCE_LEDGER_DESCRIPTION_RE = /^v4 openai (AGREE|REVISE) pr=(\d+) thread=([0-9a-f-]{36})$/i;
 const NO_FINDINGS_RE = /^None$/;
@@ -1176,7 +1179,10 @@ async function loadPullRequestEvidenceLedger(prMeta, ledgerOverrides) {
         const payload = await response.json();
         if (!Array.isArray(payload)) return null;
         statuses.push(...payload
-          .filter((status) => status?.context?.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX))
+          .filter((status) => (
+            status?.context?.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX)
+            || status?.context?.startsWith(MUTATION_LEDGER_CONTEXT_PREFIX)
+          ))
           .map((status) => evidenceLedgerStatusFromPayload(status, sha)));
         if (payload.length < 100) break;
         if (page === 10) return null;
@@ -1228,7 +1234,60 @@ async function appendPriorRevisionFinding(
   const commentByRef = new Map(comments.map((comment) => [comment?.ref, comment]));
   const commentsByDigest = new Map();
   const ledgerByDigest = new Map();
+  const mutationRecords = [];
   for (const status of ledger) {
+    if (status?.context?.startsWith(MUTATION_LEDGER_CONTEXT_PREFIX)) {
+      const context = status.context.match(MUTATION_LEDGER_CONTEXT_RE);
+      const description = status?.description?.match(MUTATION_LEDGER_DESCRIPTION_RE);
+      const contextCommentId = Number(context?.[1]);
+      const descriptionIssueNumber = Number(description?.[1]);
+      const descriptionCommentId = Number(description?.[2]);
+      const createdAtMs = Date.parse(status?.createdAt || '');
+      const statusId = Number(
+        status?.statusId
+        ?? status?.id
+        ?? status?.ref?.match(/\/statuses\/(\d+)$/)?.[1],
+      );
+      if (
+        description
+        && Number.isInteger(descriptionIssueNumber)
+        && descriptionIssueNumber !== prMeta.issueNumber
+      ) continue;
+      const valid = Boolean(
+        context
+        && description
+        && Number.isSafeInteger(contextCommentId)
+        && contextCommentId > 0
+        && descriptionIssueNumber === prMeta.issueNumber
+        && descriptionCommentId === contextCommentId
+        && description[3] === context[2]
+        && status?.state === 'failure'
+        && COMMIT_SHA_RE.test(status?.sha || '')
+        && validLedgerTargetUrl(status?.targetUrl, prMeta.baseRepo, prMeta.issueNumber)
+        && status?.creator === 'github-actions[bot]'
+        && Number.isFinite(createdAtMs)
+        && createdAtMs >= authorityCutoffs.ledgerMs
+        && Number.isSafeInteger(statusId)
+        && statusId > 0
+        && status.createdAt === status.updatedAt
+      );
+      if (!valid) {
+        invalidCandidates.push(`${status?.ref || 'missing-mutation-ref'} (invalid mutation ledger)`);
+        continue;
+      }
+      mutationRecords.push({
+        provider: 'openai',
+        verdict: 'REVISE',
+        createdAtMs,
+        evidenceSha256: `mutation-${statusId}`,
+        threadId: null,
+        ref: status.ref,
+        currentBindingFresh: false,
+        statusId,
+        tombstone: true,
+      });
+      continue;
+    }
     const digest = typeof status?.context === 'string'
       && status.context.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX)
       ? status.context.slice(EVIDENCE_LEDGER_CONTEXT_PREFIX.length)
@@ -1340,13 +1399,29 @@ async function appendPriorRevisionFinding(
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
       (candidate) => candidate.provider === body?.provider,
     );
-    if (
-      body?.schema === 'cross-ai-provider-evidence/v3'
-      && body?.provider === 'openai'
-      && Number.isFinite(commentCreatedAtMs)
-      && commentCreatedAtMs >= authorityCutoffs.ledgerMs
-    ) {
-      invalidCandidates.push(`${comment?.ref || 'missing-ref'} (retired OpenAI v3 evidence)`);
+    const openAiV3 = body?.schema === 'cross-ai-provider-evidence/v3'
+      && body?.provider === 'openai';
+    if (openAiV3) {
+      if (
+        Number.isFinite(commentCreatedAtMs)
+        && commentCreatedAtMs >= authorityCutoffs.ledgerMs
+      ) {
+        invalidCandidates.push(`${comment?.ref || 'missing-ref'} (retired OpenAI v3 evidence)`);
+        continue;
+      }
+      const candidateRefValid = validEvidenceRef(comment?.ref, prMeta.baseRepo);
+      const parsed = candidateRefValid
+        ? parseEvidenceComment(comment, EVIDENCE_PROVIDERS.openai, expectedOwner, {
+            issueNumber: prMeta.issueNumber,
+            enforceFreshness: false,
+            allowLegacyV3: true,
+            trustedSourceAnchorSha: baseTip,
+            trustedSourceDigestOverrides,
+          })
+        : null;
+      if (!parsed) invalidCandidates.push(comment?.ref || 'missing-ref');
+      // Valid pre-activation v3 comments are read-only history. Neither AGREE
+      // nor REVISE participates in the current immutable-ledger authority.
       continue;
     }
     const openAiV4 = body?.schema === 'cross-ai-provider-evidence/v4'
@@ -1449,6 +1524,8 @@ async function appendPriorRevisionFinding(
       });
     }
   }
+
+  records.push(...mutationRecords);
 
   for (const status of ledgerByDigest.values()) {
     const matchingComments = commentsByDigest.get(status.digest) || [];

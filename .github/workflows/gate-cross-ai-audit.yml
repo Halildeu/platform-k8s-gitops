@@ -89,11 +89,13 @@ permissions:
   statuses: write
 
 # #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
-# Per-PR concurrency group; superseded runs are cancelled on new PR events
-# so rapid push churn does not exhaust CI minutes.
+# Per-PR concurrency group. An owner-comment mutation cancels an in-flight
+# audit so it cannot publish a stale success. A later PR event must not cancel
+# the mutation guard before its exact-head pending check and durable tombstone
+# exist; it queues behind the guard instead.
 concurrency:
   group: cross-ai-audit-${{ github.event.pull_request.number || (github.event_name == 'issue_comment' && github.event.comment.author_association == 'OWNER' && github.event.issue.number) || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'issue_comment' }}
 
 jobs:
   cross-ai-audit:

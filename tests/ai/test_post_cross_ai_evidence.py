@@ -745,6 +745,10 @@ class EvidenceValidationTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("|| github.run_id", workflow)
+        self.assertIn(
+            "cancel-in-progress: ${{ github.event_name == 'issue_comment' }}",
+            workflow,
+        )
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()
