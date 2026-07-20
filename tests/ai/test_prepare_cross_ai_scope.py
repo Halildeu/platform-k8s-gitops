@@ -7,6 +7,7 @@ import importlib.util
 import contextlib
 import io
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -234,6 +235,10 @@ class DeterministicDiffTests(unittest.TestCase):
 
 
 class WorkflowBindingTests(unittest.TestCase):
+    ACTION_USES_RE = re.compile(
+        r"^\s*(?:-\s*)?uses:\s*([^\s#]+)(?:\s+#.*)?$", re.MULTILINE
+    )
+
     def test_changed_files_come_from_git_with_rename_detection_disabled(self) -> None:
         workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("diff --name-only --no-renames", workflow)
@@ -243,6 +248,32 @@ class WorkflowBindingTests(unittest.TestCase):
         workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("fetch-depth: 0", workflow)
         self.assertNotIn("--depth=1000", workflow)
+
+    def test_privileged_audit_external_actions_are_commit_pinned(self) -> None:
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assert_external_actions_are_commit_pinned(workflow)
+
+    def test_privileged_audit_rejects_mutable_action_reference(self) -> None:
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "actions/setup-node@v6",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "mutable external action"):
+            self.assert_external_actions_are_commit_pinned(mutated)
+
+    def assert_external_actions_are_commit_pinned(self, workflow: str) -> None:
+        references = self.ACTION_USES_RE.findall(workflow)
+        self.assertGreater(len(references), 0)
+        for reference in references:
+            if reference.startswith("./") or reference.startswith("docker://"):
+                continue
+            self.assertRegex(
+                reference,
+                r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$",
+                f"mutable external action reference in privileged audit: {reference}",
+            )
 
     def test_scope_limit_remains_bounded(self) -> None:
         self.assertEqual(MODULE.MAX_SCOPE_BYTES, 2_000_000)

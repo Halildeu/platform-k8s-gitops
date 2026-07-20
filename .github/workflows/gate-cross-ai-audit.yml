@@ -94,13 +94,13 @@ jobs:
         # Binding to the event's exact base SHA prevents a mutable-ref TOCTOU
         # window after this privileged event starts. A later base hardening
         # naturally appears on the next edited/synchronize/reopened event.
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 20
 
