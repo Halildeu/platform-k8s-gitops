@@ -418,7 +418,7 @@ images:
     # 2026-07-12 update: sha-20ee06d (platform-backend#816) enforces the
     # client-bound meeting-ai service-token policy and blank-secret fail-closed
     # behavior. Digest source: CI - Image Build + GHCR Push run 29177080417.
-    digest: sha256:fdd91cdbb375428e49ee5c5c78442caebd894a403f8c863d22347b2248d1955a
+    digest: sha256:6a3626a548b66304b3e10e335740ba761442f05f77be8a312c589e244786773a
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
