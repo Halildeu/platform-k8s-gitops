@@ -86,7 +86,7 @@
   "audit": {
     "implementer": "Codex",
     "reviewer": "Direct OpenAI Codex gpt-5.6-sol xhigh AGREE; session 019f7d47-43f5-7d73-a3cd-aafa2367d9cd; exact head 322d4950fd85604da3d9af2139c766e43b0bf678",
-    "codex_thread_id": "019f766f-10ca-7d11-8234-aad6eaf62a96",
+    "codex_thread_id": "019f7d47-43f5-7d73-a3cd-aafa2367d9cd",
     "created_at": "2026-07-19T00:13:12Z",
     "approval_pathway": "owner-approved"
   }
