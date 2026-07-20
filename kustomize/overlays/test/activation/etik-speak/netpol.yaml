@@ -44,7 +44,10 @@ spec:
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: openfga}}}]
       ports: [{port: 8080, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: permission-service}}}]
-      ports: [{port: 8090, protocol: TCP}]
+      # Named port resolves against the destination pod (8084), while callers
+      # keep using the stable Service port 8090. This remains correct across
+      # kube-proxy DNAT ordering differences between NetworkPolicy engines.
+      ports: [{port: http, protocol: TCP}]
 ---
 # The destination pods are selected by the namespace default-deny and their
 # broad intra-namespace allow accepts only part-of=platform sources. Etik Speak
@@ -75,4 +78,6 @@ spec:
             matchLabels:
               app.kubernetes.io/name: ethics-service
               app.kubernetes.io/part-of: etik-speak
-      ports: [{port: 8090, protocol: TCP}]
+      # NetworkPolicy ingress is evaluated at the destination pod, not at the
+      # Service's public port 8090; `http` resolves to containerPort 8084.
+      ports: [{port: http, protocol: TCP}]

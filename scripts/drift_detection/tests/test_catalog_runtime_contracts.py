@@ -151,6 +151,12 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
 
     def test_etikspeak_authz_network_policy_is_bidirectional_and_narrow(self):
         root = Path(__file__).resolve().parents[3]
+        permission_service = yaml.safe_load(
+            (root / "kustomize/base/apps/permission-service/service.yaml").read_text()
+        )
+        permission_deployment = yaml.safe_load(
+            (root / "kustomize/base/apps/permission-service/deployment.yaml").read_text()
+        )
         policies = list(
             yaml.safe_load_all(
                 (
@@ -160,14 +166,31 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
             )
         )
         by_name = {policy["metadata"]["name"]: policy for policy in policies}
+        service_http = next(
+            port
+            for port in permission_service["spec"]["ports"]
+            if port["name"] == "http"
+        )
+        self.assertEqual(service_http["port"], 8090)
+        target_port = service_http["targetPort"]
+        container_http = next(
+            port
+            for container in permission_deployment["spec"]["template"]["spec"][
+                "containers"
+            ]
+            for port in container["ports"]
+            if port["name"] == target_port
+        )
+        self.assertEqual(container_http["containerPort"], 8084)
+
         ethics = by_name["ethics-service"]["spec"]
         egress_ports = {
             port["port"]
             for rule in ethics["egress"]
             for port in rule.get("ports", [])
         }
-        self.assertTrue({8080, 8090}.issubset(egress_ports))
-        for target, port in (("openfga", 8080), ("permission-service", 8090)):
+        self.assertTrue({8080, target_port}.issubset(egress_ports))
+        for target, port in (("openfga", 8080), ("permission-service", target_port)):
             policy = by_name[f"allow-ethics-service-to-{target}"]["spec"]
             self.assertEqual(
                 policy["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
@@ -183,7 +206,7 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
             )
             self.assertEqual(policy["ingress"][0]["ports"], [{"port": port, "protocol": "TCP"}])
 
-    def test_openfga_and_migration_job_use_the_live_exact_digest(self):
+    def test_openfga_and_migration_job_use_exact_digest_with_safe_job_recreation(self):
         root = Path(__file__).resolve().parents[3]
         expected = (
             "openfga/openfga@sha256:"
@@ -194,6 +217,16 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
             "kustomize/base/apps/openfga/migrate-job.yaml",
         ):
             self.assertIn(f"image: {expected}", (root / relative).read_text())
+        migration_job = yaml.safe_load(
+            (root / "kustomize/base/apps/openfga/migrate-job.yaml").read_text()
+        )
+        annotations = migration_job["metadata"]["annotations"]
+        self.assertEqual(annotations["argocd.argoproj.io/hook"], "PreSync")
+        self.assertEqual(
+            set(annotations["argocd.argoproj.io/hook-delete-policy"].split(",")),
+            {"BeforeHookCreation", "HookSucceeded"},
+        )
+        self.assertEqual(annotations["argocd.argoproj.io/sync-wave"], "-1")
 
     def test_rollback_contract_forbids_activation_resource_removal(self):
         root = Path(__file__).resolve().parents[3]

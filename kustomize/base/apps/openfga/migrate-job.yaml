@@ -5,6 +5,15 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: openfga-migrate
+  annotations:
+    # The Job pod template is immutable. Treat migrations as an explicit
+    # PreSync hook so a new immutable image pin never attempts an in-place Job
+    # patch. TEST may run the idempotent migration during auto-sync; PROD can
+    # run it only through the existing human-gated full-sync workflow (hooks
+    # are deliberately skipped by selective resource syncs).
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
   labels:
     app.kubernetes.io/name: openfga
     app.kubernetes.io/component: authz
