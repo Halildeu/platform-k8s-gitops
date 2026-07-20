@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Faz 35 Etik Speak: grant the dedicated synthetic manager the suite ETHIC
-# module through permission-service's canonical role/granule/member writer.
+# Faz 35 Etik Speak: grant the three dedicated synthetic manager personas the
+# same narrow suite ETHIC module. Tenant and object authorization remain solely
+# differentiated by each persona's org claim and isolated OpenFGA tuples.
 set -euo pipefail
 # A caller may invoke bash -x; stop tracing before credentials are read.
 set +x
@@ -240,10 +241,10 @@ for label in target wrong-org denied; do
   unset username email user_id
 done
 
-# Negative personas must have no permission-service authority at all. The
-# target may be exact-empty on first run or carry only the dedicated role and
-# ETHIC=MANAGE on a rerun. The helper rejects super-admin, unrelated roles,
-# modules, permissions, actions, reports and scopes before profile activation.
+# Every synthetic manager must be either exact-empty on first run or carry only
+# the dedicated role and ETHIC=MANAGE on a rerun. Giving all three this same
+# suite-level prerequisite lets the runtime acceptance reach the intended
+# tenant/OpenFGA deny layers instead of being short-circuited by a 403.
 for label in target wrong-org denied; do
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-before.json" \
     --config "$TMP_DIR/$label-auth.curl")
@@ -252,11 +253,7 @@ for label in target wrong-org denied; do
     echo "FATAL: $label has a non-canonical full authorization projection" >&2
     exit 1
   }
-  if [ "$label" != target ] && [ "$projection_state" != ABSENT ]; then
-    echo "FATAL: $label unexpectedly has permission-service authority before dedicated writer provisioning" >&2
-    exit 1
-  fi
-  [ "$label" != target ] || target_projection_before=$projection_state
+  printf '%s' "$projection_state" >"$TMP_DIR/$label-projection-before"
 done
 unset projection_state
 
@@ -264,6 +261,23 @@ unset projection_state
 # activation. Any mismatch returns nonzero with zero activation requests.
 target_user_id=$(faz35_activate_verified_profiles \
   "$TMP_DIR" "$BASE_URL" "$TMP_DIR/writer-auth.curl") || exit 1
+wrong_org_user_id=$(<"$TMP_DIR/wrong-org-user-id")
+denied_user_id=$(<"$TMP_DIR/denied-user-id")
+for user_id in "$target_user_id" "$wrong_org_user_id" "$denied_user_id"; do
+  [[ "$user_id" =~ ^[0-9]+$ ]] || {
+    echo "FATAL: synthetic manager local user ID is not numeric" >&2
+    exit 1
+  }
+done
+expected_member_ids=$(jq -nc \
+  --argjson target "$target_user_id" \
+  --argjson wrong_org "$wrong_org_user_id" \
+  --argjson denied "$denied_user_id" \
+  '[$target,$wrong_org,$denied] | sort')
+[ "$(printf '%s' "$expected_member_ids" | jq 'unique | length')" = 3 ] || {
+  echo "FATAL: synthetic manager local user IDs are not unique" >&2
+  exit 1
+}
 
 roles_code=$(http_status GET "$BASE_URL/api/v1/roles" "$TMP_DIR/roles.json" \
   --config "$TMP_DIR/writer-auth.curl")
@@ -278,8 +292,6 @@ role_count=$(jq --arg name "$PERMISSION_ROLE_NAME" '[.items[]? | select(.name ==
   exit 1
 }
 role_id=$(jq -r --arg name "$PERMISSION_ROLE_NAME" '[.items[]? | select(.name == $name)][0].id // empty' "$TMP_DIR/roles.json")
-member_present=false
-
 if [ -n "$role_id" ]; then
   code=$(http_status GET "$BASE_URL/api/v1/roles/$role_id/granules" "$TMP_DIR/granules-before.json" \
     --config "$TMP_DIR/writer-auth.curl")
@@ -294,35 +306,43 @@ if [ -n "$role_id" ]; then
   code=$(http_status GET "$BASE_URL/api/v1/roles/$role_id/members" "$TMP_DIR/members-before.json" \
     --config "$TMP_DIR/writer-auth.curl")
   [ "$code" = 200 ] || { echo "FATAL: dedicated permission membership preflight failed" >&2; exit 1; }
-  jq -e --argjson target "$target_user_id" \
-    'length <= 1 and all(.[]?; .userId == $target)' "$TMP_DIR/members-before.json" >/dev/null || {
+  jq -e --argjson expected "$expected_member_ids" '
+    type == "array" and length <= 3 and
+    all(.[]?; (.userId | type) == "number") and
+    (([.[].userId] | length) == ([.[].userId] | unique | length)) and
+    (([.[].userId] - $expected) | length == 0)
+  ' "$TMP_DIR/members-before.json" >/dev/null || {
     echo "FATAL: dedicated permission role contains an unrelated member" >&2
     exit 1
   }
-  [ "$(jq 'length' "$TMP_DIR/members-before.json")" = 0 ] || member_present=true
 
-  if [ "$target_projection_before" = EXACT_MANAGE ]; then
+  for label in target wrong-org denied; do
+    [ "$(<"$TMP_DIR/$label-projection-before")" = EXACT_MANAGE ] || continue
+    user_id=$(<"$TMP_DIR/$label-user-id")
     if ! jq -e '.granules == [{type:"MODULE",key:"ETHIC",grant:"MANAGE"}]' \
         "$TMP_DIR/granules-before.json" >/dev/null ||
-        ! jq -e --argjson target "$target_user_id" \
-          'length == 1 and .[0].userId == $target' "$TMP_DIR/members-before.json" >/dev/null; then
-      echo "FATAL: existing target ETHIC projection is not linked to the exact dedicated role" >&2
+        ! jq -e --argjson user_id "$user_id" \
+          'any(.[]; .userId == $user_id)' "$TMP_DIR/members-before.json" >/dev/null; then
+      echo "FATAL: existing $label ETHIC projection is not linked to the exact dedicated role" >&2
       exit 1
     fi
-  fi
+  done
 else
-  [ "$target_projection_before" = ABSENT ] || {
-    echo "FATAL: target has ETHIC but the dedicated permission role is missing" >&2
-    exit 1
-  }
+  for label in target wrong-org denied; do
+    [ "$(<"$TMP_DIR/$label-projection-before")" = ABSENT ] || {
+      echo "FATAL: $label has ETHIC but the dedicated permission role is missing" >&2
+      exit 1
+    }
+  done
   jq -n --arg name "$PERMISSION_ROLE_NAME" \
-    '{name:$name,description:"Etik Speak dedicated synthetic test manager"}' >"$TMP_DIR/create-role.json"
+    '{name:$name,description:"Etik Speak dedicated synthetic test managers"}' >"$TMP_DIR/create-role.json"
   code=$(http_status POST "$BASE_URL/api/v1/roles" "$TMP_DIR/create-role-response.json" \
     --config "$TMP_DIR/writer-auth.curl" -H 'Content-Type: application/json' \
     --data-binary "@$TMP_DIR/create-role.json")
   [ "$code" = 201 ] || { echo "FATAL: dedicated permission role create failed" >&2; exit 1; }
   role_id=$(jq -r '.id // empty' "$TMP_DIR/create-role-response.json")
   [[ "$role_id" =~ ^[0-9]+$ ]] || { echo "FATAL: dedicated permission role id missing" >&2; exit 1; }
+  printf '[]' >"$TMP_DIR/members-before.json"
 fi
 
 jq -n '{permissions:[{type:"MODULE",key:"ETHIC",grant:"MANAGE"}]}' >"$TMP_DIR/granules.json"
@@ -331,8 +351,11 @@ code=$(http_status PUT "$BASE_URL/api/v1/roles/$role_id/granules" "$TMP_DIR/muta
   --data-binary "@$TMP_DIR/granules.json")
 [ "$code" = 200 ] || { echo "FATAL: ETHIC granule writer failed" >&2; exit 1; }
 
-if [ "$member_present" = false ]; then
-  jq -n --argjson target "$target_user_id" '{userIds:[$target]}' >"$TMP_DIR/member.json"
+current_member_ids=$(jq -c '[.[].userId] | unique | sort' "$TMP_DIR/members-before.json")
+missing_member_ids=$(jq -nc --argjson expected "$expected_member_ids" \
+  --argjson current "$current_member_ids" '$expected - $current')
+if [ "$(printf '%s' "$missing_member_ids" | jq 'length')" -gt 0 ]; then
+  jq -n --argjson missing "$missing_member_ids" '{userIds:$missing}' >"$TMP_DIR/member.json"
   code=$(http_status POST "$BASE_URL/api/v1/roles/$role_id/members" "$TMP_DIR/mutation.json" \
     --config "$TMP_DIR/writer-auth.curl" -H 'Content-Type: application/json' \
     --data-binary "@$TMP_DIR/member.json")
@@ -348,45 +371,41 @@ if [ "$code" != 200 ] || ! jq -e \
 fi
 code=$(http_status GET "$BASE_URL/api/v1/roles/$role_id/members" "$TMP_DIR/members-after.json" \
   --config "$TMP_DIR/writer-auth.curl")
-if [ "$code" != 200 ] || ! jq -e --argjson target "$target_user_id" \
-  'length == 1 and .[0].userId == $target' "$TMP_DIR/members-after.json" >/dev/null; then
+if [ "$code" != 200 ] || ! jq -e --argjson expected "$expected_member_ids" \
+  'length == 3 and ([.[].userId] | sort) == $expected' "$TMP_DIR/members-after.json" >/dev/null; then
   echo "FATAL: ETHIC membership readback mismatch" >&2
   exit 1
 fi
 
 # RoleChangeEvent/version propagation may be asynchronous. Poll only the
-# non-secret authorization projection and require both positive and negative
-# postconditions before returning success.
+# non-secret authorization projection and require the exact same suite-level
+# prerequisite for all three personas before runtime tenant/OpenFGA denial.
 entitlement_ready=false
-target_expected_id=$(<"$TMP_DIR/target-user-id")
 for _ in $(seq 1 30); do
-  code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/target-authz-after.json" \
-    --config "$TMP_DIR/target-auth.curl")
-  if [ "$code" = 200 ] &&
-      [ "$(faz35_authz_member_id "$TMP_DIR/target-authz-after.json" "$target_expected_id" 2>/dev/null || true)" = "$target_expected_id" ] &&
-      [ "$(faz35_authz_projection_state "$TMP_DIR/target-authz-after.json" 2>/dev/null || true)" = EXACT_MANAGE ]; then
+  all_personas_ready=true
+  for label in target wrong-org denied; do
+    expected_user_id=$(<"$TMP_DIR/$label-user-id")
+    code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-after.json" \
+      --config "$TMP_DIR/$label-auth.curl")
+    if [ "$code" != 200 ] ||
+        [ "$(faz35_authz_member_id "$TMP_DIR/$label-authz-after.json" "$expected_user_id" 2>/dev/null || true)" != "$expected_user_id" ] ||
+        [ "$(faz35_authz_projection_state "$TMP_DIR/$label-authz-after.json" 2>/dev/null || true)" != EXACT_MANAGE ]; then
+      all_personas_ready=false
+    fi
+  done
+  if [ "$all_personas_ready" = true ]; then
     entitlement_ready=true
     break
   fi
   sleep 1
 done
 [ "$entitlement_ready" = true ] || {
-  echo "FATAL: target ETHIC entitlement did not become authoritative" >&2
+  echo "FATAL: all synthetic manager ETHIC entitlements did not become authoritative" >&2
   exit 1
 }
-for label in wrong-org denied; do
-  expected_user_id=$(<"$TMP_DIR/$label-user-id")
-  code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-after.json" \
-    --config "$TMP_DIR/$label-auth.curl")
-  if [ "$code" != 200 ] ||
-      [ "$(faz35_authz_member_id "$TMP_DIR/$label-authz-after.json" "$expected_user_id" 2>/dev/null || true)" != "$expected_user_id" ] ||
-      [ "$(faz35_authz_projection_state "$TMP_DIR/$label-authz-after.json" 2>/dev/null || true)" != ABSENT ]; then
-    echo "FATAL: $label gained non-canonical permission-service authority" >&2
-    exit 1
-  fi
-done
 
-unset target_user_id target_projection_before target_expected_id expected_user_id member_present
-echo "Permission: canonical role/granule/member writer granted only the synthetic manager ETHIC=MANAGE"
-echo "Permission: target positive and wrong-org/denied negative /authz/me postconditions OK"
+unset target_user_id wrong_org_user_id denied_user_id expected_user_id user_id
+unset expected_member_ids current_member_ids missing_member_ids all_personas_ready
+echo "Permission: canonical role/granule/member writer granted all three synthetic managers exact ETHIC=MANAGE"
+echo "Permission: tenant/OpenFGA remains the sole allow, wrong-org and explicit-deny differentiator"
 echo "ETHICS_PERMISSION_ROLE_ID=$role_id"

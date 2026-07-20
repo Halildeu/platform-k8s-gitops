@@ -104,9 +104,10 @@ namespaced Kubernetes secret for that AppRole; the role can read only
 The entitlement script uses the existing test permission-writer credential only
 from its Vault document and writes through permission-service's canonical
 role/granule/member APIs. It creates or reconciles the dedicated
-`ETIK_SPEAK_MANAGER` role to exactly `MODULE:ETHIC:MANAGE`, assigns only the
-synthetic allow persona, then proves `/authz/me` positive for that persona and
-negative for the wrong-org and OpenFGA-denied personas. Raw credentials, bearer
+`ETIK_SPEAK_MANAGER` role to exactly `MODULE:ETHIC:MANAGE` and assigns all three
+synthetic manager personas. It then proves the same narrow `/authz/me`
+prerequisite for each; tenant isolation and explicit deny are exercised only at
+the downstream org/OpenFGA layer. Raw credentials, bearer
 tokens, email and numeric user IDs remain in mode-600 temporary files and are
 never emitted.
 Every password file must be regular, non-symlink, owned by the invoking user
@@ -143,8 +144,9 @@ Expected non-secret results:
 - Keycloak access token contract: `aud` includes `ethics-manager`, `scope`
   includes `ethics:case:manage`, the realm role includes `ethics-manager`, and
   `org_id` matches the persona's test tenant;
-- permission-service `/authz/me` returns `ETHIC=MANAGE` only for the dedicated
-  allow persona; both negative personas remain without the suite entitlement;
+- permission-service `/authz/me` returns the same exact `ETHIC=MANAGE` and no
+  other authority for all three synthetic managers, so wrong-org and denied
+  requests reach the tenant/OpenFGA checks instead of stopping at suite 403;
 - OpenFGA checks return allow for product `case_viewer`, `case_triager`, and
   `case_handler` for the synthetic manager subject.
 

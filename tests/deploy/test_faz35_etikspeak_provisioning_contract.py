@@ -270,7 +270,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("rawTokenIncluded: false", self.writer_identity)
         self.assertNotRegex(self.writer_identity, r"--data-urlencode \"password=\$\{")
 
-    def test_ethic_entitlement_uses_canonical_writer_and_negative_postconditions(self):
+    def test_ethic_entitlement_uses_canonical_writer_and_three_narrow_manager_postconditions(self):
         self.assertIn("/api/v1/roles/$role_id/granules", self.entitlement)
         self.assertIn("/api/v1/roles/$role_id/members", self.entitlement)
         self.assertIn('{type:"MODULE",key:"ETHIC",grant:"MANAGE"}', self.entitlement)
@@ -278,6 +278,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("wrong-org", self.entitlement)
         self.assertIn("denied", self.entitlement)
         self.assertIn("dedicated permission role contains an unrelated member", self.entitlement)
+        self.assertIn("expected_member_ids", self.entitlement)
+        self.assertIn("all three synthetic managers exact ETHIC=MANAGE", self.entitlement)
+        self.assertIn("tenant/OpenFGA remains the sole", self.entitlement)
         self.assertIn("permission-writer Vault response is not one exact JSON document", self.entitlement)
         self.assertIn("permission-writer Vault username is not the canonical synthetic writer", self.entitlement)
         self.assertIn("permission writer is not the exact least-privilege provisioner", self.entitlement)
@@ -371,13 +374,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0)
 
-        self.assertIn('target_projection_before=$projection_state', self.entitlement)
-        self.assertIn('[ "$target_projection_before" = EXACT_MANAGE ]', self.entitlement)
-        self.assertIn("existing target ETHIC projection is not linked to the exact dedicated role", self.entitlement)
-        self.assertIn('if [ "$member_present" = false ]; then', self.entitlement)
+        self.assertIn('>"$TMP_DIR/$label-projection-before"', self.entitlement)
+        self.assertIn('= EXACT_MANAGE ] || continue', self.entitlement)
+        self.assertIn("ETHIC projection is not linked to the exact dedicated role", self.entitlement)
+        self.assertIn("missing_member_ids", self.entitlement)
         self.assertIn("synthetic persona authority differs from the exact allowlist", self.authz_projection_lib)
         self.assertIn("synthetic persona authority document is incomplete or malformed", self.authz_projection_lib)
-        self.assertIn("gained non-canonical permission-service authority", self.entitlement)
+        self.assertNotIn("gained non-canonical permission-service authority", self.entitlement)
 
     def test_authz_member_identity_must_match_local_user_before_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -445,10 +448,6 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         activation = self.authz_projection_lib.index("/api/v1/users/$user_id/activation")
         self.assertLess(identity_check, activation)
         self.assertIn("target_user_id=$(faz35_activate_verified_profiles", self.entitlement)
-        self.assertIn(
-            'faz35_authz_member_id "$TMP_DIR/target-authz-after.json" "$target_expected_id"',
-            self.entitlement,
-        )
         self.assertIn(
             'faz35_authz_member_id "$TMP_DIR/$label-authz-after.json" "$expected_user_id"',
             self.entitlement,

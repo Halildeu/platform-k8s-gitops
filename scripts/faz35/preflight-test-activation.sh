@@ -23,7 +23,7 @@ MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SH
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/70188fd548a2814246aebdef6456c095a48033bc84113dced704143d24a905ca.json"
+IMAGE_SET="$REPO_ROOT/docs/faz-35-evidence/image-set/fb830fe4f94d04eb63758ce1be8607f2a6bd9e7ba7c3cc065eb7515b575703d3.json"
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
