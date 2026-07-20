@@ -172,7 +172,7 @@ Mühendislik değerlendirmesi şunları arar:
   tarafından iddia edilmez
 - veri akışı, recording/retention modu, consent/deletion boundary veya
   legal-vs-engineering ayrımı değişirse `ADR-0030` D6 tetiklenir; karar önce
-  provider-distinct cross-AI istişareyle değerlendirilir ve ADR'ye bağlanmadan
+  exact Codex-only istişareyle değerlendirilir ve ADR'ye bağlanmadan
   canonical kural sayılmaz
 
 Doğru status dili: "engineering G-COMP controls pass/pending", "legal track
@@ -282,7 +282,7 @@ Detaylı protokol (agent-state şablonu, claim protokolü, comment taxonomy, eli
 
 ## 10. Agent İletişimi — Mavis CLI
 
-Lokal agent'lar (paralel Claude session'lar dahil) arası ve kullanıcı ile koordinasyon kanalı **Mavis CLI**'dir. Multi-session geliştirme modelinde paralel agent koordinasyonu için tek standart kanal.
+Lokal agent'lar arası ve kullanıcı ile koordinasyon kanalı **Mavis CLI**'dir. Multi-session geliştirme modelinde paralel agent koordinasyonu için tek standart kanal.
 
 ### 3 Yol (öncelik sırası)
 
