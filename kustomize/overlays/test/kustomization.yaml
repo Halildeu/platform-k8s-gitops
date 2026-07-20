@@ -1474,6 +1474,23 @@ images:
     # ("Toplantı") + TRANSCRIPT ("Transkript") VIEW/MANAGE + ADMIN MANAGE granule seed
     # 2026-06-23 #736 Slice-2b: distrust foreign userId claim + /authz/me
     # fail-closed (sha-45293e5). Prior: sha256:4383d25f (Codex 019ed603 writer-path).
+    # 2026-07-20 update: sha-4a0dc67 — board #2555 Slice B / #2714.
+    # Source : platform-backend PR #896 squash 4a0dc675173156d256c5577fc7535d4b5936ede5
+    #          (CI 21/21 pass; permission-service 419/0/0/4 unit+IT).
+    # Tag    : ci-image-push.yml -> sha-4a0dc67 (build run 29778952872).
+    # Digest : sha256:a23c72fa3d196a927737055b93e37490033c1cc451507c52f2d885e59e4df9d9
+    #          captured via k3d-test-server-0 smoke pull (kubectl run --image=…:sha-4a0dc67
+    #          -> status.containerStatuses[0].imageID).
+    # Ships  : POST /api/v1/access/scope no longer returns HTTP 500 on
+    #          user-supplied invalid scope_ref. AccessScopeService.grant()
+    #          widens catch to JpaSystemException + UncategorizedSQLException,
+    #          classifies P0001 (validate_scope_ref trigger) as
+    #          ScopeReferenceInvalidException -> HTTP 400 with fieldErrors
+    #          [{field:"scopeRef", rejectedValue, message}]. 23514 CHECK
+    #          (scope_kind_source_table_consistent) still maps to 422 (code
+    #          bug, mismatched kind<->source_table). Test-only rollout;
+    #          prod defer D30 atomic cutover.
+    #
     # 2026-07-14 update: sha-c87ec88 (platform-backend PR #834, merge
     # c87ec88264e608a1f1c8a80933666070eacba79a) adds the exact
     # INTERVIEW_EVIDENCE VIEW/MANAGE catalog contract for Faz 25 P5. The module
@@ -1498,7 +1515,7 @@ images:
     # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
     #          proves the artifact, not the full source lineage. Reconcile the Actions run
     #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
+    digest: sha256:a23c72fa3d196a927737055b93e37490033c1cc451507c52f2d885e59e4df9d9
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)

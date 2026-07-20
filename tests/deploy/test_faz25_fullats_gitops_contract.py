@@ -954,7 +954,12 @@ fi
     def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
         current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
-        current_permission = "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
+        # #2555 Slice B (2026-07-20) - bumped from sha256:55f2f2f2 to sha256:a23c72fa
+        # (sha-4a0dc67, platform-backend PR #896). AccessScopeService.grant()
+        # widens the P0001 handler; POST /access/scope 500->400. Faz 25 ATS
+        # promotion state is invariant under this backend-only behavior change
+        # (no ATS DTO / catalog / recruiter-scope contract touched).
+        current_permission = "sha256:a23c72fa3d196a927737055b93e37490033c1cc451507c52f2d885e59e4df9d9"
         promoted = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
             "tag": "sha-eee1310",
