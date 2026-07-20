@@ -76,6 +76,17 @@ mavis communication peers
 
 ### 0.1 Durumsal Cross-AI İstişare — Az Kanal + Sağlayıcı/Model Esnek (2026-07-20)
 
+> **GEÇİCİ ASKI (kullanıcı 2026-07-20):** Cross-AI istişare/review şu an
+> **zorunlu değil, opt-in**. Agent otomatik olarak Codex/GLM/MiniMax'a danışmaz
+> ve ikinci-görüş açmaz — yalnız kullanıcı açıkça isteyince ("Codex'e sor",
+> "GLM'e danış", "ikinci görüş al"). Merge tarafında `cross-ai-audit` main
+> required-check'ten çıkarıldı (advisory'de kaldı; koşar, bloklamaz). Aşağıdaki
+> mode disiplini referans mimari olarak kalır ama otomatik zorlanmaz. Bir
+> istişare *fiilen yapılırsa* sabit guard'lar geçerli (implementer≠reviewer;
+> Cursor/wrapper yasak; secret/PII yasağı; kota=tracked_pending; cross-AI ≠
+> test/CI/live/human gate). Geri açma tek komut: `printf '["cross-ai-audit"]'
+> \| gh api --method POST repos/Halildeu/platform-k8s-gitops/branches/main/protection/required_status_checks/contexts --input -` + bu blok kaldırılır.
+
 - Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
   adımlarında istişare açma: `Consultation mode: none`. Changed-files kanıtı
   eksikse, consultation governance dosyası değişiyorsa veya branch
@@ -161,6 +172,12 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 ### 8. Continuous Autonomous Mode + Durumsal Cross-AI (KALICI ANA KURAL — 2026-07-20 güncel)
 
 **HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
+
+> **NOT (2026-07-20 geçici askı — §0.1):** Cross-AI istişare şu an opt-in;
+> aşağıdaki karar kuralları "gerçek ikinci görüş noktası" tetiklendiğinde
+> uygulanır — ki bu tetik artık **yalnız kullanıcı açık talebi** (otomatik
+> risk-path tetikleyicisi askıda). Askı kalkana kadar normal akışta hiçbir
+> Codex/GLM/MiniMax çağrısı otomatik yapılmaz.
 
 **Karar verme kuralı**:
 - Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
