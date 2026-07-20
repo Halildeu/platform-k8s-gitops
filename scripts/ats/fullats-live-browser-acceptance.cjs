@@ -45,6 +45,7 @@ const allowedEvidencePaths = [
   '/api/ats/v1/jobs',
   '/api/ats/v1/careers/',
   '/api/ats/v1/candidate/applications',
+  '/api/ats/v1/candidate/resume-imports',
   '/api/ats/v1/interviews',
   '/api/ats/v1/recruiter/applications',
   '/api/ats/v1/recruiter/jobs',
@@ -156,6 +157,15 @@ const waitVisible = async (locator, label, timeout = 60_000) => {
   });
 };
 
+const waitEnabled = async (locator, label, timeout = 60_000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await locator.isEnabled().catch(() => false)) return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`${label} ${timeout}ms icinde etkinlesmedi`);
+};
+
 const refreshUntilVisible = async (refreshButton, target, label, attempts = 3) => {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -227,6 +237,7 @@ let jobId = '';
 let publicHandle = '';
 let interviewId = '';
 let offerId = '';
+let resumeImportId = '';
 try {
   const recruiterContext = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
@@ -352,24 +363,127 @@ try {
   await candidatePage.getByRole('link', { name: 'Başvuru formuna geç' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-page'), 'candidate application page');
   await waitVisible(candidatePage.getByRole('heading', { name: jobTitle }), 'job title');
+  await candidatePage.getByLabel(/CV içe aktarma aydınlatmasını okudum/u).check();
+  const resumeCreateResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/careers/${publicHandle}/jobs/${jobSlug}/resume-imports`,
+    { timeout: 30_000 },
+  );
+  const resumeUploadResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      /^\/api\/ats\/v1\/candidate\/resume-imports\/ri_[A-Za-z0-9_-]{24}\/document$/u.test(
+        relevantPath(response.url()) ?? '',
+      ),
+    { timeout: 30_000 },
+  );
   await candidatePage.getByTestId('candidate-resume').setInputFiles({
     name: 'fullats-synthetic-resume.pdf',
     mimeType: 'application/pdf',
     buffer: buildSyntheticResumePdf({ fullName: candidateName, email: candidateEmail }),
   });
+  const resumeCreateResponse = await resumeCreateResponsePromise;
+  if (resumeCreateResponse.status() !== 201) {
+    throw new Error(`candidate resume import create HTTP ${resumeCreateResponse.status()}`);
+  }
+  const createdResumeImport = await resumeCreateResponse.json();
+  resumeImportId = typeof createdResumeImport.importId === 'string' ? createdResumeImport.importId : '';
+  if (!/^ri_[A-Za-z0-9_-]{24}$/u.test(resumeImportId)) {
+    throw new Error('candidate resume import id invalid');
+  }
+  const resumeUploadResponse = await resumeUploadResponsePromise;
+  if (![201, 202].includes(resumeUploadResponse.status())) {
+    throw new Error(`candidate resume upload HTTP ${resumeUploadResponse.status()}`);
+  }
+
+  const resumeReview = candidatePage.getByTestId('candidate-resume-review');
+  await waitVisible(resumeReview, 'candidate resume proposal review');
+  if ((await candidatePage.getByTestId('candidate-email').inputValue()) !== '') {
+    throw new Error('unreviewed PDF proposal escaped into authoritative form');
+  }
+  await waitVisible(
+    resumeReview.getByText(/Sayfa 1 · güven %\d+ · metin konumu doğrulandı/u).first(),
+    'candidate resume proposal provenance',
+  );
+
+  const editedCandidateName = `${candidateName} Düzenlendi`;
+  const fullNameProposal = candidatePage.getByTestId('resume-proposal-fullName');
+  await fullNameProposal.getByLabel('Aday tarafından düzenlenebilir değer').fill(editedCandidateName);
+  const fullNameEditResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/fullName`,
+    { timeout: 30_000 },
+  );
+  await fullNameProposal.getByRole('button', { name: 'Düzenlediğimi kaydet' }).click();
+  if ((await fullNameEditResponsePromise).status() !== 200) {
+    throw new Error('candidate resume full-name edit was not persisted');
+  }
+  await waitVisible(fullNameProposal.getByText('Düzenlendi', { exact: true }), 'edited resume field state');
+
+  const cityProposal = candidatePage.getByTestId('resume-proposal-city');
+  const cityRejectResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/city`,
+    { timeout: 30_000 },
+  );
+  await cityProposal.getByRole('button', { name: 'Reddet' }).click();
+  if ((await cityRejectResponsePromise).status() !== 200) {
+    throw new Error('candidate resume city rejection was not persisted');
+  }
+  await waitVisible(cityProposal.getByText('Reddedildi', { exact: true }), 'rejected resume field state');
+
+  await resumeReview.getByRole('button', { name: 'Güvenli önerileri kabul et' }).click();
+  const applySelectedButton = resumeReview.getByRole('button', {
+    name: /Seçtiğim alanları forma aktar \(\d+\)/u,
+  });
+  await waitEnabled(applySelectedButton, 'reviewed resume confirmation');
+  const resumeConfirmResponsePromise = candidatePage.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      relevantPath(response.url()) ===
+        `/api/ats/v1/candidate/resume-imports/${resumeImportId}/confirm`,
+    { timeout: 30_000 },
+  );
+  await applySelectedButton.click();
+  const resumeConfirmResponse = await resumeConfirmResponsePromise;
+  if (resumeConfirmResponse.status() !== 200) {
+    throw new Error(`candidate resume confirm HTTP ${resumeConfirmResponse.status()}`);
+  }
+  const confirmedResume = await resumeConfirmResponse.json();
+  if (
+    confirmedResume?.resumeImport?.state !== 'CONFIRMED' ||
+    confirmedResume?.draft?.importId !== resumeImportId ||
+    !Number.isInteger(confirmedResume?.draft?.version)
+  ) {
+    throw new Error('candidate resume confirmation binding invalid');
+  }
   const resumeMeta = candidatePage.getByTestId('candidate-resume-meta');
-  await waitVisible(resumeMeta, 'candidate PDF import result');
-  if (!/PDF’den dolduruldu/u.test((await resumeMeta.textContent()) ?? '')) {
-    throw new Error('candidate PDF did not autofill the application form');
+  await waitVisible(resumeMeta, 'candidate confirmed resume draft');
+  if (!/CV kararları kaydedildi; \d+ alan forma aktarıldı/u.test((await resumeMeta.textContent()) ?? '')) {
+    throw new Error('candidate confirmed resume draft did not populate the form');
   }
   if ((await candidatePage.getByTestId('candidate-email').inputValue()) !== candidateEmail) {
-    throw new Error('candidate PDF email autofill mismatch');
+    throw new Error('candidate accepted PDF email proposal mismatch');
   }
-  if ((await candidatePage.getByTestId('candidate-fullName').inputValue()) !== candidateName) {
-    throw new Error('candidate PDF full-name autofill mismatch');
+  if ((await candidatePage.getByTestId('candidate-fullName').inputValue()) !== editedCandidateName) {
+    throw new Error('candidate edited PDF full-name proposal mismatch');
   }
-  const editedCandidateName = `${candidateName} Düzenlendi`;
-  await candidatePage.getByTestId('candidate-fullName').fill(editedCandidateName);
+  if ((await candidatePage.getByTestId('candidate-city').inputValue()) !== '') {
+    throw new Error('candidate rejected PDF city proposal escaped into form');
+  }
+  await candidatePage.getByTestId('candidate-city').fill('Istanbul');
+  if ((await candidatePage.getByTestId('candidate-resume').count()) !== 0) {
+    throw new Error('raw PDF input remained mounted after terminal confirmation');
+  }
+  if (((await resumeMeta.textContent()) ?? '').includes('fullats-synthetic-resume.pdf')) {
+    throw new Error('candidate PDF filename escaped into confirmed product state');
+  }
   await candidatePage.getByRole('button', { name: 'Başvuruyu önizle' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-preview'), 'candidate preview');
   await waitVisible(
@@ -407,13 +521,21 @@ try {
     'noticeVersion',
     'phone',
     'portfolio',
+    'resumeDraftVersion',
+    'resumeImportId',
     'skills',
     'summary',
   ].sort();
   if (JSON.stringify(submittedKeys) !== JSON.stringify(expectedSubmittedKeys)) {
     throw new Error(`candidate submission field boundary mismatch: ${submittedKeys.join(',')}`);
   }
-  if (submittedPayload.fullName !== editedCandidateName || submittedPayload.email !== candidateEmail) {
+  if (
+    submittedPayload.fullName !== editedCandidateName ||
+    submittedPayload.email !== candidateEmail ||
+    submittedPayload.city !== 'Istanbul' ||
+    submittedPayload.resumeImportId !== resumeImportId ||
+    submittedPayload.resumeDraftVersion !== confirmedResume.draft.version
+  ) {
     throw new Error('candidate edited PDF fields were not submitted');
   }
   const serializedSubmission = JSON.stringify(submittedPayload);
@@ -932,6 +1054,30 @@ try {
     ['recruiter', 'POST', '/api/ats/v1/recruiter/jobs', 201],
     ['recruiter', 'PUT', `/api/ats/v1/recruiter/jobs/${jobId}`, 200],
     ['candidate', 'GET', `/api/ats/v1/careers/${publicHandle}/jobs/${jobSlug}`, 200],
+    [
+      'candidate',
+      'POST',
+      `/api/ats/v1/careers/${publicHandle}/jobs/${jobSlug}/resume-imports`,
+      201,
+    ],
+    [
+      'candidate',
+      'PUT',
+      `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/fullName`,
+      200,
+    ],
+    [
+      'candidate',
+      'PUT',
+      `/api/ats/v1/candidate/resume-imports/${resumeImportId}/fields/city`,
+      200,
+    ],
+    [
+      'candidate',
+      'POST',
+      `/api/ats/v1/candidate/resume-imports/${resumeImportId}/confirm`,
+      200,
+    ],
     ['candidate', 'POST', publicApplicationApiPath, 201],
     ['candidate', 'GET', `/api/ats/v1/candidate/applications/${publicRef}`, 200],
     ['recruiter', 'GET', '/api/ats/v1/recruiter/applications', 200],
@@ -959,6 +1105,16 @@ try {
     if (!networkEvidence.some((entry) => entry.persona === persona && entry.method === method && entry.pathname === pathname && entry.status === status)) {
       throw new Error(`missing network evidence: ${persona} ${method} ${pathname} ${status}`);
     }
+  }
+  const resumeUploads = networkEvidence.filter(
+    (entry) =>
+      entry.persona === 'candidate' &&
+      entry.method === 'PUT' &&
+      entry.pathname === `/api/ats/v1/candidate/resume-imports/${resumeImportId}/document` &&
+      [201, 202].includes(entry.status),
+  );
+  if (resumeUploads.length !== 1) {
+    throw new Error(`expected one bounded PDF upload, got ${resumeUploads.length}`);
   }
   const jobTransitions = networkEvidence.filter(
     (entry) =>
@@ -998,6 +1154,7 @@ try {
       [jobId, '[JOB_ID]'],
       [interviewId, '[INTERVIEW_ID]'],
       [offerId, '[OFFER_ID]'],
+      [resumeImportId, '[RESUME_IMPORT_ID]'],
       [publicHandle, '[PUBLIC_HANDLE]'],
       [jobSlug, '[JOB_SLUG]'],
     ]) {
@@ -1016,7 +1173,7 @@ try {
   }
 
   const summary = {
-    schemaVersion: 'fullats-live-browser-acceptance/v3',
+    schemaVersion: 'fullats-live-browser-acceptance/v4',
     environment: 'testai.acik.com',
     syntheticOnly: true,
     frontendSourceCommit: buildInfo.sha,
@@ -1038,8 +1195,14 @@ try {
       'recruiter-previews-draft',
       'recruiter-publishes-job',
       'candidate-opens-dynamic-public-job',
-      'candidate-imports-real-pdf-locally',
-      'candidate-edits-pdf-autofilled-field',
+      'candidate-acknowledges-versioned-resume-import-notice',
+      'candidate-uploads-real-pdf-to-bounded-ats-parser',
+      'candidate-reviews-field-provenance-before-form-transfer',
+      'candidate-edits-one-pdf-proposal',
+      'candidate-rejects-one-pdf-proposal',
+      'candidate-accepts-remaining-safe-proposals',
+      'candidate-confirms-selected-fields-atomically',
+      'candidate-manually-completes-rejected-required-field',
       'editable-candidate-form',
       'explicit-preview-and-confirmation',
       'persistent-receipt-created',
@@ -1072,6 +1235,7 @@ try {
     jobIdSha256: sha256(jobId),
     interviewIdSha256: sha256(interviewId),
     offerIdSha256: sha256(offerId),
+    resumeImportIdSha256: sha256(resumeImportId),
     jobSlugSha256: sha256(jobSlug),
     publicHandleSha256: sha256(publicHandle),
     finalJobState: 'CLOSED',
@@ -1081,7 +1245,7 @@ try {
     candidateTracking: 'sessionStorage-only; no URL/localStorage token',
     capturedNetworkFields: ['persona', 'method', 'pathname', 'status'],
     evidenceBoundary:
-      'network evidence excludes headers and bodies; raw PDF, extracted text, and filename are not retained or submitted; screenshots contain synthetic product state only',
+      'network evidence excludes headers and bodies; the synthetic raw PDF is transiently uploaded only to the bounded ATS parser and is absent from the final application/evidence; extracted text and filename are not retained in evidence; screenshots contain synthetic product state only',
     networkEvidence: networkEvidence.map((entry) => ({
       ...entry,
       pathname: redactPath(entry.pathname),

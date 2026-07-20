@@ -630,6 +630,14 @@ fi
             "getByRole('button', { name: 'Önizle' })",
             "getByRole('button', { name: 'Yayınla' })",
             "getByRole('link', { name: 'Başvuru formuna geç' })",
+            "getByLabel(/CV içe aktarma aydınlatmasını okudum/u).check()",
+            "getByTestId('candidate-resume').setInputFiles",
+            "getByTestId('resume-proposal-fullName')",
+            "getByRole('button', { name: 'Düzenlediğimi kaydet' }).click()",
+            "getByTestId('resume-proposal-city')",
+            "getByRole('button', { name: 'Reddet' }).click()",
+            "getByRole('button', { name: 'Güvenli önerileri kabul et' }).click()",
+            "await applySelectedButton.click()",
             "getByTestId('create-application-receipt')",
             "getByRole('button', { name: 'Duraklat' })",
             "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED')",
@@ -647,8 +655,17 @@ fi
         self.assertIn("finalJobState: 'CLOSED'", self.fullats_browser)
         self.assertIn("getByTestId('candidate-resume').setInputFiles", self.fullats_browser)
         self.assertIn("buildSyntheticResumePdf", self.fullats_browser)
-        self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
-        self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
+        self.assertIn("candidate-uploads-real-pdf-to-bounded-ats-parser", self.fullats_browser)
+        self.assertIn("candidate-reviews-field-provenance-before-form-transfer", self.fullats_browser)
+        self.assertIn("candidate-edits-one-pdf-proposal", self.fullats_browser)
+        self.assertIn("candidate-rejects-one-pdf-proposal", self.fullats_browser)
+        self.assertIn("candidate-confirms-selected-fields-atomically", self.fullats_browser)
+        self.assertIn("submittedPayload.resumeImportId !== resumeImportId", self.fullats_browser)
+        self.assertIn("submittedPayload.resumeDraftVersion !== confirmedResume.draft.version", self.fullats_browser)
+        self.assertIn("resumeImportIdSha256: sha256(resumeImportId)", self.fullats_browser)
+        self.assertIn("schemaVersion: 'fullats-live-browser-acceptance/v4'", self.fullats_browser)
+        self.assertNotIn("candidate-imports-real-pdf-locally", self.fullats_browser)
+        self.assertNotIn("PDF’den dolduruldu", self.fullats_browser)
         self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
         self.assertNotIn("getByTestId('fill-synthetic-resume').click()", self.fullats_browser)
         self.assertIn("attachNetworkEvidence(publicStatePage, 'negative-probe')", self.fullats_browser)
