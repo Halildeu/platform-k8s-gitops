@@ -338,12 +338,14 @@ Mavis bildirimi **yerine geçmez**:
 
 <a id="cross-ai-three-channel"></a>
 
-## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal
+## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal + Sağlayıcı/Model Esnek
 
 Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621)
 ve [#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638)
-kararları, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır
-ve MiniMax'i yeni istişare/receipt zincirinden çıkarır.
+kararları, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır.
+Kullanıcı 2026-07-20 kararıyla ayrıca tek-sağlayıcı ve tek-model kilidini de
+kaldırır: istişareye açık sağlayıcı listesi Codex (OpenAI), Claude (Anthropic),
+MiniMax ve GLM (Z.ai) arasından o an **mevcut ve doğrulanabilir** olan(lar)dır.
 Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
 adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
 belirsizliği veya risk için kullanılan sınırlı araçtır.
@@ -356,17 +358,23 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa veya
    branch `auto-promotion/` ise gate en az `single` zorunlu tutar. Audit/evidence
    enforcement kodunun kendisi değişiyorsa mekanik taban `dual` olur.
-2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek ve birincil kanal
-   direct Anthropic `claude --model claude-opus-4-8` olur. JSON `modelUsage`
-   exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz. Claude
-   implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz; bu
-   durumda provider-distinct ikinci kanal ile `dual` gerekir.
+2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek doğrudan headless
+   kanal kullanılır. Kanal, tercih sırasıyla Claude (Anthropic), Codex (OpenAI),
+   MiniMax veya GLM (Z.ai) sağlayıcılarından o an mevcut, kimliği doğrulanabilir
+   ve boş/error/quota-lock döndürmeyen ilk kanaldır. Model seçimi her sağlayıcı
+   içinde esnektir; `claude-opus-4-8`, `gpt-5.6-sol`, `MiniMax-M3` gibi spesifik
+   model kilidi yoktur — sağlayıcının o an aktif ve JSON/CLI çıktısında
+   doğrulanabilir modeli kullanılır. Çıktıdaki gerçek model kimliği audit'e
+   kaydedilir (uydurulmaz). Implementer sağlayıcısı ile aynı sağlayıcının
+   session'ı bağımsız `single` görüş sayılmaz; bu durumda provider-distinct
+   ikinci kanal ile `dual` gerekir.
 3. **`dual` — istisnai yüksek risk:** Yalnız geri döndürülemez, çok yüksek
-   riskli veya açık insan/yetkili kararı gerektiren noktada Claude'a doğrudan
-   OpenAI `gpt-5.6-sol` eklenir. Toplam iki kanal aşılmaz. Implementer bu iki
-   sağlayıcıdan biri olsa bile diğer kanal provider-distinct bağımsız reviewer
-   alt sınırını sağlar. MiniMax çağrısı, makbuzu veya wrapper'ı yeni karar için
-   kabul edilmez.
+   riskli veya açık insan/yetkili kararı gerektiren noktada iki provider-distinct
+   headless kanal kullanılır. İki kanal Codex, Claude, MiniMax ve GLM'den mevcut
+   ve doğrulanabilir olan farklı iki sağlayıcı olur. Toplam iki kanal aşılmaz.
+   Implementer bu iki sağlayıcıdan biri olsa bile diğer kanal provider-distinct
+   bağımsız reviewer alt sınırını sağlar. Her sağlayıcı içinde model seçimi
+   esnektir; kilit yoktur.
 
 Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
 ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,
@@ -404,7 +412,7 @@ aynı scope yeniden incelenir.
 PR structured alanları:
 
 ```yaml
-Implementer AI: Codex|Claude|Gemini|other # other yalnız none modunda
+Implementer AI: Codex|Claude|MiniMax|GLM|other # other yalnız none modunda
 Consultation mode: none|single|dual
 Consultation reason: <neden bu mod seçildi>
 Risk trigger: <kategori>: <somut açıklama> # yalnız dual
@@ -413,8 +421,12 @@ Consultation base tip: <single/dual exact target tip>
 Consultation base: <single/dual exact merge-base>
 Consultation commit: <single/dual exact head>
 Consultation scope: <single/dual content SHA-256>
-Claude receipt: <single/dual exact receipt>
-Codex receipt: <dual için zorunlu exact receipt>
+# Aşağıdaki receipt alanlarından `single`de tam olarak biri, `dual`de tam olarak
+# iki farklı sağlayıcıya ait olanı taşınır:
+Claude receipt: <single/dual — Anthropic Claude exact receipt>
+Codex receipt: <single/dual — OpenAI Codex exact receipt>
+MiniMax receipt: <single/dual — MiniMax exact receipt>
+GLM receipt: <single/dual — Z.ai GLM exact receipt>
 ```
 
 `Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
@@ -425,13 +437,16 @@ serbest/placeholder/tekrarlı metin fail-closed reddedilir.
 olarak bilinmelidir; gerçek sağlayıcıyı saklayabilen `other` bu iki modda
 fail-closed reddedilir. `other` yalnız receipt taşımayan `none` modunda kullanılabilir.
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
-risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
-`single` yalnız exact Claude receipt'i taşır, `dual` exact Claude + exact Codex
-receipt taşır. MiniMax alanı fail-closed reddedilir. `dual` yayın sırası zorunlu değildir;
-paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal
-`VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
-onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
-freshness, digest, redaction ve provider/model eşlemesi korunur.
+risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field
+taşıyamaz; `single` yalnız bir provider receipt'i taşır (Claude, Codex, MiniMax
+veya GLM), `dual` iki farklı sağlayıcıya ait iki receipt taşır. Herhangi bir
+sağlayıcı için model kilidi yoktur; her sağlayıcı içinde model seçimi çıktıdaki
+gerçek `modelUsage`/provider kimliğinden doğrulanır ve audit'e kaydedilir.
+`dual` yayın sırası zorunlu değildir; paralel çağrı kabul edilir. `single/dual`
+çıktısı `P0/P1/P2` ve tek terminal `VERDICT: AGREE|REVISE` sözleşmesine uyar;
+bozuk yanıt elle veya otomatik biçim onarımıyla evidence yapılamaz. Exact scope,
+owner-captured GitHub comment, freshness, digest, redaction ve provider/model
+eşlemesi korunur.
 
 Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion
 ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
