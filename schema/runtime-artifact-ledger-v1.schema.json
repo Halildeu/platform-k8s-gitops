@@ -58,6 +58,41 @@
             "store_ref": { "type": "string", "minLength": 1 },
             "model_id_field": { "type": "string" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "selector_kind",
+            "namespace",
+            "name",
+            "store_id_field",
+            "model_id_field",
+            "binding"
+          ],
+          "properties": {
+            "selector_kind": { "type": "string", "enum": ["kubernetes-configmap"] },
+            "namespace": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            "store_id_field": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "model_id_field": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "binding": {
+              "type": "string",
+              "pattern": "^kustomize/(?!.*\\.\\.)[A-Za-z0-9._/-]+\\.ya?ml$"
+            }
+          }
         }
       ]
     },
