@@ -241,6 +241,15 @@ Backend, public UI and manager pod `imageID` values must match the reviewed
 digests, and the manager remote hash must be recorded against the same immutable
 image. `Up` alone is not functional acceptance.
 
+The ES-1 manager is intentionally an isolated SPA, not the shared suite shell.
+Its trusted source workflow must bind the exact source head and image digest
+while passing the Keycloak check-sso/PKCE smoke and the source tests that require
+the audience + scope + realm-role triple, reject caller-supplied Cookie/Bearer
+headers and unmount protected content on logout, refresh error or API `401/403`.
+GitOps preflight verifies that source/workflow/SLSA binding; Gate 4 then proves
+the same boundary against the running TEST environment, including wrong-org and
+OpenFGA-denied personas. Neither source tests nor attestation replace Gate 4.
+
 ## Gate 4: customer closed-loop acceptance
 
 Use only synthetic content.

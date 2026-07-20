@@ -54,6 +54,12 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.activation_runbook = (
             ROOT / "docs/runbooks/RB-faz35-etik-speak-test-activation.md"
         ).read_text()
+        cls.topology_adr = (
+            ROOT / "docs/adr/0046-faz35-etik-speak-product-cell-topology.md"
+        ).read_text()
+        cls.api_ui_contract = (
+            ROOT / "docs/contracts/faz35-etik-speak-api-mfe-v1.md"
+        ).read_text()
         cls.authz_projection_lib_path = (
             ROOT / "scripts/faz35/lib-authz-projection.sh"
         )
@@ -1608,6 +1614,30 @@ spec:
         self.assertIn("name: etik-speak-manager", self.manager_ui_ingress)
         self.assertIn("name: etik-speak-manager", self.netpol)
         self.assertIn("Faz 35 must not mutate the shared test frontend pin", self.preflight)
+
+    def test_manager_route_matches_canonical_isolated_auth_contract(self):
+        for expected in (
+            "ES-1 isolated etik-speak-manager",
+            "check-sso",
+            "PKCE S256",
+            "credentials: omit",
+            "401/403",
+            "308a2777e79d1a54ee367d47f19c39cc513db42d",
+            "sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da",
+        ):
+            self.assertIn(expected, self.topology_adr)
+        for expected in (
+            "ES-1 TEST isolated manager",
+            "aud=ethics-manager",
+            "ethics:case:manage",
+            "realm role `ethics-manager`",
+            "credentials: omit",
+            "Authorization`/`Cookie",
+            "wrong-org/OpenFGA-deny",
+        ):
+            self.assertIn(expected, self.api_ui_contract)
+        self.assertIn("intentionally an isolated SPA", self.activation_runbook)
+        self.assertIn("Neither source tests nor attestation replace Gate 4", self.activation_runbook)
 
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
