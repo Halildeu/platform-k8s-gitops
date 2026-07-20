@@ -214,4 +214,4 @@ images:
   # and the device-key bridge overlay (remote-bridge-digest-alignment gate).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:bde478e9a0dd2aaf7cc8ced72592a4bf90b0920ac1feba5d51ec9b296fbcef82
+    digest: sha256:a766945a08909a9727fb75d81c14cdbfc0f86e6aff1fa62fa9cfbc79a41c42fb
