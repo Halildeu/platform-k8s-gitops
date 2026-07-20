@@ -124,6 +124,84 @@ else
   bad "live-stt read-back/provenance dogrulamasi"
 fi
 
+# Faz 25 #2441: backend screening imaji + KC scope'lari birlikte pinlendikten sonra
+# explicit acilir. Default 0 mevcut smoke'u eski pin uzerinde bozmaz;
+# acceptance kosumu ATS_SCREENING_EXPECTED=1 ile fail-closed ek 8 kontrol yapar.
+if [ "${ATS_SCREENING_EXPECTED:-0}" = "1" ]; then
+  echo "== Faz 25: Screening pointer/replay + split authority =="
+  if [ -z "$TK" ]; then
+    bad "screening icin transcriptKey yok"
+  else
+    SCREEN_KEY="scrq_$(python3 -c 'import uuid; print(uuid.uuid4())')"
+    SCREEN_BODY="{\"sourceKind\":\"TRANSCRIPT_SEGMENT\",\"transcriptKey\":\"$TK\",\"segmentIndex\":0}"
+    SCREEN_CODE=$(curl -sk --max-time 30 -D "$T/d29-screen-create.headers" \
+      -o "$T/d29-screen-create.json" -w '%{http_code}' -X POST "$API/screenings" \
+      -H "Authorization: Bearer $REVIEWER" -H 'Content-Type: application/json' \
+      -H "X-ATS-Idempotency-Key: $SCREEN_KEY" -d "$SCREEN_BODY")
+    [ "$SCREEN_CODE" = "201" ] && ok "reviewer screening create -> 201" || bad "reviewer screening create -> $SCREEN_CODE"
+    if grep -qi '^cache-control: no-store' "$T/d29-screen-create.headers" \
+      && grep -qi '^x-ats-replay: false' "$T/d29-screen-create.headers"; then
+      ok "screening create no-store + X-ATS-Replay:false"
+    else
+      bad "screening create cache/replay header kontrati"
+    fi
+    if python3 - "$T/d29-screen-create.json" <<'PY'
+import json
+import sys
+
+TOP_KEYS = {
+    "findingSetRef", "runId", "policyRef", "coverage", "disposition",
+    "source", "findings", "evidenceId", "schemaVersion", "occurredAt",
+    "spanUnit",
+}
+SOURCE_KEYS = {"kind", "canonicalSourceRef", "segmentIndex"}
+FINDING_KEYS = {"category", "signal", "sourceKind", "span"}
+SPAN_KEYS = {"startInclusive", "endExclusive", "segmentIndex"}
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+assert isinstance(payload, dict) and set(payload) == TOP_KEYS
+assert isinstance(payload["source"], dict) and set(payload["source"]) == SOURCE_KEYS
+assert isinstance(payload["findings"], list)
+for finding in payload["findings"]:
+    assert isinstance(finding, dict) and set(finding) == FINDING_KEYS
+    assert isinstance(finding["span"], dict) and set(finding["span"]) == SPAN_KEYS
+PY
+    then
+      ok "screening response pointer-only (exact allowlist semasi; ham metin/skor/karar yok)"
+    else
+      bad "screening response pointer-only exact sema ihlali"
+    fi
+    FSR=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("findingSetRef", ""))' "$T/d29-screen-create.json" 2>/dev/null)
+    REPLAY_CODE=$(curl -sk --max-time 30 -D "$T/d29-screen-replay.headers" \
+      -o "$T/d29-screen-replay.json" -w '%{http_code}' -X POST "$API/screenings" \
+      -H "Authorization: Bearer $REVIEWER" -H 'Content-Type: application/json' \
+      -H "X-ATS-Idempotency-Key: $SCREEN_KEY" -d "$SCREEN_BODY")
+    if [ "$REPLAY_CODE" = "200" ] && grep -qi '^x-ats-replay: true' "$T/d29-screen-replay.headers"; then
+      ok "ayni screening request -> 200 verified replay"
+    else
+      bad "screening replay -> $REPLAY_CODE/header"
+    fi
+    if [ -n "$FSR" ] && cmp -s "$T/d29-screen-create.json" "$T/d29-screen-replay.json"; then
+      ok "screening replay govdesi birebir ayni"
+    else
+      bad "screening replay govde bagi"
+    fi
+    C=$(code GET "$API/screenings/$FSR" "$READER")
+    [ "$C" = "200" ] && ok "reader screening.read -> 200" || bad "reader screening.read -> $C"
+    READER_WRITE=$(curl -sk --max-time 20 -o "$T/d29-screen-reader-write.json" -w '%{http_code}' \
+      -X POST "$API/screenings" -H "Authorization: Bearer $READER" \
+      -H 'Content-Type: application/json' \
+      -H "X-ATS-Idempotency-Key: scrq_$(python3 -c 'import uuid; print(uuid.uuid4())')" \
+      -d "$SCREEN_BODY")
+    [ "$READER_WRITE" = "403" ] && ok "reader screening.write -> 403" || bad "reader screening.write -> $READER_WRITE"
+    C=$(code GET "$API/screenings/$FSR" "$ROLELESS")
+    [ "$C" = "403" ] && ok "roleless screening.read -> 403" || bad "roleless screening.read -> $C"
+  fi
+else
+  echo "NOT: screening smoke kapali (backend #168 + KC #2441 pin sonrasi ATS_SCREENING_EXPECTED=1)"
+fi
+
 echo "== Operator allow / reviewer deny (DSAR) =="
 C=$(code POST "$API/dsar" "$REVIEWER" '{"subjectRef":"sub-smoke-1","reasonCode":"r-kvkk"}'); [ "$C" = "403" ] && ok "reviewer dsar -> 403" || bad "reviewer dsar -> $C"
 C=$(code POST "$API/dsar" "$OPERATOR" '{"subjectRef":"sub-smoke-1","reasonCode":"r-kvkk"}'); [ "${C:0:1}" = "2" ] && ok "operator dsar intake -> $C" || bad "operator dsar -> $C ($(head -c 160 "$T/last.json" 2>/dev/null))"

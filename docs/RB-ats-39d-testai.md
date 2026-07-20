@@ -24,7 +24,7 @@
    - Mac→staging SSH kapalı fakat self-hosted `staging-sw-testai-deploy` runner online ise canonical fallback: Actions'ta `.github/workflows/faz25-fullats-test-recovery.yml` yalnız `main` üzerinden dispatch edilir. Önce `dry_run=true`; canlı test recovery için `dry_run=false` + exact `confirm=APPLY_FAZ25_FULLATS_TEST_RECOVERY`. Her iki koşum da mutation öncesinde `platform-test` Argo Application observed revision'ının exact workflow commit'i olmasını ve Argo resource inventory'de yalnız hedef `ats-interview-evidence` Deployment + ConfigMap'in `Synced` olmasını; canlı Deployment image + ConfigMap endpoint/approval üçlüsünün canonical değerlerle birebir bağlanmasını 300 saniyeye kadar bekler. Overall Application `OutOfSync`, ATS dışı aynı-wave kaynaklar henüz uygulanmadığında target resource'lar exact/Synced olsa bile görülebilir; bu yüzden pre-append kapısı unrelated resource statüsünü safety sinyali saymaz. Full acceptance sonunda overall Argo `Synced/Healthy` yine ayrıca zorunludur. Workflow doğrudan workload patch/restart yapmaz; `--roles-only` → V6 → fixed-id model-governance append → immutable digest/Ready + V4/V5/V6 → Keycloak → sentetik 10/10 sırasını fail-closed yürütür. Ready bekleyişi 600 saniyede tükenirse raw log/env/secret basmadan yalnız deployment condition, pod phase/container wait-termination nedeni/restart sayısı ve ilgili Pod event özetini yayınlayıp durur.
 2. **Keycloak** (~60 sn): `provision-test-keycloak.sh` aynı yolla.
    - Login `svc-kc-automation` (Vault `kv/platform/keycloak-automation`); user-izinleri eksikse KC26 `bootstrap-admin` geçici-admin yolu (bkz. §Sorun Giderme).
-   - Model: audience + 13 permission + atanmayan repair client-scope **frontend'e DEFAULT**; **yetki YALNIZ `ats-api` client-role atamasıyla** (scope ∩ atanmış-rol ∩ bilinen permission). Toplam 14 rol / 15 default scope. Tenant claim hardcoded değildir; `ats_tenant` user attribute mapper'ından gelir. `ats-recruiter-persona` yalnız public careers tenant + `ats.application.{read,status.write}` exact-set taşır.
+   - Model: audience + 15 permission + atanmayan repair client-scope **frontend'e DEFAULT**; **yetki YALNIZ `ats-api` client-role atamasıyla** (scope ∩ atanmış-rol ∩ bilinen permission). Toplam 16 rol / 17 default scope (Faz 25 #2441: `ats.screening.{read,write}` eklendi). Tenant claim hardcoded değildir; `ats_tenant` user attribute mapper'ından gelir. `ats-recruiter-persona` yalnız public careers tenant + `ats.application.{read,status.write}` exact-set taşır. Persona atamaları: reader=3 (transcript.read + screening.read + review.read); reviewer=9 (mevcut interview akışı + screening read/write; export/dsar/erasure yok); operator/admin=15 (repair hariç tümü); recruiter=2 (application read/status.write); roleless=0.
 3. **Aktivasyon** (~2 dk): normal GitOps PR merge + ArgoCD reconcile (`kustomize/overlays/test` bu activation overlay'ini içerir).
    - Beklenen ara durum: yeni pod Flyway V6'yı uygular; model-governance ledger henüz boşken boot gate kasıtlı fail-closed olduğu için pod `CrashLoopBackOff` kalabilir. Bu sırada `Ready` beklenmez ve workload'a doğrudan restart/patch yapılmaz.
    - Beklenen son durum: §Faz 25 test model-governance artifact geçişi fixed-id append'i doğrulandıktan sonra boot gate açılır; ExternalSecret Ready=True → Secret 3 key; ats-interview-evidence Running/Ready olur. Provider live-stt fail-closed; kullanılmayan ai-stub pod'u desired-state dışıdır. CrashLoop exponential backoff 600 saniyelik Ready penceresini aşarsa workflow fail-loud durur; fixed transition idempotent olduğu için aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir, doğrudan workload restart/patch yapılmaz.
@@ -37,6 +37,46 @@
    - **Authz deny**: reader token'ı ile `POST consent` → 403; rolsüz+scope'lu → 403
    - **Functional — live-stt**: reviewer token'ı ile consent→upload(sentetik)→transcribe→read-back
    - **İSPATLAMAZ**: gerçek KVKK pilotu, prod-hazırlık
+
+### Faz 25 screening scope dilimi (#2441 — desired-state, runtime pending)
+
+Bu dilim test Keycloak provisioner'ının **desired-state kodunu** ve acceptance
+aracını değiştirir. Provisioner ancak aşağıdaki sıralı test-host koşumunda
+çalıştırıldığında test Keycloak'u mutate eder; bu PR'ın hazırlanması sırasında
+Keycloak, cluster veya prod mutate edilmez. Canlı baseline hâlâ mevcut 14 rol /
+15 default-scope provisioner koşumudur. Yeni hedef 16/17:
+
+| Persona | Exact `ats-api` rol kümesi | Screening yetkisi |
+|---|---:|---|
+| `ats-reader-persona` | 3 | `ats.screening.read`; write yok |
+| `ats-reviewer-persona` | 9 | `ats.screening.read` + `ats.screening.write`; export/dsar/erasure yok |
+| `ats-recruiter-persona` | 2 | screening yok (careers-scope; mülakat-scope değil) |
+| `ats-operator-persona` / `admin@example.com` | 15 | normal permission kümesinin tamamı; `ats.export.repair` yok |
+| `ats-roleless-persona` | 0 | default scope token'da görünse bile authority yok |
+
+Kabul sırası (test-only, secret/token çıktısı basmadan):
+
+1. Halildeu/ats#168 imajı immutable digest ile aktivasyon overlay'ine ayrı PR'da
+   pinlenir; imageID eşleşmeden screening smoke açılmaz.
+2. `provision-test-keycloak.sh` test hostunda idempotent çalıştırılır. Beklenen
+   son assert: **16 client-role + 17 default-scope**; repair rolü atanmamış.
+3. Mevcut base D29 koşumu `ATS_EXPECTED_DIGEST=sha256:...` ile 14/14 korunur.
+4. Aynı sentetik oturumda screening dilimi explicit açılır:
+
+   ```bash
+   ATS_EXPECTED_DIGEST=sha256:<immutable-backend-digest> \
+   ATS_SCREENING_EXPECTED=1 \
+   bash scripts/ats/d29-smoke.sh
+   ```
+
+   Ek 8 kontrol: reviewer create 201 + no-store/replay:false + exact allowlist
+   şemalı pointer-only yanıt; aynı request 200/replay:true + birebir aynı gövde;
+   reader GET 200; reader POST 403; roleless GET 403. Base 14 ile birlikte
+   beklenen sayaç **PASS=22 FAIL=0**. Bu kanıt gerçek aday verisi kullanmaz ve
+   prod kabulü değildir.
+5. Canonical web PR Halildeu/platform-web#914 (MERGED 2026-07-20 `2d0ca66`)
+   immutable frontend digest ile testai'ye taşındıktan sonra 360/390/768/1440 +
+   klavye/axe browser kanıtı ayrı acceptance kaydı olarak üretilir.
 
 ### Faz 25 Full ATS aday/recruiter acceptance (#2615)
 
