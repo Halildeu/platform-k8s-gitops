@@ -1316,12 +1316,7 @@ async function appendPriorRevisionFinding(
     ) continue;
     const commentCreatedAtMs = Date.parse(comment?.createdAt || '');
     const ownerCommentUpdatedAtMs = Date.parse(comment?.updatedAt || '');
-    const postLedgerComment = Number.isFinite(commentCreatedAtMs)
-      && commentCreatedAtMs >= authorityCutoffs.ledgerMs;
     if (comment.createdAt !== comment.updatedAt) {
-      // Post-activation comments are presentation only. Their immutable status
-      // ledger remains authoritative even if the comment is edited/deleted.
-      if (postLedgerComment) continue;
       if (
         Number.isFinite(commentCreatedAtMs)
         && Number.isFinite(ownerCommentUpdatedAtMs)
@@ -1339,9 +1334,7 @@ async function appendPriorRevisionFinding(
         'base_tip_sha', 'base_sha', 'head_sha',
         'scope_sha256', 'execution_profile', 'response_sha256', 'verdict',
       ].filter((signal) => comment?.body?.includes(signal)).length;
-      if (!postLedgerComment && rawEvidenceSignals >= 2) {
-        invalidCandidates.push(comment?.ref || 'missing-ref');
-      }
+      if (rawEvidenceSignals >= 2) invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
     }
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
@@ -1353,7 +1346,7 @@ async function appendPriorRevisionFinding(
       && Number.isFinite(commentCreatedAtMs)
       && commentCreatedAtMs >= authorityCutoffs.ledgerMs
     ) {
-      // New unledgered comments cannot add governance authority.
+      invalidCandidates.push(`${comment?.ref || 'missing-ref'} (retired OpenAI v3 evidence)`);
       continue;
     }
     const openAiV4 = body?.schema === 'cross-ai-provider-evidence/v4'
@@ -1371,6 +1364,7 @@ async function appendPriorRevisionFinding(
         continue;
       }
       if (ledgerRequired) {
+        invalidCandidates.push(`${comment?.ref || 'missing-ref'} (missing immutable status ledger)`);
         continue;
       }
       // Before the exact trusted-source activation, v4-shaped owner comments
@@ -1398,7 +1392,6 @@ async function appendPriorRevisionFinding(
       }
       continue;
     }
-    if (postLedgerComment) continue;
     if (body?.provider === 'minimax' || body?.schema === 'cross-ai-provider-evidence/v1') {
       invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;

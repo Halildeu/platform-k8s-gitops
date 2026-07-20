@@ -729,13 +729,22 @@ class EvidenceValidationTests(unittest.TestCase):
             ROOT / ".github/workflows/gate-cross-ai-audit.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("statuses: write", workflow)
-        self.assertNotIn("checks: write", workflow)
+        self.assertIn("checks: write", workflow)
         self.assertIn("Validate exact-head publication generation", workflow)
         self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
-        self.assertNotIn("issue_comment:", workflow)
+        self.assertIn("issue_comment:", workflow)
+        self.assertIn("- created", workflow)
+        self.assertIn("- edited", workflow)
+        self.assertIn("- deleted", workflow)
         self.assertIn("- ready_for_review", workflow)
         self.assertIn("- converted_to_draft", workflow)
-        self.assertNotIn("cross-ai-evidence-mutation-guard", workflow)
+        self.assertIn("cross-ai-evidence-mutation-guard", workflow)
+        self.assertIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
+        self.assertIn(
+            "github.event.comment.author_association == 'OWNER'",
+            workflow,
+        )
+        self.assertIn("|| github.run_id", workflow)
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()
