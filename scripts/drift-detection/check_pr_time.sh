@@ -43,13 +43,30 @@ RENDER=$(kubectl kustomize "$OVERLAY" 2>/dev/null) || {
 
 # Check 1: every image ref must be @sha256:
 echo "=== Check 1: image digest pin (no moving tags) ==="
-moving_tags=$(echo "$RENDER" | grep -oE 'image:\s*ghcr\.io/[^@]+:[a-zA-Z][^@]*$' | grep -v '@sha256:' || true)
+moving_tags=$(echo "$RENDER" | grep -E '^[[:space:]]*image:[[:space:]]*' | grep -v '@sha256:' || true)
 if [[ -n "$moving_tags" ]]; then
   echo "[FAIL] Non-digest image refs found:"
   echo "$moving_tags"
   EXIT_CODE=1
 else
-  echo "[OK]  All ghcr.io image refs are @sha256: pinned"
+  echo "[OK]  All rendered image refs are @sha256: pinned"
+fi
+
+image_contract_output=$(echo "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
+  python3 -c '
+import sys, yaml
+from lib.catalog_runtime_contracts import image_contract_findings
+from lib.services_catalog import ServicesCatalog
+
+catalog = ServicesCatalog.from_yaml(sys.argv[2])
+for finding in image_contract_findings(yaml.safe_load_all(sys.stdin), catalog, sys.argv[1]):
+    print(f"[FAIL] {finding.message}")
+' "$ENV" "$REPO_ROOT/docs/operations/services.yaml")
+if [[ -n "$image_contract_output" ]]; then
+  echo "$image_contract_output"
+  EXIT_CODE=1
+else
+  echo "[OK]  Catalog workloads have one immutable primary image"
 fi
 
 # Check 2: GHCR manifest existence — real verification via OCI registry API

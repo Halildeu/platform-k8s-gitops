@@ -306,19 +306,26 @@ RENDER=$(kubectl kustomize "$OVERLAY" 2>/dev/null) || {
 }
 
 declare -A YAML_DIGESTS
-while IFS=$'\t' read -r svc digest; do
-  [[ -n "$svc" && -n "$digest" ]] && YAML_DIGESTS["$svc"]="$digest"
-done < <(printf '%s' "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
+image_contract_output=$(printf '%s' "$RENDER" | PYTHONPATH="$REPO_ROOT/scripts/drift_detection" \
   python3 -c '
 import sys, yaml
-from lib.catalog_runtime_contracts import desired_image_digests
+from lib.catalog_runtime_contracts import desired_image_digests, image_contract_findings
 from lib.services_catalog import ServicesCatalog
 
 catalog = ServicesCatalog.from_yaml(sys.argv[2])
-digests = desired_image_digests(yaml.safe_load_all(sys.stdin), catalog, sys.argv[1])
+documents = list(yaml.safe_load_all(sys.stdin))
+for finding in image_contract_findings(documents, catalog, sys.argv[1]):
+    print(f"F\t{finding.code}\t{finding.message}")
+digests = desired_image_digests(documents, catalog, sys.argv[1])
 for name, digest in sorted(digests.items()):
-    print(f"{name}\t{digest}")
+    print(f"D\t{name}\t{digest}")
 ' "$ENV" "$REPO_ROOT/docs/operations/services.yaml")
+while IFS=$'\t' read -r record field value; do
+  case "$record" in
+    D) [[ -n "$field" && -n "$value" ]] && YAML_DIGESTS["$field"]="$value" ;;
+    F) add_finding P1 "$field" "$value"; mark_p1 ;;
+  esac
+done <<< "$image_contract_output"
 
 # Live pod imageIDs
 declare -A POD_DIGESTS

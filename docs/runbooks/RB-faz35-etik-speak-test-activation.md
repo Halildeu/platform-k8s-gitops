@@ -291,8 +291,11 @@ customer delivery.
 
 ## Rollback
 
-Rollback is a reviewed GitOps revert to the previous immutable digests and/or
-removal of the test activation resource. The database migration is additive;
+Rollback is a reviewed GitOps fix-forward replacement of
+`activation/etik-speak` with `deactivation/etik-speak`, optionally combined
+with a re-pin to a previous immutable dedicated product digest. Removing only
+the activation resource is forbidden because `prune: false` would leave live,
+unmanaged workloads and public Ingresses. The database migration is additive;
 do not drop the `ethics` database, schema, receipt grants, messages, or audit
 outbox during rollback. OpenFGA model versions remain append-only. Production
 workloads are not stopped by this runbook.

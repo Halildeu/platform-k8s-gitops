@@ -33,7 +33,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: openfga
-          image: openfga/openfga:v1.11.2
+          # D30: exact digest is the imageID already running in TEST and PROD;
+          # changing desired state cannot silently resolve a rebuilt v1.11.2 tag.
+          image: openfga/openfga@sha256:e5891e4676e5a8b4659c010c50aabf487397844b18f66ef7510e5ad00935949f
           imagePullPolicy: IfNotPresent
           args:
             - "run"

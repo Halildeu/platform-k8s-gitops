@@ -56,32 +56,92 @@ def desired_image_digests(
 ) -> dict[str, str]:
     """Return catalog-enabled workload name -> immutable primary image digest."""
 
+    flattened = _flatten_documents(documents)
+    primary_images, _ = _catalog_primary_images(flattened, catalog, env)
+    digests: dict[str, str] = {}
+    for name, image in primary_images.items():
+        if "@sha256:" in image:
+            digests[name] = image.rsplit("@", 1)[1]
+    return digests
+
+
+def image_contract_findings(
+    documents: Iterable[dict], catalog: ServicesCatalog, env: str
+) -> list[ContractFinding]:
+    """Fail closed when a catalog workload lacks one immutable primary image."""
+
+    flattened = _flatten_documents(documents)
+    primary_images, findings = _catalog_primary_images(flattened, catalog, env)
+    for name, image in sorted(primary_images.items()):
+        if not image or "@sha256:" not in image:
+            findings.append(
+                ContractFinding(
+                    "image_digest_unpinned",
+                    f"{name}: primary image is not pinned by sha256 digest",
+                )
+            )
+            continue
+        digest = image.rsplit("@sha256:", 1)[1]
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            findings.append(
+                ContractFinding(
+                    "image_digest_invalid",
+                    f"{name}: primary image sha256 digest is malformed",
+                )
+            )
+    return findings
+
+
+def _catalog_primary_images(
+    documents: list[dict], catalog: ServicesCatalog, env: str
+) -> tuple[dict[str, str], list[ContractFinding]]:
     enabled = {
         service.name
         for service in catalog.enabled_in(env)
         if service.workload_kind in {"Deployment", "StatefulSet"}
     }
-    digests: dict[str, str] = {}
-    for document in _flatten_documents(documents):
+    workloads: dict[str, list[dict]] = {name: [] for name in enabled}
+    for document in documents:
         if document.get("kind") not in {"Deployment", "StatefulSet"}:
             continue
         metadata = document.get("metadata") or {}
         labels = metadata.get("labels") or {}
         name = labels.get("app.kubernetes.io/name") or metadata.get("name")
-        if name not in enabled:
+        if name in workloads:
+            workloads[name].append(document)
+
+    images: dict[str, str] = {}
+    findings: list[ContractFinding] = []
+    for name, matches in sorted(workloads.items()):
+        if len(matches) != 1:
+            findings.append(
+                ContractFinding(
+                    "image_workload_ambiguous",
+                    f"{name}: expected one rendered workload, found {len(matches)}",
+                )
+            )
             continue
         containers = (
-            (((document.get("spec") or {}).get("template") or {}).get("spec") or {}).get(
+            (((matches[0].get("spec") or {}).get("template") or {}).get("spec") or {}).get(
                 "containers"
             )
             or []
         )
-        if not containers:
-            continue
-        image = str(containers[0].get("image") or "")
-        if "@sha256:" in image:
-            digests[name] = image.rsplit("@", 1)[1]
-    return digests
+        if len(containers) == 1:
+            primary = containers[0]
+        else:
+            named = [container for container in containers if container.get("name") == name]
+            if len(named) != 1:
+                findings.append(
+                    ContractFinding(
+                        "image_primary_ambiguous",
+                        f"{name}: primary container is not uniquely identifiable",
+                    )
+                )
+                continue
+            primary = named[0]
+        images[name] = str(primary.get("image") or "")
+    return images, findings
 
 
 def compare_image_digests(

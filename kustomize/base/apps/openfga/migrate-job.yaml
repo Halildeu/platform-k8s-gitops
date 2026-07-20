@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: openfga/openfga:v1.11.2
+          image: openfga/openfga@sha256:e5891e4676e5a8b4659c010c50aabf487397844b18f66ef7510e5ad00935949f
           imagePullPolicy: IfNotPresent
           args:
             - "migrate"
