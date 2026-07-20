@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: etik-speak-public-api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # The production hostnames intentionally target the synthetic cell during
+    # test-first acceptance, but must not accept uninvited real reports. The
+    # dedicated basic-auth gate is removed only by the production/legal change.
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate
+    nginx.ingress.kubernetes.io/auth-realm: "Etik Speak sentetik test"
+    nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
+    nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [etik.acik.com, speakup.acik.com]
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: etik.acik.com
+      http: &publicApi
+        paths:
+          - path: /api/v1/public/ethics
+            pathType: Prefix
+            backend:
+              service: {name: ethics-service, port: {number: 8099}}
+    - host: speakup.acik.com
+      http: *publicApi

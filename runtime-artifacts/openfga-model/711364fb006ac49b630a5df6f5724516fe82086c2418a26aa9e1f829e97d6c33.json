@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "artifact_kind": "openfga-model",
+  "artifact_content_digest": "sha256:711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33",
+  "source": {
+    "kind": "openfga-server",
+    "canonical_source_ref": "openfga://pending/platform-test/etik-speak/authorization-model-v1"
+  },
+  "runtime_selector": {
+    "selector_kind": "kubernetes-configmap",
+    "namespace": "platform-test",
+    "name": "ethics-service-config",
+    "store_id_field": "ERP_OPENFGA_STORE_ID",
+    "model_id_field": "ERP_OPENFGA_MODEL_ID",
+    "binding": "kustomize/base/apps/etik-speak/ethics-service-deployment.yaml"
+  },
+  "promotion": {
+    "test": {
+      "status": "pending",
+      "method": "pr-promotion",
+      "store_ref": "platform-test/etik-speak",
+      "verified_at": null,
+      "promoted_at": null,
+      "verified_by_pr": null,
+      "promoted_by_pr": null,
+      "model_id_env": null,
+      "evidence": null,
+      "evidence_completeness": "unverified",
+      "source_docs": [
+        "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
+        "bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json",
+        "docs/contracts/faz35-etik-speak-api-mfe-v1.md",
+        "Halildeu/platform-k8s-gitops#2656"
+      ]
+    },
+    "prod": {
+      "status": "pending",
+      "method": "manual-prod-migration",
+      "store_ref": "platform-prod/etik-speak",
+      "verified_at": null,
+      "promoted_at": null,
+      "verified_by_pr": null,
+      "promoted_by_pr": null,
+      "model_id_env": null,
+      "evidence": null,
+      "evidence_completeness": "unverified",
+      "source_docs": [
+        "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
+        "bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json",
+        "docs/adr/0046-faz35-etik-speak-product-cell-topology.md",
+        "Halildeu/platform-k8s-gitops#2656"
+      ]
+    }
+  },
+  "metadata": {
+    "previous_artifact_content_digest": null,
+    "rollback_safe": true,
+    "rollback_runbook_ref": "docs/adr/0046-faz35-etik-speak-product-cell-topology.md#deployment-and-rollback-gates",
+    "backward_compatible_until": null,
+    "migration_refs": [
+      "Halildeu/platform-k8s-gitops#2656"
+    ]
+  },
+  "audit": {
+    "implementer": "Codex",
+    "reviewer": "Direct OpenAI Codex gpt-5.6-sol; post-fix exact head, refreshed base-tip, recomputed merge-base and canonical-scope re-review tracked_pending",
+    "codex_thread_id": "019f766f-10ca-7d11-8234-aad6eaf62a96",
+    "created_at": "2026-07-19T00:13:12Z",
+    "approval_pathway": "owner-approved"
+  }
+}

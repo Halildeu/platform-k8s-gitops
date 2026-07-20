@@ -1,0 +1,33 @@
+model
+  schema 1.1
+
+type user
+
+type team
+  relations
+    define member: [user]
+
+type ethics_product
+  relations
+    define viewer: [user, team#member]
+    define triager: [user, team#member]
+    define handler: [user, team#member]
+    define technical_admin: [user, team#member]
+    define evidence_approver: [user, team#member]
+    define ethics_product_admin: [user, team#member]
+    define content_denied: technical_admin
+    define case_viewer: (viewer or triager or handler) but not content_denied
+    define case_triager: triager but not content_denied
+    define case_handler: handler but not content_denied
+    define evidence_reveal_approved: evidence_approver but not content_denied
+
+type ethics_case
+  relations
+    define product: [ethics_product]
+    define conflicted: [user]
+    define recused: [user]
+    define denied: conflicted or recused
+    define case_viewer: case_viewer from product but not denied
+    define case_triager: case_triager from product but not denied
+    define case_handler: case_handler from product but not denied
+    define evidence_reveal_approved: evidence_reveal_approved from product but not denied

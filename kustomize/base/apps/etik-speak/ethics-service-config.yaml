@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ethics-service-config
+  labels:
+    app.kubernetes.io/name: ethics-service
+data:
+  SERVER_PORT: "8099"
+  ETHICS_DB_URL: "jdbc:postgresql://postgres:5432/ethics"
+  ETHICS_DB_SCHEMA: "ethics_service"
+  # Same canonical platform-test tenant carried by the authorized staff JWT.
+  # A phase-number placeholder here would commit reports to an invisible org.
+  ETHICS_PUBLIC_ORG_ID: "00000000-0000-0000-0000-000000000001"
+  ETHICS_MAILBOX_SESSION_TTL: "15m"
+  ETHICS_SECRET_ITERATIONS: "210000"
+  SECURITY_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
+  SECURITY_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  ETHICS_STAFF_AUDIENCE: "ethics-manager"
+  ETHICS_STAFF_ROLE: "ethics-manager"
+  # Every staff request re-checks current permission-service ETHIC=MANAGE.
+  # Dependency failure or a revoked grant is a server-side deny.
+  ETHICS_PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+  ETHICS_PERMISSION_SERVICE_TIMEOUT: "PT3S"
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  # The reviewed provisioner creates the isolated test store/model first.
+  # Their non-secret immutable IDs are then pinned here in a new commit before
+  # this activation is allowed into the root test overlay.
+  ERP_OPENFGA_STORE_ID: "PENDING_FAZ35_OPENFGA_STORE_ID"
+  ERP_OPENFGA_MODEL_ID: "PENDING_FAZ35_OPENFGA_MODEL_ID"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  SPRING_FLYWAY_ENABLED: "true"

@@ -4268,6 +4268,9 @@ images:
     # list/detail/apply routes on the minimal public shell so auth bootstrap
     # cannot reload and erase the candidate's browser-local PDF draft.
     # Build run 29645789815 testai job 88083697225.
+    # Faz 35 foundation deliberately preserves the pre-existing root image.
+    # The exact reviewed Etik manager image is pinned atomically with root
+    # activation only after provisioning IDs and current-head artifacts exist.
     # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
     newTag: sha-eee1310
     digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
@@ -8247,13 +8250,26 @@ patches:
       # reconcile. 2026-07-03: Faz 24 #2186 meeting-ai test bridge found live
       # services=32/32 after Endpoints/NetPolicy synced; keep small test-only
       # headroom so the selectorless Service can reconcile via GitOps.
+      # 2026-07-19: Faz 35 Etik Speak adds two Services. Live was 34/36, which
+      # would leave zero rollback/repair headroom; 40 leaves four slots after
+      # the product cell is active. Test-only; prod quota is unchanged.
       - op: replace
         path: /spec/hard/services
-        value: "36"
+        value: "40"
       # 2026-06-28: Faz 22.6 #548 dedicated device-key broker adds three
       # isolated ExternalSecret-owned Secrets (runtime, TLS, signer). Live
       # namespace was already secrets=30/30, so keep this test-only object
       # quota honest instead of reusing the shared broker secret path.
+      # Faz 35 adds two ESO-owned Secrets; 44 retains four steady-state slots.
       - op: replace
         path: /spec/hard/secrets
-        value: "40"
+        value: "44"
+      # Faz 35 steady state adds two pods; simultaneous maxSurge adds four.
+      # Live was 26/30, so 34 preserves four slots after worst-case surge.
+      - op: replace
+        path: /spec/hard/pods
+        value: "34"
+      # Faz 35 adds two ConfigMaps. Live was 30/31; 35 preserves three slots.
+      - op: replace
+        path: /spec/hard/configmaps
+        value: "35"
