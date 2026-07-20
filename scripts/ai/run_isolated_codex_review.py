@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 from pathlib import Path
 from typing import BinaryIO, Iterator, NoReturn
 
@@ -74,6 +75,21 @@ TRUSTED_CODEX_NATIVE_SHA256 = {
     ("0.144.1", "codex-darwin-x64"): "c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c",
     ("0.144.1", "codex-linux-arm64"): "9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07",
     ("0.144.1", "codex-linux-x64"): "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
+}
+TRUSTED_GH_NATIVE_SHA256 = {
+    ("2.92.0", "gh-darwin-arm64"): (
+        "23153214eb1736a96d659fca3b8c50ebe15f8e679abd00a665f287d1465e303e",
+        "582a40676acf1394fcaf1c8c8bc5bad21806bd8c864b209d37b185c2df45dc92",
+    ),
+    ("2.92.0", "gh-darwin-x64"): (
+        "8e89e1252a70e7a7d609d50bd1e3e727af66b2678f5282a9f4750a238f8aec2e",
+    ),
+    ("2.92.0", "gh-linux-arm64"): (
+        "007955ea7dca7c1372c4f4da380d4b35040e641177b5e1e2f1be5121436d17ef",
+    ),
+    ("2.92.0", "gh-linux-x64"): (
+        "b58e487e37c00c114aa07f14987ce12f5e5abf12b9da8a38937b65ef218f6772",
+    ),
 }
 TRUSTED_GITLEAKS_NATIVE_SHA256 = {
     (GITLEAKS_VERSION, "darwin", "arm64"): "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302",
@@ -314,7 +330,7 @@ def verify_trusted_sources(
     worktree: Path,
     trusted_source_ref: str,
     expected_base_tip_sha: str,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, bytes]]:
     """Require the executing producer stack to be byte-equal to trusted base."""
     if (
         not trusted_source_ref
@@ -342,6 +358,7 @@ def verify_trusted_sources(
 
     source_root = Path(__file__).resolve().parents[2]
     digests: dict[str, str] = {}
+    verified_bytes: dict[str, bytes] = {}
     for evidence_key, relative_path in TRUSTED_SOURCE_PATHS.items():
         local_path = source_root / relative_path
         try:
@@ -361,7 +378,21 @@ def verify_trusted_sources(
         if local_bytes != trusted.stdout:
             fail("untrusted_review_producer_source")
         digests[evidence_key] = hashlib.sha256(local_bytes).hexdigest()
-    return digests
+        verified_bytes[relative_path] = local_bytes
+    return digests, verified_bytes
+
+
+def load_verified_module(name: str, source: bytes, origin: str) -> types.ModuleType:
+    """Execute the exact bytes already compared with the trusted git object."""
+    module = types.ModuleType(name)
+    module.__file__ = origin
+    module.__package__ = ""
+    try:
+        code = compile(source, origin, "exec", dont_inherit=True)
+        exec(code, module.__dict__)  # noqa: S102 - trusted immutable bytes only
+    except (SyntaxError, UnicodeError):
+        fail("trusted_source_import_failed")
+    return module
 
 
 def read_json_object(path: Path, error: str) -> dict:
@@ -1030,18 +1061,20 @@ def main() -> None:
     # paths, resolving credential-bearing CLIs, or importing the builder. A
     # modified builder therefore cannot execute import-time code before the
     # trusted-base byte comparison rejects it.
-    trusted_source_digests = verify_trusted_sources(
+    trusted_source_digests, trusted_source_bytes = verify_trusted_sources(
         worktree=args.worktree.resolve(),
         trusted_source_ref=args.trusted_source_ref,
         expected_base_tip_sha=args.base_tip_sha,
     )
-    from build_cross_ai_evidence import (  # pylint: disable=import-outside-toplevel
-        MAX_EVIDENCE_BYTES,
-        UNATTESTED_ACTUAL_MODEL,
-        validate_provider_response,
+    builder = load_verified_module(
+        "cross_ai_verified_builder",
+        trusted_source_bytes[TRUSTED_SOURCE_PATHS["evidence_builder_sha256"]],
+        TRUSTED_SOURCE_PATHS["evidence_builder_sha256"],
     )
-    from attest_cross_ai_scope_pii import (  # pylint: disable=import-outside-toplevel
-        verify_authenticated_repository_owner,
+    attester = load_verified_module(
+        "cross_ai_verified_pii_attester",
+        trusted_source_bytes[TRUSTED_SOURCE_PATHS["pii_attester_sha256"]],
+        TRUSTED_SOURCE_PATHS["pii_attester_sha256"],
     )
 
     if os.path.lexists(args.evidence_output):
@@ -1056,7 +1089,10 @@ def main() -> None:
     gitleaks_bytes, gitleaks_executable_name, _ = resolve_gitleaks_native()
     scope = read_scope(args.scope_file, args.scope_sha256)
     repository = repository_slug_from_origin(args.worktree.resolve())
-    owner_identity = verify_authenticated_repository_owner(repository)
+    owner_identity = attester.verify_authenticated_repository_owner(
+        repository,
+        trusted_gh_native_sha256=TRUSTED_GH_NATIVE_SHA256,
+    )
     pii_attestation_sha256 = read_pii_attestation(
         args.pii_attestation_file,
         args.scope_sha256,
@@ -1107,9 +1143,9 @@ def main() -> None:
         trusted_base_sha=args.base_tip_sha,
         trusted_source_digests=trusted_source_digests,
         pii_attestation_sha256=pii_attestation_sha256,
-        validate_response=validate_provider_response,
-        unattested_actual_model=UNATTESTED_ACTUAL_MODEL,
-        max_evidence_bytes=MAX_EVIDENCE_BYTES,
+        validate_response=builder.validate_provider_response,
+        unattested_actual_model=builder.UNATTESTED_ACTUAL_MODEL,
+        max_evidence_bytes=builder.MAX_EVIDENCE_BYTES,
     )
     evidence_sha256 = write_create_once(args.evidence_output, evidence)
     print(
@@ -1118,7 +1154,7 @@ def main() -> None:
                 "ok": True,
                 "provider": "openai",
                 "requested_model": model,
-                "actual_model": UNATTESTED_ACTUAL_MODEL,
+                "actual_model": builder.UNATTESTED_ACTUAL_MODEL,
                 "review_tier": args.review_tier,
                 "execution_profile": EXECUTION_PROFILE,
                 "cli_version": codex_version,

@@ -314,6 +314,63 @@ def audit_invalidation_payload(pr_url: str) -> dict:
     }
 
 
+def assert_head_has_no_successful_or_active_audit(
+    *,
+    repo: str,
+    head_sha: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> set[int]:
+    """Forbid evidence reuse on a head that can already satisfy protection."""
+    try:
+        result = runner(
+            [
+                "gh", "api",
+                f"repos/{repo}/commits/{head_sha}/check-runs"
+                "?check_name=cross-ai-audit&filter=all&per_page=100",
+                "--method", "GET",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_audit_head_preflight_failed")
+    try:
+        payload = json.loads(result.stdout)
+        runs = payload["check_runs"]
+        total_count = payload["total_count"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        fail("gh_audit_head_preflight_invalid")
+    if (
+        result.returncode != 0
+        or not isinstance(runs, list)
+        or not isinstance(total_count, int)
+        or total_count != len(runs)
+        or total_count > 100
+    ):
+        fail("gh_audit_head_preflight_invalid")
+    identifiers: set[int] = set()
+    blocked = False
+    for check_run in runs:
+        identifier = check_run.get("id") if isinstance(check_run, dict) else None
+        if (
+            not isinstance(identifier, int)
+            or identifier < 1
+            or check_run.get("name") != "cross-ai-audit"
+            or check_run.get("head_sha", "").lower() != head_sha.lower()
+        ):
+            fail("gh_audit_head_preflight_invalid")
+        identifiers.add(identifier)
+        status = check_run.get("status")
+        conclusion = check_run.get("conclusion")
+        if status != "completed" or conclusion == "success":
+            blocked = True
+    if blocked:
+        fail("gh_audit_head_already_used")
+    return identifiers
+
+
 def github_timestamp_ms(value: object) -> int | None:
     if not isinstance(value, str):
         return None
@@ -512,6 +569,7 @@ def publish_evidence(
     pr_body: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     sleeper: Callable[[float], None] = time.sleep,
+    head_guard: Callable[..., set[int]] = assert_head_has_no_successful_or_active_audit,
 ) -> dict:
     """Publish evidence under one exact-head audit generation.
 
@@ -524,6 +582,7 @@ def publish_evidence(
     """
     if not isinstance(pr_body, str):
         fail("gh_pr_body_invalid")
+    head_guard(repo=repo, head_sha=evidence["head_sha"], runner=runner)
     publication_token = secrets.token_hex(32)
     publication_lock = acquire_publication_lock(
         repo=repo,

@@ -34,6 +34,51 @@ POSTER_SPEC = importlib.util.spec_from_file_location(
 assert POSTER_SPEC is not None and POSTER_SPEC.loader is not None
 POSTER_MODULE = importlib.util.module_from_spec(POSTER_SPEC)
 POSTER_SPEC.loader.exec_module(POSTER_MODULE)
+ATTESTER_PATH = ROOT / "scripts/ai/attest_cross_ai_scope_pii.py"
+ATTESTER_SPEC = importlib.util.spec_from_file_location(
+    "attest_cross_ai_scope_pii_for_harness_test",
+    ATTESTER_PATH,
+)
+assert ATTESTER_SPEC is not None and ATTESTER_SPEC.loader is not None
+ATTESTER_MODULE = importlib.util.module_from_spec(ATTESTER_SPEC)
+ATTESTER_SPEC.loader.exec_module(ATTESTER_MODULE)
+FAKE_GH = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+if sys.argv[1:] == ["--version"]:
+    print("gh version 2.92.0 (2026-04-28)")
+    raise SystemExit(0)
+path = sys.argv[sys.argv.index("--hostname") + 2]
+login = os.environ.get("FAKE_GH_LOGIN", "Halildeu")
+admin = os.environ.get("FAKE_GH_ADMIN", "1") == "1"
+if path == "user":
+    print(json.dumps({
+        "login": login,
+        "id": 101,
+        "url": f"https://api.github.com/users/{login}",
+        "html_url": f"https://github.com/{login}",
+    }))
+elif path == "repos/Halildeu/platform-k8s-gitops":
+    print(json.dumps({
+        "id": 202,
+        "full_name": "Halildeu/platform-k8s-gitops",
+        "url": "https://api.github.com/repos/Halildeu/platform-k8s-gitops",
+        "html_url": "https://github.com/Halildeu/platform-k8s-gitops",
+        "owner": {
+            "login": "Halildeu",
+            "id": 101,
+            "url": "https://api.github.com/users/Halildeu",
+            "html_url": "https://github.com/Halildeu",
+        },
+        "permissions": {"admin": admin},
+    }))
+else:
+    raise SystemExit(2)
+'''
+
 FAKE_CODEX = r'''#!/usr/bin/env python3
 import json
 import os
@@ -152,29 +197,27 @@ fi
 exit 0
 '''
 
-FAKE_GH = r'''#!/usr/bin/env python3
-import json
-import os
-import sys
-
-path = sys.argv[sys.argv.index("api") + 1]
-login = os.environ.get("FAKE_GH_LOGIN", "Halildeu")
-admin = os.environ.get("FAKE_GH_ADMIN", "1") == "1"
-if path == "user":
-    print(json.dumps({"login": login, "id": 101}))
-elif path == "repos/Halildeu/platform-k8s-gitops":
-    print(json.dumps({
-        "id": 202,
-        "full_name": "Halildeu/platform-k8s-gitops",
-        "owner": {"login": "Halildeu", "id": 101},
-        "permissions": {"admin": admin},
-    }))
-else:
-    raise SystemExit(2)
-'''
-
-
 class IsolatedCodexReviewTests(unittest.TestCase):
+    def test_harness_and_attester_share_the_exact_gh_native_pin_set(self) -> None:
+        self.assertEqual(
+            MODULE.TRUSTED_GH_NATIVE_SHA256,
+            ATTESTER_MODULE.TRUSTED_GH_NATIVE_SHA256,
+        )
+
+    def test_verified_module_loader_executes_captured_bytes_not_mutated_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = Path(directory) / "trusted_helper.py"
+            source_path.write_text("VALUE = 'trusted'\n", encoding="utf-8")
+            verified_bytes = source_path.read_bytes()
+            source_path.write_text(
+                "VALUE = 'mutated'\nraise RuntimeError('must not execute')\n",
+                encoding="utf-8",
+            )
+            loaded = MODULE.load_verified_module(
+                "captured_trusted_helper", verified_bytes, str(source_path)
+            )
+            self.assertEqual(loaded.VALUE, "trusted")
+
     def test_untrusted_builder_cannot_execute_before_source_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -333,6 +376,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         fake_gh = self.bin_dir / "gh"
         fake_gh.write_text(FAKE_GH, encoding="utf-8")
         fake_gh.chmod(0o700)
+        self.fake_gh = fake_gh
         package_root = self.root / "lib" / "node_modules" / "@openai" / "codex"
         launcher = package_root / "bin" / "codex.js"
         launcher.parent.mkdir(parents=True)
@@ -459,27 +503,23 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             raise RuntimeError(prepare.stdout + prepare.stderr)
         self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
         self.pii_attestation = self.root / "pii-attestation.json"
-        attest = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts/ai/attest_cross_ai_scope_pii.py"),
-                "--scope-file", str(self.scope),
-                "--scope-sha256", self.scope_sha,
-                "--decision", "no-sensitive-pii",
-                "--repo", "Halildeu/platform-k8s-gitops",
-                "--output", str(self.pii_attestation),
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={
-                **os.environ,
-                "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-            },
-            check=False,
+        self.pii_attestation.write_text(
+            json.dumps(
+                {
+                    "schema": "cross-ai-pii-review-attestation/v3",
+                    "scope_sha256": self.scope_sha,
+                    "decision": "no-sensitive-pii",
+                    "reviewer_role": "authenticated-repository-owner",
+                    "repository": "Halildeu/platform-k8s-gitops",
+                    "repository_id": 202,
+                    "reviewer_login": "Halildeu",
+                    "reviewer_id": 101,
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
         )
-        if attest.returncode != 0:
-            raise RuntimeError(attest.stdout + attest.stderr)
+        self.pii_attestation.chmod(0o600)
         self.output = self.root / "evidence.json"
         self.expected_stdin = self.root / "expected-stdin.txt"
         self.expected_stdin.write_text(
@@ -601,6 +641,10 @@ class IsolatedCodexReviewTests(unittest.TestCase):
                     platform.machine().lower(),
                 )
             ] = hashlib.sha256((self.bin_dir / "gitleaks").read_bytes()).hexdigest()
+        trusted_gh = dict(MODULE.TRUSTED_GH_NATIVE_SHA256)
+        trusted_gh[("2.92.0", "gh-darwin-arm64")] = hashlib.sha256(
+            self.fake_gh.read_bytes()
+        ).hexdigest()
         stdout = io.StringIO()
         stderr = io.StringIO()
         returncode = 0
@@ -619,6 +663,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             mock.patch.object(sys, "argv", arguments),
             mock.patch.dict(os.environ, env, clear=True),
             mock.patch.object(MODULE, "TRUSTED_CODEX_NATIVE_SHA256", trusted),
+            mock.patch.object(MODULE, "TRUSTED_GH_NATIVE_SHA256", trusted_gh),
             mock.patch.object(
                 MODULE,
                 "TRUSTED_SOURCE_PATHS",

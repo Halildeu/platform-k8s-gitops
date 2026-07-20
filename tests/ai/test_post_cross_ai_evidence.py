@@ -122,6 +122,68 @@ class EvidenceValidationTests(unittest.TestCase):
             "https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
         )
 
+    def test_head_preflight_accepts_only_completed_non_successful_audits(self) -> None:
+        head_sha = "c" * 40
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({
+                    "total_count": 1,
+                    "check_runs": [{
+                        "id": 41,
+                        "name": "cross-ai-audit",
+                        "head_sha": head_sha,
+                        "status": "completed",
+                        "conclusion": "failure",
+                    }],
+                }),
+            )
+
+        self.assertEqual(
+            MODULE.assert_head_has_no_successful_or_active_audit(
+                repo="Halildeu/platform-k8s-gitops",
+                head_sha=head_sha,
+                runner=runner,
+            ),
+            {41},
+        )
+
+    def test_head_preflight_rejects_prior_success_and_active_run(self) -> None:
+        for status, conclusion in (
+            ("completed", "success"),
+            ("in_progress", None),
+            ("queued", None),
+        ):
+            with self.subTest(status=status, conclusion=conclusion):
+                def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=json.dumps({
+                            "total_count": 1,
+                            "check_runs": [{
+                                "id": 42,
+                                "name": "cross-ai-audit",
+                                "head_sha": "c" * 40,
+                                "status": status,
+                                "conclusion": conclusion,
+                            }],
+                        }),
+                    )
+
+                with (
+                    contextlib.redirect_stdout(io.StringIO()) as output,
+                    self.assertRaises(SystemExit),
+                ):
+                    MODULE.assert_head_has_no_successful_or_active_audit(
+                        repo="Halildeu/platform-k8s-gitops",
+                        head_sha="c" * 40,
+                        runner=runner,
+                    )
+                self.assertIn("gh_audit_head_already_used", output.getvalue())
+
     def test_publication_invalidates_audit_before_comment_and_retriggers_it(self) -> None:
         payload = evidence()
         text = json.dumps(payload, separators=(",", ":"))
@@ -197,6 +259,7 @@ class EvidenceValidationTests(unittest.TestCase):
             pr_body="## Cross-AI\nConsultation mode: single\n",
             runner=runner,
             sleeper=lambda _seconds: None,
+            head_guard=lambda **_kwargs: set(),
         )
         self.assertIn("GET", calls[0])
         self.assertIn("PATCH", calls[1])
@@ -293,6 +356,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 pr_body="body",
                 runner=runner,
                 sleeper=sleeps.append,
+                head_guard=lambda **_kwargs: set(),
             )
         self.assertEqual(sleeps, [MODULE.LEDGER_COMMENT_DELAY_SECONDS])
         self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
@@ -335,6 +399,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
                     pr_body="body",
                     runner=runner,
+                    head_guard=lambda **_kwargs: set(),
                 )
         self.assertEqual(len(calls), 3)
         self.assertIn("GET", calls[0])
@@ -380,6 +445,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
                     pr_body="human body",
                     runner=runner,
+                    head_guard=lambda **_kwargs: set(),
                 )
         self.assertEqual(len(calls), 2)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 0)
@@ -437,6 +503,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
                     pr_body="body",
                     runner=runner,
+                    head_guard=lambda **_kwargs: set(),
                 )
         self.assertEqual(len(calls), 6)
         self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
@@ -498,6 +565,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                     sleeper=lambda _seconds: None,
+                    head_guard=lambda **_kwargs: set(),
                 )
         self.assertEqual(len(calls), 7)
         self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
@@ -575,6 +643,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                     sleeper=lambda _seconds: None,
+                    head_guard=lambda **_kwargs: set(),
                 )
         self.assertEqual(len(calls), 9)
         self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
@@ -598,6 +667,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_url="https://github.com/Halildeu/platform-k8s-gitops/pull/2638",
                     pr_body=None,
                     runner=lambda command, **_kwargs: calls.append(command),
+                    head_guard=lambda **_kwargs: set(),
                 )
         self.assertEqual(calls, [])
 
@@ -659,17 +729,13 @@ class EvidenceValidationTests(unittest.TestCase):
             ROOT / ".github/workflows/gate-cross-ai-audit.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("statuses: write", workflow)
-        self.assertIn("checks: write", workflow)
+        self.assertNotIn("checks: write", workflow)
         self.assertIn("Validate exact-head publication generation", workflow)
         self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
-        self.assertIn("issue_comment:", workflow)
-        self.assertIn("- created", workflow)
-        self.assertIn("- edited", workflow)
-        self.assertIn("- deleted", workflow)
+        self.assertNotIn("issue_comment:", workflow)
         self.assertIn("- ready_for_review", workflow)
         self.assertIn("- converted_to_draft", workflow)
-        self.assertIn("cross-ai-evidence-mutation-guard", workflow)
-        self.assertIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
+        self.assertNotIn("cross-ai-evidence-mutation-guard", workflow)
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()

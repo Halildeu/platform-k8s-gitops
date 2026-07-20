@@ -407,6 +407,7 @@ function loadInput(args) {
         baseRepo: '',
         actor: '',
         sender: '',
+        draft: false,
         changedFiles: readChangedFiles(args),
         automationContentAttestation: readAutomationContentAttestation(args),
         sourceActivationAttestation: readSourceActivationAttestation(args),
@@ -434,6 +435,7 @@ function loadInput(args) {
         // bot-opened auto-PR (pr.user stays the bot; sender is the human).
         actor: pr.user?.login ?? '',
         sender: ev.sender?.login ?? '',
+        draft: pr.draft !== false,
         // Dependabot exemption needs the diff allowlist gate; the workflow
         // pre-fetches the file list via `gh api ... --paginate` to avoid both
         // `pull_request_target` permission expansion and giving the script
@@ -1314,7 +1316,12 @@ async function appendPriorRevisionFinding(
     ) continue;
     const commentCreatedAtMs = Date.parse(comment?.createdAt || '');
     const ownerCommentUpdatedAtMs = Date.parse(comment?.updatedAt || '');
+    const postLedgerComment = Number.isFinite(commentCreatedAtMs)
+      && commentCreatedAtMs >= authorityCutoffs.ledgerMs;
     if (comment.createdAt !== comment.updatedAt) {
+      // Post-activation comments are presentation only. Their immutable status
+      // ledger remains authoritative even if the comment is edited/deleted.
+      if (postLedgerComment) continue;
       if (
         Number.isFinite(commentCreatedAtMs)
         && Number.isFinite(ownerCommentUpdatedAtMs)
@@ -1332,7 +1339,9 @@ async function appendPriorRevisionFinding(
         'base_tip_sha', 'base_sha', 'head_sha',
         'scope_sha256', 'execution_profile', 'response_sha256', 'verdict',
       ].filter((signal) => comment?.body?.includes(signal)).length;
-      if (rawEvidenceSignals >= 2) invalidCandidates.push(comment?.ref || 'missing-ref');
+      if (!postLedgerComment && rawEvidenceSignals >= 2) {
+        invalidCandidates.push(comment?.ref || 'missing-ref');
+      }
       continue;
     }
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
@@ -1344,7 +1353,7 @@ async function appendPriorRevisionFinding(
       && Number.isFinite(commentCreatedAtMs)
       && commentCreatedAtMs >= authorityCutoffs.ledgerMs
     ) {
-      invalidCandidates.push(`${comment?.ref || 'missing-ref'} (retired OpenAI v3 evidence)`);
+      // New unledgered comments cannot add governance authority.
       continue;
     }
     const openAiV4 = body?.schema === 'cross-ai-provider-evidence/v4'
@@ -1362,7 +1371,6 @@ async function appendPriorRevisionFinding(
         continue;
       }
       if (ledgerRequired) {
-        invalidCandidates.push(`${comment?.ref || 'missing-ref'} (missing immutable status ledger)`);
         continue;
       }
       // Before the exact trusted-source activation, v4-shaped owner comments
@@ -1390,6 +1398,7 @@ async function appendPriorRevisionFinding(
       }
       continue;
     }
+    if (postLedgerComment) continue;
     if (body?.provider === 'minimax' || body?.schema === 'cross-ai-provider-evidence/v1') {
       invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
@@ -2509,6 +2518,13 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     );
   }
 }
-findings = [activationFinding, ...findings];
+const readyFinding = {
+  check: 'pr_ready_for_review',
+  pass: prMeta?.draft === false,
+  detail: prMeta?.draft === false
+    ? 'PR ready_for_review; bu exact head icin yeni required audit basari uretebilir'
+    : 'Draft PR required cross-ai-audit basarisi uretemez',
+};
+findings = [activationFinding, readyFinding, ...findings];
 const ok = report(findings);
 exit(ok ? 0 : 1);
