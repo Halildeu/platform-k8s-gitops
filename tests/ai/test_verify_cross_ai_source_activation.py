@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -64,6 +65,19 @@ class SourceActivationTests(unittest.TestCase):
         subprocess.run(
             ["git", "-C", str(self.repo), "commit", "-q", "-m", message],
             check=True,
+        )
+
+    def commit_at(self, message: str, timestamp: str) -> None:
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        environment = {
+            **os.environ,
+            "GIT_AUTHOR_DATE": timestamp,
+            "GIT_COMMITTER_DATE": timestamp,
+        }
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-q", "-m", message],
+            check=True,
+            env=environment,
         )
 
     def head_sha(self) -> str:
@@ -165,6 +179,26 @@ class SourceActivationTests(unittest.TestCase):
             MODULE.verify_activation(
                 self.repo, activation_sha, activation_sha, **self.CONTEXT
             )
+
+    def test_marker_restore_starts_a_new_activation_epoch(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        first_epoch = MODULE.verify_activation(
+            self.repo, activation_sha, activation_sha, **self.CONTEXT
+        )["activated_at"]
+
+        marker = self.repo / MODULE.ACTIVATION_MARKER_PATH
+        marker.write_text("{}\n", encoding="utf-8")
+        self.commit_at("deactivate source trust", "2035-01-01T00:00:00+00:00")
+        marker.write_bytes(MODULE.ACTIVATION_MARKER_BYTES)
+        self.commit_at("restore source trust", "2035-01-01T00:00:10+00:00")
+        restored_sha = self.head_sha()
+
+        restored = MODULE.verify_activation(
+            self.repo, restored_sha, restored_sha, **self.CONTEXT
+        )["activated_at"]
+        self.assertNotEqual(restored, first_epoch)
+        self.assertEqual(restored, "2035-01-01T00:00:10Z")
 
     def test_non_main_or_non_push_context_cannot_activate_policy(self) -> None:
         self.activate_source_stack()

@@ -498,6 +498,98 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
 
+    def test_no_marker_revalidates_pr_after_status_queries(self) -> None:
+        body = self.write_event(
+            "Consultation mode: none\n"
+            "Consultation reason: routine product code without consultation\n"
+        )
+        changed = self.current_pr(body + "changed\n")
+        responses = [
+            self.current_pr(body),
+            [[]],
+            changed,
+            [[]],
+            changed,
+            {
+                "id": 40,
+                "state": "pending",
+                "context": "cross-ai/evidence-publication",
+                "description": "Cross-AI audit retry required generation=0",
+                "target_url": self.url,
+                "creator": {"login": "github-actions[bot]"},
+            },
+        ]
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+        self.assertEqual(len(calls), 6)
+        self.assertIn(f"statuses/{self.head}", calls[-1][2])
+
+    def test_no_marker_returns_only_after_stable_transport_and_pr_generation(self) -> None:
+        body = self.write_event(
+            "Consultation mode: none\n"
+            "Consultation reason: routine product code without consultation\n"
+        )
+        result, calls = self.execute([
+            self.current_pr(body),
+            [[]],
+            self.current_pr(body),
+            [[]],
+            self.current_pr(body),
+        ])
+        self.assertEqual(result["action"], "no-pending-generation")
+        self.assertEqual(len(calls), 5)
+        self.assertFalse(any("POST" in call for call in calls))
+
+    def test_no_marker_rejects_transport_append_during_revalidation(self) -> None:
+        body = self.write_event(
+            "Consultation mode: none\n"
+            "Consultation reason: routine product code without consultation\n"
+        )
+        mutation = self.mutation_status("deleted", self.comment_id)
+        responses = [
+            self.current_pr(body),
+            [[]],
+            self.current_pr(body),
+            [[mutation]],
+            self.current_pr(body),
+            {
+                "id": 40,
+                "state": "pending",
+                "context": "cross-ai/evidence-publication",
+                "description": "Cross-AI audit retry required generation=0",
+                "target_url": self.url,
+                "creator": {"login": "github-actions[bot]"},
+            },
+        ]
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+        self.assertEqual(len(calls), 6)
+        self.assertIn(f"statuses/{self.head}", calls[-1][2])
+
     def test_initial_marker_cannot_clear_pending_before_ledger_exists(self) -> None:
         body = self.write_event(self.body(10, 0))
         with (
@@ -974,6 +1066,60 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                 self.assertIn(f"repos/{self.repo}/check-runs/501", calls[3][0])
                 failed_request = json.loads(calls[3][1] or "")
                 self.assertEqual(failed_request["conclusion"], "failure")
+
+    def test_closed_unmerged_pr_comment_deletion_is_tombstoned(self) -> None:
+        self.write_comment_event("deleted", self.comment_id)
+        closed = {
+            **self.current_pr(self.body()),
+            "state": "closed",
+            "merged_at": None,
+        }
+        responses = [
+            closed,
+            self.mutation_pending_check("deleted", self.comment_id),
+            self.mutation_status("deleted", self.comment_id),
+            self.mutation_failed_check("deleted", self.comment_id),
+        ]
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["action"], "owner-comment-history-change-invalidated")
+        self.assertEqual(len(calls), 4)
+        self.assertIn(f"statuses/{self.head}", calls[2][2])
+
+    def test_merged_pr_comment_mutation_has_no_reopen_authority(self) -> None:
+        self.write_comment_event("deleted", self.comment_id)
+        merged = {
+            **self.current_pr(self.body()),
+            "state": "closed",
+            "merged_at": "2026-07-19T18:00:00Z",
+        }
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    ["gh"], 0, stdout=json.dumps(merged), stderr=""
+                ),
+            ),
+        ):
+            result = MODULE.invalidate_owner_comment_history_change(
+                self.repo, self.event_path
+            )
+        self.assertEqual(result["action"], "ignored-non-reopenable-pr")
 
     def test_invalid_failure_check_response_fails_closed(self) -> None:
         self.write_comment_event("edited", self.comment_id)

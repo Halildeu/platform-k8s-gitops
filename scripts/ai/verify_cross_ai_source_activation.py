@@ -53,8 +53,8 @@ def run_git(repo: Path, *args: str) -> bytes:
 
 
 def derive_activation_epoch(repo: Path, expected_sha: str) -> str:
-    """Return the first mainline commit carrying marker plus complete stack."""
-    marker_history = (
+    """Return the start of the current uninterrupted active mainline segment."""
+    relevant_history = (
         run_git(
             repo,
             "rev-list",
@@ -63,36 +63,33 @@ def derive_activation_epoch(repo: Path, expected_sha: str) -> str:
             expected_sha,
             "--",
             ACTIVATION_MARKER_PATH,
+            *TRUSTED_SOURCE_PATHS.values(),
         )
         .decode()
         .splitlines()
     )
-    if not marker_history:
+    if not relevant_history:
         raise ActivationError("activation_epoch_unavailable")
-    first_marker_commit = marker_history[0]
-    descendants = (
-        run_git(
-            repo,
-            "rev-list",
-            "--first-parent",
-            "--reverse",
-            f"{first_marker_commit}..{expected_sha}",
-        )
-        .decode()
-        .splitlines()
-    )
-    for candidate in (first_marker_commit, *descendants):
+
+    activated_at: str | None = None
+    for candidate in relevant_history:
         try:
-            if (
+            active = (
                 run_git(repo, "show", f"{candidate}:{ACTIVATION_MARKER_PATH}")
-                != ACTIVATION_MARKER_BYTES
-            ):
-                continue
-            if not all(
+                == ACTIVATION_MARKER_BYTES
+                and all(
                 run_git(repo, "show", f"{candidate}:{relative_path}")
                 for relative_path in TRUSTED_SOURCE_PATHS.values()
-            ):
-                continue
+                )
+            )
+        except ActivationError:
+            active = False
+        if not active:
+            activated_at = None
+            continue
+        if activated_at is not None:
+            continue
+        try:
             raw_timestamp = (
                 run_git(repo, "show", "-s", "--format=%cI", candidate)
                 .decode()
@@ -103,13 +100,15 @@ def derive_activation_epoch(repo: Path, expected_sha: str) -> str:
             continue
         if parsed.tzinfo is None:
             continue
-        return (
+        activated_at = (
             parsed.astimezone(timezone.utc)
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
         )
-    raise ActivationError("activation_epoch_unavailable")
+    if activated_at is None:
+        raise ActivationError("activation_epoch_unavailable")
+    return activated_at
 
 
 def verify_recovery_anchor(

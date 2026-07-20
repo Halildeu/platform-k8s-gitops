@@ -263,6 +263,49 @@ def evidence_ledger_snapshot(statuses: list[dict]) -> tuple[str, ...]:
     ))
 
 
+def audit_transport_snapshot(statuses: list[dict]) -> tuple[str, ...]:
+    """Bind every mutable Cross-AI publication and evidence status."""
+    return tuple(sorted(
+        json.dumps(status, sort_keys=True, separators=(",", ":"))
+        for status in statuses
+        if status.get("context") == PUBLICATION_CONTEXT
+        or (
+            isinstance(status.get("context"), str)
+            and status["context"].startswith(
+                (EVIDENCE_CONTEXT_PREFIX, MUTATION_CONTEXT_PREFIX)
+            )
+        )
+    ))
+
+
+def pr_generation_matches(
+    payload: object,
+    *,
+    url: str,
+    head: str,
+    base: str,
+    body: str,
+    draft: bool,
+) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    try:
+        payload_head = payload["head"]["sha"].lower()
+        payload_base = payload["base"]["sha"].lower()
+        payload_body = payload.get("body") or ""
+        payload_draft = payload["draft"]
+    except (KeyError, TypeError, AttributeError):
+        return False
+    return bool(
+        payload.get("state") == "open"
+        and payload.get("html_url") == url
+        and payload_head == head
+        and payload_base == base
+        and payload_body == body
+        and payload_draft is draft
+    )
+
+
 def post_retry_pending(repo: str, head: str, url: str, generation: int) -> dict:
     payload = json.dumps(
         {
@@ -476,12 +519,14 @@ def invalidate_owner_comment_history_change(repo: str, event_path: Path) -> dict
         head = current["head"]["sha"].lower()
     except (KeyError, TypeError, AttributeError):
         fail("github_pr_mutation_guard_invalid")
+    state = current.get("state")
     if (
-        current.get("state") != "open"
+        state not in {"open", "closed"}
+        or (state == "closed" and current.get("merged_at") is not None)
         or current.get("html_url") != expected_url
         or SHA_RE.fullmatch(head) is None
     ):
-        return {"ok": True, "action": "ignored-non-open-pr"}
+        return {"ok": True, "action": "ignored-non-reopenable-pr"}
 
     owner = repo.split("/", 1)[0].lower()
     if comment_author != owner or comment_association != "OWNER":
@@ -614,6 +659,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         if requires_publication_marker(event_body):
             fail("audit_generation_marker_missing")
         statuses = status_history(repo, event_head)
+        initial_transport = audit_transport_snapshot(statuses)
         publication_statuses = [
             status for status in statuses
             if status.get("context") == PUBLICATION_CONTEXT
@@ -630,6 +676,36 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
             fail("audit_generation_unbound_pending_invalid")
         if pending_publications:
             fail("audit_generation_marker_missing")
+        current_after_statuses = gh_json(
+            [f"repos/{repo}/pulls/{issue}", "--method", "GET"]
+        )
+        statuses_after_current = status_history(repo, event_head)
+        final_current = gh_json(
+            [f"repos/{repo}/pulls/{issue}", "--method", "GET"]
+        )
+        if (
+            not pr_generation_matches(
+                current_after_statuses,
+                url=expected_url,
+                head=event_head,
+                base=event_base,
+                body=event_body,
+                draft=event_draft,
+            )
+            or not pr_generation_matches(
+                final_current,
+                url=expected_url,
+                head=event_head,
+                base=event_base,
+                body=event_body,
+                draft=event_draft,
+            )
+        ):
+            protect_live_pr_generation(repo, final_current, expected_url)
+            fail("github_pr_generation_mismatch")
+        if audit_transport_snapshot(statuses_after_current) != initial_transport:
+            protect_live_pr_generation(repo, final_current, expected_url)
+            fail("audit_generation_superseded_before_completion")
         return {"ok": True, "action": "no-pending-generation"}
     if len(markers) != 1:
         fail("audit_generation_marker_invalid")
