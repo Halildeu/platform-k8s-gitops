@@ -106,6 +106,7 @@ CODEX_EXECUTABLE_DARWIN_KEYS = CODEX_EXECUTABLE_COMMON_KEYS | {
 }
 CODEX_EXECUTABLE_LINUX_KEYS = CODEX_EXECUTABLE_COMMON_KEYS | {
     "packageTarballSha512",
+    "registryPublicKeyBase64",
     "registrySignatureKeyId",
     "registrySignatureSha256",
     "publishAttestationBundleSha256",
@@ -375,6 +376,10 @@ def validate_codex_executable_policy(value: Any) -> dict[str, Any]:
                 entry.get("signatureType") == "npm-registry-slsa-v1"
                 and isinstance(entry.get("packageTarballSha512"), str)
                 and re.fullmatch(r"sha512:[a-f0-9]{128}", entry["packageTarballSha512"])
+                and isinstance(entry.get("registryPublicKeyBase64"), str)
+                and re.fullmatch(
+                    r"[A-Za-z0-9+/]{122}==", entry["registryPublicKeyBase64"]
+                )
                 and isinstance(entry.get("registrySignatureKeyId"), str)
                 and re.fullmatch(
                     r"SHA256:[A-Za-z0-9+/]{43}=?", entry["registrySignatureKeyId"]

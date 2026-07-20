@@ -901,6 +901,7 @@ class FixedRuntimeAttestorService:
             trust_root_digest,
             runtime_policy,
         ) = self.store.get(session_id)
+        self.authorization.assert_request(request)
         generation = self._authority_generation(trust_root_digest)
         if generation.runtime_policy != runtime_policy:
             reject(

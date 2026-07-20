@@ -376,6 +376,7 @@ const CROSS_AI_AUTHORITY_PATHS = [
   'scripts/ai/cross_ai_runtime_workload.py',
   'scripts/ai/run_cross_ai_runtime_attestor.py',
   'scripts/ai/runtime-attestor.Dockerfile',
+  'scripts/ai/verify_codex_npm_provenance.mjs',
   'scripts/ai/cross_ai_authority.py',
   'scripts/ai/trusted_cross_ai_evidence.py',
   'scripts/ops/build_cross_ai_provider_review_revocations.py',

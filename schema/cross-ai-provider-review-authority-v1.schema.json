@@ -130,6 +130,7 @@
               "signatureTeamId": {"type": "string"},
               "signatureCdHashSha256": {"$ref": "#/$defs/digest"},
               "packageTarballSha512": {"type": "string", "pattern": "^sha512:[a-f0-9]{128}$"},
+              "registryPublicKeyBase64": {"type": "string", "minLength": 124, "maxLength": 124, "pattern": "^[A-Za-z0-9+/]+={0,2}$"},
               "registrySignatureKeyId": {"type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]{43}=?$"},
               "registrySignatureSha256": {"$ref": "#/$defs/digest"},
               "publishAttestationBundleSha256": {"$ref": "#/$defs/digest"},
@@ -155,7 +156,7 @@
                 "if": {"properties": {"platform": {"const": "linux-x64"}}},
                 "then": {
                   "required": [
-                    "packageTarballSha512", "registrySignatureKeyId",
+                    "packageTarballSha512", "registryPublicKeyBase64", "registrySignatureKeyId",
                     "registrySignatureSha256", "publishAttestationBundleSha256",
                     "provenanceBundleSha256", "provenanceBuilderId",
                     "provenanceRepository", "provenanceWorkflowPath", "provenanceRef"

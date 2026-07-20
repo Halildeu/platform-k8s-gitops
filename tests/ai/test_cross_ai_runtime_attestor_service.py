@@ -503,6 +503,24 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
             self.service.finalize(session["sessionId"], finalize)
         self.assertEqual(0, self.signer.calls)
 
+    def test_finalize_rebinds_stored_session_to_current_authorization(self) -> None:
+        session = self.service.execute(self.request)
+        changed = dict(self.request)
+        changed["requestId"] = "70000000-0000-4000-8000-000000000099"
+        replacement = self.root / "replacement-authorization"
+        write_authorization(replacement, changed)
+        self.service.authorization = MODULE.load_runtime_authorization(replacement)
+
+        with self.assertRaisesRegex(
+            PolicyError,
+            "PROVIDER_RUNTIME_AUTH_SCOPE_MISMATCH",
+        ):
+            self.service.finalize(
+                session["sessionId"],
+                self._finalize_request(session),
+            )
+        self.assertEqual(0, self.signer.calls)
+
     def test_caller_execution_and_forged_provider_leaf_are_rejected(self) -> None:
         injected = dict(self.request)
         injected["execution"] = MODULE.execution_document(self.receipt)
@@ -614,6 +632,22 @@ class FixedRuntimeAttestorServiceTests(unittest.TestCase):
             f"ARG CODEX_LINUX_X64_SHA256={linux['cliSha256'].removeprefix('sha256:')}",
             dockerfile,
         )
+        self.assertIn("npm audit signatures --json", dockerfile)
+        self.assertIn("verify-codex-npm-provenance.mjs", dockerfile)
+        verifier = (
+            root / "scripts/ai/verify_codex_npm_provenance.mjs"
+        ).read_text(encoding="utf-8")
+        for field in (
+            "registryPublicKeyBase64",
+            "registrySignatureSha256",
+            "publishAttestationBundleSha256",
+            "provenanceBundleSha256",
+            "provenanceBuilderId",
+            "provenanceRepository",
+            "provenanceWorkflowPath",
+            "provenanceRef",
+        ):
+            self.assertIn(field, verifier)
 
 
 if __name__ == "__main__":

@@ -24,13 +24,14 @@
         "packageVersion": "0.144.1",
         "platform": "linux-x64",
         "provenanceBuilderId": "https://github.com/actions/runner/github-hosted",
-        "provenanceBundleSha256": "sha256:def0098cdefd708ba38714ca91bc153f9e3f803aa18ea88816d617c39eb65780",
+        "provenanceBundleSha256": "sha256:4e53437223ce2ca0f6728f3c64ca2f9b58b43c488f12bfc0e132b1a4d5acf1ce",
         "provenanceRef": "refs/tags/rust-v0.144.1",
         "provenanceRepository": "https://github.com/openai/codex",
         "provenanceWorkflowPath": ".github/workflows/rust-release.yml",
-        "publishAttestationBundleSha256": "sha256:91828646693240754d6b9d6fd36e99d164f09f99e8d728715dc42abc9f802e6d",
+        "publishAttestationBundleSha256": "sha256:91cae77884683681fd36103e8bd612b8f6e11cf124ba22e92ce8b84c78fd46d2",
+        "registryPublicKeyBase64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEY6Ya7W++7aUPzvMTrezH6Ycx3c+HOKYCcNGybJZSCJq/fd7Qa8uuAKtdIkUQtQiEKERhAmE5lMMJhP8OkDOa2g==",
         "registrySignatureKeyId": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
-        "registrySignatureSha256": "sha256:df18e840ea41068969939631967db703cb5911459ce60869793cdfaf13be752d",
+        "registrySignatureSha256": "sha256:43903bf65502acbdb961a1d0a8def2ac30b15d7b80e63b3da9994195fe4be6f1",
         "signatureType": "npm-registry-slsa-v1",
         "sourceClass": "official-openai-npm-bundled-native"
       }

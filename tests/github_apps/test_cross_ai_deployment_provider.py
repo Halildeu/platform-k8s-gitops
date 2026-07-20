@@ -162,6 +162,7 @@ class ProviderExecutionTest(unittest.TestCase):
             ),
             "signatureType": "npm-registry-slsa-v1",
             "packageTarballSha512": "sha512:" + ("1" * 128),
+            "registryPublicKeyBase64": ("A" * 122) + "==",
             "registrySignatureKeyId": "SHA256:" + ("A" * 43) + "=",
             "registrySignatureSha256": digest("registry-signature"),
             "publishAttestationBundleSha256": digest("publish-attestation"),

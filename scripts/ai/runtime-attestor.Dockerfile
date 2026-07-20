@@ -6,6 +6,8 @@ ARG TARGETARCH
 ARG CODEX_VERSION=0.144.1
 ARG CODEX_TARBALL_SHA512=5e2af5cea3dfa5e9e1768028b21379deea27cdb0578f5f023b2cd190595566948dc849795ed92e62ef6875d10b78f14decaff4b1751c48edf801de487825cf6f
 ARG CODEX_LINUX_X64_SHA256=a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902
+COPY config/github-apps/cross-ai-provider-review-authority.v1.json /tmp/codex-authority.json
+COPY scripts/ai/verify_codex_npm_provenance.mjs /tmp/verify-codex-npm-provenance.mjs
 RUN set -eux; \
     test "${TARGETARCH}" = "amd64"; \
     cd /tmp; \
@@ -13,6 +15,12 @@ RUN set -eux; \
     archive="openai-codex-${CODEX_VERSION}.tgz"; \
     actual="$(sha512sum "${archive}" | awk '{print $1}')"; \
     test "${actual}" = "${CODEX_TARBALL_SHA512}"; \
+    mkdir /tmp/codex-audit; \
+    npm install --prefix /tmp/codex-audit --ignore-scripts "@openai/codex@${CODEX_VERSION}"; \
+    cd /tmp/codex-audit; \
+    npm audit signatures --json > /tmp/npm-signature-audit.json; \
+    node -e 'const a=require("/tmp/npm-signature-audit.json"); if (a.invalid?.length || a.missing?.length) process.exit(1)'; \
+    node /tmp/verify-codex-npm-provenance.mjs /tmp/codex-authority.json; \
     npm install --global --ignore-scripts "/tmp/${archive}"; \
     native="$(find /usr/local/lib/node_modules/@openai/codex -path '*/vendor/*/bin/codex' -type f -perm /111)"; \
     test -n "${native}"; \
