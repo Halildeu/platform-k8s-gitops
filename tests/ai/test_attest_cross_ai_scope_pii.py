@@ -183,6 +183,23 @@ class ScopePiiAttestationTests(unittest.TestCase):
         self.assertIn("gh_native_untrusted", result.stdout)
         self.assertFalse(self.output.exists())
 
+    def test_rejects_oversized_gh_before_reading_contents(self) -> None:
+        runner = mock.Mock()
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value=str(self.gh)),
+            mock.patch.object(MODULE.platform, "system", return_value="Darwin"),
+            mock.patch.object(MODULE.platform, "machine", return_value="arm64"),
+            mock.patch.object(MODULE, "MAX_GH_NATIVE_BYTES", 1),
+            mock.patch.object(
+                Path,
+                "read_bytes",
+                side_effect=AssertionError("oversized native must not be read"),
+            ),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.resolve_gh_native(self.trusted_pins, runner=runner)
+        runner.assert_not_called()
+
     def test_accepts_an_explicit_pin_from_a_bounded_platform_pin_set(self) -> None:
         digest = hashlib.sha256(self.gh.read_bytes()).hexdigest()
         self.trusted_pins = {

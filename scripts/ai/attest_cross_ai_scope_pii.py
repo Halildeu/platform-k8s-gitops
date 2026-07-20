@@ -96,13 +96,21 @@ def resolve_gh_native(
     try:
         native = Path(candidate).resolve(strict=True)
         native_stat = native.stat()
-        native_bytes = native.read_bytes()
     except OSError:
         fail("gh_native_untrusted")
     if (
         not stat.S_ISREG(native_stat.st_mode)
         or native_stat.st_mode & 0o022
-        or not native_bytes
+        or native_stat.st_size < 1
+        or native_stat.st_size > MAX_GH_NATIVE_BYTES
+    ):
+        fail("gh_native_untrusted")
+    try:
+        native_bytes = native.read_bytes()
+    except OSError:
+        fail("gh_native_untrusted")
+    if (
+        len(native_bytes) != native_stat.st_size
         or len(native_bytes) > MAX_GH_NATIVE_BYTES
     ):
         fail("gh_native_untrusted")

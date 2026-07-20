@@ -114,6 +114,17 @@ const REAL_TRUSTED_SOURCE_DIGESTS = Object.fromEntries(
     { cwd: REPO_ROOT, encoding: 'utf8' },
   ))]),
 );
+const REAL_TRUSTED_BASE_PARENT_SOURCE_DIGESTS = Object.fromEntries(
+  Object.entries({
+    review_harness_sha256: 'scripts/ai/run_isolated_codex_review.py',
+    scope_preparer_sha256: 'scripts/ai/prepare_cross_ai_scope.py',
+    pii_attester_sha256: 'scripts/ai/attest_cross_ai_scope_pii.py',
+    evidence_builder_sha256: 'scripts/ai/build_cross_ai_evidence.py',
+  }).map(([key, path]) => [key, sha256(execFileSync(
+    'git', ['show', `${REAL_TRUSTED_BASE_PARENT_SHA}:${path}`],
+    { cwd: REPO_ROOT, encoding: 'utf8' },
+  ))]),
+);
 const TRUSTED_SOURCE_DIGEST_OVERRIDES = {
   [BASE_TIP_SHA]: CURRENT_TRUSTED_SOURCE_DIGESTS,
   [HISTORICAL_TRUSTED_BASE_SHA]: HISTORICAL_TRUSTED_SOURCE_DIGESTS,
@@ -1249,6 +1260,10 @@ const cases = [
       baseSha: REAL_TRUSTED_BASE_PARENT_SHA, body: explicitNoneBody,
       changedFiles: [ROUTINE_PATH], evidence: realTrustedBaseCodexV4Evidence,
       includeTrustedSourceOverride: false,
+      sourceActivationAttestation: sourceActivation(
+        REAL_TRUSTED_BASE_PARENT_SHA,
+        REAL_TRUSTED_BASE_PARENT_SOURCE_DIGESTS,
+      ),
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['none mode rejects a post-retirement OpenAI v1 record',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',

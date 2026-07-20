@@ -43,6 +43,10 @@ PUBLICATION_CONTEXT = "cross-ai/evidence-publication"
 PENDING_DESCRIPTION = "Cross-AI evidence publication awaiting trusted audit"
 TRUSTED_WORKFLOW_STATUS_CREATOR = "github-actions[bot]"
 RETRY_DESCRIPTION_PREFIX = "Cross-AI audit retry required generation="
+RETRY_DESCRIPTION_RE = re.compile(
+    rf"^{re.escape(RETRY_DESCRIPTION_PREFIX)}([1-9]\d*)$"
+)
+EVIDENCE_CONTEXT_PREFIX = "cross-ai/evidence/"
 
 
 def fail(code: str) -> NoReturn:
@@ -224,6 +228,32 @@ def valid_retry_pending(status: dict | None, generation: int, url: str) -> bool:
         and isinstance(status.get("id"), int)
         and status["id"] > generation
     )
+
+
+def valid_unbound_pending(status: dict, owner: str, url: str) -> bool:
+    """Validate a pending fence when no PR-body generation marker is available."""
+    identifier = status.get("id")
+    if not isinstance(identifier, int) or identifier < 1:
+        return False
+    if valid_owner_pending(status, identifier, owner, url):
+        return True
+    description = status.get("description")
+    match = (
+        RETRY_DESCRIPTION_RE.fullmatch(description)
+        if isinstance(description, str)
+        else None
+    )
+    return bool(match and valid_retry_pending(status, int(match.group(1)), url))
+
+
+def evidence_ledger_snapshot(statuses: list[dict]) -> tuple[str, ...]:
+    """Content-address every evidence ledger status so append races are visible."""
+    return tuple(sorted(
+        json.dumps(status, sort_keys=True, separators=(",", ":"))
+        for status in statuses
+        if isinstance(status.get("context"), str)
+        and status["context"].startswith(EVIDENCE_CONTEXT_PREFIX)
+    ))
 
 
 def post_retry_pending(repo: str, head: str, url: str, generation: int) -> dict:
@@ -431,12 +461,18 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         publication_statuses = [
             status for status in statuses
             if status.get("context") == PUBLICATION_CONTEXT
-            and isinstance(status.get("id"), int)
         ]
-        latest_publication = max(
-            publication_statuses, key=lambda status: status["id"], default=None
-        )
-        if latest_publication is not None and latest_publication.get("state") == "pending":
+        pending_publications = [
+            status for status in publication_statuses
+            if status.get("state") == "pending"
+        ]
+        owner = repo.split("/", 1)[0].lower()
+        if any(
+            not valid_unbound_pending(status, owner, expected_url)
+            for status in pending_publications
+        ):
+            fail("audit_generation_unbound_pending_invalid")
+        if pending_publications:
             fail("audit_generation_marker_missing")
         return {"ok": True, "action": "no-pending-generation"}
     if len(markers) != 1:
@@ -458,6 +494,8 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     current_statuses = (
         source_statuses if review_head == event_head else status_history(repo, event_head)
     )
+    source_evidence_ledger = evidence_ledger_snapshot(source_statuses)
+    current_evidence_ledger = evidence_ledger_snapshot(current_statuses)
     source_publication_statuses = [
         status for status in source_statuses
         if status.get("context") == PUBLICATION_CONTEXT
@@ -540,6 +578,14 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         if review_head == event_head
         else status_history(repo, event_head)
     )
+    if (
+        evidence_ledger_snapshot(source_statuses_before_completion)
+        != source_evidence_ledger
+        or evidence_ledger_snapshot(current_statuses_before_completion)
+        != current_evidence_ledger
+    ):
+        protect_live_pr_generation(repo, current_before_completion, expected_url)
+        fail("audit_evidence_ledger_superseded_before_completion")
     source_publication_before_completion = [
         status for status in source_statuses_before_completion
         if status.get("context") == PUBLICATION_CONTEXT

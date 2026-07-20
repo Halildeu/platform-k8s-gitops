@@ -191,6 +191,46 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             )
         )
 
+    def test_new_evidence_ledger_after_validation_never_turns_green(self) -> None:
+        body = self.write_event()
+        newer_ledger = {
+            **self.ledger(identifier=12),
+            "context": f"cross-ai/evidence/{'b' * 64}",
+        }
+        retry = {
+            "id": 13,
+            "state": "pending",
+            "context": "cross-ai/evidence-publication",
+            "description": "Cross-AI audit retry required generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        responses = [
+            self.current_pr(body),
+            self.comment(),
+            [[self.pending(), self.ledger()]],
+            self.current_pr(body),
+            [[self.pending(), self.ledger(), newer_ledger]],
+            retry,
+        ]
+        calls: list[list[str]] = []
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(responses.pop(0)), stderr=""
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+        self.assertEqual(len(calls), 6)
+
     def test_draft_generation_cannot_leave_successful_required_check(self) -> None:
         body = self.write_event(draft=True)
         responses = [
@@ -340,6 +380,81 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                     ),
                     subprocess.CompletedProcess(
                         ["gh"], 0, stdout=json.dumps([[self.pending()]]), stderr=""
+                    ),
+                ],
+            ),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_no_marker_rejects_open_pending_hidden_by_newer_terminal(self) -> None:
+        body = self.write_event(
+            "Consultation mode: none\n"
+            "Consultation reason: routine product code without consultation\n"
+        )
+        for state in ("failure", "success"):
+            with self.subTest(state=state):
+                terminal = {
+                    "id": 20,
+                    "state": state,
+                    "context": "cross-ai/evidence-publication",
+                    "description": "terminal status cannot close another generation",
+                    "target_url": self.url,
+                    "creator": {"login": "github-actions[bot]"},
+                }
+                with (
+                    mock.patch.object(
+                        MODULE.shutil, "which", return_value="/usr/bin/gh"
+                    ),
+                    mock.patch.object(
+                        MODULE.subprocess,
+                        "run",
+                        side_effect=[
+                            subprocess.CompletedProcess(
+                                ["gh"],
+                                0,
+                                stdout=json.dumps(self.current_pr(body)),
+                                stderr="",
+                            ),
+                            subprocess.CompletedProcess(
+                                ["gh"],
+                                0,
+                                stdout=json.dumps([[self.pending(), terminal]]),
+                                stderr="",
+                            ),
+                        ],
+                    ),
+                    self.assertRaises(SystemExit),
+                ):
+                    MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_no_marker_rejects_malformed_pending_generation(self) -> None:
+        body = self.write_event(
+            "Consultation mode: none\n"
+            "Consultation reason: routine product code without consultation\n"
+        )
+        malformed = {
+            "id": 20,
+            "state": "pending",
+            "context": "cross-ai/evidence-publication",
+            "description": "Cross-AI audit retry required generation=20",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[
+                    subprocess.CompletedProcess(
+                        ["gh"],
+                        0,
+                        stdout=json.dumps(self.current_pr(body)),
+                        stderr="",
+                    ),
+                    subprocess.CompletedProcess(
+                        ["gh"], 0, stdout=json.dumps([[malformed]]), stderr=""
                     ),
                 ],
             ),
