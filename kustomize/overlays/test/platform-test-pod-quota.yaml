@@ -1,0 +1,59 @@
+# ResourceQuota — platform-test pod ceiling (board #2317, layer 2)
+#
+# The PrometheusRule in kustomize/base/monitoring/k3d-test-capacity-guard-rule.yaml
+# is the early-warning layer; this is the fail-closed one. A quota rejects the
+# 47th pod at admission with a clear message, instead of letting it sit Pending
+# with `Too many pods` while a session wonders why a deploy did nothing.
+#
+# ## The number is measured, not guessed
+#
+# #2317 explicitly says "Körlemesine 60/70 YAPMA" and asks for a post-recreate
+# baseline. Measured on k3d-test 2026-07-22, after the #2306 Part-2 node
+# recreate landed (allocatable moved 50 -> 80):
+#
+#   node allocatable pods                      80
+#   non-terminal pods, all namespaces          53
+#   platform-test non-terminal                 29
+#   all OTHER namespaces (S)                   24   <- monitoring, kube-system,
+#                                                      argocd, cert-manager, ESO…
+#
+# The issue's formula is `hard.pods ~= 68-70 - S`. With S=24 that gives 44-46.
+# Taking the upper end:
+#
+#   46 (platform-test cap) + 24 (other namespaces) = 70
+#   80 - 70 = 10 slots held back as hard reserve   <- the 10-12 the issue wants
+#
+# ## Why 46 does not throttle normal work
+#
+# platform-test sits at 29, leaving 17 slots. A full overlay rollout surges by
+# maxSurge (25% default) rather than doubling: ~7 extra pods, peaking near 36 —
+# comfortably inside 46. The remaining ~10 absorb Job pods, ESO/ingress churn
+# and the frontend surge slot the issue calls out.
+#
+# If a legitimate workload ever needs more, RAISE THIS NUMBER in a PR rather
+# than deleting the quota: the number failing loudly is the signal that the
+# node needs resizing, and deleting it removes the signal along with the limit.
+#
+# ## Scope
+#
+# `pods` only. CPU/memory quotas are deliberately NOT set here: the failure
+# mode this guard addresses is the node's pod-count ceiling, and adding
+# resource quotas would force every workload in the namespace to declare
+# requests/limits — a much larger change with its own rollout risk, unrelated
+# to #2317.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-test-pod-ceiling
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: capacity-guard
+  annotations:
+    board.platform/issue: "2317"
+    capacity.platform/measured-at: "2026-07-22"
+    capacity.platform/node-allocatable-pods: "80"
+    capacity.platform/other-namespace-baseline: "24"
+    capacity.platform/hard-reserve-slots: "10"
+spec:
+  hard:
+    pods: "46"

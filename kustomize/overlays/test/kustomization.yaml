@@ -98,6 +98,12 @@ resources:
   - frontend-federation-smoke-rbac.yaml
   - frontend-federation-smoke-status.yaml
   - frontend-federation-smoke-netpol.yaml
+  # 2026-07-22 #2317 capacity guard, layer 2 (fail-closed). Caps platform-test
+  # at 46 pods — measured, not guessed: node allocatable 80, other namespaces
+  # 24, hard reserve 10. Layer 1 is the PrometheusRule in
+  # kustomize/base/monitoring/k3d-test-capacity-guard-rule.yaml. Full
+  # derivation in the manifest header.
+  - platform-test-pod-quota.yaml
 
 # Faz 25 #2615 test-only customer-path fix: the immutable frontend image ships
 # the correct `.mjs` MIME rule, but the GitOps-mounted nginx ConfigMap replaces
