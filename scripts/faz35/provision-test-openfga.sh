@@ -2,6 +2,17 @@
 # Faz 35 Etik Speak: create/reuse the isolated test store, promote the exact
 # compiled model and bind the synthetic staff subject. Store/model IDs are
 # non-secret outputs that must be pinned in GitOps by a new reviewed commit.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` public + DAG=true KC client'ı A2c cutover'ında
+# `directAccessGrantsEnabled=false`'a çevrilecek. Bu script `frontend` client'ının
+# `ethics-manager-audience` + `ethics:case:manage` optional scope'larına bağımlı
+# (Vault kv/platform/keycloak/smoke-client A2a substrate mevcut, ama A2b.1
+# smoke-runtime-v1 scope set'ine ethics-* opt-in'i EKLİ DEĞİL). Faz35 team A2c
+# cutover ÖNCESİ ya (a) A2b.3 extension ile smoke-client optionalClientScopes'a
+# `ethics-manager-audience` + `ethics:case:manage` eklemeli ya da (b) bu script'i
+# smoke-client + custom scope opt-in ile revize etmeli. Aksi halde A2c cutover
+# ROPC token 400/invalid_scope veya audience mismatch üretir.
 set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x

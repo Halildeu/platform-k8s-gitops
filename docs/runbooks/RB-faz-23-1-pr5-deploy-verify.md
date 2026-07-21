@@ -144,8 +144,20 @@ PF=$!
 sleep 2
 
 # Submit synthetic intent (synthetic JWT subscriber:1204)
-TOKEN=$(curl -s -X POST -d "client_id=frontend&grant_type=password&username=admin&password=admin" \
-  https://testai.acik.com/realms/platform-test/protocol/openid-connect/token | jq -r .access_token)
+# A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover);
+# Vault path: kv/platform/keycloak/smoke-client; scope=openid smoke-notify-v1 (org_id capability)
+SMOKE_CLIENT_SECRET=$(ssh halil@staging-sw '
+  VT=$(python3 -c "import json; print(json.load(open(\"/home/halil/bootstrap-drill/vault-init-test.json\"))[\"root_token\"])")
+  docker exec -e VAULT_TOKEN=$VT platform-vault-test vault kv get -field=client_secret kv/platform/keycloak/smoke-client
+')
+TEST_PERSONA_PASSWORD=$(ssh halil@staging-sw 'kubectl --context k3d-test -n platform-test get secret test-personas-perf-auth -o jsonpath="{.data.password}" | base64 -d')
+TOKEN=$(curl -s -X POST "https://testai.acik.com/realms/platform-test/protocol/openid-connect/token" \
+  --data-urlencode "client_id=smoke-client" \
+  --data-urlencode "client_secret=${SMOKE_CLIENT_SECRET}" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "username=perf-test" \
+  --data-urlencode "password=${TEST_PERSONA_PASSWORD}" \
+  --data-urlencode "scope=openid smoke-notify-v1" | jq -r .access_token)
 
 curl -X POST http://localhost:18080/api/v1/notify/intents \
   -H "Authorization: Bearer $TOKEN" \

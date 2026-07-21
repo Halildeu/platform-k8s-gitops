@@ -2,6 +2,11 @@
 # Read-only, host-side Faz 35 TEST authorization proof. This script is sent to
 # staging-sw over SSH by preflight-test-activation.sh; it never prints tokens,
 # passwords or resolved subject IDs.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` public + DAG=true — A2c cutover'da DAG=false; bu proof
+# ROPC token'ı `frontend`'e bağımlı. Faz35 team A2c ÖNCESİ smoke-client + ETHICS
+# opt-in (A2b.3) veya persona bazlı client_credentials pattern'e taşımalı.
 set -euo pipefail
 set +x
 umask 077

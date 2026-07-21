@@ -47,6 +47,7 @@ KC_ADMIN_PASS_FILE="$TMP_DIR/kc-admin-password.txt"
 KC_SOURCE_DIAG_FILE="$TMP_DIR/keycloak-source-diagnostics.json"
 PERSONA_PASS_FILE="$TMP_DIR/persona-password.txt"
 PERSONA_ROTATE_PASS_FILE="$TMP_DIR/persona-rotate-password.txt"
+SMOKE_CLIENT_SECRET_FILE="$TMP_DIR/smoke-client-secret.txt"
 RESET_BODY_FILE="$TMP_DIR/reset-password.json"
 ROTATE_BODY_FILE="$TMP_DIR/rotate-password.json"
 SQL_FILE="$TMP_DIR/domain-ops-smoke.sql"
@@ -347,12 +348,28 @@ reset_persona_password() {
   [[ "$status" == "204" ]] || fail "Keycloak persona password reset returned HTTP $status"
 }
 
+fetch_smoke_client_secret() {
+  # A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover).
+  # Vault kv/platform/keycloak/smoke-client (A2a); scope-mapping + audience×6 (A2b.1 setup-smoke-token-contract.sh).
+  local vault_root_token
+  vault_root_token="$(python3 -c "import json; print(json.load(open('/home/halil/bootstrap-drill/vault-init-test.json'))['root_token'])")" \
+    || fail "smoke-client secret için vault root token okunamadı"
+  docker exec -e VAULT_TOKEN="$vault_root_token" platform-vault-test \
+    vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "$SMOKE_CLIENT_SECRET_FILE" \
+    || fail "smoke-client secret Vault'tan alınamadı (kv/platform/keycloak/smoke-client — A2a seed edilmiş olmalı)"
+  chmod 0600 "$SMOKE_CLIENT_SECRET_FILE"
+  vault_root_token=""
+  [[ -s "$SMOKE_CLIENT_SECRET_FILE" ]] || fail "smoke-client secret dosyası boş"
+}
+
 mint_persona_token() {
+  fetch_smoke_client_secret
   local token_response persona_token
   token_response="$(curl -sS -X POST \
     "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
     --data-urlencode "grant_type=password" \
-    --data-urlencode "client_id=frontend" \
+    --data-urlencode "client_id=smoke-client" \
+    --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
     --data-urlencode "username=$PERSONA_USERNAME" \
     --data-urlencode "password@$PERSONA_PASS_FILE")" \
     || fail "Keycloak persona token request failed"

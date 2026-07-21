@@ -506,7 +506,7 @@ cat .cache/zanzibar-canary/<RUN_ID>/setup.log
    olmalı — hızlı `kc_post` bootstrap sadece geçici.
 - Realm'de `canary-load` client tanımlı + Direct Access Grants: Enabled + confidential (secret'li).
 - Client secret'i Vault'ta (stage tier): `vault kv get secret/stage/keycloak/canary-load`.
-- Fallback: geliştirme için `CLIENT_ID=frontend` + realm export'ta direct-grants enabled (yalnız dev, Evidence PASS için kabul edilmez).
+- Fallback: geliştirme için `CLIENT_ID=smoke-client` + Vault `kv/platform/keycloak/smoke-client` (A2a substrate, A2b.1 token contract). `frontend` client'ı A2c cutover sonrası `directAccessGrantsEnabled=false` olduğu için ROPC dönmez; ayrıca smoke-client audience'a `canary-load` YOK, kısa-vadeli test dışında Evidence PASS için kabul edilmez.
 
 ### 5.7 Rollback Prosedürü (Stage 2 / 3 detay)
 

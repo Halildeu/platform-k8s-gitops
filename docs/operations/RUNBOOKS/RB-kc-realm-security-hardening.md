@@ -22,8 +22,9 @@
 | **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) — `harden-realm-security.sh` | ✅ LIVE (PR #2479) |
 | **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
 | **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 + impersonation 201 pending** (persona seed — ayrı fixture paketi) |
-| A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
-| A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
+| **A2b.2** | 4 TEST runbook + core smoke script repoint (`client_id=frontend` → `smoke-client`) | ✅ bu sürüm (docs: RB-22-1-1-be-009-openfga-live + RB-faz-21-3-d35-3-keycloak-admin-jwt + RB-faz-23-1-pr5-deploy-verify + RB-zanzibar-canary + runbook-auth-impersonation-broker-secret + RB-bl011 (prod pattern note); scripts: faz22/smoke-endpoint-admin-domain-ops + faz22-remote-ops/devkey-cert-autorenew + faz22-remote-ops/agentpc2-update-agent-v0214 + faz24/provision-meeting-intelligence-access + faz35/reconcile-test-permission-writer-identity). Faz35 ethics scripts + ATS scripts A2c-blocker migration note aldı (A2b.3 dependency: smoke-client optional scope extension). |
+| A2b.3 | smoke-client optionalClientScopes'a ATS + ETHICS scope opt-in genişletme | A2c ÖNCESİ zorunlu — Faz25/Faz35 team ya scope opt-in ya dedicated smoke client kurar |
+| **A2c** | `frontend.directAccessGrantsEnabled=false` | **BLOCKED on A2b.3** — Faz25 ATS scope opt-in + Faz35 ethics scope opt-in tamamlanmadan flip DAG=false ROPC break eder (fullats-application-smoke, provision-test-openfga/ethic-entitlement/keycloak, verify-test-openfga-authz). Ayrı cutover PR. |
 | A3 | redirectUri + webOrigins narrowing | sonraki PR |
 | B | Conditional-OTP privileged (admin/manager) | ayrı flow PR |
 
