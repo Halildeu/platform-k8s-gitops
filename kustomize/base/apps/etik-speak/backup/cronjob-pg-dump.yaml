@@ -1,0 +1,83 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etik-speak-pg-dump
+  labels:
+    app.kubernetes.io/part-of: etik-speak
+    app.kubernetes.io/component: backup
+    faz35.backup.type: postgres
+spec:
+  # 03:00 UTC = 06:00 Europe/Istanbul (peak-off window; runbook
+  # RB-faz35-incident-response §backup-window).
+  schedule: "0 3 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: etik-speak
+            app.kubernetes.io/component: backup
+            faz35.backup.type: postgres
+        spec:
+          serviceAccountName: etik-speak-backup
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-pg, key: database}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-pg, key: user}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-pg, key: password}
+                - name: ARCHIVE_ROOT
+                  value: /archive
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TS=$(date -u +%Y%m%dT%H%M%SZ)
+                  OUT="$ARCHIVE_ROOT/pg/${PGDATABASE}-${TS}.sql.gz"
+                  mkdir -p "$ARCHIVE_ROOT/pg"
+                  # --data-only + schema captured separately keeps restores
+                  # incremental. Ownership stripped so restores land under
+                  # the target-side role, not the source.
+                  pg_dump --no-owner --no-privileges --format=plain "$PGDATABASE" | gzip -c > "$OUT"
+                  echo "wrote $OUT"
+                  ls -lh "$ARCHIVE_ROOT/pg" | tail -20
+                  # Housekeeping: keep last 30 daily dumps + purge older.
+                  find "$ARCHIVE_ROOT/pg" -type f -name '*.sql.gz' -mtime +30 -delete || true
+              volumeMounts:
+                - name: archive
+                  mountPath: /archive
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits:   {cpu: 500m, memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65532
+                seccompProfile: {type: RuntimeDefault}
+          volumes:
+            - name: archive
+              persistentVolumeClaim:
+                claimName: etik-speak-backup-archive
