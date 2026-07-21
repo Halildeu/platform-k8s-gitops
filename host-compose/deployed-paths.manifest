@@ -1,0 +1,33 @@
+# Host config deploy manifest — canonical (git) → live (host) path pairs.
+#
+# WHY THIS EXISTS
+# ---------------
+# Files under host-compose/ are the canonical source for configuration that
+# runs directly on the host (outside Kubernetes). Unlike kustomize/ there is
+# no controller reconciling them: the documented deploy step is a manual
+# `scp` (docs/phase18-evidence/tombstone-deploy-20260424.md:17). A merged PR
+# therefore does NOT mean the live host is running that config.
+#
+# Faz 24 Bulgu 3-E (2026-07-21) is the incident that motivated this file:
+# PR #2711 correctly added the audio-gateway WebSocket `Upgrade`/`Connection`
+# forward to host-compose/web-nginx/default.conf and merged green, but nobody
+# copied the file to the host. The live edge kept the old config for a full
+# day, so the desktop recorder's WS handshake kept failing with
+# "Invalid 'Upgrade' header" while git and CI both reported the fix as landed.
+#
+# scripts/host-config-drift-check.sh reads this manifest and fails when a
+# canonical file differs from what is actually deployed, so "merged" can no
+# longer be mistaken for "deployed".
+#
+# CONSTRAINT — no secrets in listed files
+# On drift the checker prints a unified diff of both sides into the CI log, so
+# only list files that carry no credentials. Config that references a secret by
+# path or env var name is fine; config with an inline token, password, or key
+# is not. If such a file ever needs drift coverage, compare hashes instead of
+# printing the diff.
+#
+# FORMAT
+#   <repo-relative canonical path><TAB><absolute live path on staging-sw>
+# Blank lines and lines starting with '#' are ignored.
+
+host-compose/web-nginx/default.conf	/home/halil/platform/web/nginx/default.conf
