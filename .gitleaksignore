@@ -62,17 +62,14 @@ db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:148
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:232
 
-# PR #2753 (Faz 24 live e2e smoke) — the RFC 6455 §1.3 canonical example
-# client nonce (`dGhlIHNhbXBsZSBub25jZQ==`, base64 for "the sample nonce")
-# is the WebSocket handshake test vector every RFC-6455 reference impl
-# ships. Gitleaks generic-api-key heuristic misclassified the 24-char
-# base64 literal at scripts/faz24-live-e2e-smoke.sh:66 as a secret. The
-# fix commit (81f2110) split the literal at runtime via `printf` string
-# concatenation — the source lines no longer trip the entropy check —
-# but gitleaks scans every commit in the PR diff, so the original commit
-# (c78326c) still re-trips the rule on its own line. This entry silences
-# the historical fingerprint only; new commits use the split-literal form.
+# PR #2753 (Faz 24 live e2e smoke) — historical fingerprints from the base64
+# literal that has since been eliminated (the nonce is now built at runtime
+# via `base64(1)` on the ASCII source). Gitleaks scans every commit in a PR
+# diff so these historical hashes still trip generic-api-key even though the
+# working tree no longer contains the offending literal. Safe to remove once
+# the branch is squashed to main.
 c78326c52add2cc1fbaf6ee93a0b64218a5cf158:scripts/faz24-live-e2e-smoke.sh:generic-api-key:66
+1449ef056ba01f4a79d2b15e0185acb5d997adc9:scripts/faz24-live-e2e-smoke.sh:generic-api-key:66
 
 # PR #1036 (BL-010 KC org_id User Attribute mapper canary persona) —
 # gitleaks generic-api-key entropy heuristic flagged Kubernetes pod name
