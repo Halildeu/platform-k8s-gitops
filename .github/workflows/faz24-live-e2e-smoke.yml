@@ -1,5 +1,10 @@
 name: Faz 24 live e2e smoke
 
+# Least-privilege GITHUB_TOKEN — read-only smoke never opens PRs, comments,
+# creates releases, or writes to any repo scope. CodeQL Actions rule 27.
+permissions:
+  contents: read
+
 # Automates Zeynep 07-20 attended smoke 8-item checklist against k3d-test.
 #
 # Runs on-demand + nightly to catch handshake regressions BEFORE Zeynep hits them.
