@@ -9,7 +9,8 @@
     "Test admin subject = numeric user ID (mock IT admin persona, prod kullanıcısı DEĞİL)",
     "Idempotent: aynı tuple iki kez yazılırsa OpenFGA no-op (writeTuple semantic)"
   ],
-  "_apply_via": "permission-service admin OpenFGA bootstrap endpoint (BE-009 final config'da exposed). Doğrudan OpenFGA gRPC/REST kullanma (DD-EA-2 boundary).",
+  "_apply_via": "NONE — this fixture is NOT APPLIABLE (board #2534, 2026-07-22). The 'permission-service admin OpenFGA bootstrap endpoint (BE-009)' this field previously named DOES NOT EXIST in the codebase; the claim was never true, so anyone following it burned time looking for a route that was never written. Module grants go through the assignment API; data-access scopes through POST /api/v1/access/scope (wrapper: scripts/acceptance/grant-data-access-scope.sh). Direct OpenFGA gRPC/REST remains forbidden (DD-EA-2). This file is retained as a DESIRED-STATE REFERENCE of which tuples the product path should end up producing — not as an input to any runner.",
+  "_status": "reference-only; no runner consumes this file",
   "model": "endpoint-admin module relation set (define endpoint, policy, command, inventory, audit + can_view, can_assign, can_execute, can_signoff, can_revoke)",
 
   "_drift_fix_2026_05_05": "Faz 22.1.1b III review (Codex 019df86f) — 3-tier drift fix. Önceki seed `relation: admin/viewer` ve `module:endpoint-admin` instance'ı code/live model'le uyumsuzdu. Şimdi: relation `can_manage`/`can_view` (live model `module` type kontratı) + module:endpoint-admin (kebab-case, code constants ile hizalı). Production deployment'a kadar drift kapatılıyor.",
