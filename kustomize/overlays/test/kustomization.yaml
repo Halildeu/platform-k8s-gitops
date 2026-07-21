@@ -250,8 +250,14 @@ images:
     # Cross-AI: Claude Opus 4.8 birincil AGREE recorded 2026-07-20;
     # Codex challenger DEFERRED to Jul 26 usage-quota reset (merge-time
     # governance-exception noted on platform-backend#894).
-    # D30 immutable digest pin.
-    digest: sha256:c667300b686b732a7f7059e7b686d6c70ddc52642799966e037b37cf0df0ceb8
+    # 2026-07-21 update: sha-494e4f4 — platform-backend#902 (Faz 24 İ4) adds
+    # the cadenced meeting-ai /analyze/live trigger sink (segment-window
+    # aggregator + best-effort WebClient publish). DEFAULT-OFF via
+    # AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED=false (gitops#2728) so
+    # this pin changes nothing at runtime until a follow-up flips enable +
+    # base-url. Image build run 29789029837, superset of sha-b3c93e2 (WS
+    # handshake header forward). D30 immutable digest pin.
+    digest: sha256:db1bdb6fdee8c98ad951e59aadf433d61477346e1e3fd0b93df98e4c8561e953
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
