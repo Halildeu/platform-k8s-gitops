@@ -4,9 +4,10 @@
 # Runs on staging-sw (or any host with kubectl context "k3d-test" + vault-test
 # root token at /home/halil/bootstrap-drill/vault-init-test.json).
 #
-# Zeynep 07-20 attended smoke 8-madde checklist'ini otonom kanıtlar:
-#   (a) audio:start WS handshake — silent 400 handshake failed sinyali YOK
-#       (accept 101/426/400/401/403/404/405; reject 502/503/504)
+# Zeynep 07-20 attended smoke 8-madde checklist'inin backend preflight'ini
+# çalıştırır. Tam kullanıcı yolculuğu veya audio:start acceptance değildir.
+#   (a) WS handshake — yalnız HTTP 101 kanıttır. Auth-only veya application
+#       error yanıtları (4xx) Upgrade aktarımını kanıtlamaz ve gate'i geçemez.
 #   (b) audio-gw pod actuator UP
 #   (c/d) bridge wired (backend #894 INFO log)
 #   (e) live-analyze counter registration (default-off cluster: expected 0)
@@ -14,8 +15,8 @@
 #   (h) transcript.ready + consent.revoked outbox emitters running
 #
 # Exit codes:
-#   0 = all critical gates passed (WARN steps do not fail)
-#   1 = critical gate failed (WS ingress 5xx, audio-gw actuator DOWN, JWT fetch fail)
+#   0 = all critical gates passed, including a real HTTP 101
+#   1 = any critical gate failed or the handshake remains unproven
 #
 # Idempotent; no state mutation; no PII persisted.
 
@@ -32,6 +33,11 @@ VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
 log() { printf '[smoke] %s\n' "$*" >&2; }
 fail() { printf '[smoke FAIL] %s\n' "$*" >&2; exit 1; }
 ok() { printf '[smoke  ok ] %s\n' "$*" >&2; }
+gate_failures=0
+gate_failed() {
+  printf '[smoke FAIL] %s\n' "$*" >&2
+  gate_failures=$((gate_failures + 1))
+}
 
 RT=$(jq -r .root_token "$VAULT_INIT_FILE")
 
@@ -71,12 +77,16 @@ WS_CODE=$(curl -s -m 5 -o /dev/null -w '%{http_code}' \
   -H "Connection: upgrade" \
   -H "Sec-WebSocket-Version: 13" \
   -H "Sec-WebSocket-Key: $WS_NONCE" \
-  "$BASE/api/v1/audio-gateway/live/stream/?sessionId=smoke-$(date +%s)")
+  "$BASE/api/v1/audio-gateway/sessions/smoke-preflight-$(date +%s)/stream")
 case "$WS_CODE" in
-  101|426) ok "step (a) ingress upgraded successfully (HTTP $WS_CODE)";;
-  400|401|403|404|405) ok "step (a) ingress reached upstream (HTTP $WS_CODE) — silent 400 handshake failed GONE (gitops#2711 fix confirmed)";;
-  502|503|504) fail "step (a) upstream unreachable (HTTP $WS_CODE) — investigate audio-gw pod/service";;
-  *) fail "step (a) unexpected HTTP $WS_CODE";;
+  101) ok "step (a) ingress WebSocket upgrade confirmed (HTTP 101)";;
+  400|401|403|404|405|426)
+    gate_failed "step (a) HTTP $WS_CODE is non-diagnostic for Upgrade forwarding; only 101 passes"
+    ;;
+  502|503|504)
+    gate_failed "step (a) upstream unreachable (HTTP $WS_CODE) — investigate audio-gw pod/service"
+    ;;
+  *) gate_failed "step (a) unexpected HTTP $WS_CODE";;
 esac
 
 # ---- (b) audio-gw actuator ----
@@ -84,7 +94,11 @@ log "step (b): audio-gw pod + actuator"
 POD=$(kubectl --context "$CTX" -n "$NS" get pod -l app.kubernetes.io/name=audio-gateway -o jsonpath='{.items[0].metadata.name}')
 [ -n "$POD" ] || fail "step (b) audio-gw pod not found"
 HEALTH=$(kubectl --context "$CTX" -n "$NS" exec "$POD" -- curl -s -m 5 http://localhost:8081/actuator/health 2>/dev/null | jq -r '.status' 2>/dev/null || echo "?")
-[ "$HEALTH" = "UP" ] && ok "step (b) audio-gw actuator UP" || fail "step (b) audio-gw actuator not UP: $HEALTH"
+if [ "$HEALTH" = "UP" ]; then
+  ok "step (b) audio-gw actuator UP"
+else
+  fail "step (b) audio-gw actuator not UP: $HEALTH"
+fi
 
 # ---- (c/d) bridge wiring INFO log (backend #894) ----
 log "step (c/d): LiveSttWebSocketConfig wiring INFO log"
@@ -109,7 +123,11 @@ log "step (f/g): meeting-service canonical intelligence"
 MS_POD=$(kubectl --context "$CTX" -n "$NS" get pod -l app.kubernetes.io/name=meeting-service -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [ -n "$MS_POD" ]; then
   MS_HEALTH=$(kubectl --context "$CTX" -n "$NS" exec "$MS_POD" -- curl -s -m 5 http://localhost:8080/actuator/health 2>/dev/null | jq -r '.status' 2>/dev/null || echo "?")
-  [ "$MS_HEALTH" = "UP" ] && ok "step (f/g) meeting-service actuator UP ($MS_POD)" || log "step (f/g) WARN: meeting-service actuator: $MS_HEALTH"
+  if [ "$MS_HEALTH" = "UP" ]; then
+    ok "step (f/g) meeting-service actuator UP ($MS_POD)"
+  else
+    log "step (f/g) WARN: meeting-service actuator: $MS_HEALTH"
+  fi
 else
   log "step (f/g) WARN: meeting-service pod not found"
 fi
@@ -130,13 +148,18 @@ else
 fi
 
 log ""
-log "=== FAZ 24 LIVE E2E SMOKE COMPLETE ==="
-log "  (a) WS handshake: HTTP $WS_CODE (silent 400 GONE)"
+log "=== FAZ 24 BACKEND PREFLIGHT RESULT ==="
+log "  (a) WS handshake: HTTP $WS_CODE (required: 101)"
 log "  (b) audio-gw actuator: $HEALTH"
 log "  (c/d) wiring log occurrences: $WIRING"
 log "  (e) live-analyze counters: default-off (expected until enable flip)"
 log "  (f/g) meeting-service: $MS_HEALTH"
 log "  (h) transcript outbox + audit-consumer bridge: LIVE"
 log ""
-log "Zeynep 07-20 attended smoke blocker'ı 'gateway live stream handshake failed' bu smoke ile de doğrulandı — ARTIK ÇIKMAYACAK."
+if [ "$gate_failures" -gt 0 ]; then
+  log "Handshake acceptance is not proven; packaged desktop attended smoke remains pending."
+  exit 1
+fi
+
+log "Backend preflight passed. This does not replace packaged desktop + real mic acceptance."
 exit 0

@@ -1,20 +1,19 @@
-name: Faz 24 live e2e smoke
+name: Faz 24 backend preflight
 
 # Least-privilege GITHUB_TOKEN — read-only smoke never opens PRs, comments,
 # creates releases, or writes to any repo scope. CodeQL Actions rule 27.
 permissions:
   contents: read
 
-# Automates Zeynep 07-20 attended smoke 8-item checklist against k3d-test.
+# Runs the non-attended backend preflight against k3d-test.
 #
 # Runs on-demand + nightly to catch handshake regressions BEFORE Zeynep hits them.
 # The script itself is scripts/faz24-live-e2e-smoke.sh — reuse locally on staging-sw
 # with `bash scripts/faz24-live-e2e-smoke.sh` (needs vault-test root token + kubectl).
 #
-# Success ≠ Zeynep smoke acceptance (attended UI still requires real mic + packaged
-# desktop for full user-journey confirmation); this workflow proves the *backend
-# chain* is regression-guarded so the attended run is not blocked by silent
-# infrastructure drift.
+# HTTP 4xx is not handshake evidence: only HTTP 101 passes the WebSocket gate.
+# Success still does not equal Zeynep smoke acceptance; packaged desktop, real
+# mic, transcript, stop, persistence and reopen remain the user-journey gate.
 
 on:
   workflow_dispatch:
@@ -35,14 +34,14 @@ on:
       - '.github/workflows/faz24-live-e2e-smoke.yml'
 
 jobs:
-  live-e2e-smoke:
+  backend-preflight:
     runs-on: [self-hosted, staging-sw]
     timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run Faz 24 live e2e smoke on staging-sw
+      - name: Run Faz 24 backend preflight on staging-sw
         env:
           KUBE_CTX: k3d-test
           KUBE_NS: platform-test
