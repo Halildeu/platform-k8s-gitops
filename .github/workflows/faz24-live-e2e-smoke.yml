@@ -41,7 +41,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Pull requests validate the fail-closed harness itself. Running the live
+      # gate here would make a fix for a known TEST outage depend on that outage.
+      - name: Validate backend preflight harness
+        if: github.event_name == 'pull_request'
+        run: |
+          bash -n scripts/faz24-live-e2e-smoke.sh
+          shellcheck scripts/faz24-live-e2e-smoke.sh
+
       - name: Run Faz 24 backend preflight on staging-sw
+        if: github.event_name != 'pull_request'
         env:
           KUBE_CTX: k3d-test
           KUBE_NS: platform-test
