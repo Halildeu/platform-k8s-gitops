@@ -694,7 +694,7 @@ fi
         expected = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
+            "frontend": "sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a",
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
@@ -706,15 +706,15 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c",
+            "EXPECTED_FRONTEND_SHA: a611aa0a24cb19e613fe56ddf95a72b4a464b15e",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815",
+            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29858875032",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225",
+            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29858875032/job/88730140487",
             self.fullats_browser_workflow,
         )
         self.assertIn('echo "- frontend build job: ${FRONTEND_BUILD_JOB}"', self.fullats_browser_workflow)
@@ -766,11 +766,11 @@ fi
         )
 
     def test_frontend_promotion_receipt_is_cross_file_bound(self):
-        source_sha = "eee1310b33376013967482ae842bf15c797fe72c"
-        tag = "sha-eee1310"
-        digest = "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-        run_id = "29645789815"
-        job_id = "88083697225"
+        source_sha = "a611aa0a24cb19e613fe56ddf95a72b4a464b15e"
+        tag = "sha-a611aa0"
+        digest = "sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a"
+        run_id = "29858875032"
+        job_id = "88730140487"
 
         for exact in (
             f"Build run {run_id} testai job {job_id}.",
@@ -849,8 +849,8 @@ fi
         for digest in (
             "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
+            "sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a",
         ):
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
@@ -973,12 +973,12 @@ fi
         # recruiter-scope contract touched).
         current_permission = "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
         promoted = {
-            "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
-            "tag": "sha-eee1310",
+            "frontend": "sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a",
+            "tag": "sha-a611aa0",
         }
         rolled_back = {
-            "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
-            "tag": "sha-9f82edb",
+            "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
+            "tag": "sha-eee1310",
         }
         expected = promoted if self.promotion_state == "PROMOTED" else rolled_back
         self.assertIn(current_ats, self.activation)

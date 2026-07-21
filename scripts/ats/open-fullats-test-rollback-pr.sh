@@ -83,7 +83,7 @@ risk_trigger="$(sed -nE 's/^Risk trigger:[[:space:]]*(security-authz|production-
   echo "[fullats-rollback] dual consultation risk trigger is missing or invalid" >&2
   exit 1
 }
-for receipt_label in "Claude receipt" "Codex receipt"; do
+for receipt_label in "Claude receipt" "MiniMax receipt"; do
   receipt_line="$(grep -E "^${receipt_label}: " <<<"$promotion_body" || true)"
   [[ "$(grep -Ec "^${receipt_label}: " <<<"$promotion_body" || true)" == "1" && \
      "$receipt_line" == *"head=$promotion_head;"* && \
@@ -93,8 +93,8 @@ for receipt_label in "Claude receipt" "Codex receipt"; do
     exit 1
   }
 done
-[[ "$(grep -Fc "MiniMax receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
-  echo "[fullats-rollback] MiniMax receipt is forbidden by forward policy" >&2
+[[ "$(grep -Fc "Codex receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
+  echo "[fullats-rollback] Codex implementer cannot use Codex as dual secondary" >&2
   exit 1
 }
 git fetch origin main --quiet
@@ -114,12 +114,12 @@ trap 'rm -f "$rendered"' EXIT
 
 ATS_CURRENT="sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
 PERMISSION_CURRENT="sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
-FRONTEND_OLD="sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0"
-FRONTEND_NEW="sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
-FRONTEND_OLD_SHA="9f82edb249bcc4de3d83ce59a3800d835e88f410"
-FRONTEND_NEW_SHA="eee1310b33376013967482ae842bf15c797fe72c"
-FRONTEND_OLD_TAG="sha-9f82edb"
-FRONTEND_NEW_TAG="sha-eee1310"
+FRONTEND_OLD="sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
+FRONTEND_NEW="sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a"
+FRONTEND_OLD_SHA="eee1310b33376013967482ae842bf15c797fe72c"
+FRONTEND_NEW_SHA="a611aa0a24cb19e613fe56ddf95a72b4a464b15e"
+FRONTEND_OLD_TAG="sha-eee1310"
+FRONTEND_NEW_TAG="sha-a611aa0"
 
 test_root="kustomize/overlays/test/kustomization.yaml"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
