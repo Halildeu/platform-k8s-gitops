@@ -1,0 +1,242 @@
+# Faz 35 Etik Speak — SLI/SLO + alertmanager rules (sektör-standardı SRE).
+#
+# SLO: 99.5% availability weekly (30-day rolling); error budget ≈ 3.6h/week.
+# Ölçütler ISO 37002:2021 §9.1 (whistleblowing service performance monitoring)
+# ve OWASP ASVS v4.0 V1.11 (logging + monitoring) uyumlu.
+#
+# Alert severity map (Alertmanager route selector):
+# - SEV1 (page): whistleblower kanalı erişilemez ya da veri bütünlüğü riski.
+#   → PagerDuty + on-call SMS + kill-switch runbook link.
+# - SEV2 (ticket): staff/reporter deneyimi bozulur ama kanal ayakta.
+#   → Slack/Teams ticket + business-hours escalation.
+# - SEV3 (log): trend/gözlem — SLO danışmanı, insan aksiyonu gerekmez.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: etik-speak-slo
+  labels:
+    app.kubernetes.io/name: ethics-service
+    app.kubernetes.io/part-of: etik-speak
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # 1. Availability — whistleblowing kanalının canlı olması yasal yükümlülük.
+    # -------------------------------------------------------------------------
+    - name: faz35.etik-speak.availability
+      interval: 30s
+      rules:
+        - alert: EtikSpeakEthicsServiceDown
+          expr: up{job=~".*ethics-service.*"} == 0
+          for: 2m
+          labels:
+            severity: SEV1
+            product: etik-speak
+            runbook: RB-faz35-incident-response
+          annotations:
+            summary: "Etik Speak ethics-service pod down ({{ $labels.namespace }}/{{ $labels.instance }})"
+            description: |
+              ethics-service {{ $labels.namespace }}/{{ $labels.instance }} Prometheus
+              tarafından 2 dakikadır scrape edilemiyor. Whistleblower intake +
+              staff reply akışları kapalı; kill-switch aktivasyonu değil, servis
+              recovery gerekiyor. Runbook: docs/runbooks/RB-faz35-incident-response.md
+
+        - alert: EtikSpeakOpenFgaDown
+          expr: up{job=~".*openfga.*",namespace=~"platform-(test|prod)"} == 0
+          for: 2m
+          labels:
+            severity: SEV1
+            product: etik-speak
+            runbook: RB-faz35-incident-response
+          annotations:
+            summary: "OpenFGA authz store down ({{ $labels.namespace }})"
+            description: |
+              OpenFGA {{ $labels.namespace }} scrape'siz. Case erişim kararı
+              fail-closed ol ur (staff hiçbir case'e erişemez); reporter mailbox
+              hala çalışabilir ama staff reply yok. ADR-0035: authz backing
+              store outage'ı SEV1.
+
+    # -------------------------------------------------------------------------
+    # 2. Latency — SLO 99.5% intake p95 < 500ms, staff p95 < 800ms.
+    # -------------------------------------------------------------------------
+    - name: faz35.etik-speak.latency
+      interval: 30s
+      rules:
+        - alert: EtikSpeakIntakeLatencyP95High
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (
+                rate(http_server_requests_seconds_bucket{
+                  job=~".*ethics-service.*",
+                  uri=~"/api/v1/public/ethics/reports"
+                }[5m])
+              )
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: SEV2
+            product: etik-speak
+          annotations:
+            summary: "Reporter intake p95 > 500ms ({{ $value | humanizeDuration }})"
+            description: |
+              Public intake p95 latency SLO threshold'unu aştı. Backend load +
+              PG write + Vault fetch chain darboğazı olabilir. Circuit-breaker +
+              backpressure metriklerini incele.
+
+        - alert: EtikSpeakStaffCaseListLatencyP95High
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (
+                rate(http_server_requests_seconds_bucket{
+                  job=~".*ethics-service.*",
+                  uri=~"/api/v1/ethics/cases"
+                }[5m])
+              )
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: SEV2
+            product: etik-speak
+          annotations:
+            summary: "Staff case list p95 > 800ms ({{ $value | humanizeDuration }})"
+            description: |
+              Manager UI case list yükleme p95 latency SLO'nun üstünde. OpenFGA
+              list-objects performansı ilk şüpheli.
+
+    # -------------------------------------------------------------------------
+    # 3. Error budget — 5xx oranı > 0.5% → SLO consumption artıyor.
+    # -------------------------------------------------------------------------
+    - name: faz35.etik-speak.error-budget
+      interval: 60s
+      rules:
+        - alert: EtikSpeakIntakeErrorBudgetBurn
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{
+                job=~".*ethics-service.*",
+                uri=~"/api/v1/public/ethics/reports",
+                status=~"5.."
+              }[5m]))
+              /
+              sum(rate(http_server_requests_seconds_count{
+                job=~".*ethics-service.*",
+                uri=~"/api/v1/public/ethics/reports"
+              }[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: SEV1
+            product: etik-speak
+            runbook: RB-faz35-incident-response
+          annotations:
+            summary: "Reporter intake 5xx > %5 ({{ $value | humanizePercentage }})"
+            description: |
+              Public intake 5xx oranı %5'i aştı. Whistleblower bildirim veremiyor;
+              yasal hizmet yükümlülüğü ihlali riski. Immediate diagnosis + rollback.
+
+        - alert: EtikSpeakMailboxSessionFailRate
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{
+                job=~".*ethics-service.*",
+                uri=~"/api/v1/public/ethics/mailbox/sessions",
+                status=~"4.."
+              }[15m]))
+              /
+              sum(rate(http_server_requests_seconds_count{
+                job=~".*ethics-service.*",
+                uri=~"/api/v1/public/ethics/mailbox/sessions"
+              }[15m]))
+            ) > 0.10
+          for: 15m
+          labels:
+            severity: SEV2
+            product: etik-speak
+          annotations:
+            summary: "Mailbox login fail rate > %10 ({{ $value | humanizePercentage }})"
+            description: |
+              Reporter mailbox session establish başarısızlık oranı %10'un
+              üstünde. Access-secret geçersizlik legitimate olabilir; ancak brute
+              force sinyali olarak da değerlendir (bkz. Faz 35 security-signal
+              alerts).
+
+    # -------------------------------------------------------------------------
+    # 4. Security signal — anormallik + saldırı sinyalleri.
+    # -------------------------------------------------------------------------
+    - name: faz35.etik-speak.security-signal
+      interval: 60s
+      rules:
+        - alert: EtikSpeakBasicAuthFailBurst
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{
+              ingress=~"etik-speak-public-.*",
+              status="401"
+            }[5m])) > 10
+          for: 5m
+          labels:
+            severity: SEV2
+            product: etik-speak
+          annotations:
+            summary: "Public basic-auth 401 burst > 10/s ({{ $value }}/s)"
+            description: |
+              Public reporter gate'inde ani 401 yükselmesi — brute-force veya
+              credential leak sinyali. `etik-speak-public-gate` secret rotate
+              gerekli olabilir.
+
+        - alert: EtikSpeakStaffAuthFailBurst
+          expr: |
+            sum(rate(http_server_requests_seconds_count{
+              job=~".*ethics-service.*",
+              uri=~"/api/v1/ethics/.*",
+              status=~"4[01]."
+            }[5m])) > 5
+          for: 5m
+          labels:
+            severity: SEV2
+            product: etik-speak
+          annotations:
+            summary: "Staff API 4xx burst > 5/s ({{ $value }}/s)"
+            description: |
+              Manager UI + staff API'da 4xx yükselmesi. Persona compromise,
+              expired token flood veya OpenFGA policy divergence olabilir.
+
+        - alert: EtikSpeakRateLimitTrigger
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{
+              ingress=~"etik-speak-public-.*",
+              status="429"
+            }[5m])) > 1
+          for: 5m
+          labels:
+            severity: SEV3
+            product: etik-speak
+          annotations:
+            summary: "Public reporter rate-limit 429 tetiklendi ({{ $value }}/s)"
+            description: |
+              limit-rps annotation devrede + client bir kaynak burst göndermiş.
+              Gerçek olay değil (legitimate reporter surge) veya abuse ise
+              ingress rate-limit'in artırılması gerekebilir.
+
+    # -------------------------------------------------------------------------
+    # 5. Data-integrity — audit outbox delivery + WORM append backlog.
+    # -------------------------------------------------------------------------
+    - name: faz35.etik-speak.data-integrity
+      interval: 60s
+      rules:
+        - alert: EtikSpeakAuditOutboxBacklog
+          expr: |
+            (
+              sum(ethics_audit_outbox_pending_entries{namespace=~"platform-(test|prod)"})
+              > 100
+            )
+          for: 10m
+          labels:
+            severity: SEV2
+            product: etik-speak
+          annotations:
+            summary: "Audit outbox pending > 100 entries ({{ $value }})"
+            description: |
+              WORM audit trail delivery pipeline arkasında birikme var. Yasal
+              audit koruma gecikir; downstream signer/sink outage olabilir.
+              (Metric adı backend implementation ile birlikte publish edilir;
+              ilk deploy'ta metric yoksa alert no-data → auto-skip.)
