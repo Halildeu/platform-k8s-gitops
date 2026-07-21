@@ -11,6 +11,7 @@ resources:
   - manager-service-account.yaml
   - manager-deployment.yaml
   - manager-service.yaml
+  - monitoring
 labels:
   - pairs:
       app.kubernetes.io/part-of: etik-speak

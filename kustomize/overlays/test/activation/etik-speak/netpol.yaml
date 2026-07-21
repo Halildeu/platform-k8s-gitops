@@ -32,6 +32,15 @@ spec:
     - from:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
       ports: [{port: 8099, protocol: TCP}]
+    # Faz 35 SRE — Prometheus scrape /actuator/prometheus (management:8081).
+    # Yalnız monitoring namespace'inden gelen scrape trafiği geçer; ingress-nginx
+    # veya diğer application pod'ları bu porta ulaşamaz. Prometheus-operator'ın
+    # canonical namespace label'ı kube-prometheus-stack helm chart default'u.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports: [{port: 8081, protocol: TCP}]
   egress:
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
