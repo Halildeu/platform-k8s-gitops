@@ -1541,7 +1541,7 @@ images:
     #          endpoint), not just AccessScopeController. Test-only rollout;
     #          prod defer D30 atomic cutover.
     #
-    digest: sha256:f93e800d35eeabdf5c0d03e33bc1ff088b19a838f5227e6f586772a8b9b76817
+    digest: sha256:d6724488d6812548ec2ed8943a32b397de7ffd94107f29f937b0ab4f251a512c
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
