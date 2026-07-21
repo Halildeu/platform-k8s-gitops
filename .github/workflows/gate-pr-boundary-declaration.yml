@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout base repository (BG-1.2 — base ref HEAD, NOT PR HEAD)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Trusted: base BRANCH HEAD (main HEAD), NOT base SHA (PR fork-point).
           # BG-1.1 used base.sha but that pointed to old commits for stale

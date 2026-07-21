@@ -100,7 +100,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run AgentPC2 constrained executor acceptance
         id: smoke

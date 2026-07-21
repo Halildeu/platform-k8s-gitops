@@ -183,7 +183,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Prepare privacy-safe smoke chunk fixture
         id: prepare_chunk

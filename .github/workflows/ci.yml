@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup kustomize
         uses: imranismail/setup-kustomize@v3
@@ -262,7 +262,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: yamllint
         uses: ibiqlik/action-yamllint@v3
         with:
@@ -282,7 +282,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
@@ -297,7 +297,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Grep forbidden closure terms
         run: |
           # CLAUDE.md kural: "kapandı/bitti/gün sonu/başarıyla tamamlandı/pause"
@@ -332,7 +332,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Setup kustomize
         uses: imranismail/setup-kustomize@v3
         with:

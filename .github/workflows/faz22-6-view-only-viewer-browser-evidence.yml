@@ -67,7 +67,7 @@ jobs:
           printf '%s' "$MASK_RECT_BPS" | grep -Eq '^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$'
 
       - name: Checkout target verifier revision
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Verify least-privilege VIEW_ONLY audit DB role before approval
         run: bash scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh check
@@ -89,7 +89,7 @@ jobs:
 
     steps:
       - name: Checkout evidence producer revision
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -184,7 +184,7 @@ jobs:
           }
 
       - name: Checkout evidence producer revision
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Re-verify live target after protected approval
         env:

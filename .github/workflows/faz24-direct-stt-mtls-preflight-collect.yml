@@ -95,7 +95,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Collect metadata-only preflight evidence
         id: collect

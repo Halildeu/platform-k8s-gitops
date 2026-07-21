@@ -189,7 +189,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run VIEW_ONLY attended smoke
         id: smoke

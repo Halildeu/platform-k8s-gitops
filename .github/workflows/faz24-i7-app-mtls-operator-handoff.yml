@@ -147,7 +147,7 @@ jobs:
           reject_path_chars prod_gate_evidence_path "${PROD_GATE_EVIDENCE_PATH}"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Build handoff package
         env:

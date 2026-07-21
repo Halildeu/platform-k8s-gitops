@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Pull requests validate the fail-closed harness itself. Running the live
       # gate here would make a fix for a known TEST outage depend on that outage.

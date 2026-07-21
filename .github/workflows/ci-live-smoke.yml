@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run MFE remote smoke
         run: bash scripts/smoke/mfe-remote-smoke.sh ${{ inputs.target || 'both' }}
