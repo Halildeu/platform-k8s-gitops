@@ -1541,7 +1541,39 @@ images:
     #          endpoint), not just AccessScopeController. Test-only rollout;
     #          prod defer D30 atomic cutover.
     #
-    digest: sha256:d6724488d6812548ec2ed8943a32b397de7ffd94107f29f937b0ab4f251a512c
+    # 2026-07-21 update: sha-e9018ce — board #907 wire step (foundation #851, umbrella #2530).
+    # Source : platform-backend PR #909 squash e9018ce38a6c3ffeb2bd631866261cfe29256564
+    #          (CI 21/21 pass; permission-service +5 new AuthorizationControllerV1Test cases
+    #          for RESOLVED / PROFILE_MISSING / IDENTITY_MISMATCH / ACCOUNT_DISABLED /
+    #          USER_DELETED / DIRECTORY_UNAVAILABLE outcomes, +5 adapter tests).
+    # Tag    : ci-image-push.yml -> sha-e9018ce (build run 29806437506 success).
+    # Digest : sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
+    #          (extracted from build log: '#23 pushing manifest for
+    #          ghcr.io/halildeu/platform-backend-permission-service:sha-e9018ce@sha256:096ed22...').
+    # Ships  : /authz/me endpoint now flows through the canonical
+    #          common-auth/identity/AuthenticatedPrincipalResolver. Resolution.Outcome
+    #          decides responses: RESOLVED → normal path, PROFILE_MISSING/IDENTITY_MISMATCH/
+    #          UNAUTHENTICATED → 200 + empty snapshot (fail-closed; NO JWT-permissions rebuild
+    #          — the exact "claim-as-authority" defect umbrella #2530 removes),
+    #          ACCOUNT_DISABLED → 403, USER_DELETED → 404, DIRECTORY_UNAVAILABLE → 503
+    #          AUTHZ_DEGRADED. Transport wrap: adapter wraps AuthenticatedUserLookupService
+    #          (auth-free /api/users/by-email path) rather than calling the canonical
+    #          POST /authenticated-principal/resolve endpoint, because that sits behind
+    #          /internal/** requiring PERM_users:internal via ServiceTokenAuthenticationFilter
+    #          and permission-service does not yet mint service tokens. Follow-up #910
+    #          migrates the transport (subject-binding back-fill + activation gates).
+    # Runtime: today's runtime behaviour is UNCHANGED (adapter returns enabled=true/
+    #          deleted=false so ACCOUNT_DISABLED/USER_DELETED never fire from the wrapped
+    #          path). What lands is the resolver semantic + fail-closed contract; the new
+    #          HTTP status paths activate once the follow-up wires the canonical endpoint.
+    # Body    : /authz/me 200 body shape UNCHANGED (permissions[], allowedScopes[],
+    #          reports[], modules{}, roles[], actions{}, allowedModules[], subscriberId).
+    # NOTE   : outer getMe() try/catch now rethrows ResponseStatusException before the
+    #          generic RuntimeException path so 401/403/404/503 signals from the resolver
+    #          are preserved (previously all runtime exceptions collapsed to 503 — an
+    #          artefact of the Codex 019dddb7 iter-42 pattern).
+    #
+    digest: sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
