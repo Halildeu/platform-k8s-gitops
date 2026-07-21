@@ -6,7 +6,13 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "1m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    # Staff API uses higher ceilings: authenticated users, expected batching.
+    # burst-multiplier=2 tolerates short spikes; limit-connections caps a
+    # runaway console. Backend Resilience4j bulkhead (publicMailbox) still
+    # applies to POST reply/messages.
     nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
 spec:
   ingressClassName: nginx
   tls:
