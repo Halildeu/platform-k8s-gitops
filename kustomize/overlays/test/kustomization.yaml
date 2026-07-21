@@ -4369,9 +4369,9 @@ images:
     # Faz 35 manager is a dedicated workload and deliberately leaves the
     # shared suite image unchanged. This preserves Full ATS/ETS rollback and
     # prevents an Etik Speak release from mutating another product cell.
-    # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
-    newTag: sha-eee1310
-    digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
+    # sourceRevision: c04701fc025ad022d5b509f8750a4c32c90e3620
+    newTag: sha-c04701f
+    digest: sha256:f42ba88cefce59c6fcb8ff43001ccc0940aa2eedf5ab86eaef1dfba46e0f5819
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
