@@ -315,7 +315,7 @@ images:
     # durable audit outbox relay. Canonical image run 29603219415 produced the
     # immutable digest below. This test pin does not claim attended acceptance.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:20b3918fb03037df70ced9ec8edd3d2d984831a0fb0474f164e2efbbdb459f11
+    digest: sha256:82775ca2a7937e819b65db74ecb8875d45741953c17174017ff4d9cd5ddeee09
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -335,7 +335,7 @@ images:
     # transcript/KVKK access-log cleanup and destruction-audit accounting. This
     # desired-state pin does not by itself prove live deletion or legal closure.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:9f0e73f101a132e6b21b6d3a7530e333901dfed05a65c1ae4d728b0940ace53e
+    digest: sha256:86e39d10ec45172f3daade6a6ed784ff359e6cc11ed2030e47a25ad0ebe9c12d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -418,7 +418,7 @@ images:
     # 2026-07-12 update: sha-20ee06d (platform-backend#816) enforces the
     # client-bound meeting-ai service-token policy and blank-secret fail-closed
     # behavior. Digest source: CI - Image Build + GHCR Push run 29177080417.
-    digest: sha256:6a3626a548b66304b3e10e335740ba761442f05f77be8a312c589e244786773a
+    digest: sha256:58ec61b09ced0c160853ac41ebcd2e5070be6f191dae3fbd44526ab11e1bea87
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -680,7 +680,7 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
-    digest: sha256:c5ed9119e5e4895335cb0401b9c3251c8e41606abca954a556ba2578cd5e0cc8
+    digest: sha256:64ea404e2eef5f83624abdff0aa97329289410ebf1a4623c070ac4af58de0660
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -1535,7 +1535,7 @@ images:
     #          endpoint), not just AccessScopeController. Test-only rollout;
     #          prod defer D30 atomic cutover.
     #
-    digest: sha256:32e7e2b539bd8d7c1afe1b93a39b560aa45ef62c8426eaa7fe11257a69aeaece
+    digest: sha256:f93e800d35eeabdf5c0d03e33bc1ff088b19a838f5227e6f586772a8b9b76817
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -5781,7 +5781,7 @@ images:
     # board #2559 — sha-780a95c (platform-backend 780a95c29, PR #853): the resolver learns to
     # apply an explicit org -> tenant alias, which is what makes the ConfigMap key above mean
     # anything. Digest read from the registry manifest (linux/amd64), not from the tag.
-    digest: sha256:a766945a08909a9727fb75d81c14cdbfc0f86e6aff1fa62fa9cfbc79a41c42fb
+    digest: sha256:5659221d7b6c74438dd451f05fe2722620aa7c72903463a477e2ddb01fb0c176
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
