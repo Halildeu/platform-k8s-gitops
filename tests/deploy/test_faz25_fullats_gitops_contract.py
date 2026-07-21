@@ -965,7 +965,13 @@ fi
         # Exception systemic + HttpMessageNotReadable D-parity). Backend-only
         # behaviour changes; Faz 25 ATS promotion state is invariant under this
         # chain (no ATS DTO / catalog / recruiter-scope contract touched).
-        current_permission = "sha256:d6724488d6812548ec2ed8943a32b397de7ffd94107f29f937b0ab4f251a512c"
+        # 2026-07-21: board #907 wire step (PR platform-backend#909, foundation #851)
+        # bumps permission-service to sha-e9018ce (sha256:096ed22f…). /authz/me now
+        # flows through common-auth/identity/AuthenticatedPrincipalResolver; body
+        # shape unchanged, runtime behaviour unchanged for RESOLVED path today.
+        # Faz 25 ATS promotion state remains invariant (no ATS DTO / catalog /
+        # recruiter-scope contract touched).
+        current_permission = "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
         promoted = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
             "tag": "sha-eee1310",
