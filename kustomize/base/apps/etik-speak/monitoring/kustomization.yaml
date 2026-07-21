@@ -1,0 +1,18 @@
+# Faz 35 Etik Speak — monitoring package
+# ServiceMonitor + PrometheusRule (SLI/SLO + security-signal + data-integrity).
+# Bu paket base/apps/etik-speak/kustomization.yaml tarafından resource olarak
+# include edilir; overlay-level namespace scope (platform-test / platform-prod)
+# ServiceMonitor.namespaceSelector ile enforce edilir.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - servicemonitor.yaml
+  - prometheusrule.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/component: monitoring
+      app.kubernetes.io/part-of: etik-speak
+    includeTemplates: false
+    includeSelectors: false
