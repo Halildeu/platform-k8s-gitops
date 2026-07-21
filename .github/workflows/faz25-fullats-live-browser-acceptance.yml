@@ -25,12 +25,12 @@ jobs:
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
-      EXPECTED_FRONTEND_DIGEST: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
-      EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c
+      EXPECTED_FRONTEND_DIGEST: sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a
+      EXPECTED_FRONTEND_SHA: a611aa0a24cb19e613fe56ddf95a72b4a464b15e
       ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
-      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815
-      FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225
+      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29858875032
+      FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29858875032/job/88730140487
     steps:
       - name: Validate test-only dispatch boundary
         id: preflight
