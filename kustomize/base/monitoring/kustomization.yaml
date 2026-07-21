@@ -104,6 +104,13 @@ resources:
   # See docs/RB-vault-ops.md §"Network drift".
   - eso-servicemonitor.yaml
   - eso-external-secret-alert-rule.yaml
+  # 2026-07-22 k3d-test node pod-capacity guard (issue #2317). Runs against
+  # kube-state-metrics series that were verified live before the rule was
+  # authored (allocatable=80, non-terminal=53, pending=0) — NOT the custom
+  # host-collector metrics the issue originally specified, whose textfile
+  # foundation does not exist on staging-sw. Rationale + the refuted premises
+  # are in the manifest header.
+  - k3d-test-capacity-guard-rule.yaml
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):

@@ -1,0 +1,230 @@
+# PrometheusRule — k3d-test node pod-capacity guard (board #2317)
+#
+# ## Why this exists
+#
+# 2026-07 the shared k3d-test node hit its pod ceiling with no warning: pods
+# went Pending with `Too many pods` and sessions discovered it by having a
+# deploy silently fail to schedule. The guard is the early-warning layer;
+# ResourceQuota on platform-test (sister manifest, overlays/test) is the
+# second, fail-closed layer.
+#
+# ## Why this is NOT the design the issue originally described
+#
+# #2317 specified a host-level systemd collector writing six custom
+# `k3d_test_*` metrics into a node_exporter textfile directory, scraped by
+# prod-hub. Live inspection on 2026-07-22 refuted the premises that design
+# rested on:
+#
+#   * There is no host-level node_exporter on staging-sw. The running one is
+#     the kube-prometheus-stack DaemonSet inside each cluster
+#     (`--path.rootfs=/host/root`), :9100 answers 403 from the host and
+#     exports zero `node_` series there. `--collector.textfile.directory` is
+#     not set, so the textfile path the design depended on does not exist.
+#   * The test cluster is NOT unmonitored. It runs a full kube-prometheus
+#     stack — Prometheus StatefulSet (v3.11.3, 72d uptime, Ready),
+#     kube-state-metrics, node-exporter, operator, alertmanager-bridge.
+#   * Every metric the design proposed to build already exists there. Verified
+#     by live PromQL through `svc/kube-prometheus-stack-prometheus`:
+#
+#       kube_node_status_allocatable{resource="pods"}              = 80
+#       count(kube_pod_status_phase{phase=~"Running|Pending"}==1)  = 53
+#       count(kube_pod_status_phase{phase="Pending"}==1)           = 0
+#       up{job=~".*kube-state-metrics.*"}                          = 1
+#       up{job=~".*node-exporter.*"}                               = 1
+#
+# Building the collector would have re-implemented series that had been
+# scraped continuously for 72 days. The rules below therefore run against
+# kube-state-metrics directly.
+#
+# ## Every expression below was evaluated live before being committed
+#
+#   k3d_test:pod_capacity_ratio expr                        -> 0.6625  (1 series)
+#   sum(kube_pod_status_scheduled{condition="false"})       -> 0       (1 series)
+#   max by (node,condition) (kube_node_status_condition{…}) -> 0       (3 series)
+#   up{job=~".*kube-state-metrics.*"} == 0                  -> empty   (up==1, correct)
+#
+# That pass caught a real defect: the first draft used
+# `kube_pod_status_unschedulable`, which does not exist in this
+# kube-state-metrics build. It would have shipped an alert that could never
+# fire. See the note on that rule below.
+#
+# The same inspection showed allocatable is 80, not the 50 the issue assumed
+# ("Pre-recreate 51/50 doğal critical") — the #2306 Part-2 node recreate has
+# landed, so 53/80 = 66% is currently below the warning threshold.
+#
+# ## Thresholds — ratio of allocatable, with hysteresis
+#
+# The issue's absolute numbers were derived from allocatable=50 and would be
+# wrong now. Expressed as a ratio they survive the next resize:
+#
+#   warning   >= 0.75   (60/80 today)   resolves < 0.70
+#   critical  >= 0.875  (70/80 today)   resolves < 0.80
+#
+# The resolve band is deliberately lower than the fire threshold: pod counts
+# oscillate during rollouts (maxSurge briefly adds ~25%), and an alert that
+# fires and resolves on the same oscillation trains people to ignore it.
+#
+# `Too many pods` unschedulable is immediate-critical with no ratio gate — by
+# the time scheduling fails the ratio argument is moot.
+#
+# ## Placement — in-cluster, and the residual on that choice
+#
+# Codex (thread 019f533d) RED'd an in-cluster guard because "node doluyken
+# guard pod'u kendisi schedule olamaz". That reasoning is correct for the
+# CronJob it was aimed at. It does not transfer to a PrometheusRule: no new
+# pod is scheduled — the CR attaches to a Prometheus that has been running
+# for 72 days.
+#
+# The residual is real but narrower than the original objection: if the node
+# wedges hard enough to evict Prometheus itself, the critical tier loses its
+# own alarm. The warning tier fires at 75%, long before that, which is the
+# point of an early-warning guard. Mirroring the critical tier to prod-hub is
+# tracked on #2317 as an open design question rather than silently decided
+# here.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: k3d-test-capacity-guard
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    # Required by kube-prometheus-stack ruleSelector.
+    release: kube-prometheus-stack
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: k3d-test-capacity
+      interval: 60s
+      rules:
+        # ── Recording rule ──────────────────────────────────────────────
+        # Both alerts and any dashboard read the same expression, so the
+        # threshold conversation can never drift between them.
+        #
+        # `phase=~"Running|Pending"` counts NON-TERMINAL pods on purpose:
+        # Succeeded/Failed Job pods still hold an API object but not a node
+        # slot, and counting them would fire on a busy Job day while the node
+        # is idle. This is the distinction #2317 called out explicitly
+        # ("Running değil non-terminal say").
+        - record: k3d_test:pod_capacity_ratio
+          expr: >-
+            count(kube_pod_status_phase{phase=~"Running|Pending"} == 1)
+            /
+            sum(kube_node_status_allocatable{resource="pods"})
+
+        # ── Warning ─────────────────────────────────────────────────────
+        - alert: K3dTestPodCapacityHigh
+          expr: k3d_test:pod_capacity_ratio >= 0.75
+          for: 10m
+          labels:
+            severity: warning
+            cluster: k3d-test
+          annotations:
+            summary: "k3d-test pod capacity at {{ $value | humanizePercentage }} of allocatable"
+            description: >-
+              Non-terminal pods have been at or above 75% of node allocatable
+              for 10 minutes. Deploys will begin failing to schedule before
+              this reaches 100% because ResourceQuota and per-namespace
+              reservations consume headroom. Check what grew:
+              `kubectl --context k3d-test get pods -A --field-selector=status.phase!=Succeeded`.
+              Resolves below 70%.
+            runbook: "docs/RB-faz-capacity-test-node-recreate.md"
+
+        # ── Critical ────────────────────────────────────────────────────
+        - alert: K3dTestPodCapacityCritical
+          expr: k3d_test:pod_capacity_ratio >= 0.875
+          for: 5m
+          labels:
+            severity: critical
+            cluster: k3d-test
+          annotations:
+            summary: "k3d-test pod capacity CRITICAL at {{ $value | humanizePercentage }}"
+            description: >-
+              Non-terminal pods at or above 87.5% of node allocatable for 5
+              minutes. New workloads are close to unschedulable. Shed load or
+              run the node-recreate runbook. Resolves below 80%.
+            runbook: "docs/RB-faz-capacity-test-node-recreate.md"
+
+        # ── Unschedulable — immediate, no ratio gate ─────────────────────
+        - alert: K3dTestPodsUnschedulableTooManyPods
+          # `kube_pod_status_scheduled{condition="false"} == 1` means the pod
+          # object exists but the scheduler has not placed it.
+          #
+          # NOT `kube_pod_status_unschedulable`: that series DOES NOT EXIST in
+          # the kube-state-metrics build running here. Verified by listing
+          # __name__ values on the live Prometheus — the only unschedulable-ish
+          # names present are `kube_node_spec_unschedulable` (cordon state, not
+          # pods) and `scheduler_unschedulable_pods`. An alert on a
+          # non-existent series evaluates to no-data and is PERMANENTLY
+          # SILENT, which is the worst failure mode for a guard.
+          #
+          # NOT `scheduler_unschedulable_pods` either, despite it existing:
+          # `up{job=~".*scheduler.*"}` returns no series, so that target's
+          # health cannot be asserted and the K3dTestCapacityGuardBlind alert
+          # below would not notice it going away. The chosen series comes from
+          # kube-state-metrics — the exact target that alert watches — so a
+          # blind guard is detectable.
+          #
+          # `for: 2m` rather than immediate: a pod is briefly unscheduled in
+          # the normal path between creation and placement. Two minutes is
+          # past any healthy scheduling latency but well short of a human
+          # noticing a failed deploy.
+          expr: sum(kube_pod_status_scheduled{condition="false"}) > 0
+          for: 2m
+          labels:
+            severity: critical
+            cluster: k3d-test
+          annotations:
+            summary: "{{ $value }} pod(s) unschedulable on k3d-test"
+            description: >-
+              At least one pod cannot be scheduled. If the reason is
+              `Too many pods` the node pod ceiling is reached — this is the
+              failure the capacity guard exists to pre-empt, and it means the
+              warning tier was missed or ignored. Inspect:
+              `kubectl --context k3d-test get pods -A --field-selector=status.phase=Pending`.
+            runbook: "docs/RB-faz-capacity-test-node-recreate.md"
+
+        # ── Node pressure ───────────────────────────────────────────────
+        - alert: K3dTestNodeUnderPressure
+          # Disk/memory/PID pressure evicts pods, which LOWERS the capacity
+          # ratio — so the ratio alerts above can go quiet exactly when the
+          # node is at its worst. This alert covers that blind spot.
+          expr: >-
+            max by (node, condition) (
+              kube_node_status_condition{
+                condition=~"MemoryPressure|DiskPressure|PIDPressure",
+                status="true"
+              }
+            ) == 1
+          for: 5m
+          labels:
+            severity: critical
+            cluster: k3d-test
+          annotations:
+            summary: "k3d-test node {{ $labels.node }} reports {{ $labels.condition }}"
+            description: >-
+              Node condition {{ $labels.condition }} has been true for 5
+              minutes. The kubelet will evict pods, which masks the capacity
+              ratio alerts by lowering the pod count while the node is
+              degraded.
+            runbook: "docs/RB-faz-capacity-test-node-recreate.md"
+
+        # ── Collector liveness — the guard watching itself ───────────────
+        - alert: K3dTestCapacityGuardBlind
+          # Every rule above reads kube-state-metrics. If that target is
+          # down the rules evaluate to no-data and go SILENT — a guard that
+          # fails open without saying so is worse than no guard, because the
+          # absence of alerts reads as "capacity is fine".
+          expr: up{job=~".*kube-state-metrics.*"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            cluster: k3d-test
+          annotations:
+            summary: "k3d-test capacity guard is blind (kube-state-metrics down)"
+            description: >-
+              kube-state-metrics has been unreachable for 5 minutes, so every
+              k3d-test capacity alert is evaluating on no data and cannot
+              fire. Capacity is UNKNOWN, not healthy.
+            runbook: "docs/RB-faz-capacity-test-node-recreate.md"
