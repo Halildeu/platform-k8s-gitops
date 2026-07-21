@@ -1129,8 +1129,26 @@ images:
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
     # 2026-07-12 desired-state alignment: deploy-backend-testai.yml
     # --fail-on-change reported this digest behind backend image run 29202272289.
-    newTag: sha-b3c93e2
-    digest: sha256:2d7dbbb52628eb957cb8eb1f8a72e84760afda73a16cd5f37d53ce5c081b6160
+    #
+    # 2026-07-21 audit-scan hijyeni bump sha-1e3e060 (platform-backend PR #915
+    # MERGED): RemoteRequestNormalizer silent bug fix — @Component with two
+    # constructors + no @Autowired forced Spring to fall back to the no-arg
+    # ctor, silently instantiating a fresh ObjectMapper instead of the
+    # Spring-managed bean. No visible crashloop (report-service kept running),
+    # but the injected mapper wiring intent was lost — annotating the
+    # production ctor with @Autowired restores the shared bean. Cross-service
+    # audit-scan uncovered this pattern; PR #903/#904 already fixed the
+    # sibling meeting-service crashloop from the same anti-pattern.
+    #
+    # Build run 29855924135. Image push:
+    # ghcr.io/halildeu/platform-backend-report-service:sha-1e3e060@
+    # sha256:9603f1225c3b7dd1b83f38faccc6de3fdffe26c2cd67e2b49abb8a54a6da325d
+    #
+    # Runtime evidence expected (post-rollout): identical /reports/*/data
+    # responses (no behavior change) + report-service pod ready + normalized
+    # RemoteRequestNormalizer now receives the shared ObjectMapper bean.
+    newTag: sha-1e3e060
+    digest: sha256:9603f1225c3b7dd1b83f38faccc6de3fdffe26c2cd67e2b49abb8a54a6da325d
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
