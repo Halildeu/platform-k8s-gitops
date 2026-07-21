@@ -19,6 +19,13 @@
 # canonical file differs from what is actually deployed, so "merged" can no
 # longer be mistaken for "deployed".
 #
+# CONSTRAINT — no secrets in listed files
+# On drift the checker prints a unified diff of both sides into the CI log, so
+# only list files that carry no credentials. Config that references a secret by
+# path or env var name is fine; config with an inline token, password, or key
+# is not. If such a file ever needs drift coverage, compare hashes instead of
+# printing the diff.
+#
 # FORMAT
 #   <repo-relative canonical path><TAB><absolute live path on staging-sw>
 # Blank lines and lines starting with '#' are ignored.
