@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Faz 35 ES-309 — nightly durability backups. Test overlay activates the
+# shared PVC-backed target below; the prod overlay swaps the target to
+# an off-cluster S3 bucket via strategic-merge patch (documented in
+# kustomize/overlays/prod/activation/etik-speak/README.md ES-309 section).
+resources:
+  - pvc-archive.yaml
+  - serviceaccount-backup.yaml
+  - cronjob-pg-dump.yaml
+  - cronjob-openfga-export.yaml
+  - cronjob-vault-snapshot.yaml

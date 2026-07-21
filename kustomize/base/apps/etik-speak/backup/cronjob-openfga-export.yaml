@@ -1,0 +1,97 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etik-speak-openfga-export
+  labels:
+    app.kubernetes.io/part-of: etik-speak
+    app.kubernetes.io/component: backup
+    faz35.backup.type: openfga
+spec:
+  schedule: "10 3 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: etik-speak
+            app.kubernetes.io/component: backup
+            faz35.backup.type: openfga
+        spec:
+          serviceAccountName: etik-speak-backup
+          restartPolicy: OnFailure
+          containers:
+            - name: openfga-export
+              image: curlimages/curl:8.10.1
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: FGA_API_URL
+                  value: http://openfga-http.platform-test:8080
+                - name: FGA_STORE_ID
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-openfga, key: store_id}
+                - name: FGA_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-openfga, key: token}
+                - name: ARCHIVE_ROOT
+                  value: /archive
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TS=$(date -u +%Y%m%dT%H%M%SZ)
+                  OUT_DIR="$ARCHIVE_ROOT/openfga/${TS}"
+                  mkdir -p "$OUT_DIR"
+                  # Store metadata + full authorization-model + tuple export
+                  # (paginated). This gives a point-in-time snapshot suitable
+                  # for restore into a new empty store.
+                  curl -sf -H "Authorization: Bearer $FGA_TOKEN" \
+                    "$FGA_API_URL/stores/$FGA_STORE_ID" > "$OUT_DIR/store.json"
+                  curl -sf -H "Authorization: Bearer $FGA_TOKEN" \
+                    "$FGA_API_URL/stores/$FGA_STORE_ID/authorization-models?page_size=100" \
+                    > "$OUT_DIR/authorization-models.json"
+                  # Tuple pages (up to 20 pages × 100 tuples). Runbook covers
+                  # increasing this bound when cluster tuple count grows.
+                  CONT=""
+                  PAGE=0
+                  while [ $PAGE -lt 20 ]; do
+                    PAGE=$((PAGE+1))
+                    if [ -z "$CONT" ]; then
+                      BODY='{"page_size":100}'
+                    else
+                      BODY='{"page_size":100,"continuation_token":"'$CONT'"}'
+                    fi
+                    RESP=$(curl -sf -H "Authorization: Bearer $FGA_TOKEN" \
+                      -H "Content-Type: application/json" -X POST \
+                      -d "$BODY" "$FGA_API_URL/stores/$FGA_STORE_ID/read")
+                    echo "$RESP" > "$OUT_DIR/tuples-${PAGE}.json"
+                    CONT=$(echo "$RESP" | sed -n 's/.*"continuation_token":"\([^"]*\)".*/\1/p')
+                    [ -z "$CONT" ] && break
+                  done
+                  ls -lh "$OUT_DIR"
+                  # Housekeeping: keep last 30 daily snapshots.
+                  find "$ARCHIVE_ROOT/openfga" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + || true
+              volumeMounts:
+                - name: archive
+                  mountPath: /archive
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits:   {cpu: 200m, memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65532
+                seccompProfile: {type: RuntimeDefault}
+          volumes:
+            - name: archive
+              persistentVolumeClaim:
+                claimName: etik-speak-backup-archive
