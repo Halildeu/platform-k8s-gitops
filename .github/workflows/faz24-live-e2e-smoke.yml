@@ -1,0 +1,50 @@
+name: Faz 24 live e2e smoke
+
+# Least-privilege GITHUB_TOKEN — read-only smoke never opens PRs, comments,
+# creates releases, or writes to any repo scope. CodeQL Actions rule 27.
+permissions:
+  contents: read
+
+# Automates Zeynep 07-20 attended smoke 8-item checklist against k3d-test.
+#
+# Runs on-demand + nightly to catch handshake regressions BEFORE Zeynep hits them.
+# The script itself is scripts/faz24-live-e2e-smoke.sh — reuse locally on staging-sw
+# with `bash scripts/faz24-live-e2e-smoke.sh` (needs vault-test root token + kubectl).
+#
+# Success ≠ Zeynep smoke acceptance (attended UI still requires real mic + packaged
+# desktop for full user-journey confirmation); this workflow proves the *backend
+# chain* is regression-guarded so the attended run is not blocked by silent
+# infrastructure drift.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly 02:00 UTC → k3d-test quiet window
+    - cron: '0 2 * * *'
+  pull_request:
+    paths:
+      - 'kustomize/overlays/test/audio-gateway/**'
+      - 'kustomize/overlays/test/meeting-service/**'
+      - 'kustomize/overlays/test/transcript-service/**'
+      - 'kustomize/overlays/test/audit-event-consumer-service/**'
+      - 'kustomize/base/apps/audio-gateway/**'
+      - 'kustomize/base/apps/meeting-service/**'
+      - 'kustomize/base/apps/transcript-service/**'
+      - 'kustomize/base/apps/audit-event-consumer-service/**'
+      - 'scripts/faz24-live-e2e-smoke.sh'
+      - '.github/workflows/faz24-live-e2e-smoke.yml'
+
+jobs:
+  live-e2e-smoke:
+    runs-on: [self-hosted, staging-sw]
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Faz 24 live e2e smoke on staging-sw
+        env:
+          KUBE_CTX: k3d-test
+          KUBE_NS: platform-test
+          TESTAI_BASE: https://testai.acik.com
+        run: bash scripts/faz24-live-e2e-smoke.sh

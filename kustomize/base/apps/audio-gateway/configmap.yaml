@@ -104,3 +104,8 @@ data:
   AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL: ""
   AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_SEGMENT_WINDOW: "5"
   AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS: "5000"
+  # Faz 24 İ2-T live transcript SSE broadcast (platform-backend#914).
+  # Ephemeral pub/sub; SSE endpoint MeetingAccessValidator meeting:{id}#can_view
+  # ile guarded; multi-viewer web clients aynı desktop recorder'ın canlı
+  # transcript increment'lerine subscribe olur. Default-off — enable owner-touch.
+  AUDIO_GATEWAY_DIRECT_STT_LIVE_TRANSCRIPT_BROADCAST_ENABLED: "false"
