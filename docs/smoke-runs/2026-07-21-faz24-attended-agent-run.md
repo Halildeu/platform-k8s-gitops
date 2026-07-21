@@ -1,5 +1,14 @@
 # Faz 24 attended smoke — agent koşumu (2026-07-21)
 
+> **2026-07-21 live-truth correction:** The HTTP 401 observation below is an
+> authentication-boundary response, not WebSocket handshake evidence. Auth is
+> evaluated before the framework validates Upgrade, so it cannot prove that
+> `Upgrade`/`Connection` survived the edge path. Later authenticated desktop
+> requests reached `HandshakeWebSocketService` without those headers and
+> returned HTTP 400. The earlier success mark and `LIVE-CONFIRMED` wording are
+> retracted; only HTTP 101 can pass this gate. Tracking: platform-desktop#82,
+> platform-k8s-gitops#2758.
+
 **Runner:** Claude agent (Halil'in ihtiyacı olan destek — Zeynep-tarafı gate'e agent devir)
 **Trigger:** Owner talebi 2026-07-21: "hatta onun yaptığı işe destek olalım biz yapalım destek vermekte geciktik. işi tamamen yapalım"
 **Environment:** k3d-test / platform-test (staging-sw), testai.acik.com edge
@@ -10,7 +19,7 @@
 
 | Adım | Beklenen | Kanıt | Sonuç |
 |---|---|---|---|
-| (a) audio:start WS handshake | Silent 400 handshake failed sinyali YOK | Ingress WS probe → **HTTP 401** (Bearer processed, aud check reddet) | ✅ silent 400 GONE — gitops#2711 fix LIVE-CONFIRMED |
+| (a) audio:start WS handshake | HTTP 101 + validated ready event | Ingress probe → **HTTP 401**; auth-only response | ❌ non-diagnostic, handshake unproven |
 | (b) audio-gw pod | actuator UP | `audio-gateway-547fbf484b-w9nbz` actuator status **UP** | ✅ |
 | (c/d) LiveSttWebSocketConfig wiring | INFO log satırı | tail=2000 içinde bulunamadı (pod uptime 9h > log retention) | ⚠️ INFO log advisory (backend #894 kalıcı impl edildi; log rotasyonu doğal) |
 | (e) live-analyze counter | Micrometer series | 0 series (default-off; `AUDIO_GATEWAY_LIVE_ANALYZE_ENABLED=false` overlay baseline) | ⚠️ intended — meeting-ai deploy owner-touch bekliyor |
@@ -20,11 +29,13 @@
 
 ## Attended (Zeynep-tarafı) gate
 
-Bu agent smoke **backend chain**'i kanıtlar. Attended smoke'un gerçek gate'i (Zeynep + packaged Windows + real mic) hâlâ Zeynep tarafında — bu smoke onun **karşısına çıkacak silent infrastructure drift**'i önden yakalar.
+Bu koşum yalnız backend sağlık sinyallerini topladı; WebSocket handshake veya
+backend chain functional acceptance kanıtlamadı. Attended smoke'un gerçek gate'i
+packaged Windows + real mic + canlı transcript + stop + kalıcı readback'tir.
 
 ## Kalıcı çözüm
 
-- `scripts/faz24-live-e2e-smoke.sh` — idempotent, PII'sız, mutation'sız
+- `scripts/faz24-live-e2e-smoke.sh` — idempotent, PII'sız, mutation'sız backend preflight; yalnız HTTP 101 ile handshake gate geçer
 - `.github/workflows/faz24-live-e2e-smoke.yml` — nightly 02:00 UTC + PR path-filter (kustomize overlay değişimlerinde otomatik)
 
 ## Referanslar

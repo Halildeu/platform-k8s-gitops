@@ -75,6 +75,17 @@ spec:
             - secretRef:
                 name: audio-gateway-secrets   # ESO: SPRING_DATA_REDIS_PASSWORD
                 optional: false
+          env:
+            # HandshakeWebSocketService DEBUG renders the complete request
+            # header map, including Authorization. Keep framework socket
+            # diagnostics below DEBUG in every environment; operational
+            # evidence must use redacted/presence-only signals instead.
+            - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_REACTIVE_SOCKET
+              value: INFO
+            - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_REACTIVE_SOCKET_SERVER_SUPPORT
+              value: INFO
+            - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_BOOT_AUTOCONFIGURE_CONDITION
+              value: INFO
           resources:
             requests:
               cpu: 100m
