@@ -321,7 +321,7 @@ images:
     # durable audit outbox relay. Canonical image run 29603219415 produced the
     # immutable digest below. This test pin does not claim attended acceptance.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:82775ca2a7937e819b65db74ecb8875d45741953c17174017ff4d9cd5ddeee09
+    digest: sha256:317c6d6c574db999af1814a6d6b57bdbabdaf708e18c137b9ecc7c16fd5f4b4f
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
