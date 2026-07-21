@@ -965,7 +965,7 @@ fi
         # Exception systemic + HttpMessageNotReadable D-parity). Backend-only
         # behaviour changes; Faz 25 ATS promotion state is invariant under this
         # chain (no ATS DTO / catalog / recruiter-scope contract touched).
-        current_permission = "sha256:f93e800d35eeabdf5c0d03e33bc1ff088b19a838f5227e6f586772a8b9b76817"
+        current_permission = "sha256:d6724488d6812548ec2ed8943a32b397de7ffd94107f29f937b0ab4f251a512c"
         promoted = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
             "tag": "sha-eee1310",
