@@ -62,6 +62,15 @@ db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:148
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:232
 
+# PR #2753 (Faz 24 live e2e smoke) — historical fingerprints from the base64
+# literal that has since been eliminated (the nonce is now built at runtime
+# via `base64(1)` on the ASCII source). Gitleaks scans every commit in a PR
+# diff so these historical hashes still trip generic-api-key even though the
+# working tree no longer contains the offending literal. Safe to remove once
+# the branch is squashed to main.
+c78326c52add2cc1fbaf6ee93a0b64218a5cf158:scripts/faz24-live-e2e-smoke.sh:generic-api-key:66
+1449ef056ba01f4a79d2b15e0185acb5d997adc9:scripts/faz24-live-e2e-smoke.sh:generic-api-key:66
+
 # PR #1036 (BL-010 KC org_id User Attribute mapper canary persona) —
 # gitleaks generic-api-key entropy heuristic flagged Kubernetes pod name
 # suffixes (e.g. `api-gateway-664f4b5655-rqqlm`,
