@@ -1,5 +1,26 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — #2796 PROD D43 SMTP recipient NDR (2026-07-22)
+
+Direct Graph mailbox evidence supersedes the older R9 interpretation that
+Office 365 server-side acceptance proved final SMTP delivery:
+
+- PROD `NotifyServiceDown` fired and Alertmanager sent the D43 direct-fallback
+  email from `ai@acik.com` to the configured `notify-ops@acik.com` target;
+- Exchange returned an NDR with `Unknown To address`; the target does not exist
+  in the tenant, so the SMTP leg is not Functional even though the sender path
+  accepted the message;
+- board issue [#2796](https://github.com/Halildeu/platform-k8s-gitops/issues/2796)
+  tracks a source-only recipient change to the existing shared mailbox
+  `ai@acik.com`, static route guards and real receipt acceptance;
+- no production apply has been performed for #2796. The new source target is
+  not live until an explicit human-approved prod sync proves firing receipt,
+  no NDR, recovery receipt and the existing bridge path.
+
+Current semantics: D43 SMTP final delivery is **Active risk / not Functional**.
+PR merge alone cannot change that status; source-ready, prod apply and real
+mailbox acceptance remain separate evidence classes.
+
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 
 This delta supersedes only the 2026-07-17 statements below that TEST Vault had

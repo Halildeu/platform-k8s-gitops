@@ -3,7 +3,7 @@
 > **Status**: ACTIVE (Session 51 closure 2026-05-28 — **R29 🔵→🟡 Active LIVE** V2.1 Exit #4 perf-alerts Teams primary path operator activation complete; PR #1099 D43 SMTP dormant unblock + helm REVISION 4 + cluster Alertmanager → Power Automate → Teams Adaptive Card receipt; Codex `019e6bd1` 4-iter AGREE chain absorb. Session 50 update 2026-05-27 — R29 NEW pending activation ADR-0029 Hibrit D perf-alertmanager Teams primary path; R26 OpenFGA model_id multi-cluster drift Active→Closed Archive migration BL-006b CLOSURE 2026-05-24 reflect; Session 49+ history: R11 Tempo LIVE mitigated; R2 closed via Codex `019e5189` legal verdict 2026-05-23; R1 NetGSM DEFER asset-preserved 2026-05-23 per kullanıcı kararı)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Charter**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
-> **Last review**: 2026-05-28
+> **Last review**: 2026-07-22
 
 Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için: ID, açıklama, probability, impact, mitigation, owner, status, last review tarihi.
 
@@ -13,6 +13,24 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 - Per-PR: yeni risk gözlemlenirse R-N satırı eklenir
 - Weekly: tüm aktif riskler review edilir, status update
 - Per-incident: incident sonrası retrospective ile yeni risk eklenir
+
+---
+
+## Current R9 Override — recipient NDR (2026-07-22)
+
+This section supersedes the historical R9 `Mitigated` status in the table
+below until #2796 post-apply acceptance is available.
+
+- Live `NotifyServiceDown` delivery to the configured
+  `notify-ops@acik.com` target produced an Exchange `Unknown To address` NDR.
+- Office 365 server-side acceptance did not prove final inbox delivery; R9 is
+  therefore **Active** and the SMTP leg is not Functional.
+- [#2796](https://github.com/Halildeu/platform-k8s-gitops/issues/2796) carries
+  the source target change to shared mailbox `ai@acik.com`. Production apply is
+  human-approved and pending.
+- Mitigation requires one evidence chain: firing receipt in the shared mailbox,
+  no NDR, `send_resolved` recovery receipt and preserved bridge delivery. PR
+  merge or Alertmanager send counters alone do not restore `Mitigated` status.
 
 ---
 

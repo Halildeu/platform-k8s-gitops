@@ -155,8 +155,11 @@ alertmanager:
         #        -f helm-values/kube-prometheus-stack/values-prod.yaml`
         #       Alertmanager pod restart picks up new config + Secret mount;
         #   (c) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
-        #       controlled window) → **SMTP receipt notify-ops@acik.com**
+        #       controlled window) → **SMTP receipt ai@acik.com**
         #       + GitHub Issue bridge + recovery.
+        # #2796 changes only the source desired-state recipient. Production
+        # apply requires explicit human approval; firing/recovery delivery and
+        # NDR absence remain post-apply acceptance evidence.
         # 2-channel D43 defense-in-depth aktif (SMTP + bridge). `continue: true`
         # bridge GitHub Issue path'i de garanti eder (defense-in-depth).
         # Runbook: docs/runbooks/RB-notification-outage-fallback.md §3.2 prod
@@ -287,8 +290,9 @@ alertmanager:
       #
       # HISTORICAL CHANNELS (slack_configs block silindi 2026-05-24 user
       # decision):
-      #   * SMTP `notify-ops@acik.com` via `smtp.office365.com:587` — ACTIVE
-      #     (BL-008 RESTORED 2026-05-28)
+      #   * SMTP source target `ai@acik.com` via
+      #     `smtp.office365.com:587` — #2796 human-approved apply + real receipt
+      #     pending; this source value is not a live-delivery claim.
       #   * Slack — removed 2026-05-24 ("slack kullanmıyoruz"); future
       #     reactivation = operator Slack workspace + Vault seed + PR atomic
       #     with drill rerun (asset-preserved başka tenants için ADR-0027 D2).
@@ -334,7 +338,7 @@ alertmanager:
         # R29 (perf-alertmanager) channels unrelated to this receiver — D43
         # SMTP only matches NotifyServiceDown|NotifyServiceAbsent route.
         email_configs:
-          - to: notify-ops@acik.com
+          - to: ai@acik.com
             from: ai@acik.com
             smarthost: 'smtp.office365.com:587'
             auth_username: ai@acik.com
