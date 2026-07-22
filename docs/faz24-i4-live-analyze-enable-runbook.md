@@ -73,8 +73,12 @@ rollout restart against the shared test workload.
 CTX=k3d-test
 NS=platform-test
 
-kubectl --context "$CTX" -n argocd get application platform-test \
-  -o jsonpath='{.status.sync.status}{"|"}{.status.health.status}{"\n"}'
+ARGO_STATE="$(kubectl --context "$CTX" -n argocd get application platform-test \
+  -o jsonpath='{.status.sync.status}{"|"}{.status.health.status}')"
+test "$ARGO_STATE" = "Synced|Healthy" || {
+  printf 'FAIL Argo state=%s expected=Synced|Healthy\n' "$ARGO_STATE" >&2
+  exit 1
+}
 kubectl --context "$CTX" -n "$NS" rollout status deploy/audio-gateway \
   --timeout=180s
 ```
@@ -87,16 +91,58 @@ post-sync gate before requesting attended product acceptance.
 ## Post-sync gate A - desired-state and pod identity
 
 ```bash
-POD="$(kubectl --context "$CTX" -n "$NS" get pod \
-  -l app.kubernetes.io/name=audio-gateway \
-  -o jsonpath='{.items[0].metadata.name}')"
+EXPECTED_IMAGE="$(kustomize build kustomize/overlays/test | python3 -c '
+import sys, yaml
+docs = yaml.safe_load_all(sys.stdin)
+matches = [c["image"] for d in docs if isinstance(d, dict)
+           and d.get("kind") == "Deployment"
+           and d.get("metadata", {}).get("name") == "audio-gateway"
+           for c in d["spec"]["template"]["spec"]["containers"]
+           if c.get("name") == "audio-gateway"]
+if len(matches) != 1:
+    raise SystemExit(f"expected one rendered audio-gateway image, found {len(matches)}")
+print(matches[0])')"
+EXPECTED_DIGEST="${EXPECTED_IMAGE##*@}"
+[[ "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
 
-kubectl --context "$CTX" -n "$NS" get pod "$POD" \
-  -o jsonpath='{.status.containerStatuses[0].imageID}{"\n"}'
-kubectl --context "$CTX" -n "$NS" exec "$POD" -- env \
-  | grep -E 'AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_(ENABLED|BASE_URL)='
+LIVE_DEPLOY_IMAGE="$(kubectl --context "$CTX" -n "$NS" \
+  get deploy audio-gateway \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="audio-gateway")].image}')"
+test "$LIVE_DEPLOY_IMAGE" = "$EXPECTED_IMAGE"
+
+scripts/deploy/verify-pod-digest.sh \
+  --context "$CTX" \
+  --namespace "$NS" \
+  --selector 'app.kubernetes.io/name=audio-gateway' \
+  --expected-digest "$EXPECTED_DIGEST"
+
+PODS_JSON="$(kubectl --context "$CTX" -n "$NS" get pod \
+  -l app.kubernetes.io/name=audio-gateway \
+  --field-selector=status.phase=Running -o json)"
+test "$(printf '%s' "$PODS_JSON" | jq \
+  '[.items[] | select(.metadata.deletionTimestamp == null)] | length')" -eq 1
+POD="$(printf '%s' "$PODS_JSON" | jq -er \
+  '.items[] | select(.metadata.deletionTimestamp == null) | .metadata.name')"
+
+test "$(kubectl --context "$CTX" -n "$NS" exec "$POD" -- \
+  printenv AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED)" = "true"
+test "$(kubectl --context "$CTX" -n "$NS" exec "$POD" -- \
+  printenv AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL)" \
+  = "http://meeting-ai-service:8080"
+
 kubectl --context "$CTX" -n "$NS" get networkpolicy \
-  allow-audio-gateway-egress-live-stt-mtls -o yaml
+  allow-audio-gateway-egress-live-stt-mtls -o json | jq -e '
+    .spec == {
+      podSelector: {matchLabels: {"app.kubernetes.io/name": "audio-gateway"}},
+      policyTypes: ["Egress"],
+      egress: [{
+        to: [{ipBlock: {cidr: "10.99.0.2/32"}}],
+        ports: [
+          {protocol: "TCP", port: 8243},
+          {protocol: "TCP", port: 8300}
+        ]
+      }]
+    }' >/dev/null
 ```
 
 Expected: immutable audio-gateway image ID, `ENABLED=true`, canonical bridge
@@ -219,10 +265,25 @@ commit independently. Submit and merge the rollback through GitOps.
 ```bash
 git switch main
 git pull --ff-only
-git revert <exact-merged-or-squash-sha>
-git push origin <rollback-branch>
+: "${LANDED_SHA:?set LANDED_SHA to this PR's exact origin/main landed SHA}"
+git merge-base --is-ancestor "$LANDED_SHA" origin/main
+ROLLBACK_BRANCH="rollback/faz24-live-analyze-$(date -u +%Y%m%dT%H%M%SZ)"
+git switch -c "$ROLLBACK_BRANCH"
+
+PARENT_COUNT="$(git rev-list --parents -n 1 "$LANDED_SHA" | awk '{print NF - 1}')"
+case "$PARENT_COUNT" in
+  1) git revert "$LANDED_SHA" ;;
+  2) git revert -m 1 "$LANDED_SHA" ;;
+  *) printf 'Unsupported parent count: %s\n' "$PARENT_COUNT" >&2; exit 1 ;;
+esac
+
+git push -u origin HEAD
 # Open and merge the rollback PR under repository gates.
 ```
+
+`LANDED_SHA` is the commit created on `origin/main` by merging this PR, not one
+of the branch review heads. The parent-count branch supports both squash and
+two-parent GitHub merge commits without guessing the mainline parent.
 
 The revert must restore all four desired-state properties together:
 

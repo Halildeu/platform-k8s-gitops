@@ -57,6 +57,18 @@ def assert_absent(documents: list[dict], kind: str, name: str, namespace: str) -
         raise AssertionError(f"unexpected {kind}/{namespace}/{name} in prod render")
 
 
+def sync_wave(resource: dict) -> int:
+    raw_wave = (
+        resource.get("metadata", {})
+        .get("annotations", {})
+        .get("argocd.argoproj.io/sync-wave", "0")
+    )
+    try:
+        return int(raw_wave)
+    except (TypeError, ValueError) as exc:
+        raise AssertionError(f"invalid ArgoCD sync wave: {raw_wave!r}") from exc
+
+
 def main() -> int:
     if len(sys.argv) != 4:
         print(
@@ -166,21 +178,23 @@ def main() -> int:
     )
 
     service = find_exactly_one(test_docs, "Service", BRIDGE_NAME, TEST_NAMESPACE)
-    service_spec = service.get("spec", {})
-    require(
-        "selector" not in service_spec, "meeting-ai bridge Service must be selectorless"
-    )
-    require(
-        service_spec.get("ports")
-        == [
+    expected_service_spec = {
+        "ports": [
             {
                 "name": "http",
                 "port": 8080,
                 "targetPort": 8300,
                 "protocol": "TCP",
             }
-        ],
-        "meeting-ai bridge Service must expose only TCP 8080 -> 8300",
+        ]
+    }
+    require(
+        service.get("spec") == expected_service_spec,
+        "meeting-ai bridge Service must be the exact selectorless ClusterIP contract",
+    )
+    require(
+        sync_wave(service) <= 17,
+        "meeting-ai bridge Service must sync no later than wave 17",
     )
 
     endpoints = find_exactly_one(test_docs, "Endpoints", BRIDGE_NAME, TEST_NAMESPACE)
@@ -193,6 +207,10 @@ def main() -> int:
             }
         ],
         "meeting-ai bridge Endpoints must contain only 10.99.0.2:8300/TCP",
+    )
+    require(
+        sync_wave(endpoints) <= 17,
+        "meeting-ai bridge Endpoints must sync no later than wave 17",
     )
 
     assert_absent(prod_docs, "ConfigMap", CONFIG_NAME, PROD_NAMESPACE)
