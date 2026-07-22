@@ -4414,8 +4414,23 @@ images:
     # follow-up gated on 0-unexplained-violation on the golden paths.
     #
     #
-    # 2026-07-22 uç birim yönetimi düzeltmeleri sha-78466aa (platform-web
-    # PR #979 + #981 MERGED). #979: ajan güncelleme modalı 31 onaylı sürümle
+    # 2026-07-22 uç birim yönetimi düzeltmeleri sha-c8d9f2b (platform-web
+    # PR #979 + #981 + #983 + #984 MERGED).
+    #
+    # #983: çift onaylı komutlar (LOCK_USER_LOGIN / UNLOCK_USER_LOGIN /
+    # CHANGE_LOCAL_PASSWORD / ROTATE_CREDENTIAL) üründen başlatılabiliyor ama
+    # tamamlanamıyordu — backend BE-017'den beri maker-checker uyguluyor
+    # (POST /endpoint-commands/{id}/approval, onaylayan ≠ gönderen) ama MFE'de
+    # o ikinci kararı kaydedecek mutation, ekran veya menü girişi yoktu, komut
+    # sonsuza kadar PENDING kalıyordu. Yeni `approvals/commands` envanteri
+    # Güvenlik & Uyum altında; kendi komutunu onaylama istemcide engelli ama
+    # koruma yalnızca UX — backend 403'ü her zaman kendi cümlesiyle gösteriliyor.
+    # #984: #983'ün iki RTK hook'u export bloğuna eklenmemişti ve imaj build'i
+    # MISSING_EXPORT ile kırılmıştı; düzeltmeyle birlikte her endpoint için
+    # hook export'unu türetip doğrulayan kalıcı bir test eklendi (o test 5 adet
+    # daha önceden eksik export buldu).
+    #
+    # #979: ajan güncelleme modalı 31 onaylı sürümle
     # 2656px'e çıkıp zorunlu Gerekçe alanını ve her iki düğmeyi 872px'lik
     # ekranın dışına itiyordu — panel artık InstallPreflightModal ile aynı
     # `max-h-[85vh] flex flex-col` kabuğunu kullanıyor, alt bar kaydırma
@@ -4426,9 +4441,9 @@ images:
     # hâliyle SON KOMUTLAR listesinde görünüyordu); bilinmeyen kod ham
     # gösterilerek fail-open, `winget_exit_<n>` çıkış kodu gömülüyor.
     #
-    # Build run 29896314673 testai job 88847121773.
-    # Image push: ghcr.io/halildeu/platform-web-frontend-testai:sha-78466aa@
-    # sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c
+    # Build run 29908857420 testai job 88886700036.
+    # Image push: ghcr.io/halildeu/platform-web-frontend-testai:sha-c8d9f2b@
+    # sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4
     # sourceRevision: c8d9f2bc4f6748547a834ccda93f3a6b5f49a686
     newTag: sha-c8d9f2b
     digest: sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4
