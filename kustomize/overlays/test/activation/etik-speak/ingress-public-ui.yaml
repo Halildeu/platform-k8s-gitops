@@ -8,6 +8,11 @@ metadata:
     nginx.ingress.kubernetes.io/auth-type: basic
     nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate
     nginx.ingress.kubernetes.io/auth-realm: "Etik Speak sentetik test"
+    # Static UI can serve a higher steady rate but a single client should
+    # not open thousands of concurrent connections.
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
 spec:
   ingressClassName: nginx
   tls:

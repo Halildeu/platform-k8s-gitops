@@ -14,7 +14,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
     nginx.ingress.kubernetes.io/proxy-body-size: "2m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    # ES-306 load test showed 24×504 pattern under 30 concurrent POST.
+    # limit-rps caps steady state per source IP, limit-burst-multiplier=1
+    # keeps the burst equal to that steady state (default 5x lets 25 rps
+    # through) and limit-connections caps concurrent conns per IP so a
+    # single client cannot exhaust the backend worker pool. The backend
+    # itself carries an in-process Resilience4j bulkhead as second layer.
     nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "1"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
 spec:
   ingressClassName: nginx
   tls:
