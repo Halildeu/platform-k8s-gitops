@@ -4441,9 +4441,11 @@ images:
     # hâliyle SON KOMUTLAR listesinde görünüyordu); bilinmeyen kod ham
     # gösterilerek fail-open, `winget_exit_<n>` çıkış kodu gömülüyor.
     #
-    # Build run 29908857420 testai job 88886700036.
-    # Image push: ghcr.io/halildeu/platform-web-frontend-testai:sha-c8d9f2b@
-    # sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4
+    # Historical build receipt for the sha-c8d9f2b promotion:
+    # run 29908857420, testai job 88886700036, immutable digest
+    # sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4.
+    # Current machine-readable authority is the sourceRevision/newTag/digest
+    # tuple below; narrow automation updates only those three lines.
     # sourceRevision: c8d9f2bc4f6748547a834ccda93f3a6b5f49a686
     newTag: sha-c8d9f2b
     digest: sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4

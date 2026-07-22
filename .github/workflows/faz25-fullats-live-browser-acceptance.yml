@@ -25,12 +25,8 @@ jobs:
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
-      EXPECTED_FRONTEND_DIGEST: sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4
-      EXPECTED_FRONTEND_SHA: c8d9f2bc4f6748547a834ccda93f3a6b5f49a686
       ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
-      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29908857420
-      FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29908857420/job/88886700036
     steps:
       - name: Validate test-only dispatch boundary
         id: preflight
@@ -48,6 +44,25 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+
+      - name: Bind frontend runtime to canonical test overlay
+        id: frontend-pin
+        run: |
+          set -euo pipefail
+          pin="$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
+            --kustomization kustomize/overlays/test/kustomization.yaml)"
+          source_sha="$(jq -er '.source_sha | select(type == "string" and test("^[a-f0-9]{40}$"))' <<<"$pin")"
+          tag="$(jq -er '.tag | select(type == "string" and test("^sha-[a-f0-9]{7}$"))' <<<"$pin")"
+          digest="$(jq -er '.digest | select(type == "string" and test("^sha256:[a-f0-9]{64}$"))' <<<"$pin")"
+          [[ "$tag" == "sha-${source_sha:0:7}" ]] || {
+            echo "::error::frontend sourceRevision and newTag disagree"
+            exit 1
+          }
+          {
+            echo "EXPECTED_FRONTEND_SHA=$source_sha"
+            echo "EXPECTED_FRONTEND_DIGEST=$digest"
+            echo "FRONTEND_SOURCE_URL=https://github.com/Halildeu/platform-web/commit/$source_sha"
+          } >> "$GITHUB_ENV"
 
       - name: Wait for exact GitOps auto-sync convergence
         id: convergence
@@ -190,8 +205,8 @@ jobs:
             echo "- source lineage boundary: Actions build run metadata; no signed provenance attestation claimed"
             echo "- ATS build: ${ATS_BUILD_RUN}"
             echo "- permission build: ${PERMISSION_BUILD_RUN}"
-            echo "- frontend build: ${FRONTEND_BUILD_RUN}"
-            echo "- frontend build job: ${FRONTEND_BUILD_JOB}"
+            echo "- frontend source: ${FRONTEND_SOURCE_URL}"
+            echo "- frontend immutable digest: ${EXPECTED_FRONTEND_DIGEST}"
             if [[ -n "${{ steps.rollback.outputs.rollback_pr_url }}" ]]; then
               echo "- compensating rollback PR: ${{ steps.rollback.outputs.rollback_pr_url }}"
             fi
