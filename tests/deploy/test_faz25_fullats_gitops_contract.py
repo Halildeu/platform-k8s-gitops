@@ -37,6 +37,20 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             / "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml"
         ).read_text()
         cls.test_root = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text()
+        cls.frontend_pin = json.loads(
+            subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / "scripts/automation/test-overlay-frontend-image.py"),
+                    "inspect",
+                    "--kustomization",
+                    str(ROOT / "kustomize/overlays/test/kustomization.yaml"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        )
         cls.test_frontend_nginx = (
             ROOT / "kustomize/overlays/test/frontend-nginx-default.conf"
         ).read_text()
@@ -694,30 +708,52 @@ fi
         expected = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4",
+            "frontend": self.frontend_pin["digest"],
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
             f"EXPECTED_PERMISSION_DIGEST: {expected['permission']}",
             self.fullats_browser_workflow,
         )
+        self.assertNotRegex(
+            self.fullats_browser_workflow,
+            r"(?m)^\s+EXPECTED_FRONTEND_(?:DIGEST|SHA):\s+(?:sha256:)?[a-f0-9]{40,64}$",
+        )
         self.assertIn(
-            f"EXPECTED_FRONTEND_DIGEST: {expected['frontend']}",
+            "Bind frontend runtime to canonical test overlay",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: c8d9f2bc4f6748547a834ccda93f3a6b5f49a686",
+            "python3 scripts/automation/test-overlay-frontend-image.py inspect",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29908857420",
+            'echo "EXPECTED_FRONTEND_SHA=$source_sha"',
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29908857420/job/88886700036",
+            'echo "EXPECTED_FRONTEND_DIGEST=$digest"',
             self.fullats_browser_workflow,
         )
-        self.assertIn('echo "- frontend build job: ${FRONTEND_BUILD_JOB}"', self.fullats_browser_workflow)
+        checkout = self.fullats_browser_workflow.index(
+            "Checkout canonical acceptance scripts"
+        )
+        bind = self.fullats_browser_workflow.index(
+            "Bind frontend runtime to canonical test overlay"
+        )
+        convergence = self.fullats_browser_workflow.index(
+            "Wait for exact GitOps auto-sync convergence"
+        )
+        self.assertLess(checkout, bind)
+        self.assertLess(bind, convergence)
+        self.assertIn(
+            'echo "- frontend source: ${FRONTEND_SOURCE_URL}"',
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            'echo "- frontend immutable digest: ${EXPECTED_FRONTEND_DIGEST}"',
+            self.fullats_browser_workflow,
+        )
         self.assertIn("body.sha !== expectedFrontendSha", self.fullats_browser)
         self.assertIn("fetchBuildInfo('pre')", self.fullats_browser)
         self.assertIn("fetchBuildInfo('post')", self.fullats_browser)
@@ -765,35 +801,34 @@ fi
             self.rendered_test_root,
         )
 
-    def test_frontend_promotion_receipt_is_cross_file_bound(self):
-        source_sha = "c8d9f2bc4f6748547a834ccda93f3a6b5f49a686"
-        tag = "sha-c8d9f2b"
-        digest = "sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4"
-        run_id = "29908857420"
-        job_id = "88886700036"
+    def test_frontend_promotion_consumers_use_canonical_overlay_pin(self):
+        source_sha = self.frontend_pin["source_sha"]
+        tag = self.frontend_pin["tag"]
+        digest = self.frontend_pin["digest"]
 
+        self.assertRegex(source_sha, r"^[a-f0-9]{40}$")
+        self.assertEqual(tag, f"sha-{source_sha[:7]}")
+        self.assertRegex(digest, r"^sha256:[a-f0-9]{64}$")
         for exact in (
-            f"Build run {run_id} testai job {job_id}.",
             f"sourceRevision: {source_sha}",
             f"newTag: {tag}",
             f"digest: {digest}",
         ):
             self.assertIn(exact, self.test_root)
 
-        for exact in (
-            f'FRONTEND_NEW="{digest}"',
-            f'FRONTEND_NEW_SHA="{source_sha}"',
-            f'FRONTEND_NEW_TAG="{tag}"',
-        ):
-            self.assertIn(exact, self.rollback_script)
-
-        for exact in (
+        self.assertIn(
+            "Current machine-readable authority is the sourceRevision/newTag/digest",
+            self.test_root,
+        )
+        self.assertIn(
+            "test-overlay-frontend-image.py inspect",
+            self.fullats_browser_workflow,
+        )
+        self.assertNotIn(f'FRONTEND_NEW="{digest}"', self.rollback_script)
+        self.assertNotIn(
             f"EXPECTED_FRONTEND_DIGEST: {digest}",
-            f"EXPECTED_FRONTEND_SHA: {source_sha}",
-            f"actions/runs/{run_id}",
-            f"actions/runs/{run_id}/job/{job_id}",
-        ):
-            self.assertIn(exact, self.fullats_browser_workflow)
+            self.fullats_browser_workflow,
+        )
 
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
         self.assertIn("timeout-minutes: 90", self.fullats_browser_workflow)
@@ -849,8 +884,8 @@ fi
         for digest in (
             "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
-            "sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4",
         ):
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
@@ -973,8 +1008,8 @@ fi
         # recruiter-scope contract touched).
         current_permission = "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
         promoted = {
-            "frontend": "sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4",
-            "tag": "sha-c8d9f2b",
+            "frontend": self.frontend_pin["digest"],
+            "tag": self.frontend_pin["tag"],
         }
         rolled_back = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
