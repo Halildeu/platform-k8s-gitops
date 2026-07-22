@@ -5,9 +5,13 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/auth-type: basic
-    nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate
-    nginx.ingress.kubernetes.io/auth-realm: "Etik Speak sentetik test"
+    # ES-313 (2026-07-21, owner explicit "riskleri anladım hemen aç"):
+    # sentetik-test Basic Auth gate KALDIRILDI. Reporter UI artık anonim
+    # erişime açık. Anti-abuse ingress rate-limit ile enforce edilir.
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-rpm: "300"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
 spec:
   ingressClassName: nginx
   tls:
