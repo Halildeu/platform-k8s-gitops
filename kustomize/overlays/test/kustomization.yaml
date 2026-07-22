@@ -8314,6 +8314,11 @@ patches:
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
               audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-11-184-ws-doublerelease-fix-v4"
+              # Faz 24 I4 live-analysis trigger reads its gate and target from
+              # the ConfigMap through envFrom. Keep an independent revision so
+              # enable/rollback always changes the pod template and cannot
+              # leave a stale process on the previous value.
+              audio-gateway.acik.com/live-analyze-enable-rev: "2026-07-22-244-enable-v1"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -8348,6 +8353,21 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL
         value: "wss://live-stt.denetim:8243/ws/stream"
+
+  # Faz 24 I4: test-only live Meeting Intelligence trigger. The GPU-host
+  # revision and SSE relay must pass the governed preflight before this change
+  # is merged. Base/prod remain fail-closed. ROLLBACK: set enabled=false,
+  # clear base-url and bump live-analyze-enable-rev.
+  - target:
+      kind: ConfigMap
+      name: audio-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL
+        value: "http://meeting-ai-service:8080"
 
   # Test PDB gevşek (tek replica olunca anlamsız)
   - target:
