@@ -73,4 +73,4 @@ images:
   # remains owner-gated; live VIEW_ONLY evidence + KVKK signoff still separate.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:5659221d7b6c74438dd451f05fe2722620aa7c72903463a477e2ddb01fb0c176
+    digest: sha256:6cc0909dcbd2d810dde0cc27904c122aac686e552e5a3a665fb51b7fc78b7997

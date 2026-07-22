@@ -4412,9 +4412,22 @@ images:
     # `securitypolicyviolation` without blocking any request; enforce
     # follow-up gated on 0-unexplained-violation on the golden paths.
     #
-    # Build run 29858875032 testai job 88730140487.
-    # Image push: ghcr.io/halildeu/platform-web-frontend-testai:sha-a611aa0@
-    # sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a
+    #
+    # 2026-07-22 uç birim yönetimi düzeltmeleri sha-78466aa (platform-web
+    # PR #979 + #981 MERGED). #979: ajan güncelleme modalı 31 onaylı sürümle
+    # 2656px'e çıkıp zorunlu Gerekçe alanını ve her iki düğmeyi 872px'lik
+    # ekranın dışına itiyordu — panel artık InstallPreflightModal ile aynı
+    # `max-h-[85vh] flex flex-col` kabuğunu kullanıyor, alt bar kaydırma
+    # kabının dışında, sürüm listesi kendi kutusunda kayıyor ve kapalı
+    # gönder düğmesi sebebini yazıyor. #981: kurulum/kaldırma denetim
+    # tablolarında ajanın `failedReasonCode` / `finalStatus` değeri
+    # gösteriliyor (LIVE'da FAILED_EGRESS / egress_not_ready yalnız ham
+    # hâliyle SON KOMUTLAR listesinde görünüyordu); bilinmeyen kod ham
+    # gösterilerek fail-open, `winget_exit_<n>` çıkış kodu gömülüyor.
+    #
+    # Build run 29896314673 testai job 88847121773.
+    # Image push: ghcr.io/halildeu/platform-web-frontend-testai:sha-78466aa@
+    # sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c
     # sourceRevision: 78466aa96f34a498d29b09500c6eeea2e81dd04a
     newTag: sha-78466aa
     digest: sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c
@@ -5865,7 +5878,17 @@ images:
     # board #2559 — sha-780a95c (platform-backend 780a95c29, PR #853): the resolver learns to
     # apply an explicit org -> tenant alias, which is what makes the ConfigMap key above mean
     # anything. Digest read from the registry manifest (linux/amd64), not from the tag.
-    digest: sha256:5659221d7b6c74438dd451f05fe2722620aa7c72903463a477e2ddb01fb0c176
+    # 2026-07-22 board platform-backend#921 -> sha-e98aaf5 (platform-backend PR
+    # #922): UPDATE_AGENT dispatch her cagrida HTTP 500 donuyordu. Idempotency
+    # anahtari "admin-update-agent:" + deviceId + ":" + releaseUuid + ":" +
+    # UUID = 129 karakter, sutun VARCHAR(128). Dispatch modali guvenlik geregi
+    # govdeyi tam olarak {releaseId, reason} gonderdigi (caller anahtari yok)
+    # icin UI yolu %100 kirikti. Sutun genisletilmedi; sinir CommandIdempotencyKeys
+    # ile koda tasindi - bugun kalicilasabilen her sekil bayt-bayt ayni kaliyor,
+    # yalnizca hic kalicilasamamis sekil daraltiliyor. 148 test yesil.
+    # Immutable build evidence: Actions run 29895260136, endpoint-admin-service
+    # job 88843954553, tag sha-e98aaf5.
+    digest: sha256:6cc0909dcbd2d810dde0cc27904c122aac686e552e5a3a665fb51b7fc78b7997
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
