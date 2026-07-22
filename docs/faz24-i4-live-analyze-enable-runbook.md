@@ -1,147 +1,249 @@
-# RB Faz 24 İ4 — audio-gateway live-analyze enable + rollback
+# RB Faz 24 I4 - audio-gateway live-analyze test enable + rollback
 
-**Owner**: platform-ops (test) / D30-atomic (prod)
-**Prerequisite**: meeting-ai runtime reachable on the target cluster (see
-`docs/faz24-meeting-ai-host-deploy-runbook.md`)
-**Blast radius**: single service (audio-gateway); no cross-service secrets;
-test-only egress is limited to `10.99.0.2/32` TCP `8300`.
-**Reversible**: yes — flip enabled back to `false` + rollout restart.
+**Owner**: platform-ops (`k3d-test` only)
+**Prerequisite**: the governed meeting-ai exact-SHA rollout and direct relay
+smoke must pass before this desired-state is merged.
+**Blast radius**: `audio-gateway` in `platform-test`; egress is limited to
+`10.99.0.2/32` TCP `8300`. Production is excluded and remains a separate D30
+owner gate.
+**Reversible**: yes - revert the exact merged PR and let ArgoCD reconcile.
 
----
+This runbook keeps three different proofs separate:
 
-## When to run
+1. **Direct relay**: GPU-host `/analyze/live` publish -> SSE.
+2. **Cluster bridge**: the same relay through the selectorless Service from the
+   actual audio-gateway network identity.
+3. **Gateway-triggered path**: real desktop transcript segments ->
+   audio-gateway segment window -> meeting-ai -> SSE.
 
-- **Trigger**: platform-backend#902 (İ4 aggregator code) is merged AND the
-  matching digest is pinned in the target overlay (test: gitops#2730 landed
-  `sha-494e4f4`; prod: awaits its own bump) AND meeting-ai is reachable
-  from the audio-gateway pod on the configured base URL.
-- **NOT before** meeting-ai is up — the trigger fires per every Nth transcript
-  and each failed POST costs one metric increment + one WARN log. Enabling
-  against a down meeting-ai will not break the STT path (fail-closed
-  design) but will spam alerts.
+Only the third proof exercises the feature enabled by this change.
 
 ---
 
-## Preflight (all must be true)
+## GitOps ordering
+
+The test ConfigMap and narrow NetworkPolicy carry ArgoCD sync wave `17`.
+`Deployment/audio-gateway` carries wave `18`. The target URL and TCP `8300`
+policy are therefore reconciled before a new process starts with the enabled
+flag. This is a post-sync acceptance model; it is not a pre-enable pod
+reachability proof.
+
+The application is fail-contained when meeting-ai is unavailable: STT delivery
+continues while the live-analysis attempt records an error counter. A failed
+post-sync gate still requires immediate rollback to avoid repeated failed
+publishes.
+
+---
+
+## Pre-merge remote runtime gate
+
+Run on `staging-sw`, where the WireGuard route and repository checkout are
+available. Do not put tokens or transcript content in command output.
 
 ```bash
-CTX=k3d-test        # or k3d-prod, once its own bump lands
-NS=platform-test    # or platform-prod
+cd /path/to/platform-k8s-gitops
 
-# 1. Audio-gw pod is on the code that has the trigger.
-kubectl --context $CTX -n $NS get pod -l app.kubernetes.io/name=audio-gateway \
-  -o jsonpath='{.items[*].status.containerStatuses[*].imageID}'
-# → expect ghcr.io/…/audio-gateway-service@sha256:db1bdb6f…  (sha-494e4f4)
+# A waiting protected-environment job is not deployment evidence.
+gh run view <gpu-rollout-run-id> --json status,conclusion,jobs,url
 
-# 2. Env vars are visible to the pod (baseline gitops#2728 pins them off).
-kubectl --context $CTX -n $NS exec deploy/audio-gateway -- \
-  env | grep AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE
-# → 4 keys; ENABLED=false, BASE_URL=""
-
-# 3. Target meeting-ai is reachable from the actual audio-gateway network identity.
-kubectl --context $CTX -n $NS exec deploy/audio-gateway -- \
-  curl -sS -o /dev/null -w 'HTTP %{http_code}\n' \
-    -m 5 http://meeting-ai-service:8080/health
-# → expect HTTP 200 (or HTTP 401 if auth-required — a routable-but-guarded
-#   endpoint is still preflight-passing; a connect/timeout error is NOT)
-```
-
-Preflight failure → STOP. Fix reachability before flipping the flag.
-
----
-
-## Enable
-
-Use the shared kustomize patch — DO NOT `kubectl set env` a ConfigMap
-directly (drifts from git; next `apply -k` overwrites it).
-
-```bash
-# 1. Patch the overlay
-cd platform-k8s-gitops
-git checkout -b enable/faz24-i4-audio-gw-live-analyze-<env>-<yyyymmdd>
-# Edit kustomize/overlays/<env>/kustomization.yaml — add a patch that
-# `op: replace` /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED → "true"
-# and /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL → the reachable
-# meeting-ai URL (e.g. "http://meeting-ai-service:8080").
-# Follow the pattern already used for AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED
-# (test overlay kustomization.yaml — grep for STREAMING_ENABLED to see the
-# in-place patch shape).
-
-# 2. Commit + PR + merge as usual (Boundary declaration: state-mutation)
-
-# 3. Apply
-kubectl --context $CTX -n $NS apply -k kustomize/overlays/<env>
-
-# 4. Rollout restart so envFrom picks up the new ConfigMap
-kubectl --context $CTX -n $NS rollout restart deploy/audio-gateway
-kubectl --context $CTX -n $NS rollout status  deploy/audio-gateway --timeout=180s
-```
-
----
-
-## Verify (all must pass)
-
-```bash
-# A. Config actually landed in the pod
-kubectl --context $CTX -n $NS exec deploy/audio-gateway -- \
-  env | grep -E 'AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_(ENABLED|BASE_URL)='
-# → ENABLED=true; BASE_URL matches the overlay patch
-
-# B. Micrometer counters are registered (means the bean wired)
-kubectl --context $CTX -n $NS exec deploy/audio-gateway -- \
-  curl -sS localhost:8080/actuator/prometheus \
-  | grep -E '^audio_gw_live_analyze_(publish|drop)_total'
-# → 4 series present (publish_total, publish_success_total,
-#   publish_error_total, drop_total). Values may all be 0 until traffic.
-
-# C. End-to-end smoke — run the İ5 script against the SAME meeting-ai URL
-#    audio-gateway now uses.
-MEETING_AI_URL=http://meeting-ai-service:8080 \
+# Direct GPU-host health and direct publish -> SSE relay proof.
+curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -m 5 \
+  http://10.99.0.2:8300/health
+MEETING_AI_URL=http://10.99.0.2:8300 \
   scripts/faz24/live-analyze-sse-smoke.sh
-# → PASS: SSE delivered an event: analysis frame with is_partial=true
 ```
 
-If (A) or (B) fails, treat as an incident and roll back. If (C) fails but
-(A)+(B) pass, meeting-ai itself is degraded — leave audio-gw enabled and
-investigate meeting-ai independently.
+Expected: health `200`, smoke exit `0`, and rollout evidence naming the expected
+immutable revision. This proves direct relay only; it does not prove the
+cluster bridge or audio-gateway trigger.
+
+---
+
+## Enable through GitOps
+
+Do not run `kubectl apply`, `kubectl patch`, `kubectl set env`, or an imperative
+rollout restart against the shared test workload.
+
+1. Verify the PR exact head, CI, render guard, and independent review.
+2. Merge only after the pre-merge remote runtime gate passes.
+3. Let the `platform-test` ArgoCD Application reconcile `main`.
+4. Observe wave `17` resources before the wave `18` Deployment rollout.
+
+```bash
+CTX=k3d-test
+NS=platform-test
+
+kubectl --context "$CTX" -n argocd get application platform-test \
+  -o jsonpath='{.status.sync.status}{"|"}{.status.health.status}{"\n"}'
+kubectl --context "$CTX" -n "$NS" rollout status deploy/audio-gateway \
+  --timeout=180s
+```
+
+Argo `Synced` and rollout success are **Up** evidence only. Continue with every
+post-sync gate before requesting attended product acceptance.
+
+---
+
+## Post-sync gate A - desired-state and pod identity
+
+```bash
+POD="$(kubectl --context "$CTX" -n "$NS" get pod \
+  -l app.kubernetes.io/name=audio-gateway \
+  -o jsonpath='{.items[0].metadata.name}')"
+
+kubectl --context "$CTX" -n "$NS" get pod "$POD" \
+  -o jsonpath='{.status.containerStatuses[0].imageID}{"\n"}'
+kubectl --context "$CTX" -n "$NS" exec "$POD" -- env \
+  | grep -E 'AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_(ENABLED|BASE_URL)='
+kubectl --context "$CTX" -n "$NS" get networkpolicy \
+  allow-audio-gateway-egress-live-stt-mtls -o yaml
+```
+
+Expected: immutable audio-gateway image ID, `ENABLED=true`, canonical bridge
+URL, and only the test `/32` TCP `8243` + `8300` egress contract.
+
+---
+
+## Post-sync gate B - bridge relay from the real network identity
+
+The current live image contains `/usr/bin/bash` and `/usr/bin/curl`; verify
+those tools again. Stream the existing smoke into the actual pod so the probe
+is subject to the same NetworkPolicies as audio-gateway.
+
+```bash
+kubectl --context "$CTX" -n "$NS" exec "$POD" -- \
+  sh -c 'command -v bash && command -v curl'
+
+kubectl --context "$CTX" -n "$NS" exec -i "$POD" -- \
+  env MEETING_AI_URL=http://meeting-ai-service:8080 \
+      TMPDIR=/tmp TIMEOUT_SEC=15 bash -s \
+  < scripts/faz24/live-analyze-sse-smoke.sh
+```
+
+Expected: smoke exit `0`. This proves the selectorless Service, Endpoints,
+NetworkPolicy, meeting-ai publish, and SSE relay. It still bypasses the
+audio-gateway segment-window trigger and is not gateway functional acceptance.
+
+---
+
+## Post-sync gate C - exact metrics
+
+```bash
+METRICS="$(kubectl --context "$CTX" -n "$NS" exec "$POD" -- \
+  curl -fsS http://localhost:8081/actuator/prometheus)"
+
+for metric in \
+  audio_gw_live_analyze_publish_total \
+  audio_gw_live_analyze_publish_success_total \
+  audio_gw_live_analyze_publish_error_total \
+  audio_gw_live_analyze_drop_total
+do
+  count="$(printf '%s\n' "$METRICS" \
+    | grep -Ec "^${metric}(\\{|[[:space:]]|$)" || true)"
+  test "$count" -eq 1 || {
+    printf 'FAIL metric=%s matches=%s\n' "$metric" "$count" >&2
+    exit 1
+  }
+done
+```
+
+This proves registration of exactly four expected series. It does not prove a
+successful publish until the counters move under real gateway input.
+
+---
+
+## Post-sync gate D - gateway-triggered attended acceptance
+
+Use a fresh packaged-desktop meeting ID. Subscribe before recording, then
+produce at least five final transcript segments so the configured segment
+window flushes. Do not persist or attach raw SSE/transcript payloads to
+evidence.
+
+Terminal 1:
+
+```bash
+MEETING_ID=<fresh-meeting-uuid>
+kubectl --context "$CTX" -n "$NS" exec "$POD" -- \
+  sh -c "curl -fsS --no-buffer --max-time 180 \
+    http://meeting-ai-service:8080/analyze/live/stream/$MEETING_ID \
+    | grep -m1 -q '^event: analysis$'"
+```
+
+Terminal 2, before recording:
+
+```bash
+metric_value() {
+  kubectl --context "$CTX" -n "$NS" exec "$POD" -- \
+    curl -fsS http://localhost:8081/actuator/prometheus \
+    | awk -v name="$1" '$1 == name {print $2; exit}'
+}
+
+BEFORE_TOTAL="$(metric_value audio_gw_live_analyze_publish_total)"
+BEFORE_SUCCESS="$(metric_value audio_gw_live_analyze_publish_success_total)"
+BEFORE_ERROR="$(metric_value audio_gw_live_analyze_publish_error_total)"
+```
+
+Start the packaged desktop recording for `MEETING_ID`, speak until at least
+five final transcript segments are visible, and stop normally. Then:
+
+```bash
+AFTER_TOTAL="$(metric_value audio_gw_live_analyze_publish_total)"
+AFTER_SUCCESS="$(metric_value audio_gw_live_analyze_publish_success_total)"
+AFTER_ERROR="$(metric_value audio_gw_live_analyze_publish_error_total)"
+
+awk -v before="$BEFORE_TOTAL" -v after="$AFTER_TOTAL" \
+  'BEGIN { exit !(after > before) }'
+awk -v before="$BEFORE_SUCCESS" -v after="$AFTER_SUCCESS" \
+  'BEGIN { exit !(after > before) }'
+test "$AFTER_ERROR" = "$BEFORE_ERROR"
+```
+
+Acceptance requires all of these together for the same meeting ID:
+
+- Terminal 1 exits `0` after an SSE `analysis` event.
+- publish total and success counters increase.
+- publish error does not increase.
+- packaged desktop continues its live transcript path without a new recording
+  failure.
+
+If any gate fails, do not classify it as meeting-ai-only. Roll back and
+diagnose the exact failed hop.
 
 ---
 
 ## Rollback
 
+Revert the exact merged/squash commit for this PR; do not revert one branch
+commit independently. Submit and merge the rollback through GitOps.
+
 ```bash
-# Fastest: revert the enable PR + apply
-git revert <enable-commit-sha>
-git push
-kubectl --context $CTX -n $NS apply -k kustomize/overlays/<env>
-kubectl --context $CTX -n $NS rollout restart deploy/audio-gateway
+git switch main
+git pull --ff-only
+git revert <exact-merged-or-squash-sha>
+git push origin <rollback-branch>
+# Open and merge the rollback PR under repository gates.
 ```
 
-Env-flip is idempotent — restart is required so the pod re-reads the
-ConfigMap (envFrom does not hot-reload).
+The revert must restore all four desired-state properties together:
 
----
+- live-analysis flag `false`;
+- base URL empty;
+- live-analysis pod-template revision removed/changed, causing a rollout;
+- TCP `8300` removed while existing TCP `8243` direct-STT egress remains.
 
-## Known-good defaults
+After ArgoCD reconciles the rollback, verify:
 
-| Key | Default | Notes |
-|---|---|---|
-| `ENABLED` | `true` (after flip) | The gate. |
-| `BASE_URL` | `http://meeting-ai-service:8080` (test) | No trailing slash. |
-| `SEGMENT_WINDOW` | `5` | Nth transcript flushes. Bigger = fewer POSTs, coarser live view. |
-| `TIMEOUT_MS` | `5000` | WebClient connect + response cap. |
+```bash
+kubectl --context k3d-test -n platform-test rollout status \
+  deploy/audio-gateway --timeout=180s
+kubectl --context k3d-test -n platform-test exec deploy/audio-gateway -- env \
+  | grep AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE
+kubectl --context k3d-test -n platform-test get networkpolicy \
+  allow-audio-gateway-egress-live-stt-mtls -o yaml \
+  | grep -q 'port: 8300' && exit 1 || true
+```
 
----
+Expected: `ENABLED=false`, URL empty, rollout on the reverted pod template, and
+no TCP `8300` in the live policy. Production is not part of this runbook.
 
-## Guarantees the code makes (do NOT try to re-verify by breaking things
-in prod)
-
-- **Broken meeting-ai** never fails the STT forwarding path. Publish
-  errors increment `audio_gw_live_analyze_publish_error_total` and are
-  logged with safe fields only (no transcript text).
-- **PII discipline** — transcript text IS the POST body (meeting-ai's
-  redactor applies KVKK PII guard before the LLM), but audio-gateway
-  logs the failure class + meeting_id length + sequence, never the text.
-
-Ref: platform-backend#902 (İ4 code), gitops#2728 (env baseline),
-     gitops#2730 (digest bump), platform-ai#270 (SSE relay hub).
+Ref: platform-backend#902, gitops#2728/#2730, platform-ai#244/#270.

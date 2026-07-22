@@ -8362,6 +8362,10 @@ patches:
       kind: ConfigMap
       name: audio-gateway-config
     patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          argocd.argoproj.io/sync-wave: "17"
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED
         value: "true"

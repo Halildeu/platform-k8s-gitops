@@ -14,10 +14,18 @@ PROD_NAMESPACE = "platform-prod"
 CONFIG_NAME = "audio-gateway-config"
 DEPLOYMENT_NAME = "audio-gateway"
 POLICY_NAME = "allow-audio-gateway-egress-live-stt-mtls"
+BRIDGE_NAME = "meeting-ai-service"
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
 
 
 def load_documents(path: Path) -> list[dict]:
-    return [doc for doc in yaml.safe_load_all(path.read_text()) if isinstance(doc, dict)]
+    return [
+        doc for doc in yaml.safe_load_all(path.read_text()) if isinstance(doc, dict)
+    ]
 
 
 def find_exactly_one(
@@ -49,20 +57,6 @@ def assert_absent(documents: list[dict], kind: str, name: str, namespace: str) -
         raise AssertionError(f"unexpected {kind}/{namespace}/{name} in prod render")
 
 
-def has_egress_port(policy: dict, cidr: str, port: int) -> bool:
-    for rule in policy.get("spec", {}).get("egress", []):
-        peers = rule.get("to", [])
-        ports = rule.get("ports", [])
-        peer_matches = any(peer.get("ipBlock", {}).get("cidr") == cidr for peer in peers)
-        port_matches = any(
-            item.get("protocol", "TCP") == "TCP" and item.get("port") == port
-            for item in ports
-        )
-        if peer_matches and port_matches:
-            return True
-    return False
-
-
 def main() -> int:
     if len(sys.argv) != 4:
         print(
@@ -75,30 +69,53 @@ def main() -> int:
     prod_docs = load_documents(Path(sys.argv[2]))
     base_docs = load_documents(Path(sys.argv[3]))
 
-    base_config = next(
-        (
-            doc
-            for doc in base_docs
-            if doc.get("kind") == "ConfigMap"
-            and doc.get("metadata", {}).get("name") == CONFIG_NAME
-        ),
-        None,
+    base_configs = [
+        doc
+        for doc in base_docs
+        if doc.get("kind") == "ConfigMap"
+        and doc.get("metadata", {}).get("name") == CONFIG_NAME
+    ]
+    require(
+        len(base_configs) == 1,
+        f"expected one base ConfigMap/{CONFIG_NAME}; found {len(base_configs)}",
     )
-    if base_config is None:
-        raise AssertionError(f"missing base ConfigMap/{CONFIG_NAME}")
+    base_config = base_configs[0]
     base_data = base_config.get("data", {})
-    assert base_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED") == "false"
-    assert base_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL") == ""
+    require(
+        base_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED") == "false",
+        "base live-analyze enable default must be false",
+    )
+    require(
+        base_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL") == "",
+        "base live-analyze URL default must be empty",
+    )
 
     test_config = find_exactly_one(test_docs, "ConfigMap", CONFIG_NAME, TEST_NAMESPACE)
     test_data = test_config.get("data", {})
-    assert test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED") == "true"
-    assert (
-        test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL")
-        == "http://meeting-ai-service:8080"
+    require(
+        test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED") == "true",
+        "test live-analyze enable must be true",
     )
-    assert test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_SEGMENT_WINDOW") == "5"
-    assert test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS") == "5000"
+    require(
+        test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL")
+        == "http://meeting-ai-service:8080",
+        "test live-analyze URL must use the canonical bridge Service",
+    )
+    require(
+        test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_SEGMENT_WINDOW") == "5",
+        "test live-analyze segment window must be 5",
+    )
+    require(
+        test_data.get("AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS") == "5000",
+        "test live-analyze timeout must be 5000ms",
+    )
+    require(
+        test_config.get("metadata", {})
+        .get("annotations", {})
+        .get("argocd.argoproj.io/sync-wave")
+        == "17",
+        "test audio-gateway ConfigMap must sync at wave 17",
+    )
 
     deployment = find_exactly_one(
         test_docs, "Deployment", DEPLOYMENT_NAME, TEST_NAMESPACE
@@ -109,21 +126,80 @@ def main() -> int:
         .get("metadata", {})
         .get("annotations", {})
     )
-    assert (
+    require(
         annotations.get("audio-gateway.acik.com/live-analyze-enable-rev")
-        == "2026-07-22-244-enable-v1"
+        == "2026-07-22-244-enable-v1",
+        "audio-gateway pod template must carry the live-analyze rollout revision",
+    )
+    require(
+        deployment.get("metadata", {})
+        .get("annotations", {})
+        .get("argocd.argoproj.io/sync-wave")
+        == "18",
+        "audio-gateway Deployment must sync after config and policy at wave 18",
     )
 
     policy = find_exactly_one(test_docs, "NetworkPolicy", POLICY_NAME, TEST_NAMESPACE)
-    assert policy.get("spec", {}).get("podSelector", {}).get("matchLabels", {}).get(
-        "app.kubernetes.io/name"
-    ) == "audio-gateway"
-    assert has_egress_port(policy, "10.99.0.2/32", 8243)
-    assert has_egress_port(policy, "10.99.0.2/32", 8300)
+    expected_policy_spec = {
+        "podSelector": {"matchLabels": {"app.kubernetes.io/name": "audio-gateway"}},
+        "policyTypes": ["Egress"],
+        "egress": [
+            {
+                "to": [{"ipBlock": {"cidr": "10.99.0.2/32"}}],
+                "ports": [
+                    {"protocol": "TCP", "port": 8243},
+                    {"protocol": "TCP", "port": 8300},
+                ],
+            }
+        ],
+    }
+    require(
+        policy.get("spec") == expected_policy_spec,
+        "audio-gateway egress policy must be the exact /32 TCP 8243+8300 contract",
+    )
+    require(
+        policy.get("metadata", {})
+        .get("annotations", {})
+        .get("argocd.argoproj.io/sync-wave")
+        == "17",
+        "audio-gateway egress policy must sync at wave 17",
+    )
+
+    service = find_exactly_one(test_docs, "Service", BRIDGE_NAME, TEST_NAMESPACE)
+    service_spec = service.get("spec", {})
+    require(
+        "selector" not in service_spec, "meeting-ai bridge Service must be selectorless"
+    )
+    require(
+        service_spec.get("ports")
+        == [
+            {
+                "name": "http",
+                "port": 8080,
+                "targetPort": 8300,
+                "protocol": "TCP",
+            }
+        ],
+        "meeting-ai bridge Service must expose only TCP 8080 -> 8300",
+    )
+
+    endpoints = find_exactly_one(test_docs, "Endpoints", BRIDGE_NAME, TEST_NAMESPACE)
+    require(
+        endpoints.get("subsets")
+        == [
+            {
+                "addresses": [{"ip": "10.99.0.2"}],
+                "ports": [{"name": "http", "port": 8300, "protocol": "TCP"}],
+            }
+        ],
+        "meeting-ai bridge Endpoints must contain only 10.99.0.2:8300/TCP",
+    )
 
     assert_absent(prod_docs, "ConfigMap", CONFIG_NAME, PROD_NAMESPACE)
     assert_absent(prod_docs, "Deployment", DEPLOYMENT_NAME, PROD_NAMESPACE)
     assert_absent(prod_docs, "NetworkPolicy", POLICY_NAME, PROD_NAMESPACE)
+    assert_absent(prod_docs, "Service", BRIDGE_NAME, PROD_NAMESPACE)
+    assert_absent(prod_docs, "Endpoints", BRIDGE_NAME, PROD_NAMESPACE)
     return 0
 
 
