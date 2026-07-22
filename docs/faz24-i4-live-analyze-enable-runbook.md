@@ -4,7 +4,7 @@
 **Prerequisite**: meeting-ai runtime reachable on the target cluster (see
 `docs/faz24-meeting-ai-host-deploy-runbook.md`)
 **Blast radius**: single service (audio-gateway); no cross-service secrets;
-no NetworkPolicy scope change.
+test-only egress is limited to `10.99.0.2/32` TCP `8300`.
 **Reversible**: yes — flip enabled back to `false` + rollout restart.
 
 ---
@@ -38,11 +38,10 @@ kubectl --context $CTX -n $NS exec deploy/audio-gateway -- \
   env | grep AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE
 # → 4 keys; ENABLED=false, BASE_URL=""
 
-# 3. Target meeting-ai is reachable from a network peer of audio-gateway.
-kubectl --context $CTX -n $NS run mai-preflight --rm -it --image=curlimages/curl:8.4.0 \
-  --restart=Never -- \
-  -sS -o /dev/null -w 'HTTP %{http_code}\n' \
-      -m 5 http://meeting-ai-service:8080/health
+# 3. Target meeting-ai is reachable from the actual audio-gateway network identity.
+kubectl --context $CTX -n $NS exec deploy/audio-gateway -- \
+  curl -sS -o /dev/null -w 'HTTP %{http_code}\n' \
+    -m 5 http://meeting-ai-service:8080/health
 # → expect HTTP 200 (or HTTP 401 if auth-required — a routable-but-guarded
 #   endpoint is still preflight-passing; a connect/timeout error is NOT)
 ```

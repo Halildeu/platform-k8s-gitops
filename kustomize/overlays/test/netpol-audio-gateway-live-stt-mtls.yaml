@@ -1,5 +1,5 @@
-# Faz 24 #182/#198 — audio-gateway direct-STT app-mTLS egress to platform-ai.
-# Narrow test-only allow: live-stt Denetim WireGuard endpoint, no generic 8243.
+# Faz 24 #182/#198/#244 — audio-gateway egress to platform-ai.
+# Narrow test-only allow: live-stt mTLS and meeting-ai on the Denetim WG host.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -22,3 +22,5 @@ spec:
       ports:
         - protocol: TCP
           port: 8243
+        - protocol: TCP
+          port: 8300
