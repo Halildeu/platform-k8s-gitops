@@ -612,10 +612,26 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 
 ### 6.5.6 Acceptance — DUAL receipt (continue:true; SMTP-only per user decision 2026-05-24 Slack DEFER)
 
-- **SMTP receipt**: ops mail group (`notify-ops@acik.com`) inbox'ında
-  `[D43 PROD] NotifyServiceDown` subject'li email + alert labels
-  (Cluster=prod, outage_fallback=true, bypass_orchestrator=true).
+- **Source target**: shared mailbox `ai@acik.com` yalnız desired-state alıcısıdır;
+  production apply ayrı ve açık insan onayı gerektirir. Apply + aşağıdaki
+  receipt zinciri görülmeden bu adres canlı/functional sayılmaz.
+- **Firing SMTP receipt**: aynı inbox'ta `[D43 PROD] NotifyServiceDown`
+  subject'li email + alert labels (Cluster=prod, outage_fallback=true,
+  bypass_orchestrator=true).
+- **No-NDR evidence**: synthetic firing gönderiminden sonra `ai@acik.com`
+  mailbox'ında hedef alıcıya ait Exchange NDR/bounce oluşmaz.
+- **Recovery SMTP receipt**: orchestrator tekrar Ready olduktan ve alarm
+  resolved olduktan sonra `send_resolved: true` bildirimi aynı inbox'a ulaşır.
 - **GitHub Issue (alarm-receiver-bridge P1 evidence)**: Halildeu/platform-k8s-gitops repo'sunda yeni issue (alertmanager-bridge dedupe: alertname+namespace tek issue açar; recovery'de comment + close).
+
+**#2796 apply/rollback sınırı:** PR merge yalnız source truth'u değiştirir ve
+production mutation değildir. Prod Helm/GitOps apply için insan onayı gerekir.
+Firing receipt, no-NDR, recovery receipt veya bridge kanıtlarından biri düşerse
+delivery functional sayılmaz; doğrudan cluster edit yapılmaz. Operatör ya
+doğrulanmış alternatif alıcıyı yeni reviewed PR ile seçer ya da bu recipient
+commit'ini reviewed revert PR + insan onaylı prod re-sync ile geri alır. Bilinen
+geçersiz eski alıcıya dönüş SMTP açığını gidermediğinden P0 issue açık kalır;
+mevcut `alarm-receiver-bridge` sibling route'u korunur.
 
 **Historical** (pre-2026-05-24 Slack DEFER): TRIPLE receipt included Slack `#alerts-d43-drill` channel message. Removed per user decision 2026-05-24 ("slack kullanmıyoruz. sonrasınd agelirse yapılacak"). DUAL receipt (SMTP + GitHub Issue bridge) is current v1 acceptance gate. Future Slack reactivation atomic with §2.1 active config re-add + Vault seed + drill rerun in same PR; cascade re-add to TRIPLE receipt acceptance dili.
 
