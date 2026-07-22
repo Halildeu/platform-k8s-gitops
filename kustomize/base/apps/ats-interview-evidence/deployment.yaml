@@ -69,8 +69,9 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            periodSeconds: 5
-            failureThreshold: 36   # Flyway + cold-boot penceresi ~3 dk
+            periodSeconds: 10
+            failureThreshold: 60   # 600 sn bütçe; ölçülen boot 114 sn (2026-07-23)
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /healthz

@@ -99,17 +99,23 @@ spec:
           # startupProbe gate). Pre-fix the deployment used non-existent
           # `/healthz/live` and `/healthz/ready` paths (skeleton-era artifact)
           # AND lacked a startupProbe, so liveness ran the 45s grace clock
-          # against a Spring Boot startup that takes 50-60 seconds; every
+          # against a Spring Boot startup that then took 50-60 seconds; every
           # restart was killed at the 45-second mark before the management
           # server could serve. 11-day silent CrashLoopBackOff (paired with
           # the eso-runtime missing-policy bug; once ESO sync started working,
           # the probe timing bug surfaced).
+          # 2026-07-23: the same class of bug returned from the other side --
+          # the service now boots in 243s, so the 150s budget SIGKILLed it
+          # (exit 137) before management:8081 bound. Budget is now measured,
+          # not assumed, and tests/deploy/test_startup_probe_budget_contract.py
+          # fails the build if it is lowered again.
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
               port: management
-            failureThreshold: 30
-            periodSeconds: 5        # 30*5 = 150 sn startup toleransı
+            failureThreshold: 60
+            periodSeconds: 10        # 60*10 = 600 sn bütçe; ölçülen worst-case boot 243 sn (2026-07-23)
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
