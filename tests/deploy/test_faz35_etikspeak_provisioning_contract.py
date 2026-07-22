@@ -1622,14 +1622,24 @@ spec:
         ):
             self.assertIn(required, self.image_attestation_lib)
 
-    def test_public_test_hosts_are_gated_and_redirect_to_https(self):
+    def test_public_test_hosts_redirect_to_https_with_rate_limit(self):
+        # ES-313 (2026-07-21, owner explicit "riskleri anladım hemen aç"):
+        # sentetik-test Basic Auth gate KALDIRILDI. Contract artık kanalın
+        # anonim erişime açık olduğunu + anti-abuse ingress rate-limit
+        # enforce edildiğini garanti eder. auth-basic annotation'ları
+        # RE-INTRODUCTION regression'ı için negative-assertion ile korunur.
         for ingress in (self.public_api_ingress, self.public_ui_ingress):
             self.assertIn('nginx.ingress.kubernetes.io/force-ssl-redirect: "true"', ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/auth-type: basic", ingress)
-            self.assertIn(
+            # ES-313 gate kaldırıldı — re-introduction guard
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-type: basic", ingress)
+            self.assertNotIn(
                 "nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate",
                 ingress,
             )
+            # ES-313 minimum defense — ingress-level rate-limit ZORUNLU
+            # (ES-306 residual backend rate-limit gelmeden önce koruma)
+            self.assertIn("nginx.ingress.kubernetes.io/limit-rps:", ingress)
+            self.assertIn("nginx.ingress.kubernetes.io/limit-connections:", ingress)
         self.assertIn(
             "nginx.ingress.kubernetes.io/proxy-set-headers: "
             "platform-test/etik-speak-public-upstream-headers",
