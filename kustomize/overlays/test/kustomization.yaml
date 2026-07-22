@@ -4415,9 +4415,9 @@ images:
     # Build run 29858875032 testai job 88730140487.
     # Image push: ghcr.io/halildeu/platform-web-frontend-testai:sha-a611aa0@
     # sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a
-    # sourceRevision: a611aa0a24cb19e613fe56ddf95a72b4a464b15e
-    newTag: sha-a611aa0
-    digest: sha256:ccabdfea9f4e023988d97f054f5b36e5034a91a8a66b998f35cd1857813d643a
+    # sourceRevision: 120daee774d3c727b0419e5034aae98f562a1692
+    newTag: sha-120daee
+    digest: sha256:d77892f2add88d44842ec408afffa5307404f2f9e46a7f778c307dd21c57878b
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
