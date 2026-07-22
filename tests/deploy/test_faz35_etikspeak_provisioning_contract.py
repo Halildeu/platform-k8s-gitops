@@ -1622,14 +1622,30 @@ spec:
         ):
             self.assertIn(required, self.image_attestation_lib)
 
-    def test_public_test_hosts_are_gated_and_redirect_to_https(self):
+    def test_public_test_hosts_are_open_rate_limited_and_redirect_to_https(self):
         for ingress in (self.public_api_ingress, self.public_ui_ingress):
             self.assertIn('nginx.ingress.kubernetes.io/force-ssl-redirect: "true"', ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/auth-type: basic", ingress)
-            self.assertIn(
-                "nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate",
-                ingress,
-            )
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-type:", ingress)
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-secret:", ingress)
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-realm:", ingress)
+            self.assertIn("nginx.ingress.kubernetes.io/limit-rps:", ingress)
+            self.assertIn("nginx.ingress.kubernetes.io/limit-rpm:", ingress)
+            self.assertIn("nginx.ingress.kubernetes.io/limit-connections:", ingress)
+            self.assertIn("nginx.ingress.kubernetes.io/limit-burst-multiplier:", ingress)
+        for expected in (
+            'nginx.ingress.kubernetes.io/limit-rps: "3"',
+            'nginx.ingress.kubernetes.io/limit-rpm: "60"',
+            'nginx.ingress.kubernetes.io/limit-connections: "10"',
+            'nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"',
+        ):
+            self.assertIn(expected, self.public_api_ingress)
+        for expected in (
+            'nginx.ingress.kubernetes.io/limit-rps: "10"',
+            'nginx.ingress.kubernetes.io/limit-rpm: "300"',
+            'nginx.ingress.kubernetes.io/limit-connections: "20"',
+            'nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"',
+        ):
+            self.assertIn(expected, self.public_ui_ingress)
         self.assertIn(
             "nginx.ingress.kubernetes.io/proxy-set-headers: "
             "platform-test/etik-speak-public-upstream-headers",
