@@ -24,7 +24,7 @@
 | **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 + impersonation 201 pending** (persona seed — ayrı fixture paketi) |
 | A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
 | A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
-| A3 | redirectUri + webOrigins narrowing | sonraki PR |
+| **A3** | redirectUri + webOrigins narrowing — [`narrow-frontend-client.sh`](../../../scripts/keycloak/narrow-frontend-client.sh) | ✅ **LIVE** (2026-07-23) — `frontend.webOrigins` `["+",…,localhost]`→`["https://testai.acik.com"]` (açık CORS `+` kapatıldı), `redirectUris`→`["https://testai.acik.com/*"]` (localhost çıkarıldı); `frontend-local` dev client oluşturuldu. Canlı kanıt: prod authorize 200 + CORS ACAO=testai + `frontend`+localhost redirect **HTTP 400** + `frontend-local`+localhost 200 + browser KC login formu render (invalid-redirect YOK, console temiz). |
 | B | Conditional-OTP privileged (admin/manager) | ayrı flow PR |
 
 Realm-level slice'lar `harden-realm-security.sh` `DESIRED_JSON`'a eklenir; **client-level** işler ayrı
