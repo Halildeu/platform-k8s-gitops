@@ -679,6 +679,10 @@ fi
         self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
         self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
         self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
+        self.assertIn(
+            "candidate submission is not bound to the confirmed resume draft",
+            self.fullats_browser,
+        )
         self.assertIn("structured recruiter evaluation HTTP", self.fullats_browser)
         self.assertIn(
             "['recruiter', 'POST', `/api/ats/v1/recruiter/applications/"

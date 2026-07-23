@@ -431,12 +431,11 @@ try {
     'email',
     'experience',
     'fullName',
-    'linkedIn',
-    'note',
     'noticeAcceptedAt',
     'noticeVersion',
     'phone',
-    'portfolio',
+    'resumeDraftVersion',
+    'resumeImportId',
     'skills',
     'summary',
   ].sort();
@@ -445,6 +444,13 @@ try {
   }
   if (submittedPayload.fullName !== editedCandidateName || submittedPayload.email !== candidateEmail) {
     throw new Error('candidate edited PDF fields were not submitted');
+  }
+  if (
+    !/^ri_[A-Za-z0-9_-]{24}$/u.test(submittedPayload.resumeImportId ?? '') ||
+    !Number.isSafeInteger(submittedPayload.resumeDraftVersion) ||
+    submittedPayload.resumeDraftVersion < 1
+  ) {
+    throw new Error('candidate submission is not bound to the confirmed resume draft');
   }
   const serializedSubmission = JSON.stringify(submittedPayload);
   if (serializedSubmission.includes('%PDF') || serializedSubmission.includes('fullats-synthetic-resume.pdf')) {
