@@ -367,7 +367,12 @@ try {
   await applyResumeButton.click({ timeout: 30_000 });
   const resumeMeta = candidatePage.getByTestId('candidate-resume-meta');
   await waitVisible(resumeMeta, 'candidate PDF import result');
-  if (!/CV’den dolduruldu/u.test((await resumeMeta.textContent()) ?? '')) {
+  const resumeMetaText = (await resumeMeta.textContent()) ?? '';
+  const importedFieldCount = Number.parseInt(
+    resumeMetaText.match(/CV’den dolduruldu:\s*(\d+)\s*alan/u)?.[1] ?? '0',
+    10,
+  );
+  if (!Number.isSafeInteger(importedFieldCount) || importedFieldCount < 2) {
     throw new Error('candidate PDF did not autofill the application form');
   }
   if ((await candidatePage.getByTestId('candidate-email').inputValue()) !== candidateEmail) {
@@ -378,7 +383,23 @@ try {
   }
   const editedCandidateName = `${candidateName} Düzenlendi`;
   await candidatePage.getByTestId('candidate-fullName').fill(editedCandidateName);
+  const fillIfEmpty = async (testId, value) => {
+    const field = candidatePage.getByTestId(testId);
+    if ((await field.inputValue()).trim() === '') await field.fill(value);
+  };
+  await fillIfEmpty('candidate-phone', '+90 555 000 00 00');
+  await fillIfEmpty('candidate-city', 'İstanbul');
   await candidatePage.getByRole('button', { name: 'Deneyim bilgilerime devam et' }).click();
+  await fillIfEmpty(
+    'candidate-summary',
+    'Müşteri ihtiyacını çalışan ürün yolculuğuna dönüştüren sentetik aday.',
+  );
+  await fillIfEmpty('candidate-experience', 'Ürün Uzmanı · Örnek Teknoloji · 2022–2026');
+  await fillIfEmpty(
+    'candidate-education',
+    'Yönetim Bilişim Sistemleri · Örnek Üniversitesi · 2020',
+  );
+  await fillIfEmpty('candidate-skills', 'Ürün keşfi, kullanıcı araştırması, analitik');
   await candidatePage.getByRole('button', { name: 'Başvuruyu kontrol et' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-preview'), 'candidate preview');
   await waitVisible(
