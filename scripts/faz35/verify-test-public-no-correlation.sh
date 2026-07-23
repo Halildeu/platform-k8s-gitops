@@ -15,7 +15,7 @@ ROOT_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
 ACTIVATION_DIR="$ROOT_DIR/kustomize/overlays/test/activation/etik-speak"
 EDGE_CONFIG="$ROOT_DIR/host-compose/web-nginx/default.conf"
 
-for command_name in ssh kubectl grep awk sed mktemp date openssl; do
+for command_name in ssh kubectl curl dig grep awk sed mktemp date openssl; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "FATAL: required command is unavailable: $command_name" >&2
     exit 2
@@ -23,8 +23,10 @@ for command_name in ssh kubectl grep awk sed mktemp date openssl; do
 done
 
 rendered_file=$(mktemp)
-trap 'rm -f "$rendered_file"' EXIT
+request_tmp_dir=$(mktemp -d)
+trap 'rm -f "$rendered_file"; rm -rf "$request_tmp_dir"' EXIT
 chmod 600 "$rendered_file"
+chmod 700 "$request_tmp_dir"
 kubectl kustomize "$ACTIVATION_DIR" >"$rendered_file"
 
 for ingress_name in etik-speak-public-ui etik-speak-public-api; do
@@ -118,6 +120,78 @@ sentinel_referrer="https://synthetic.invalid/es106-${sentinel_suffix}"
 sentinel_forwarded="198.51.100.42"
 sentinel_cookie="suite_session=ES106-SYNTHETIC-${sentinel_suffix}"
 started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# The corporate split-DNS zone may intentionally shadow public acik.com and
+# omit these reporter records. Resolve the authoritative public A record
+# explicitly, then keep the original hostname in SNI/Host via curl --resolve.
+public_addresses=()
+for host in "${EXPECTED_HOSTS[@]}"; do
+  public_ip=$(
+    dig +short @1.1.1.1 A "$host" \
+      | awk '/^([0-9]{1,3}\.){3}[0-9]{1,3}$/ {print}'
+  )
+  [ "$(printf '%s\n' "$public_ip" | awk 'NF {count++} END {print count+0}')" -eq 1 ] || {
+    echo "FATAL: public reporter host does not have exactly one public A record" >&2
+    exit 8
+  }
+  public_addresses+=("$public_ip")
+
+  response_headers="$request_tmp_dir/${host}.headers"
+  http_code=$(
+    curl --silent --show-error --output /dev/null --dump-header "$response_headers" \
+      --write-out '%{http_code}' \
+      --resolve "${host}:443:${public_ip}" \
+      --user-agent "$sentinel_ua" \
+      --referer "$sentinel_referrer" \
+      --header "X-Forwarded-For: $sentinel_forwarded" \
+      --header "X-Real-IP: $sentinel_forwarded" \
+      --header "Forwarded: for=$sentinel_forwarded" \
+      --header "Cookie: $sentinel_cookie" \
+      "https://$host/"
+  )
+  case "$http_code" in
+    200|204|301|302|307|308) ;;
+    *)
+      echo "FATAL: public reporter host is unavailable (HTTP $http_code)" >&2
+      exit 9
+      ;;
+  esac
+  if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$response_headers"; then
+    echo "FATAL: Domain=.acik.com cookie escaped the public boundary" >&2
+    exit 10
+  fi
+  if grep -Ei '^Set-Cookie:' "$response_headers" \
+    | grep -Eiv '^Set-Cookie:[[:space:]]*__Host-etik_mailbox=' \
+    | grep -q .; then
+    echo "FATAL: non-mailbox cookie escaped the public boundary" >&2
+    exit 11
+  fi
+done
+
+# Exercise the public API denial path without creating a case or a real secret.
+api_headers="$request_tmp_dir/public-api.headers"
+api_code=$(
+  curl --silent --show-error --output /dev/null --dump-header "$api_headers" \
+    --write-out '%{http_code}' \
+    --resolve "${EXPECTED_HOSTS[0]}:443:${public_addresses[0]}" \
+    --request POST --header 'Content-Type: application/json' \
+    --user-agent "$sentinel_ua" --referer "$sentinel_referrer" \
+    --header "X-Forwarded-For: $sentinel_forwarded" \
+    --header "Cookie: $sentinel_cookie" \
+    --data '{"synthetic":"es106-negative-control"}' \
+    "https://${EXPECTED_HOSTS[0]}/api/v1/public/ethics/reports"
+)
+case "$api_code" in
+  400|401|403|404|405|409|415|422) ;;
+  *)
+    echo "FATAL: synthetic public API negative control was not denied (HTTP $api_code)" >&2
+    exit 12
+    ;;
+esac
+if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$api_headers"; then
+  echo "FATAL: Domain=.acik.com API cookie escaped the public boundary" >&2
+  exit 13
+fi
 
 ssh "$SSH_TARGET" bash -s -- \
   "$KUBE_CONTEXT" "$KUBE_NS" "$INGRESS_NS" "$EDGE_CONTAINER" \
@@ -324,62 +398,6 @@ do
   }
 done
 
-for host in "${hosts[@]}"; do
-  response_headers="$tmp_dir/${host}.headers"
-  http_code=$(
-    curl --silent --show-error --output /dev/null --dump-header "$response_headers" \
-      --write-out '%{http_code}' \
-      --user-agent "$sentinel_ua" \
-      --referer "$sentinel_referrer" \
-      --header "X-Forwarded-For: $sentinel_forwarded" \
-      --header "X-Real-IP: $sentinel_forwarded" \
-      --header "Forwarded: for=$sentinel_forwarded" \
-      --header "Cookie: $sentinel_cookie" \
-      "https://$host/"
-  )
-  case "$http_code" in
-    200|204|301|302|307|308) ;;
-    *)
-      echo "FATAL: public reporter host is unavailable (HTTP $http_code)" >&2
-      exit 24
-      ;;
-  esac
-  if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$response_headers"; then
-    echo "FATAL: Domain=.acik.com cookie escaped the public boundary" >&2
-    exit 25
-  fi
-  if grep -Ei '^Set-Cookie:' "$response_headers" \
-    | grep -Eiv '^Set-Cookie:[[:space:]]*__Host-etik_mailbox=' \
-    | grep -q .; then
-    echo "FATAL: non-mailbox cookie escaped the public boundary" >&2
-    exit 26
-  fi
-done
-
-# Exercise the public API denial path without creating a case or a real secret.
-api_headers="$tmp_dir/public-api.headers"
-api_code=$(
-  curl --silent --show-error --output /dev/null --dump-header "$api_headers" \
-    --write-out '%{http_code}' \
-    --request POST --header 'Content-Type: application/json' \
-    --user-agent "$sentinel_ua" --referer "$sentinel_referrer" \
-    --header "X-Forwarded-For: $sentinel_forwarded" \
-    --header "Cookie: $sentinel_cookie" \
-    --data '{"synthetic":"es106-negative-control"}' \
-    "https://${hosts[0]}/api/v1/public/ethics/reports"
-)
-case "$api_code" in
-  400|401|403|404|405|409|415|422) ;;
-  *)
-    echo "FATAL: synthetic public API negative control was not denied (HTTP $api_code)" >&2
-    exit 27
-    ;;
-esac
-if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$api_headers"; then
-  echo "FATAL: Domain=.acik.com API cookie escaped the public boundary" >&2
-  exit 28
-fi
-
 # Keep raw logs inside the mode-700 temporary directory. Only a leak count may
 # leave this verifier.
 docker logs "$edge_container" --since "$started_at" \
@@ -415,5 +433,6 @@ echo "LIVE_SUITE_COOKIE_FILTER=true"
 echo "LIVE_UPSTREAM_CLIENT_IDENTITY_STRIPPED=true"
 echo "PUBLIC_PARENT_DOMAIN_COOKIE_ABSENT=true"
 echo "SYNTHETIC_SENTINEL_LEAK_COUNT=0"
-echo "NO_CORRELATION_ACCEPTED=true"
 REMOTE
+echo "PUBLIC_DNS_A_RECORD_VERIFIED=true"
+echo "NO_CORRELATION_ACCEPTED=true"
