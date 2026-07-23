@@ -553,8 +553,11 @@ try {
   await candidateLink.click();
   await waitVisible(candidatePage.getByTestId('candidate-portal-page'), 'candidate portal');
   await waitVisible(candidatePage.getByRole('heading', { name: 'Başvuru yolculuğum' }), 'candidate journey');
-  const submittedStep = candidatePage.getByRole('listitem').filter({ hasText: 'Başvuru alındı' });
-  await waitVisible(submittedStep.getByText('Şimdi'), 'submitted current state');
+  const submittedStep = candidatePage.getByRole('heading', {
+    name: 'Başvuru alındı',
+    exact: true,
+  });
+  await waitVisible(submittedStep, 'submitted current state');
   await assertAxeClean(candidatePage, 'candidate-portal-mobile');
   await assertNoHorizontalOverflow(candidatePage, 'candidate-portal-mobile');
 
@@ -582,8 +585,11 @@ try {
   await reviewPanel.getByRole('button', { name: 'İnsan incelemesini başlat' }).click();
   await waitVisible(reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }), 'under review transition');
   const refreshStatusButton = candidatePage.getByRole('button', { name: 'Durumu yenile' });
-  const reviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'İnsan incelemesinde' });
-  await refreshUntilVisible(refreshStatusButton, reviewStep.getByText('Şimdi'), 'candidate sees under review');
+  const reviewStep = candidatePage.getByRole('heading', {
+    name: 'İnsan incelemesinde',
+    exact: true,
+  });
+  await refreshUntilVisible(refreshStatusButton, reviewStep, 'candidate sees under review');
 
   await reviewPanel.getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' }).click();
   const scorecard = reviewPanel.getByRole('form', { name: 'Yapılandırılmış insan scorecard’ı' });
@@ -638,8 +644,11 @@ try {
   }
   await assertAxeClean(recruiterPage, 'recruiter-workspace-terminal-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-terminal-desktop');
-  const interviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'Mülakat planlaması' });
-  await refreshUntilVisible(refreshStatusButton, interviewStep.getByText('Şimdi'), 'candidate sees interview pending');
+  const interviewStep = candidatePage.getByRole('heading', {
+    name: 'Mülakat planlaması',
+    exact: true,
+  });
+  await refreshUntilVisible(refreshStatusButton, interviewStep, 'candidate sees interview pending');
 
   await recruiterPage.getByRole('button', { name: 'Aday detayını kapat' }).click();
   await recruiterPage.getByRole('tab', { name: 'İlanlar' }).click();
@@ -669,7 +678,7 @@ try {
   await assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED');
   await refreshUntilVisible(
     refreshStatusButton,
-    interviewStep.getByText('Şimdi'),
+    interviewStep,
     'existing candidate receipt survives pause',
   );
 
@@ -705,7 +714,7 @@ try {
   await assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'CLOSED');
   await refreshUntilVisible(
     refreshStatusButton,
-    interviewStep.getByText('Şimdi'),
+    interviewStep,
     'existing candidate receipt survives close',
   );
   await assertAxeClean(candidatePage, 'candidate-portal-after-job-close-mobile');
