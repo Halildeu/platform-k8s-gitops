@@ -1736,6 +1736,7 @@ spec:
             "LIVE_HOST_EDGE_ACCESS_LOG_DISABLED=true",
             "LIVE_HOST_EDGE_VOLATILE_RATE_LIMIT=true",
             "LIVE_SUITE_COOKIE_FILTER=true",
+            "server_name[[:space:]]+etik\\.acik\\.com",
             "synthetic sentinel leaked",
             "Domain=.acik.com",
             "NO_CORRELATION_ACCEPTED=true",
@@ -1750,6 +1751,10 @@ spec:
             "ai.acik.com",
         ):
             self.assertNotIn(forbidden, self.no_correlation_verifier)
+        self.assertNotIn(
+            "sed -n '/# Faz 35 ES-106/,$p'",
+            self.no_correlation_verifier,
+        )
         self.assertIn(
             "SSH_TARGET=staging-sw "
             "./scripts/faz35/verify-test-public-no-correlation.sh",
