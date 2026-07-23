@@ -1,9 +1,10 @@
 #!/bin/bash
 # Read-only Faz 35 Etik Speak test activation preflight.
-# Runs from a reviewed local GitOps checkout and inspects staging-sw over SSH.
+# Runs from a reviewed local GitOps checkout and inspects the authoritative
+# aiserver runtime over SSH.
 set -euo pipefail
 
-SSH_TARGET="${SSH_TARGET:-halil@staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiserver}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 PREFLIGHT_STAGE="${PREFLIGHT_STAGE:-activation}"
@@ -25,7 +26,6 @@ EXPECTED_MODEL_JSON="$REPO_ROOT/bootstrap/openfga/faz35-etik-speak/authorization
 MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SHA256.json"
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
-FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 IMAGE_SET_DIR="$REPO_ROOT/docs/faz-35-evidence/image-set"
 image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print | wc -l | tr -d ' ')
 [ "$image_set_count" -eq 1 ] || {
@@ -34,8 +34,8 @@ image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -prin
 }
 IMAGE_SET=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print)
 
-[ "$SSH_TARGET" = "halil@staging-sw" ] || {
-  echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
+[ "$SSH_TARGET" = "aiserver" ] || {
+  echo "FATAL: Faz 35 preflight is pinned to the aiserver SSH alias" >&2
   exit 1
 }
 [ "$KUBE_CONTEXT" = "k3d-test" ] && [ "$KUBE_NS" = "platform-test" ] || {
@@ -263,10 +263,39 @@ grep -Fq 'name: vault-platform-gitops' "$rendered" && {
   echo "FATAL: Etik Speak must not use the broad shared ClusterSecretStore" >&2
   exit 1
 }
-[ "$(grep -c 'nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate' "$rendered")" -eq 2 ] || {
-  echo "FATAL: both public ingresses must use the synthetic test access gate" >&2
+if grep -Fq 'nginx.ingress.kubernetes.io/auth-' "$rendered"; then
+  echo "FATAL: public reporter ingresses must not retain the removed Basic Auth gate" >&2
   exit 1
-}
+fi
+for rate_limit_annotation in limit-rps limit-rpm limit-connections limit-burst-multiplier; do
+  public_rate_limit_count=$(awk -v annotation="nginx.ingress.kubernetes.io/${rate_limit_annotation}:" '
+    function finish_document() {
+      if (kind == "Ingress" &&
+          (name == "etik-speak-public-api" || name == "etik-speak-public-ui") &&
+          has_annotation) {
+        count++
+      }
+    }
+    /^---$/ {
+      finish_document()
+      kind = ""
+      name = ""
+      has_annotation = 0
+      next
+    }
+    /^kind: / { kind = $2 }
+    /^  name: / { name = $2 }
+    index($0, annotation) { has_annotation = 1 }
+    END {
+      finish_document()
+      print count + 0
+    }
+  ' "$rendered")
+  [ "$public_rate_limit_count" -eq 2 ] || {
+    echo "FATAL: both public reporter ingresses must carry ${rate_limit_annotation}" >&2
+    exit 1
+  }
+done
 [ "$(grep -c 'nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers' "$rendered")" -eq 1 ] || {
   echo "FATAL: public API ingress must bind the reviewed upstream-header contract" >&2
   exit 1
@@ -401,15 +430,10 @@ else
   root_state=not-included
 fi
 
-root_frontend_pin=$(awk '
-  $1 == "newName:" && $2 == "ghcr.io/halildeu/platform-web-frontend-testai" { found=1; next }
-  found && $1 == "newTag:" { tag=$2 }
-  found && $1 == "digest:" { print tag "|" $2; exit }
-' "$ROOT_OVERLAY")
-[ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
-  echo "FATAL: Faz 35 must not mutate the shared test frontend pin" >&2
+if grep -R -Fq 'platform-web-frontend-testai' "$ACTIVATION"; then
+  echo "FATAL: Faz 35 activation must not reference the shared test frontend" >&2
   exit 1
-}
+fi
 if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_root_activation_binding "$ROOT_OVERLAY"
   kustomize build "$REPO_ROOT/kustomize/overlays/test" >"$rendered_root"
@@ -418,7 +442,7 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-manager "$expected_manager"
 fi
 
-# Variables in this single-quoted program intentionally expand on staging-sw.
+# Variables in this single-quoted program intentionally expand on aiserver.
 # shellcheck disable=SC2016
 live_activation_resources=$(remote '
   set -eu

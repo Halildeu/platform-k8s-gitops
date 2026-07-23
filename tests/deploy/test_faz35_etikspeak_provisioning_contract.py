@@ -1321,7 +1321,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("public gate password fails the canonical length/format policy", self.pg_vault)
 
     def test_preflight_is_read_only_and_binds_live_dependencies(self):
-        self.assertIn('SSH_TARGET" = "halil@staging-sw', self.preflight)
+        self.assertIn('SSH_TARGET" = "aiserver', self.preflight)
+        self.assertNotIn("staging-sw", self.preflight)
         self.assertIn('KUBE_CONTEXT" = "k3d-test', self.preflight)
         self.assertIn('KUBE_NS" = "platform-test', self.preflight)
         for required in (
@@ -1347,10 +1348,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "check_object_headroom secrets 2 2",
             "check_object_headroom pods 6 2",
             "activation must render exactly two ExternalSecrets",
-            "both public ingresses must use the synthetic test access gate",
+            "public reporter ingresses must not retain the removed Basic Auth gate",
+            "both public reporter ingresses must carry",
             "one-year HSTS header",
             "foundation provisioning refuses an included Etik Speak activation root",
-            "Faz 35 must not mutate the shared test frontend pin",
+            "Faz 35 activation must not reference the shared test frontend",
             "foundation provisioning refuses existing or partial Etik Speak activation resources",
             "secretstore/etik-speak-vault",
             "secret/ethics-service-secrets",
@@ -1376,6 +1378,15 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.preflight,
             r"vault\s+(kv\s+)?(put|patch|delete|write)",
         )
+
+    def test_synthetic_persona_secrets_are_pinned_to_aiserver_secret_root(self):
+        secret_root = "/srv/platform/secrets/faz35-test"
+        verifier = (
+            ROOT / "scripts/faz35/verify-test-openfga-authz.sh"
+        ).read_text()
+        for script in (self.keycloak, self.openfga, self.entitlement, verifier):
+            self.assertIn(secret_root, script)
+            self.assertNotIn("/home/halil/bootstrap-drill/ethics-manager", script)
 
     def test_activation_artifact_helpers_reject_stale_duplicate_and_unbound_state(self):
         manifest = """apiVersion: apps/v1
@@ -1661,7 +1672,10 @@ spec:
         self.assertIn("path: /ethic", self.manager_ui_ingress)
         self.assertIn("name: etik-speak-manager", self.manager_ui_ingress)
         self.assertIn("name: etik-speak-manager", self.netpol)
-        self.assertIn("Faz 35 must not mutate the shared test frontend pin", self.preflight)
+        self.assertIn(
+            "Faz 35 activation must not reference the shared test frontend",
+            self.preflight,
+        )
 
     def test_manager_route_matches_canonical_isolated_auth_contract(self):
         for expected in (
