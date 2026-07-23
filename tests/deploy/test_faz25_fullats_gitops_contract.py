@@ -399,7 +399,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             "'recruiter-workspace-terminal-desktop')"
         )
         candidate_terminal_refresh = self.fullats_browser.index(
-            "const interviewStep = candidatePage.getByRole('listitem')"
+            "const interviewStep = candidatePage.getByRole('heading'"
         )
         self.assertLess(initial_scan, terminal_response_wait)
         self.assertLess(terminal_response_wait, terminal_transition_click)
@@ -679,6 +679,10 @@ fi
         self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
         self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
         self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
+        self.assertNotIn("getByText('Şimdi')", self.fullats_browser)
+        self.assertIn("name: 'Başvuru alındı'", self.fullats_browser)
+        self.assertIn("name: 'İnsan incelemesinde'", self.fullats_browser)
+        self.assertIn("name: 'Mülakat planlaması'", self.fullats_browser)
         self.assertIn(
             "candidate submission is not bound to the confirmed resume draft",
             self.fullats_browser,
