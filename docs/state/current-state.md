@@ -1,5 +1,65 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — `.53` archive-standby runtime fence (2026-07-23)
+
+Eski `staging-sw` (`10.9.10.53`) hostu dosya ve SSH yönetim erişimi için açık
+kalır; AI platformu runtime, deploy veya aktif writer hedefi değildir. Bu delta,
+aşağıdaki `.53` shutdown hazırlığını daha dar bir archive-standby modeliyle
+supersede eder. Firewall, iç/public DNS, NAT ve MSSQL yüzeyleri değiştirilmedi.
+
+Değişiklik öncesi canlı kanıt:
+
+- `.53` üzerinde `29` korunmuş container kaydı vardı; çalışan container ve
+  `restart-policy != no` sayıları ayrı ayrı `0` idi;
+- `docker.socket`, `docker.service` ve `containerd.service` active/enabled idi;
+- `22`, `2222` ve `8443` dinleyicilerinin sahibi yalnız `sshd` idi;
+- bağımsız ikinci SSH oturumu açıldı; `.15` doğrudan SNI ile
+  `ai.acik.com` ve `testai.acik.com` için HTTP `200` verdi.
+
+Uygulanan geri alınabilir fence:
+
+- root-owned `/etc/aiserver-archive/ARCHIVE_STANDBY` sentinel'i ile
+  `docker`, `containerd`, iki legacy runner, cutover/bootstrap NAT,
+  WireGuard ve k3d MASQ birimlerine fail-closed systemd koşulu eklendi;
+- `docker.socket`, `docker.service` ve `containerd.service` stop/disable
+  edildikten sonra kalıcı `masked` duruma alındı; `wg-quick@wg0.service`
+  de `masked` kaldı;
+- legacy runner, `aiserver-cutover-forward`,
+  `aiserver-bootstrap-nat`, `k3d-wg-masq` servis/timer birimleri
+  inactive/disabled ve sentinel koşullu; static drift birimi de aynı koşulu
+  taşır;
+- SSH girişinde archive-standby uyarısı gösterilir. Geri dönüş ön kontrolü
+  `/usr/local/sbin/aiserver-archive-rollback-preflight` salt-okuma ve
+  fail-closed çalışır; `.15` fence kanıtı yokken `REFUSE` verir ve kendisi
+  sentinel kaldırmaz, unit unmask/start veya DNS/NAT değişikliği yapmaz.
+
+Reboot sonrası canlı kanıt:
+
+- `.53` 2026-07-23 `14:07 +03` boot sonrasında bağımsız SSH oturumuna geri
+  geldi;
+- Docker/containerd birimleri `inactive/masked`; legacy birimler
+  `inactive`, arşiv koşulları yüklü, Docker socket listener yok ve Docker API
+  unix-socket probe sonucu `000`;
+- exact process-name taramasında `dockerd`, `containerd`, `Runner.Listener`
+  veya `wg-quick` süreci yok; dış TCP dinleyicileri yine yalnız `sshd`
+  (`22`, `2222`, `8443`);
+- reboot öncesi ve sonrası `.15` doğrudan `ai`/`testai` SNI kontrolleri HTTP
+  `200` kaldı.
+
+Rollback sınırı:
+
+- `.53` tekrar runtime/writer yapılmadan önce `.15` workload'ları durdurulur;
+  running platform container, non-`no` restart policy ve aktif platform unit
+  sayılarının `0` olduğunu gösteren en fazla 15 dakikalık root-owned evidence
+  üretilir;
+- rollback preflight `PASS` verdikten sonra attended operatör işlemiyle sentinel
+  kaldırılır, `systemctl daemon-reload` çalıştırılır ve yalnız gereken birimler
+  unmask/enable edilir. `.53` tek writer olarak doğrulanmadan DNS/NAT geri
+  çevrilmez;
+- DNS TTL/cache nedeniyle eski cevapların geçici görülebileceği ayrıca
+  kontrol edilir. `.15` ve `.53` hiçbir aşamada bağımsız aktif writer olarak
+  birlikte çalıştırılmaz.
+
 ## Live Delta — `.15` aiserver direct runtime and deploy-control cutover (2026-07-23)
 
 Bu delta, AI platformunun node yönetim adresini `10.9.10.53` olarak gösteren
