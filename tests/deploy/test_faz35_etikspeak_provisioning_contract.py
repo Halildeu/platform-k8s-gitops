@@ -1324,7 +1324,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_preflight_is_read_only_and_binds_live_dependencies(self):
         self.assertIn('SSH_TARGET" = "aiserver', self.preflight)
-        self.assertNotIn("staging-sw", self.preflight)
+        self.assertNotIn('SSH_TARGET="${SSH_TARGET:-staging-sw', self.preflight)
+        self.assertNotIn('[ "$SSH_TARGET" = "staging-sw', self.preflight)
         self.assertIn('KUBE_CONTEXT" = "k3d-test', self.preflight)
         self.assertIn('KUBE_NS" = "platform-test', self.preflight)
         for required in (
@@ -1351,7 +1352,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "check_object_headroom pods 6 2",
             "activation must render exactly two ExternalSecrets",
             "public reporter ingresses must not retain the removed Basic Auth gate",
-            "both public reporter ingresses must carry",
+            "public reporter ingress displaced edge",
+            "platform-web-nginx nginx -T",
+            "canonical host edge misses Etik Speak rate-limit policy",
+            "live host edge misses Etik Speak rate-limit policy",
+            "Etik Speak host edge access logs are not disabled",
             "one-year HSTS header",
             "foundation provisioning refuses an included Etik Speak activation root",
             "Faz 35 activation must not reference the shared test frontend",
@@ -1524,6 +1529,15 @@ spec:
             capture_output=True,
             text=True,
         ).stdout
+        self.assertNotIn("ETHICS_AUDIT_DELIVERY_ENABLED", self.service_config)
+        self.assertEqual(
+            rendered.count('ETHICS_AUDIT_DELIVERY_ENABLED: "true"'),
+            1,
+        )
+        self.assertIn(
+            'ETHICS_AUDIT_DELIVERY_ENABLED: "true"',
+            self.preflight,
+        )
         with tempfile.TemporaryDirectory() as directory:
             manifest_path = Path(directory) / "activation.yaml"
             manifest_path.write_text(rendered)
@@ -1548,6 +1562,26 @@ spec:
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0)
+
+    def test_preflight_pins_new_aiserver_identity_and_bounds_optional_jump(self):
+        for required in (
+            'SSH_TARGET="${SSH_TARGET:-aiserver}"',
+            'SSH_PROXY_JUMP="${SSH_PROXY_JUMP:-}"',
+            '""|staging-sw-legacy)',
+            '[ "$target_hostname" != "aiserver" ]',
+            "grep -qw '10.9.10.15'",
+            "SSH path does not terminate on authoritative aiserver 10.9.10.15",
+            'resolve_ip=""',
+            '--resolve "$host:443:$resolve_ip"',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.preflight)
+
+        self.assertNotIn("resolve_args", self.preflight)
+        self.assertIn(
+            "SSH_PROXY_JUMP=staging-sw-legacy",
+            self.activation_runbook,
+        )
 
     def test_semantic_gate_triggers_for_every_authoritative_external_input(self):
         for required_path in (
