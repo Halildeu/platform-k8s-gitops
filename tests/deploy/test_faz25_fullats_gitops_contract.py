@@ -712,10 +712,17 @@ fi
             self.fullats_browser_shell,
         )
         self.assertIn(
-            "recruiter role exact member snapshot mismatch",
+            "target recruiter exact role membership snapshot mismatch",
             self.fullats_browser_shell,
         )
-        self.assertIn("length == 1 and .[0].userId", self.fullats_browser_shell)
+        self.assertIn(
+            "[.[] | select(.userId == $recruiter_user_id)] | length == 1",
+            self.fullats_browser_shell,
+        )
+        self.assertNotIn(
+            "length == 1 and .[0].userId",
+            self.fullats_browser_shell,
+        )
         self.assertNotIn("def module_allowed", self.fullats_browser_shell)
         self.assertNotIn("def action_allowed", self.fullats_browser_shell)
         self.assertNotIn('{type:"MODULE",key:$ats_key,grant:"MANAGE"}', self.fullats_browser_shell)
