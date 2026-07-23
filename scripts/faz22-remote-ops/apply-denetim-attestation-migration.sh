@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Rollout/acceptance adapter for the bounded Denetim attestation/KID migration.
 # The permanent AnyDesk-like product runtime remains the provider-neutral
-# endpoint-agent <-> broker contract; it must not depend on this script,
-# staging-sw, or GitHub Actions. This adapter accepts the migration only after a
+# endpoint-agent <-> broker contract; it must not depend on this script, any
+# named SSH management host, or GitHub Actions. This adapter accepts the
+# migration only after a
 # transaction-bound attended product command produces a session-scoped broker
 # trust refresh. Any post-mutation failure triggers hash-verified rollback.
 
