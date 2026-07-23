@@ -636,7 +636,10 @@ try {
   }
   const terminalStatus = reviewPanel.getByRole('status');
   await waitVisible(terminalStatus, 'interview pending terminal status');
-  if ((await terminalStatus.textContent())?.trim() !== 'Mülakat planlaması bekliyor.') {
+  if (
+    (await terminalStatus.textContent())?.trim() !==
+    'Durum güncellendi: Mülakat planlaması bekliyor.'
+  ) {
     throw new Error('interview pending terminal status text mismatch');
   }
   await assertAxeClean(recruiterPage, 'recruiter-workspace-terminal-desktop');

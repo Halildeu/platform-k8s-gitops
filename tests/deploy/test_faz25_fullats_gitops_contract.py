@@ -414,8 +414,11 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
         self.assertIn("terminalResponse.status() !== 200", self.fullats_browser)
         self.assertIn(
-            "(await terminalStatus.textContent())?.trim() !== "
-            "'Mülakat planlaması bekliyor.'",
+            "(await terminalStatus.textContent())?.trim() !==",
+            self.fullats_browser,
+        )
+        self.assertIn(
+            "'Durum güncellendi: Mülakat planlaması bekliyor.'",
             self.fullats_browser,
         )
         self.assertIn(
