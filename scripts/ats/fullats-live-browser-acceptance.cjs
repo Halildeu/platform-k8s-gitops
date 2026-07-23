@@ -656,6 +656,20 @@ try {
   });
   const publicStatePage = await negativeProbeContext.newPage();
   attachNetworkEvidence(publicStatePage, 'negative-probe');
+  await publicStatePage.goto(`${baseURL}/jobs`, { waitUntil: 'domcontentloaded' });
+  const anonymousRecruiterStatus = await publicStatePage.evaluate(async () => {
+    const response = await fetch('/api/ats/v1/recruiter/applications', {
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
+    return response.status;
+  });
+  if (anonymousRecruiterStatus !== 401) {
+    throw new Error(
+      `anonymous recruiter applications API expected 401, got ${anonymousRecruiterStatus}`,
+    );
+  }
   const pauseResponsePromise = recruiterPage.waitForResponse(
     (response) =>
       relevantPath(response.url()) === `/api/ats/v1/recruiter/jobs/${jobId}/transitions` &&
@@ -739,6 +753,7 @@ try {
     ['recruiter', 'GET', '/api/ats/v1/recruiter/applications', 200],
     ['recruiter', 'POST', `/api/ats/v1/recruiter/applications/${publicRef}/evaluations`, 201],
     ['recruiter', 'PUT', `/api/ats/v1/recruiter/applications/${publicRef}/status`, 200],
+    ['negative-probe', 'GET', '/api/ats/v1/recruiter/applications', 401],
   ];
   for (const [persona, method, pathname, status] of requiredChecks) {
     if (!networkEvidence.some((entry) => entry.persona === persona && entry.method === method && entry.pathname === pathname && entry.status === status)) {
@@ -828,6 +843,7 @@ try {
       'recruiter-closes-job',
       'closed-job-rejects-new-application',
       'existing-candidate-result-survives-close',
+      'anonymous-recruiter-applications-denied',
     ],
     publicRefSha256: sha256(publicRef),
     jobIdSha256: sha256(jobId),
