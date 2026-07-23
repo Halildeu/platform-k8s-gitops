@@ -92,6 +92,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.fullats_runtime = (
             ROOT / "scripts/ats/verify-fullats-live-runtime.sh"
         ).read_text()
+        cls.testai_reconcile = (
+            ROOT / "scripts/deploy/reconcile-testai-backend-sequential.sh"
+        ).read_text()
         cls.fullats_axe_evidence = (
             ROOT / "scripts/ats/fullats-axe-evidence.cjs"
         )
@@ -790,6 +793,32 @@ fi
         self.assertIn("Cache-Control: no-cache", self.fullats_runtime)
         self.assertIn("PHASE: pre", self.fullats_browser_workflow)
         self.assertIn("PHASE: post", self.fullats_browser_workflow)
+        self.assertIn(
+            'echo "effective_gitops_sha=$effective_revision" >> "$GITHUB_OUTPUT"',
+            self.fullats_browser_workflow,
+        )
+        self.assertEqual(
+            2,
+            self.fullats_browser_workflow.count(
+                "EXPECTED_GITOPS_SHA: ${{ steps.convergence.outputs.effective_gitops_sha }}"
+            ),
+        )
+        self.assertIn(
+            'git checkout --detach "$effective_revision"',
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            '.effectiveRevision == .observedRevision',
+            self.fullats_browser_workflow,
+        )
+        for acceptance_path in (
+            ".github/workflows/faz25-fullats-live-browser-acceptance.yml",
+            "scripts/ats/verify-fullats-live-runtime.sh",
+            "scripts/ats/fullats-live-browser-acceptance.sh",
+            "scripts/ats/fullats-live-browser-acceptance.cjs",
+            "scripts/ats/d29-smoke.sh",
+        ):
+            self.assertIn(acceptance_path, self.testai_reconcile)
         self.assertIn("id: d29", self.fullats_browser_workflow)
         self.assertIn("bash scripts/ats/d29-smoke.sh", self.fullats_browser_workflow)
         self.assertNotRegex(self.d29, r"curl\s+-[^\n]*k")
