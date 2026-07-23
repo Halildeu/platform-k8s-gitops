@@ -9,19 +9,10 @@ metadata:
     # in-memory for rate limiting but must not become a durable access record.
     nginx.ingress.kubernetes.io/enable-access-log: "false"
     nginx.ingress.kubernetes.io/enable-opentelemetry: "false"
-    nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
-    etik-speak.acik.com/no-correlation-policy: es106-v2
-    # The anonymous reporter UI has no cookie dependency. Suppressing every
-    # upstream Set-Cookie is a fail-closed superset of the Domain=.acik.com
-    # prohibition and prevents suite-cookie propagation across public aliases.
-    nginx.ingress.kubernetes.io/proxy-hide-headers: "Set-Cookie"
     # ES-313 (2026-07-21, owner explicit "riskleri anladım hemen aç"):
     # sentetik-test Basic Auth gate KALDIRILDI. Reporter UI artık anonim
-    # erişime açık. Anti-abuse ingress rate-limit ile enforce edilir.
-    nginx.ingress.kubernetes.io/limit-rps: "10"
-    nginx.ingress.kubernetes.io/limit-rpm: "300"
-    nginx.ingress.kubernetes.io/limit-connections: "20"
-    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    # erişime açık. ES-106 anti-abuse host edge'de gerçek client IP ile
+    # volatile uygulanır; bu ingress'e client identity taşınmaz.
 spec:
   ingressClassName: nginx
   tls:

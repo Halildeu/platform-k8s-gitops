@@ -69,13 +69,20 @@ when cluster TLS termination is not used. A valid edge certificate and
 authoritative public request remain mandatory.
 
 The public reporter hosts are open without Basic Auth under the explicit
-ES-313 owner decision recorded by PR #2789. Both public ingresses must retain
-their reviewed per-IP request, minute, connection and burst limits.
-ingress-nginx removes caller `Authorization` before proxying the public API and
-overwrites `X-Etik-Speak-Transport: https`. The ethics backend rejects public
-mutations without that transport proof, and its NetworkPolicy admits only the
-ingress namespace. Suite bearer/cookie confusion remains fail-closed. This
-technical opening does not authorize real PII or assert production legal go.
+ES-313 owner decision recorded by PR #2789. Per-client request, minute and
+connection limits run at the canonical host edge, which is the only HTTP hop
+that still sees the real client address. The same edge clears caller identity,
+suite bearer and suite-cookie metadata before the cluster boundary, forwards
+only the host-scoped `__Host-etik_mailbox` cookie needed by the reporter
+follow-up journey, and sets `X-Etik-Speak-Transport: https`. Every upstream
+`Set-Cookie` is hidden; the edge republishes only an exact
+`__Host-etik_mailbox` cookie carrying `Path=/`, `Secure`, `HttpOnly` and
+`SameSite=Strict` with no `Domain` attribute. All other response cookies fail
+closed. Both the host edge and public ingresses keep access logging and
+OpenTelemetry disabled.
+The ethics backend rejects public mutations without the transport proof, and
+its NetworkPolicy admits only the ingress namespace. This technical opening
+does not authorize real PII or assert production legal go.
 
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
@@ -261,13 +268,15 @@ verifier from the exact merged GitOps checkout:
 SSH_TARGET=staging-sw ./scripts/faz35/verify-test-public-no-correlation.sh
 ```
 
-It verifies both public Ingresses in desired and live state, inspects the
-generated NGINX server blocks, exercises UI plus API denial paths with
-non-personal synthetic sentinels, and scans only a bounded post-start log
-window. Raw logs remain in a mode-700 temporary directory and are deleted by
-the verifier; only boolean results and the zero leak count are publishable.
-`NO_CORRELATION_ACCEPTED=true` is required before Gate 4. A merge, annotation
-presence, healthy pod, or source-only test does not replace this live result.
+It verifies both public Ingresses in desired and live state, inspects the live
+host-edge and generated ingress NGINX configuration, proves the mailbox-only
+cookie filter plus volatile per-client rate limits, exercises UI plus API
+denial paths with non-personal synthetic sentinels, and scans only a bounded
+post-start log window. Raw logs remain in a mode-700 temporary directory and
+are deleted by the verifier; only boolean results and the zero leak count are
+publishable. `NO_CORRELATION_ACCEPTED=true` is required before Gate 4. A merge,
+annotation presence, healthy pod, or source-only test does not replace this
+live result.
 
 ## Gate 4: customer closed-loop acceptance
 

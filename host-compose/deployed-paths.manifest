@@ -30,4 +30,4 @@
 #   <repo-relative canonical path><TAB><absolute live path on staging-sw>
 # Blank lines and lines starting with '#' are ignored.
 
-host-compose/web-nginx/default.conf	/home/halil/platform/web/nginx/default.conf
+host-compose/web-nginx/default.conf	/srv/platform/web/nginx/default.conf

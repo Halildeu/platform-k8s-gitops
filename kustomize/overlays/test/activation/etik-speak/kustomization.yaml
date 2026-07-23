@@ -12,8 +12,6 @@ resources:
   - netpol.yaml
   - resource-quota.yaml
   - priority-class.yaml
-  - public-api-upstream-headers.yaml
-  - public-upstream-headers-rbac.yaml
 images:
   # Exact branch artifacts: backend source a5b6d3a5 / run 29803062932 (Faz 35
   # ES-306 transport boundary hardening — X-Forwarded-Proto fallback +
