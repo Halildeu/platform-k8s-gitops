@@ -14,6 +14,7 @@ metadata:
     # trafiğine açık. Anti-abuse ingress rate-limit + boundary NetworkPolicy
     # + backend ES-306 hardening ile enforce edilir.
     nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
+    etik-speak.acik.com/no-correlation-policy: es106-v1
     # Public API authentication is access-secret based and cookie-free. Drop
     # every upstream Set-Cookie so a parent-domain suite cookie can never be
     # emitted through this boundary.

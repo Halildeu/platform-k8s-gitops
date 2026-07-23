@@ -10,6 +10,7 @@ metadata:
     nginx.ingress.kubernetes.io/enable-access-log: "false"
     nginx.ingress.kubernetes.io/enable-opentelemetry: "false"
     nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
+    etik-speak.acik.com/no-correlation-policy: es106-v1
     # The anonymous reporter UI has no cookie dependency. Suppressing every
     # upstream Set-Cookie is a fail-closed superset of the Domain=.acik.com
     # prohibition and prevents suite-cookie propagation across public aliases.

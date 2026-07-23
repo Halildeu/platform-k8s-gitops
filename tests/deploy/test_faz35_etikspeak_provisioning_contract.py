@@ -127,6 +127,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/public-api-upstream-headers.yaml"
         ).read_text()
+        cls.public_upstream_headers_rbac = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/public-upstream-headers-rbac.yaml"
+        ).read_text()
         cls.no_correlation_verifier = (
             ROOT / "scripts/faz35/verify-test-public-no-correlation.sh"
         ).read_text()
@@ -1647,6 +1651,10 @@ spec:
                 ingress,
             )
             self.assertIn(
+                "etik-speak.acik.com/no-correlation-policy: es106-v1",
+                ingress,
+            )
+            self.assertIn(
                 'nginx.ingress.kubernetes.io/proxy-hide-headers: "Set-Cookie"',
                 ingress,
             )
@@ -1686,6 +1694,33 @@ spec:
         self.assertIn("X-Etik-Speak-Transport: https", self.public_upstream_headers)
         self.assertNotIn("api-gateway", self.netpol)
 
+    def test_public_header_policy_rbac_is_exact_and_namespace_scoped(self):
+        for expected in (
+            "kind: Role",
+            "kind: RoleBinding",
+            "name: ingress-nginx-read-etik-speak-public-upstream-headers",
+            "resourceNames: [etik-speak-public-upstream-headers]",
+            "verbs: [get]",
+            "name: ingress-nginx",
+            "namespace: ingress-nginx",
+        ):
+            self.assertIn(expected, self.public_upstream_headers_rbac)
+        for forbidden in (
+            "kind: ClusterRole",
+            "kind: ClusterRoleBinding",
+            "verbs: [get, list",
+            "verbs: ['*']",
+            'resources: ["*"]',
+        ):
+            self.assertNotIn(forbidden, self.public_upstream_headers_rbac)
+        self.assertIn(
+            "- public-upstream-headers-rbac.yaml",
+            (
+                ROOT
+                / "kustomize/overlays/test/activation/etik-speak/kustomization.yaml"
+            ).read_text(),
+        )
+
     def test_public_no_correlation_runtime_verifier_is_fail_closed(self):
         for expected in (
             'readonly KUBE_CONTEXT="k3d-test"',
@@ -1696,6 +1731,8 @@ spec:
             "proxy-set-headers",
             "proxy-hide-headers",
             "X-Original-Forwarded-For",
+            "configmap/etik-speak-public-upstream-headers",
+            "LIVE_INGRESS_HEADER_POLICY_RBAC=true",
             "synthetic sentinel leaked",
             "Domain=.acik.com",
             "NO_CORRELATION_ACCEPTED=true",
