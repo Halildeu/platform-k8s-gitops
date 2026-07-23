@@ -59,34 +59,46 @@ if [[ "$REQUIRE_HEAD_SHA" == "true" ]]; then
     exit 1
   }
 fi
-[[ "$(git rev-parse origin/main)" == "$EXPECTED_GITOPS_SHA" ]] || {
-  echo "FATAL: origin/main advanced or does not contain the dispatched revision" >&2
+observed_main_revision="$(git rev-parse origin/main)"
+git merge-base --is-ancestor "$EXPECTED_GITOPS_SHA" "$observed_main_revision" || {
+  echo "FATAL: origin/main does not contain the dispatched GitOps revision" >&2
   exit 1
 }
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 argo_json="$tmp/argo.json"
+observed_argo_revision=""
 for _ in $(seq 1 90); do
+  git fetch --quiet --no-tags origin main
+  observed_main_revision="$(git rev-parse origin/main)"
   kubectl --context="$ARGO_CONTEXT" -n "$ARGO_NAMESPACE" \
     get application "$ARGO_APPLICATION" -o json >"$argo_json"
-  if jq -e --arg revision "$EXPECTED_GITOPS_SHA" '
-      .status.sync.revision == $revision and
+  observed_argo_revision="$(jq -r '.status.sync.revision // ""' "$argo_json")"
+  if jq -e '
+      (.status.sync.revision | type == "string" and test("^[a-f0-9]{40}$")) and
       .status.sync.status == "Synced" and
       .status.health.status == "Healthy"
-    ' "$argo_json" >/dev/null; then
+    ' "$argo_json" >/dev/null \
+    && git cat-file -e "${observed_argo_revision}^{commit}" 2>/dev/null \
+    && git merge-base --is-ancestor "$EXPECTED_GITOPS_SHA" "$observed_argo_revision" \
+    && git merge-base --is-ancestor "$observed_argo_revision" "$observed_main_revision"; then
     break
   fi
   sleep 2
 done
-jq -e --arg revision "$EXPECTED_GITOPS_SHA" '
-    .status.sync.revision == $revision and
-    .status.sync.status == "Synced" and
-    .status.health.status == "Healthy"
-  ' "$argo_json" >/dev/null || {
-  echo "FATAL: Argo application did not reach exact revision + Synced + Healthy" >&2
+if ! {
+  jq -e '
+      (.status.sync.revision | type == "string" and test("^[a-f0-9]{40}$")) and
+      .status.sync.status == "Synced" and
+      .status.health.status == "Healthy"
+    ' "$argo_json" >/dev/null \
+    && git merge-base --is-ancestor "$EXPECTED_GITOPS_SHA" "$observed_argo_revision" \
+    && git merge-base --is-ancestor "$observed_argo_revision" "$observed_main_revision"
+}; then
+  echo "FATAL: Argo application did not reach a trusted descendant revision + Synced + Healthy" >&2
   exit 1
-}
+fi
 
 verify_deployment() {
   local deployment="$1" container="$2" selector="$3" expected_image="$4"
@@ -176,6 +188,8 @@ if [[ -n "$EVIDENCE_DIR" ]]; then
   jq -n \
     --arg phase "$PHASE" \
     --arg gitopsRevision "$EXPECTED_GITOPS_SHA" \
+    --arg observedGitopsRevision "$observed_argo_revision" \
+    --arg observedMainRevision "$observed_main_revision" \
     --arg frontendSourceCommit "$EXPECTED_FRONTEND_SHA" \
     --arg atsDigest "$EXPECTED_ATS_DIGEST" \
     --arg permissionDigest "$EXPECTED_PERMISSION_DIGEST" \
@@ -185,6 +199,9 @@ if [[ -n "$EVIDENCE_DIR" ]]; then
       environment:"testai.acik.com",
       phase:$phase,
       gitopsRevision:$gitopsRevision,
+      observedGitopsRevision:$observedGitopsRevision,
+      observedMainRevision:$observedMainRevision,
+      revisionRelationship:"dispatched-equals-or-ancestor-of-observed",
       argo:{application:"platform-test",sync:"Synced",health:"Healthy"},
       frontendSourceCommit:$frontendSourceCommit,
       runtime:{atsDigest:$atsDigest,permissionDigest:$permissionDigest,frontendDigest:$frontendDigest},
@@ -193,4 +210,4 @@ if [[ -n "$EVIDENCE_DIR" ]]; then
     }' >"$EVIDENCE_DIR/runtime-$PHASE.json"
 fi
 
-echo "PASS Full ATS runtime phase=$PHASE revision=$EXPECTED_GITOPS_SHA"
+echo "PASS Full ATS runtime phase=$PHASE dispatched=$EXPECTED_GITOPS_SHA observed=$observed_argo_revision"
