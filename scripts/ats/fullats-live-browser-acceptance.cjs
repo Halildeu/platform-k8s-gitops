@@ -350,6 +350,9 @@ try {
   await candidatePage.getByRole('link', { name: 'Başvuru formuna geç' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-page'), 'candidate application page');
   await waitVisible(candidatePage.getByRole('heading', { name: jobTitle }), 'job title');
+  const resumeImportNotice = candidatePage.locator('#resume-import-notice');
+  await waitVisible(resumeImportNotice, 'candidate resume import notice');
+  await resumeImportNotice.check();
   await candidatePage.getByTestId('candidate-resume').setInputFiles({
     name: 'fullats-synthetic-resume.pdf',
     mimeType: 'application/pdf',

@@ -646,6 +646,8 @@ fi
             "getByRole('button', { name: 'Önizle' })",
             "getByRole('button', { name: 'Yayınla' })",
             "getByRole('link', { name: 'Başvuru formuna geç' })",
+            "locator('#resume-import-notice')",
+            "getByTestId('candidate-resume').setInputFiles",
             "getByRole('button', { name: 'Güvenli önerileri kabul et' })",
             "getByRole('button', { name: 'Deneyim bilgilerime devam et' })",
             "getByRole('button', { name: 'Başvuruyu kontrol et' })",
@@ -669,6 +671,7 @@ fi
         self.assertIn("jobSlugSha256: sha256(jobSlug)", self.fullats_browser)
         self.assertIn("finalJobState: 'CLOSED'", self.fullats_browser)
         self.assertIn("getByTestId('candidate-resume').setInputFiles", self.fullats_browser)
+        self.assertIn("await resumeImportNotice.check()", self.fullats_browser)
         self.assertIn("buildSyntheticResumePdf", self.fullats_browser)
         self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
         self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
