@@ -643,7 +643,14 @@ fi
             "getByRole('button', { name: 'Önizle' })",
             "getByRole('button', { name: 'Yayınla' })",
             "getByRole('link', { name: 'Başvuru formuna geç' })",
+            "getByRole('button', { name: 'Güvenli önerileri kabul et' })",
+            "getByRole('button', { name: 'Deneyim bilgilerime devam et' })",
+            "getByRole('button', { name: 'Başvuruyu kontrol et' })",
             "getByTestId('create-application-receipt')",
+            "getByRole('button', { name: 'İnsan incelemesini başlat' })",
+            "getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' })",
+            "getByRole('button', { name: 'Immutable değerlendirmeyi kaydet' })",
+            "getByRole('button', { name: 'Mülakat planlamasına al' })",
             "getByRole('button', { name: 'Duraklat' })",
             "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED')",
             "getByRole('button', { name: 'Yayınla' })",
@@ -663,6 +670,12 @@ fi
         self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
         self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
         self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
+        self.assertIn("structured recruiter evaluation HTTP", self.fullats_browser)
+        self.assertIn(
+            "['recruiter', 'POST', `/api/ats/v1/recruiter/applications/"
+            "${publicRef}/evaluations`, 201]",
+            self.fullats_browser,
+        )
         self.assertNotIn("getByTestId('fill-synthetic-resume').click()", self.fullats_browser)
         self.assertIn("attachNetworkEvidence(publicStatePage, 'negative-probe')", self.fullats_browser)
         self.assertIn("entry.persona === 'negative-probe'", self.fullats_browser)
@@ -706,8 +719,8 @@ fi
 
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
-            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "ats": "sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4",
+            "permission": "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4",
             "frontend": self.frontend_pin["digest"],
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
@@ -882,8 +895,8 @@ fi
         self.assertIn("printf 'ROLLED_BACK\\n'", self.rollback_script)
         self.assertIn("changed-file set escaped two-file contract", self.rollback_script)
         for digest in (
-            "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4",
+            "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4",
             "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
         ):
@@ -988,7 +1001,7 @@ fi
 
     def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
-        current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
+        current_ats = "sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4"
         # #2555 Slice B (2026-07-20) - bumped from sha256:55f2f2f2 to sha256:a23c72fa
         # (sha-4a0dc67, platform-backend PR #896). AccessScopeService.grant()
         # widens the P0001 handler; POST /access/scope 500->400. Faz 25 ATS
@@ -1187,9 +1200,9 @@ fi
         self.assertIn("Full acceptance sonunda overall Argo `Synced/Healthy`", self.runbook)
         self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
         self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
-        self.assertIn("Faz 25 #2615 branch-acceptance pini", self.runbook)
-        self.assertIn("ATS #183 exact head `f4d2b4f`", self.runbook)
-        self.assertIn("canlı D29 pending", self.runbook)
+        self.assertIn("Faz 25 #2526 ilk müşteri yüzeyi backend pini", self.runbook)
+        self.assertIn("ATS exact main `29a8abb`", self.runbook)
+        self.assertIn("Canlı D29 ve uçtan uca aday/İK kanıtı", self.runbook)
         self.assertIn("aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir", self.runbook)
         self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)
         self.assertIn("modelGovernanceLedgerReader(DataSource, Flyway)", self.runbook)

@@ -13,15 +13,17 @@
 #     scope'ları (Faz 25 #2441: ats.screening.{read,write} eklendi; default scope
 #     + rol-kapısı ats#96/#168 modeli değişmez)
 #
-# Güncel Faz 25 #2615 branch-acceptance imaj pini. Numerik UID (10001:10001) ve deployment
-# securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:
-#   source  ats#183 f4d2b4f79b10fa879e610a102acf1eb54eba9964
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-f4d2b4f
-#   digest  sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
-#   build   https://github.com/Halildeu/ats/actions/runs/29629811674
-# Son canlı D29 kanıtlı baseline: sha-e6b7409 /
-#   sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
-# Yeni 8812ab4e pini için canlı D29, #2615 recovery + acceptance koşumunda üretilecektir.
+# Faz 25 #2526 Full ATS ilk müşteri yüzeyinin backend pini. Bu kaynak;
+# güvenli PDF alan önerisi, kalıcı başvuru makbuzu, recruiter detay/evaluation
+# ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
+# (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
+# tag yalnız provenance alias'ıdır:
+#   source  ats@29a8abb27e41d4a311fae38b70414463a9a8fe08
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-29a8abb
+#   digest  sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4
+#   build   https://github.com/Halildeu/ats/actions/runs/29854189435
+# Canlı D29 + aday/İK yolculuğu bu GitOps değişikliği ArgoCD ile
+# eşitlendikten sonra faz25-fullats-live-browser-acceptance ile üretilecektir.
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
@@ -41,7 +43,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+    digest: sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
