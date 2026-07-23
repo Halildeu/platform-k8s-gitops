@@ -347,8 +347,12 @@ images:
     # 2026-06-26 retention runtime sync: platform-backend#764 adds metadata-only
     # transcript/KVKK access-log cleanup and destruction-audit accounting. This
     # desired-state pin does not by itself prove live deletion or legal closure.
+    # 2026-07-23 #2568 regression repair: platform-backend#923 types the native
+    # retry CASE branches as TIMESTAMPTZ, preventing PostgreSQL 42804 from
+    # wedging canonical Direct-STT session-association retries. Image build
+    # run 30008690343 produced the immutable digest below.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:86e39d10ec45172f3daade6a6ed784ff359e6cc11ed2030e47a25ad0ebe9c12d
+    digest: sha256:a6a7dc01268055ca50ecf5296c955fe72d5ff18350e1fad883a90f131373d019
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
