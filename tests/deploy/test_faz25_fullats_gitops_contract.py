@@ -705,6 +705,12 @@ fi
             "${publicRef}/evaluations`, 201]",
             self.fullats_browser,
         )
+        self.assertIn(
+            "['negative-probe', 'GET', '/api/ats/v1/recruiter/applications', 401]",
+            self.fullats_browser,
+        )
+        self.assertIn("anonymousRecruiterStatus !== 401", self.fullats_browser)
+        self.assertIn("credentials: 'omit'", self.fullats_browser)
         self.assertNotIn("getByTestId('fill-synthetic-resume').click()", self.fullats_browser)
         self.assertIn("attachNetworkEvidence(publicStatePage, 'negative-probe')", self.fullats_browser)
         self.assertIn("entry.persona === 'negative-probe'", self.fullats_browser)
@@ -852,8 +858,16 @@ fi
             "scripts/ats/d29-smoke.sh",
         ):
             self.assertIn(acceptance_path, self.testai_reconcile)
-        self.assertIn("id: d29", self.fullats_browser_workflow)
-        self.assertIn("bash scripts/ats/d29-smoke.sh", self.fullats_browser_workflow)
+        self.assertNotIn("id: d29", self.fullats_browser_workflow)
+        self.assertNotIn("bash scripts/ats/d29-smoke.sh", self.fullats_browser_workflow)
+        self.assertIn(
+            "customer-slice D29: exact runtime + real browser function",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            "meeting/STT model-governance matrix: separate product slice",
+            self.fullats_browser_workflow,
+        )
         self.assertNotRegex(self.d29, r"curl\s+-[^\n]*k")
         self.assertIn("capturedNetworkFields", self.fullats_browser)
         self.assertIn("redacted.replaceAll(value, marker)", self.fullats_browser)
@@ -910,7 +924,7 @@ fi
         self.assertIn("id: preflight", self.fullats_browser_workflow)
         self.assertIn("id: runtime", self.fullats_browser_workflow)
         self.assertIn("id: browser", self.fullats_browser_workflow)
-        self.assertIn("id: d29", self.fullats_browser_workflow)
+        self.assertNotIn("id: d29", self.fullats_browser_workflow)
         self.assertIn("id: final-runtime", self.fullats_browser_workflow)
         self.assertIn("id: convergence", self.fullats_browser_workflow)
         self.assertIn("FULL_SYNC_TIMEOUT=900", self.fullats_browser_workflow)
@@ -920,9 +934,10 @@ fi
         )
         self.assertIn("steps.convergence.outcome == 'failure'", self.fullats_browser_workflow)
         self.assertIn(
-            "steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure'",
+            "steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure'",
             self.fullats_browser_workflow,
         )
+        self.assertNotIn("steps.d29.outcome", self.fullats_browser_workflow)
         self.assertIn("steps.rollback-checkout.outcome == 'success'", self.fullats_browser_workflow)
         self.assertIn("install-pinned-gh-cli.sh", self.fullats_browser_workflow)
         self.assertIn("steps.rollback-gh.outcome == 'success'", self.fullats_browser_workflow)
