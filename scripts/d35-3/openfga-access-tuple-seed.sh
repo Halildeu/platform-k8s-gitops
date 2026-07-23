@@ -74,7 +74,7 @@ info() { printf '\033[1;32m[info]\033[0m %s\n' "$*"; }
 
 : "${ADMIN_UID:?ADMIN_UID is required (admin persona Keycloak UUID)}"
 GRANTED_UID="${GRANTED_UID:-}"
-SSH_TARGET="${SSH_TARGET:-halil@staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
 OPENFGA_URL="${OPENFGA_URL:-http://10.44.3.209:8080}"
 
 # UUID format guard (lightweight — RFC 4122 8-4-4-4-12 hex)

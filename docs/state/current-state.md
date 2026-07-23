@@ -46,6 +46,22 @@ Reboot sonrası canlı kanıt:
 - reboot öncesi ve sonrası `.15` doğrudan `ai`/`testai` SNI kontrolleri HTTP
   `200` kaldı.
 
+Arşiv replikasyonu:
+
+- `.53` üzerinde `platform-backup-archive-pull.timer` etkin ve aktiftir;
+  servis yalnız `platform-backup-export@10.9.10.15` kaynağından `pg`, `vault`
+  ve `keycloak` yedek sınıflarını çeker;
+- kaynak SSH kimliği `rrsync -ro /srv/platform/backup` forced-command,
+  `restrict`, host-key pin ve yalnız okuma ACL ile sınırlandırılmıştır. Canlı
+  negatif kontrolde normal shell ve rsync yazma protokolü ayrı ayrı
+  reddedilmiştir;
+- hedef aktarım `--checksum --ignore-existing` ile mevcut arşiv nesnelerini
+  ezmez veya silmez. Her koşu tüm arşiv düzenli dosyaları için yol, boyut ve
+  SHA-256 içeren root-only ledger üretir;
+- ilk doğrulamada `.15` ve `.53` üzerinde `14/14` göreli yol+SHA-256 birebir
+  eşleşmiş, ledger `14` kayıt taşımış ve servis `Result=success` vermiştir.
+  Bu akış `.53` üzerinde Docker/containerd veya platform workload'ı açmaz.
+
 Rollback sınırı:
 
 - `.53` tekrar runtime/writer yapılmadan önce `.15` workload'ları durdurulur;
@@ -90,7 +106,9 @@ Doğrudan canlı kanıt:
 - `.15` üzerinde ilk prod/test PostgreSQL dump, Vault Raft snapshot ve
   Keycloak full realm export setleri oluşturulmuş; JSON/gzip yapısı
   doğrulanmıştır. `platform-backup-{pg,vault,keycloak,freshness}.timer`
-  etkin, freshness metriği iki k3d node'una kopyalanmıştır;
+  etkin, freshness metriği iki k3d node'una kopyalanmıştır. Yedek çıktıları
+  `.53` archive-standby'ya tek yönlü ve salt okunur taşıyan ayrı pull timer'ı
+  da hash eşleşmesiyle doğrulanmıştır;
 - `.53` üzerinde k3d/container workload'ları, WireGuard, deploy/signing/desktop
   runner'ları, geçici cutover bridge ve artık çalışmayan legacy L4 uyumluluk
   zinciri durdurulmuş; restart policy'leri kapatılmıştır. Eski kullanıcı cron'u

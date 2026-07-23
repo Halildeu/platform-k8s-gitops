@@ -23,7 +23,7 @@ metadata:
     app.kubernetes.io/name: vault
 subsets:
   - addresses:
-      - ip: 10.9.10.53
+      - ip: 192.0.2.1               # fail-closed placeholder; overlay override zorunlu
     ports:
       - name: http
         port: 8200                  # prod mevcut (overlays/test 8201)

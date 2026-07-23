@@ -29,7 +29,7 @@
 #   SCOPE_KIND         optional; default COMPANY (V25 anchor pair)
 #   SCOPE_REF          optional; default '["1"]' (V25 OUR_COMPANY.COMP_ID=1)
 #   EXPECTED_TUPLE_OBJECT  optional; default company:wc-our-company-1
-#   PG_SSH_TARGET      optional; default halil@staging-sw
+#   PG_SSH_TARGET      optional; default aiadmin@aiserver
 #   PG_CONTAINER       optional; default platform-pg-test
 #   POLL_INTERVAL_S    optional; default 5
 #   POLL_TIMEOUT_S     optional; default 30
@@ -54,7 +54,7 @@ ORG_ID="${ORG_ID:-1}"
 SCOPE_KIND="${SCOPE_KIND:-COMPANY}"
 SCOPE_REF="${SCOPE_REF:-[\"1\"]}"
 EXPECTED_TUPLE_OBJECT="${EXPECTED_TUPLE_OBJECT:-company:wc-our-company-1}"
-PG_SSH_TARGET="${PG_SSH_TARGET:-halil@staging-sw}"
+PG_SSH_TARGET="${PG_SSH_TARGET:-aiadmin@aiserver}"
 PG_CONTAINER="${PG_CONTAINER:-platform-pg-test}"
 POLL_INTERVAL_S="${POLL_INTERVAL_S:-5}"
 POLL_TIMEOUT_S="${POLL_TIMEOUT_S:-30}"

@@ -1,6 +1,6 @@
-# Prod overlay — k3d-prod (staging-sw canlı)
+# Prod overlay — k3d-prod (aiserver / 10.9.10.15 aktif platform)
 # - Image: GHCR tag (sha-<short>)
-# - Host bridge: 10.9.10.53:5432/8081/8200 (D20)
+# - Host bridge: platform-prod-net üzerindeki izole prod compose servisleri
 # - Replica: 2 sabit (D21)
 # - Namespace: platform-prod
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -323,6 +323,49 @@ images:
 # prod cluster awaits PR-D.3.x (test smoke + ledger).
 
 patches:
+  # 2026-07-23 post-cutover fence: Redis Streams ve MinIO yalnız TEST
+  # workload'ları tarafından kullanılıyor; prod için izole instance henüz
+  # tanımlı değil. Base fail-closed placeholder'ı prod'a taşımak veya eski
+  # 10.9.10.53 archive-standby hostuna yönlenmek yanlış bir çalışırlık iddiası
+  # üretirdi. Prod consumer + izole stateful topology ayrı D30 diliminde
+  # birlikte aktive edilene kadar Service ve Endpoints çiftini render'dan sil.
+  - target:
+      kind: Service
+      name: minio
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: minio
+  - target:
+      kind: Endpoints
+      name: minio
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Endpoints
+      metadata:
+        name: minio
+  - target:
+      kind: Service
+      name: redis-streams
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: redis-streams
+  - target:
+      kind: Endpoints
+      name: redis-streams
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Endpoints
+      metadata:
+        name: redis-streams
+
   # 2026-05-10 — PR-471b prod replicas=1 default (kullanıcı 2026-05-10 kararı)
   # > "prodda tek olsun varsayılan"
   # Pre-prod tek user için cost optimization. metrics-server kuruldu (PR-471
@@ -1082,7 +1125,8 @@ patches:
 
   # Faz 22.5 M2 prod AD CS / edge mTLS activation (#1359/#1376).
   # Preconditions live-proven 2026-06-14/15:
-  #   - DNS `mtls.ai.acik.com` resolves to the staging edge (10.9.10.53).
+  #   - DNS `mtls.ai.acik.com` resolves to the active aiserver edge
+  #     (10.9.10.15); `.53` is archive-standby only.
   #   - Host nginx SNI stream route points `mtls.ai.acik.com` to prod ingress.
   #   - AD CS issues machine ClientAuth certs from Acik-Endpoint-CA.
   #   - Server cert SAN covers both `mtls.testai.acik.com` and

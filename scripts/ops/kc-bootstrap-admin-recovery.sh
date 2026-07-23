@@ -100,7 +100,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-${ENV_NAME}}"
-KC_PASS_FILE="${KC_PASS_FILE:-/home/halil/platform-k8s-gitops/host-compose/keycloak/${ENV_NAME}/secrets/kc_admin_password.txt}"
+KC_PASS_FILE="${KC_PASS_FILE:-/srv/platform/gitops/platform-k8s-gitops/host-compose/keycloak/${ENV_NAME}/secrets/kc_admin_password.txt}"
 KC_HOST_PORT="${KC_HOST_PORT:-$([ "${ENV_NAME}" = "test" ] && echo 8082 || echo 8081)}"
 KC_URL="http://127.0.0.1:${KC_HOST_PORT}"
 

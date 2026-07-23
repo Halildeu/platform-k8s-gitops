@@ -28,7 +28,7 @@
 #
 # Schedule (post-PR-4):
 #   .github/workflows/gate-env-drift.yml — daily 06:15 UTC + workflow_dispatch
-#   on self-hosted staging-sw runner. Legacy systemd timer (5min prod / 15min
+#   on self-hosted aiserver runner. Legacy systemd timer (5min prod / 15min
 #   test) kept for redundancy.
 #
 # Exit code precedence (high → low):
@@ -56,7 +56,7 @@
 #                            BOTH platform-prod + platform-test Applications)
 #   - ArgoCD namespace:      ${ARGOCD_NAMESPACE:-argocd}
 #
-# Dependencies: kubectl, git, jq, bash 4+. Designed for staging-sw host where
+# Dependencies: kubectl, git, jq, bash 4+. Designed for aiserver where
 # both clusters are reachable.
 
 set -uo pipefail
@@ -113,14 +113,14 @@ ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
 # Priority:
 #   1. PLATFORM_GITOPS_REPO env var (systemd unit + CI explicit)
 #   2. ../.. relative to script (when invoked from repo)
-#   3. /home/halil/platform/platform-k8s-gitops fallback (staging-sw default)
+#   3. /srv/platform/gitops/platform-k8s-gitops fallback (aiserver default)
 REPO_ROOT="${PLATFORM_GITOPS_REPO:-}"
 if [[ -z "$REPO_ROOT" ]]; then
   candidate="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)"
   if [[ -d "$candidate/kustomize/overlays/${ENV}" ]]; then
     REPO_ROOT="$candidate"
-  elif [[ -d "/home/halil/platform/platform-k8s-gitops/kustomize/overlays/${ENV}" ]]; then
-    REPO_ROOT="/home/halil/platform/platform-k8s-gitops"
+  elif [[ -d "/srv/platform/gitops/platform-k8s-gitops/kustomize/overlays/${ENV}" ]]; then
+    REPO_ROOT="/srv/platform/gitops/platform-k8s-gitops"
   fi
 fi
 [[ -z "$REPO_ROOT" || ! -d "$REPO_ROOT/kustomize/overlays/${ENV}" ]] && {
