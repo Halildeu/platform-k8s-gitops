@@ -47,6 +47,13 @@ göndermesi, yetkili test kullanıcısının `testai.acik.com` üzerinden yanıt
 reporter'ın public mailbox'tan yanıtı görmesiyle kanıtlanır. Mock ekran, source
 merge, CI green veya pod `Ready` tek başına teslimat değildir.
 
+Bu zincirin normatif ve makine-okunur kabul sözleşmesi
+[Faz 35 first-customer journey v1](./contracts/faz35-first-customer-journey.v1.json)
+dosyasıdır. Sözleşme, her adımın kalıcı sonucunu ve o sonucu kullanan sonraki
+aktörü; `Up`, `Functional`, `Authorized`, `Privacy-safe`, `Browser` ve
+`Recoverable` kanıt katmanlarını; sentetik TEST ile gerçek kullanıcı/production
+insan kapısını ayrı tutar.
+
 ## 3. Pazar giriş sınıflandırması
 
 ### 3.1 CORE-MUST — satılabilir baseline
