@@ -40,5 +40,11 @@ grep -Fq -- '--expected-live-sha' "$RECONCILE" || fail 'CAS input missing'
 grep -Fq 'ROLLBACK: restored' "$RECONCILE" || fail 'automatic rollback missing'
 grep -Fq 'nginx -t -c /tmp/nginx-candidate.conf' "$RECONCILE" || \
   fail 'candidate config validation missing'
+grep -Fq 'container_sha=' "$RECONCILE" || fail 'container bind-mount digest missing'
+grep -Fq 'bak-runtime-' "$RECONCILE" || fail 'effective runtime backup missing'
+grep -Fq 'docker restart "$container"' "$RECONCILE" || \
+  fail 'read-only bind-mount restart reconciliation missing'
+grep -Fq 'applied_container_sha' "$RECONCILE" || \
+  fail 'post-restart container digest check missing'
 
 printf '%s\n' 'PASS: Faz 24 edge nginx static reconciliation contract'

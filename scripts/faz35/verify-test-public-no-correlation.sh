@@ -217,8 +217,31 @@ done
 docker exec "$edge_container" nginx -T \
   >"$tmp_dir/host-edge-nginx.conf" 2>/dev/null
 chmod 600 "$tmp_dir/host-edge-nginx.conf"
-sed -n '/# Faz 35 ES-106/,$p' "$tmp_dir/host-edge-nginx.conf" \
-  >"$tmp_dir/host-edge-public.conf"
+# `nginx -T` normalizes away source comments. Select the two public server
+# blocks structurally by exact server_name instead of relying on a comment
+# marker, while leaving global map/limit-zone assertions on the full config.
+awk '
+  /^[[:space:]]*server[[:space:]]*\{/ {
+    capture=1
+    depth=1
+    block=$0 ORS
+    next
+  }
+  capture {
+    block=block $0 ORS
+    line=$0
+    opens=gsub(/\{/, "{", line)
+    closes=gsub(/\}/, "}", line)
+    depth=depth + opens - closes
+    if (depth == 0) {
+      if (block ~ /server_name[[:space:]]+etik\.acik\.com[[:space:]]+speakup\.acik\.com;/) {
+        printf "%s", block
+      }
+      capture=0
+      block=""
+    }
+  }
+' "$tmp_dir/host-edge-nginx.conf" >"$tmp_dir/host-edge-public.conf"
 [ -s "$tmp_dir/host-edge-public.conf" ] || {
   echo "FATAL: live host-edge ES-106 policy is missing" >&2
   exit 18
@@ -227,7 +250,6 @@ sed -n '/# Faz 35 ES-106/,$p' "$tmp_dir/host-edge-nginx.conf" \
 # Literal NGINX variables are intentionally not expanded in the remote shell.
 # shellcheck disable=SC2016
 for edge_requirement in \
-  'server_name etik.acik.com speakup.acik.com;' \
   'map $http_cookie $etik_speak_public_cookie' \
   '__Host-etik_mailbox=[^;]+' \
   'limit_req_zone $binary_remote_addr zone=etik_speak_api_rps:10m rate=3r/s;' \
@@ -235,6 +257,23 @@ for edge_requirement in \
   'limit_req_zone $binary_remote_addr zone=etik_speak_ui_rps:10m rate=10r/s;' \
   'limit_req_zone $binary_remote_addr zone=etik_speak_ui_rpm:10m rate=300r/m;' \
   'limit_conn_zone $binary_remote_addr zone=etik_speak_public_conn:10m;' \
+  'map $upstream_http_set_cookie $etik_speak_mailbox_set_cookie_name' \
+  'map $etik_speak_mailbox_set_cookie_httponly $etik_speak_public_set_cookie' \
+  '"~*;\s*Domain=" "";' \
+  '"~*;\s*Path=/(?:;|$)" $etik_speak_mailbox_set_cookie_domain;' \
+  '"~*;\s*Secure(?:;|$)" $etik_speak_mailbox_set_cookie_path;' \
+  '"~*;\s*HttpOnly(?:;|$)" $etik_speak_mailbox_set_cookie_secure;' \
+  '"~*;\s*SameSite=Strict(?:;|$)" $etik_speak_mailbox_set_cookie_httponly;'
+do
+  grep -Fq "$edge_requirement" "$tmp_dir/host-edge-nginx.conf" || {
+    echo "FATAL: live host edge misses a global ES-106 privacy boundary" >&2
+    exit 19
+  }
+done
+
+# shellcheck disable=SC2016
+for edge_requirement in \
+  'server_name etik.acik.com speakup.acik.com;' \
   'location ^~ /api/v1/public/ethics' \
   'limit_req zone=etik_speak_api_rps burst=6 nodelay;' \
   'limit_req zone=etik_speak_api_rpm burst=120 nodelay;' \
@@ -244,19 +283,12 @@ for edge_requirement in \
   'limit_conn etik_speak_public_conn 20;' \
   'proxy_set_header Cookie $etik_speak_public_cookie;' \
   'proxy_set_header X-Etik-Speak-Transport https;' \
-  'map $upstream_http_set_cookie $etik_speak_mailbox_set_cookie_name' \
-  'map $etik_speak_mailbox_set_cookie_httponly $etik_speak_public_set_cookie' \
   'proxy_hide_header Set-Cookie;' \
-  'add_header Set-Cookie $etik_speak_public_set_cookie always;' \
-  '"~*;\s*Domain=" "";' \
-  '"~*;\s*Path=/(?:;|$)" $etik_speak_mailbox_set_cookie_domain;' \
-  '"~*;\s*Secure(?:;|$)" $etik_speak_mailbox_set_cookie_path;' \
-  '"~*;\s*HttpOnly(?:;|$)" $etik_speak_mailbox_set_cookie_secure;' \
-  '"~*;\s*SameSite=Strict(?:;|$)" $etik_speak_mailbox_set_cookie_httponly;'
+  'add_header Set-Cookie $etik_speak_public_set_cookie always;'
 do
   grep -Fq "$edge_requirement" "$tmp_dir/host-edge-public.conf" || {
-    echo "FATAL: live host edge misses the ES-106 privacy boundary" >&2
-    exit 19
+    echo "FATAL: live public server misses the ES-106 privacy boundary" >&2
+    exit 20
   }
 done
 
@@ -266,7 +298,7 @@ host_access_log_off_count=$(
 )
 [ "$host_access_log_off_count" -ge 2 ] || {
   echo "FATAL: live host-edge public servers still log access" >&2
-  exit 20
+  exit 21
 }
 
 cookie_filter_count=$(
@@ -275,7 +307,7 @@ cookie_filter_count=$(
 )
 [ "$cookie_filter_count" -eq 2 ] || {
   echo "FATAL: live host edge does not enforce the exact mailbox cookie filter" >&2
-  exit 21
+  exit 22
 }
 
 for header in \
@@ -288,7 +320,7 @@ do
   )
   [ "$header_count" -eq 2 ] || {
     echo "FATAL: live host edge does not clear identity header: $header" >&2
-    exit 22
+    exit 23
   }
 done
 
@@ -309,18 +341,18 @@ for host in "${hosts[@]}"; do
     200|204|301|302|307|308) ;;
     *)
       echo "FATAL: public reporter host is unavailable (HTTP $http_code)" >&2
-      exit 23
+      exit 24
       ;;
   esac
   if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$response_headers"; then
     echo "FATAL: Domain=.acik.com cookie escaped the public boundary" >&2
-    exit 24
+    exit 25
   fi
   if grep -Ei '^Set-Cookie:' "$response_headers" \
     | grep -Eiv '^Set-Cookie:[[:space:]]*__Host-etik_mailbox=' \
     | grep -q .; then
     echo "FATAL: non-mailbox cookie escaped the public boundary" >&2
-    exit 25
+    exit 26
   fi
 done
 
@@ -340,12 +372,12 @@ case "$api_code" in
   400|401|403|404|405|409|415|422) ;;
   *)
     echo "FATAL: synthetic public API negative control was not denied (HTTP $api_code)" >&2
-    exit 26
+    exit 27
     ;;
 esac
 if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$api_headers"; then
   echo "FATAL: Domain=.acik.com API cookie escaped the public boundary" >&2
-  exit 27
+  exit 28
 fi
 
 # Keep raw logs inside the mode-700 temporary directory. Only a leak count may
@@ -373,7 +405,7 @@ for log_file in "$tmp_dir"/*.log; do
 done
 [ "$leak_count" -eq 0 ] || {
   echo "FATAL: synthetic sentinel leaked into a durable log surface" >&2
-  exit 28
+  exit 29
 }
 
 echo "LIVE_INGRESS_ACCESS_LOG_DISABLED=true"
