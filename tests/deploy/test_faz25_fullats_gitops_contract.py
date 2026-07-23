@@ -683,6 +683,7 @@ fi
             "candidate submission is not bound to the confirmed resume draft",
             self.fullats_browser,
         )
+        self.assertIn("submittedPayload.resumeDraftVersion < 0", self.fullats_browser)
         self.assertIn("structured recruiter evaluation HTTP", self.fullats_browser)
         self.assertIn(
             "['recruiter', 'POST', `/api/ats/v1/recruiter/applications/"
