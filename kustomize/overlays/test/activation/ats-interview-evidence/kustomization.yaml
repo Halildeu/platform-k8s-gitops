@@ -18,10 +18,16 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@29a8abb27e41d4a311fae38b70414463a9a8fe08
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-29a8abb
-#   digest  sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4
-#   build   https://github.com/Halildeu/ats/actions/runs/29854189435
+#   source  ats@c7cf82ced983ec8c571e114cf9203015cf39fb63
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-c7cf82c
+#   digest  sha256:f5e596662772e6fdce722fa2e6723e308c78c603d1908171a8c9835a3f103119
+#   run     https://github.com/Halildeu/ats/actions/runs/29788943515
+# Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
+# migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
+# identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
+# ilan, CV import, pipeline/evaluation ve mülakat akışlarını taşır; DSAR
+# remediation ayrı owner-gated iş olarak fail-closed kalır.
+#   build   https://github.com/Halildeu/ats/actions/runs/29788943515
 # Canlı D29 + aday/İK yolculuğu bu GitOps değişikliği ArgoCD ile
 # eşitlendikten sonra faz25-fullats-live-browser-acceptance ile üretilecektir.
 #
@@ -43,7 +49,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:a5258a61390743b4b81860e61166af6ecf94c0c949a98d030bdf6170694afcc4
+    digest: sha256:f5e596662772e6fdce722fa2e6723e308c78c603d1908171a8c9835a3f103119
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
