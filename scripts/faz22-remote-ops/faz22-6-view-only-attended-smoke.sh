@@ -463,7 +463,7 @@ open_session_after_agent_reconnect() {
 
 keycloak_admin_password_candidates() {
   printf '%s\n' \
-    "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "/srv/platform/gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "$HOME/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "$HOME/host-compose/keycloak/test/secrets/kc_admin_password.txt" \

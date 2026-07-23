@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE="${EDGE_NGINX_SOURCE:-${ROOT}/host-compose/web-nginx/default.conf}"
-SSH_TARGET="${SSH_TARGET:-halil@staging-sw}"
-REMOTE_FILE="${EDGE_NGINX_REMOTE_FILE:-/home/halil/platform/web/nginx/default.conf}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
+REMOTE_FILE="${EDGE_NGINX_REMOTE_FILE:-/srv/platform/web/nginx/default.conf}"
 CONTAINER="${EDGE_NGINX_CONTAINER:-platform-web-nginx}"
 VERIFY="${ROOT}/scripts/faz24/verify-edge-nginx-ws-contract.sh"
 
@@ -77,10 +77,10 @@ fi
 
 remote_candidate="$(
   ssh -o BatchMode=yes "$SSH_TARGET" \
-    'umask 077; candidate=$(mktemp /home/halil/platform/web/nginx/default.conf.candidate.XXXXXX); cat >"$candidate"; printf "%s" "$candidate"' \
+    'umask 077; candidate=$(mktemp /srv/platform/web/nginx/default.conf.candidate.XXXXXX); cat >"$candidate"; printf "%s" "$candidate"' \
     <"$SOURCE"
 )"
-[[ "$remote_candidate" == /home/halil/platform/web/nginx/default.conf.candidate.* ]] || \
+[[ "$remote_candidate" == /srv/platform/web/nginx/default.conf.candidate.* ]] || \
   fail 'remote candidate path failed validation'
 
 candidate_sha="$(ssh -o BatchMode=yes "$SSH_TARGET" "sha256sum -- '$remote_candidate'" | awk '{print $1}')"

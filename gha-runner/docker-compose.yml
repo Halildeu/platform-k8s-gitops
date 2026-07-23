@@ -1,4 +1,4 @@
-# iter-50 Step 3.4a — Self-hosted GitHub Actions runner (staging-sw).
+# iter-50 Step 3.4a — Self-hosted GitHub Actions runner (aiserver).
 #
 # Codex 019dded6 S1 sertleştirmesi:
 #   - Tek amaçlı runner; testai-deploy event'leri için.
@@ -12,7 +12,7 @@
 #   2. RUNNER_PAT değerini least-privilege fine-grained PAT ile set et
 #   3. GitHub API egress preflight'i geçmeden runner'ı başlatma
 #   4. `docker compose up -d`
-#   5. GitHub Settings → Actions → Runners'da `staging-sw-testai-deploy` görünmeli
+#   5. GitHub Settings → Actions → Runners'da `aiserver-testai-deploy` görünmeli
 #
 # Runner ephemeral mode'da; her job sonrası container restart eder ve
 # yeni registration token ile yeniden bağlanır. Bu güvenlik için (token
@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
 
     # Container kullanıcı: runner (UID 1000 default). Host'ta runner için
-    # /home/halil/platform/web-stage/releases write yetkisi gerek.
+    # /srv/platform/web-stage/releases write yetkisi gerek.
     user: runner
 
     environment:
@@ -38,9 +38,9 @@ services:
       # token kırılır; token 1h TTL + single-use). PAT scope:
       # Administration: Write on Halildeu/platform-k8s-gitops.
       RUNNER_PAT: ${RUNNER_PAT}
-      RUNNER_NAME: ${RUNNER_NAME:-staging-sw-testai-deploy}
+      RUNNER_NAME: ${RUNNER_NAME:-aiserver-testai-deploy}
       # Codex S1: tek amaçlı label set
-      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,staging-sw,testai-deploy}
+      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,aiserver,testai-deploy}
       RUNNER_GROUP: ${RUNNER_GROUP:-Default}
       RUNNER_GITHUB_API_CONNECT_TIMEOUT: ${RUNNER_GITHUB_API_CONNECT_TIMEOUT:-5}
       RUNNER_GITHUB_API_MAX_TIME: ${RUNNER_GITHUB_API_MAX_TIME:-20}
@@ -53,7 +53,7 @@ services:
       - ${HOST_KUBECONFIG:-/home/halil/.kube/config}:/home/runner/.kube/config:ro
 
       # Host nginx releases dir — read-write (kubectl cp + rsync target)
-      - /home/halil/platform/web-stage:/home/halil/platform/web-stage:rw
+      - /srv/platform/web-stage:/srv/platform/web-stage:rw
 
       # Codex S1: docker.sock NO mount — silinmiş özellikle.
       # - /var/run/docker.sock:/var/run/docker.sock  # ❌ DO NOT ADD

@@ -1,9 +1,9 @@
 # Host-level MinIO bridge — Faz 24 audit-archive 7yr WORM cold storage (#1250).
 #
 # ADR-0042: standalone `audit-retention-worker` (C-slice) → MinIO bucket
-# `audit-archive` (object-lock COMPLIANCE 7y + versioning). Gerçek MinIO
-# staging-sw'da host-compose ile çalışır (/opt/platform/minio/docker-compose.yml,
-# profile=test; #55 meeting/transcript artifact storage ile paylaşılan instance).
+# `audit-archive` (object-lock COMPLIANCE 7y + versioning). Gerçek MinIO aktif
+# platform hostunda host-compose ile çalışır (test profile; #55
+# meeting/transcript artifact storage ile paylaşılan instance).
 # ADR-0031 D2 "stateful/cold off the hot k3d cluster" — in-cluster PVC DEĞİL.
 #
 # Test live değeri: 172.19.0.252:9000 (platform-test-net; minio-minio-test-1
@@ -11,8 +11,8 @@
 # emsali). Container NATIVE port 9000 (host-published :9100 DEĞİL — cluster
 # bridge IP üzerinden container portuna erişir). IP drift'e karşı
 # bootstrap/reconnect-compose-to-test-net.sh. Base placeholder host-LAN IP taşır;
-# overlay Endpoints patch gerçek bridge IP'yi yazar (redis-streams-svc.yaml
-# disiplini).
+# overlay Endpoints patch gerçek bridge IP'yi yazar. Base tek başına canlı bir
+# hosta yönlenmez; RFC 5737 TEST-NET-1 adresi fail-closed placeholder'dır.
 ---
 apiVersion: v1
 kind: Service
@@ -37,7 +37,7 @@ metadata:
     app.kubernetes.io/name: minio
 subsets:
   - addresses:
-      - ip: 10.9.10.53               # placeholder; overlay override (test: 172.19.0.252)
+      - ip: 192.0.2.1                # fail-closed placeholder; overlay override zorunlu
     ports:
       - name: s3
         port: 9000

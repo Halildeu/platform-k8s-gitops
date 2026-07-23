@@ -120,6 +120,8 @@ jobs:
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge > /tmp/eab-bridge-activation.yaml
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key (#548 child — staged)
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key > /tmp/eab-bridge-device-key.yaml
+      - name: aiserver active / staging-sw standby regression guard
+        run: python3 scripts/test/aiserver-post-cutover-contract.py
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key-live (#548 live wrapper — staged)
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live > /tmp/eab-bridge-device-key-live.yaml
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge-viewer (#1580 viewer — staged)

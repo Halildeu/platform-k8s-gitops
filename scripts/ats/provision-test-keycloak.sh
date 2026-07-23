@@ -9,6 +9,7 @@
 set -euo pipefail
 
 KC=platform-kc-test
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 REALM=platform-test
 KCADM='/opt/keycloak/bin/kcadm.sh'
 # Full ATS public careers tenant. Candidate applications are persisted here;
@@ -22,7 +23,7 @@ kc() { docker exec "$KC" "$KCADM" "$@"; }
 # login: keycloak-automation service-account (Vault'tan; stdout'a düşmez).
 # Bootstrap env parolası rotate edilmiş durumda (invalid_grant) — otomasyon
 # client'ı kanonik yol. Önce platform-test realm'i, olmazsa master denenir.
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 AUTO_JSON=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/keycloak-automation)
@@ -369,7 +370,7 @@ assert c.get("access.token.claim")=="true"' || {
 # persona test-şifreleri: Vault degerleri kararlı tutulur; yalnız eksik anahtar
 # uretilir. KC her kosumda Vault'taki degerle uzlastirilir; secret argv/stdout'a
 # cikmaz. kv/platform/ats-smoke 39d-4 smoke tekrar-koşumlarının kaynağıdır.
-ROOT2=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT2=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 if ! EXISTING_SMOKE=$(VAULT_TOKEN="$ROOT2" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/ats-smoke 2>/dev/null); then

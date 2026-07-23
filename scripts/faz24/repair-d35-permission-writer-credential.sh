@@ -28,7 +28,7 @@ readonly WRITER_CLIENT="frontend"
 readonly BASE_URL="https://testai.acik.com"
 readonly VAULT_PERSONA_PATH="kv/platform/d35-3"
 readonly VAULT_CONTAINER="platform-vault-test"
-readonly VAULT_INIT_FILE="/home/halil/bootstrap-drill/vault-init-test.json"
+readonly VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 
 STATUS="running"
 KC_ADMIN_PASSWORD_STDIN=false

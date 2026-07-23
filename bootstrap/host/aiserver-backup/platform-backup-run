@@ -8,23 +8,49 @@ REPO_ROOT="${REPO_ROOT:-/srv/platform/gitops/platform-k8s-gitops}"
 BACKUP_ROOT="${BACKUP_ROOT:-/srv/platform/backup}"
 AUTH_ROOT="${AUTH_ROOT:-/srv/platform/secrets/backup-auth}"
 METRIC_ROOT="${METRIC_ROOT:-/srv/platform/backup/metrics}"
+BACKUP_EXPORT_USER="${BACKUP_EXPORT_USER:-platform-backup-export}"
+
+grant_export_read_acl() {
+  local class="$1"
+  local class_root="${BACKUP_ROOT}/${class}"
+
+  getent passwd "${BACKUP_EXPORT_USER}" >/dev/null 2>&1 || return 0
+  [[ -d "${class_root}" ]] || return 0
+  command -v setfacl >/dev/null 2>&1 || {
+    echo "backup export ACL skipped: setfacl missing" >&2
+    return 1
+  }
+
+  # The SSH identity is forced through read-only rrsync. It receives traverse
+  # permission on the root, read/traverse on backup directories and read-only
+  # access to files. Backup creators chmod outputs to 0600, so this hook runs
+  # after every successful producer invocation.
+  setfacl -m "u:${BACKUP_EXPORT_USER}:--x" "${BACKUP_ROOT}"
+  find "${class_root}" -type d -exec \
+    setfacl -m "u:${BACKUP_EXPORT_USER}:r-x" {} +
+  find "${class_root}" -type f -exec \
+    setfacl -m "u:${BACKUP_EXPORT_USER}:r--" {} +
+}
 
 case "${1:-}" in
   pg)
     BACKUP_ROOT="${BACKUP_ROOT}/pg" \
-      exec "${REPO_ROOT}/bootstrap/pg-dump-cron.sh"
+      "${REPO_ROOT}/bootstrap/pg-dump-cron.sh"
+    grant_export_read_acl pg
     ;;
   vault)
     BACKUP_ROOT="${BACKUP_ROOT}/vault" \
     VAULT_INIT_FILE_PROD="${AUTH_ROOT}/vault-init-prod.json" \
     VAULT_INIT_FILE_TEST="${AUTH_ROOT}/vault-init-test.json" \
-      exec "${REPO_ROOT}/bootstrap/vault-snapshot-cron.sh"
+      "${REPO_ROOT}/bootstrap/vault-snapshot-cron.sh"
+    grant_export_read_acl vault
     ;;
   keycloak)
     BACKUP_ROOT="${BACKUP_ROOT}/keycloak" \
     KC_ADMIN_PASSWORD_FILE_PROD="${REPO_ROOT}/host-compose/keycloak/prod/secrets/kc_admin_password.txt" \
     KC_ADMIN_PASSWORD_FILE_TEST="${REPO_ROOT}/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
-      exec "${REPO_ROOT}/bootstrap/kc-export-cron.sh"
+      "${REPO_ROOT}/bootstrap/kc-export-cron.sh"
+    grant_export_read_acl keycloak
     ;;
   freshness)
     install -d -m 0750 "${METRIC_ROOT}"

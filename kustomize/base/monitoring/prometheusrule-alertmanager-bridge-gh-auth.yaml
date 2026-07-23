@@ -96,7 +96,7 @@ spec:
 
               Diagnostic:
                 kubectl --context k3d-prod -n monitoring describe externalsecret alertmanager-bridge-gh-token | tail -20
-                ssh halil@staging-sw 'VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json); docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod vault kv get kv/platform/alertmanager-bridge-gh'
+                ssh aiadmin@aiserver 'VAULT_ROOT_TOKEN=$(sudo -n jq -r .root_token /srv/platform/secrets/backup-auth/vault-init-prod.json); sudo -n docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod vault kv get kv/platform/alertmanager-bridge-gh'
                 # If "No value found" → operator init pending (RB §4.1)
 
               Runbook: docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md §4.1

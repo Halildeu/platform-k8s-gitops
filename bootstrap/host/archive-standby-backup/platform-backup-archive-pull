@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Pull immutable backup objects from aiserver into the .53 archive standby.
+
+set -euo pipefail
+umask 077
+
+SOURCE="${SOURCE:-platform-backup-export@10.9.10.15}"
+DEST_ROOT="${DEST_ROOT:-/srv/platform/archive/aiserver-backup}"
+IDENTITY_FILE="${IDENTITY_FILE:-/root/.ssh/aiserver-backup-pull}"
+KNOWN_HOSTS_FILE="${KNOWN_HOSTS_FILE:-/root/.ssh/aiserver-backup-known-hosts}"
+LEDGER_ROOT="${LEDGER_ROOT:-${DEST_ROOT}/.ledger}"
+LOCK_FILE="${LOCK_FILE:-/run/lock/platform-backup-archive-pull.lock}"
+
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "archive pull must run as root" >&2
+  exit 77
+}
+
+for command in flock rsync sha256sum; do
+  command -v "${command}" >/dev/null 2>&1 || {
+    echo "missing command: ${command}" >&2
+    exit 69
+  }
+done
+
+for file in "${IDENTITY_FILE}" "${KNOWN_HOSTS_FILE}"; do
+  [[ -f "${file}" && ! -L "${file}" ]] || {
+    echo "missing regular trust file: ${file}" >&2
+    exit 78
+  }
+  mode="$(stat -c '%a' "${file}")"
+  [[ "${mode}" == "600" ]] || {
+    echo "unsafe trust file mode ${mode}: ${file}" >&2
+    exit 78
+  }
+done
+
+install -d -m 0700 "${DEST_ROOT}" "${LEDGER_ROOT}"
+exec 9>"${LOCK_FILE}"
+flock -n 9 || {
+  echo "archive pull already running" >&2
+  exit 0
+}
+
+run_id="$(date -u +%Y%m%dT%H%M%SZ)"
+work="$(mktemp -d)"
+cleanup() {
+  rm -rf "${work}"
+}
+trap cleanup EXIT
+
+ssh_transport=(
+  ssh
+  -o BatchMode=yes
+  -o IdentitiesOnly=yes
+  -o StrictHostKeyChecking=yes
+  -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}"
+  -o ConnectTimeout=15
+  -i "${IDENTITY_FILE}"
+)
+
+for class in pg vault keycloak; do
+  log_file="${work}/${class}.rsync.log"
+  rsync \
+    --archive \
+    --checksum \
+    --ignore-existing \
+    --no-owner \
+    --no-group \
+    --numeric-ids \
+    --safe-links \
+    --partial-dir=.partial \
+    --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= \
+    --itemize-changes \
+    --out-format='%i|%n' \
+    --log-file="${log_file}" \
+    --log-file-format='%i|%n' \
+    -e "${ssh_transport[*]}" \
+    "${SOURCE}:/${class}/" \
+    "${DEST_ROOT}/${class}/"
+done
+
+ledger_tmp="${work}/sha256"
+: >"${ledger_tmp}"
+
+# Inventory the complete immutable archive after every pull. Restricting the
+# ledger to this run's rsync delta would produce an empty receipt on a healthy,
+# idempotent run and would not prove the retained archive contents.
+for class in pg vault keycloak; do
+  while IFS= read -r -d '' archive_path; do
+    relative_path="${archive_path#"${DEST_ROOT}/"}"
+    [[ "${relative_path}" != "${archive_path}" ]] || {
+      echo "archive path escaped destination root" >&2
+      exit 65
+    }
+    [[ "${relative_path}" =~ ^[A-Za-z0-9._/-]+$ ]] || {
+      echo "unsafe archive path" >&2
+      exit 65
+    }
+    [[ ! -L "${archive_path}" ]] || {
+      echo "archive path is a symlink: ${relative_path}" >&2
+      exit 65
+    }
+    digest="$(sha256sum "${archive_path}" | awk '{print $1}')"
+    size="$(stat -c '%s' "${archive_path}")"
+    printf '%s  %s  %s\n' "${digest}" "${size}" "${relative_path}" >>"${ledger_tmp}"
+  done < <(
+    find "${DEST_ROOT}/${class}" -type f ! -path '*/.partial/*' -print0
+  )
+done
+
+ledger="${LEDGER_ROOT}/${run_id}.sha256"
+{
+  printf '# schema=acik.aiserver-backup-archive-ledger.v1\n'
+  printf '# source=aiserver destination=stagingsw createdAtUtc=%s\n' "${run_id}"
+  sort -k3,3 "${ledger_tmp}"
+} >"${ledger}"
+chmod 0600 "${ledger}"
+
+inventoried="$(grep -vc '^#' "${ledger}" || true)"
+printf 'archive_pull=pass run=%s inventoried=%s ledger=%s\n' \
+  "${run_id}" "${inventoried}" "${ledger}"

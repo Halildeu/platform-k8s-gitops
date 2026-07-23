@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # 39d-4 D29 kanıt matrisi (Codex 019f4c6c/019f50b7 adlandırmasıyla).
-# staging-sw'de koşar; persona şifreleri Vault'tan (stdout'a düşmez);
+# aiserver'da koşar; persona şifreleri Vault'tan (stdout'a düşmez);
 # token'lar yalnız bu süreçte — basılan tek şey claim ÖZETİ (redacted).
 # shellcheck disable=SC2015 # ok()/bad() daima 0; bu dosyada koşullu sayaç deseni.
 set -uo pipefail
 EDGE="https://testai.acik.com"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 KCTOK="$EDGE/realms/platform-test/protocol/openid-connect/token"
 API="$EDGE/api/ats/v1/interviews/iv-smoke-1"
 T=$(mktemp -d); chmod 700 "$T"; umask 077
@@ -17,7 +18,7 @@ PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 SMOKE=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/ats-smoke)
