@@ -124,7 +124,7 @@ class BuildWgBplusOperatorHandoffTest(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("faz24-wg-bplus-operator-handoff-${{ github.run_id }}", workflow)
-        self.assertIn("does not connect to Denetim PC or staging-sw", workflow)
+        self.assertIn("does not connect to Denetim PC or aiserver", workflow)
         self.assertIn("does not mutate host, cluster, WireGuard", workflow)
         self.assertIn('(cd "${HANDOFF_DIR}" && sha256sum --check SHA256SUMS)', workflow)
         self.assertIn('"faz24.wg-bplus.operator-handoff.v1"', workflow)

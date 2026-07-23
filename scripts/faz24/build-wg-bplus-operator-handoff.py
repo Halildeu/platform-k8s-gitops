@@ -2,7 +2,7 @@
 """Build a metadata-only operator handoff package for Faz 24 WG-B+.
 
 This package coordinates the remaining I3 and I6 operator evidence steps. It
-does not connect to Denetim PC or staging-sw, does not collect live evidence,
+does not connect to Denetim PC or aiserver, does not collect live evidence,
 and does not mutate host, cluster, WireGuard, platform-ai, or production state.
 """
 
@@ -222,7 +222,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, object]:
             "targetHost": args.i6_target_host,
             "nextActions": [
                 "Download the I6 host-evidence package artifact.",
-                "Run collect-staging-i6-host-evidence.sh from a clean platform-k8s-gitops checkout on staging-sw.",
+                "Run collect-staging-i6-host-evidence.sh from a clean platform-k8s-gitops checkout on aiserver.",
                 "Ingest the resulting protected metadata-only JSON with faz24-wg-bplus-i6-masq-evidence-ingest.yml.",
                 "Require GitHub ingest verifier PASS and reviewer acceptance.",
             ],
@@ -258,7 +258,7 @@ def render_readme(manifest: dict[str, object]) -> str:
 Scope: platform-k8s-gitops#1864, #1867, and #1874.
 
 This package is a coordination artifact only. It does not connect to Denetim
-PC or staging-sw, does not collect live evidence, and does not change host,
+PC or aiserver, does not collect live evidence, and does not change host,
 cluster, WireGuard, platform-ai, secret, or production state.
 
 ## Current boundary
@@ -267,7 +267,7 @@ cluster, WireGuard, platform-ai, secret, or production state.
 - I6 board status: `Needs Verify`
 - I3 requires Denetim operator execution, Denetim authorize evidence ingest,
   and then I3 evidence verifier PASS.
-- I6 requires staging-sw operator execution, MASQ evidence ingest, and verifier
+- I6 requires aiserver operator execution, MASQ evidence ingest, and verifier
   PASS.
 - This package does not prove direct-STT Functional, app-mTLS, compute-plane
   audit smoke, direct audio e2e, or production cutover.
@@ -299,7 +299,7 @@ If the ingest verifier returns PASS, re-run the I3 evidence workflow:
 {i3_commands["rerunI3Evidence"]}
 ```
 
-## I6 staging-sw host evidence
+## I6 aiserver host evidence
 
 Download the package:
 
@@ -307,7 +307,7 @@ Download the package:
 {i6_commands["downloadPackage"]}
 ```
 
-Run on `staging-sw` from a clean `platform-k8s-gitops` checkout:
+Run on `aiserver` from a clean `platform-k8s-gitops` checkout:
 
 ```bash
 {i6_commands["operatorShell"]}
@@ -365,7 +365,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--i3-public-key-blob-sha256", default=DEFAULT_I3_PUBLIC_KEY_BLOB_SHA256)
     parser.add_argument("--i6-host-package-run-id", default=DEFAULT_I6_HOST_PACKAGE_RUN_ID)
     parser.add_argument("--denetim-ssh-target", default="svc-denetim-agent@10.99.0.2")
-    parser.add_argument("--i6-target-host", default="staging-sw")
+    parser.add_argument("--i6-target-host", default="aiserver")
     return parser.parse_args(argv)
 
 

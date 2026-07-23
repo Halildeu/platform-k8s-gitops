@@ -154,6 +154,14 @@ expected_source_fragments = {
         'SSH_HOST="aiadmin@aiserver"',
         "/srv/platform/secrets/backup-auth/vault-init-prod.json",
     ),
+    "scripts/faz24/build-wg-bplus-operator-handoff.py": (
+        'parser.add_argument("--i6-target-host", default="aiserver")',
+        "I6 requires aiserver operator execution",
+    ),
+    "scripts/faz24/build-wg-bplus-i6-host-evidence-package.py": (
+        'parser.add_argument("--target-host", default="aiserver")',
+        "repository root on aiserver",
+    ),
     "host-compose/preflight-check.sh": (
         'REMOTE="${REMOTE:-aiadmin@aiserver}"',
     ),
@@ -195,6 +203,15 @@ for relative_path, fragments in expected_source_fragments.items():
     source = (ROOT / relative_path).read_text(encoding="utf-8")
     for fragment in fragments:
         assert fragment in source, f"{relative_path} missing {fragment!r}"
+
+for relative_path in (
+    "scripts/faz24/build-wg-bplus-operator-handoff.py",
+    "scripts/faz24/build-wg-bplus-i6-host-evidence-package.py",
+):
+    source = (ROOT / relative_path).read_text(encoding="utf-8")
+    assert "staging-sw" not in source, (
+        f"{relative_path} still routes WG-B+ evidence to archive standby"
+    )
 
 reconnect_source = (
     ROOT / "bootstrap/reconnect-compose-to-test-net.sh"
