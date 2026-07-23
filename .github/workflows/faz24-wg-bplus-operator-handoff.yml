@@ -1,7 +1,7 @@
 name: Faz 24 WG-B+ Operator Handoff
 
 # Builds a metadata-only operator handoff package for the remaining I3/I6
-# evidence steps. It does not connect to Denetim PC or staging-sw, does not
+# evidence steps. It does not connect to Denetim PC or aiserver, does not
 # collect live evidence, and does not mutate host, cluster, WireGuard,
 # platform-ai, secrets, or production state.
 
@@ -43,7 +43,7 @@ on:
       i6_target_host:
         description: "Host where I6 operator package is run"
         required: true
-        default: "staging-sw"
+        default: "aiserver"
 
 permissions:
   contents: read
@@ -198,7 +198,7 @@ jobs:
             echo "- I6 issue: #1867"
             echo "- Docs/board issue: #1874"
             echo
-            echo "Boundary: metadata-only coordination artifact. It does not connect to Denetim PC or staging-sw, collect live evidence, mutate host or cluster state, or mark I3/I6 accepted."
+            echo "Boundary: metadata-only coordination artifact. It does not connect to Denetim PC or aiserver, collect live evidence, mutate host or cluster state, or mark I3/I6 accepted."
             echo
             if [ -s "${HANDOFF_DIR}/README.md" ]; then
               sed -n '1,180p' "${HANDOFF_DIR}/README.md"

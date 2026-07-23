@@ -22,7 +22,7 @@ permissions:
 jobs:
   verify:
     name: endpoint-admin OpenFGA runtime selector
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 5
 
     steps:

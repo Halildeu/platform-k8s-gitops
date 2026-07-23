@@ -44,8 +44,10 @@ for env in prod test; do
     continue
   fi
 
-  # Vault token (root) bootstrap-drill'den
-  token_file="${HOME}/bootstrap-drill/vault-init-${env}.json"
+  # Vault token source. The per-environment override lets a production host
+  # keep the init material under a root-only secret store instead of $HOME.
+  token_file_var="VAULT_INIT_FILE_${env^^}"
+  token_file="${!token_file_var:-${HOME}/bootstrap-drill/vault-init-${env}.json}"
   if [[ ! -f "${token_file}" ]]; then
     log "SKIP ${env}: no token file ${token_file}"
     continue

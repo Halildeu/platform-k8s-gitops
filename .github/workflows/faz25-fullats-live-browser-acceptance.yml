@@ -18,7 +18,7 @@ concurrency:
 jobs:
   live-browser:
     name: Recruiter job lifecycle to candidate application on testai
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     # Includes the customer journey plus a bounded wait for a protected
     # compensating rollback PR if runtime/browser acceptance fails.
     timeout-minutes: 90
@@ -93,7 +93,7 @@ jobs:
         env:
           CONFIRM: ${{ inputs.confirm }}
           EVIDENCE_DIR: ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
+          VAULT_INIT_JSON: /srv/platform/secrets/backup-auth/vault-init-test.json
         run: bash scripts/ats/fullats-live-browser-acceptance.sh
 
       - name: Run promoted D29 functional and authorization matrix

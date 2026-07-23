@@ -2,7 +2,7 @@ name: Faz 22.6 A1 Vault HTTPS Activate
 
 # Operator-triggered activation for the test-only Vault HTTPS 8202 path used by
 # the Faz 22.6 #548 A1 hardware-attestation flow. This workflow exists because
-# Mac-side SSH to staging-sw can be unavailable while the self-hosted runner is
+# Mac-side SSH to aiserver can be unavailable while the self-hosted runner is
 # still the authoritative k3d-test execution surface.
 
 on:
@@ -40,14 +40,14 @@ env:
   KUBE_CONTEXT: k3d-test
   KUBE_NAMESPACE: platform-test
   SSH_TARGET: local
-  VAULT_TLS_DIR: /home/halil/platform-stateful/test/vault/tls
-  VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
-  VAULT_COMPOSE_DIR: /home/halil/platform-k8s-gitops/host-compose/vault/test
+  VAULT_TLS_DIR: /srv/platform/stateful/test/vault/tls
+  VAULT_INIT_JSON: /srv/platform/secrets/backup-auth/vault-init-test.json
+  VAULT_COMPOSE_DIR: /srv/platform/gitops/platform-k8s-gitops/host-compose/vault/test
 
 jobs:
   activate:
-    name: Activate Vault HTTPS 8202 on staging-sw
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    name: Activate Vault HTTPS 8202 on aiserver
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     steps:
@@ -114,17 +114,17 @@ jobs:
           fi
           jq '.Mounts' /tmp/platform-vault-test-inspect.json > /tmp/platform-vault-test-mounts.json
 
-          jq -e --arg src "/home/halil/platform-stateful/test/vault/data" \
+          jq -e --arg src "/srv/platform/stateful/test/vault/data" \
             '[.[] | select(.Destination == "/vault/data" and (.Source | startswith($src)))] | length == 1' \
             /tmp/platform-vault-test-mounts.json >/dev/null
-          jq -e --arg src "/home/halil/platform-stateful/test/vault/logs" \
+          jq -e --arg src "/srv/platform/stateful/test/vault/logs" \
             '[.[] | select(.Destination == "/vault/logs" and (.Source | startswith($src)))] | length == 1' \
             /tmp/platform-vault-test-mounts.json >/dev/null
-          jq -e --arg src "/home/halil/platform-stateful/test/vault/tls" \
+          jq -e --arg src "/srv/platform/stateful/test/vault/tls" \
             '[.[] | select(.Destination == "/vault/tls" and (.Source | startswith($src)) and .RW == false)] | length == 1' \
             /tmp/platform-vault-test-mounts.json >/dev/null
 
-          echo "PASS live Vault data/log/tls mounts match /home/halil/platform-stateful/test/vault"
+          echo "PASS live Vault data/log/tls mounts match /srv/platform/stateful/test/vault"
 
       - name: Render only Vault Service and Endpoints from test overlay
         run: |
@@ -215,7 +215,7 @@ jobs:
           {
             echo "## Faz 22.6 A1 Vault HTTPS activation"
             echo ""
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- dry_run: \`${{ inputs.dry_run }}\`"
             echo "- context: \`${KUBE_CONTEXT}\`"
             echo "- namespace: \`${KUBE_NAMESPACE}\`"

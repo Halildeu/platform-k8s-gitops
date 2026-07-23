@@ -1,6 +1,6 @@
 name: Faz 24 I3 Runner WG Tool Repair
 
-# Controlled preflight/repair for the self-hosted staging-sw runner prerequisite
+# Controlled preflight/repair for the self-hosted aiserver runner prerequisite
 # needed by platform-k8s-gitops#1864. This workflow does not touch clusters,
 # Denetim PC config, direct-STT, app-mTLS, or production state.
 
@@ -30,8 +30,8 @@ concurrency:
 
 jobs:
   repair:
-    name: preflight/repair staging-sw wg tool
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    name: preflight/repair aiserver wg tool
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     env:
@@ -108,7 +108,7 @@ jobs:
           {
             echo "## Faz 24 I3 runner WG tool repair"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Mode: \`${MODE_INPUT}\`"
             echo "- Package manager: \`${PACKAGE_MANAGER_INPUT}\`"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

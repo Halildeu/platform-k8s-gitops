@@ -48,7 +48,7 @@ env:
 jobs:
   update-agent:
     name: AgentPC2 release-catalog UPDATE_AGENT
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 25
 
     steps:

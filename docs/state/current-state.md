@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — `.15` aiserver direct runtime and deploy-control cutover (2026-07-23)
+
+Bu delta, AI platformunun node yönetim adresini `10.9.10.53` olarak gösteren
+eski operasyon kayıtlarını supersede eder. MSSQL ayrı sistemdir ve bu cutover
+kapsamında taşınmamıştır.
+
+Doğrudan canlı kanıt:
+
+- iç DNS `ai.acik.com`, `testai.acik.com` ve
+  `remote-bridge-mtls.testai.acik.com` için `10.9.10.15` döndürür; public
+  TCP 80/443 DNAT hedefi de `.15` olarak operatör tarafından değiştirilmiştir;
+- `.15` Ubuntu Server `24.04.4 LTS` üzerinde `k3d-test` ve `k3d-prod` ayrı
+  cluster'ları çalışır. TEST ve PROD D29 kontrolü ayrı ayrı `10/10 Up`,
+  `Functional`, doğru issuer ve Zanzibar allow/deny PASS üretmiştir;
+- GitOps test kontrol koşusu `29987958679`, eski runner durdurulmuşken
+  `aiserver-testai-deploy` üzerinde başarıyla çalışmış ve yerel `k3d-test`
+  erişimini kanıtlamıştır;
+- GitHub'da yalnız `.15` runner kayıtları çevrimiçidir:
+  `aiserver-testai-deploy`, `aiserver-signing` ve `aiserver-desktop-ci`.
+  Üç eski `.53` runner kaydı silinmiştir;
+- signing CA public fingerprint'leri kaynakla eşleşir; private key dosyaları
+  `.15` üzerinde yalnız `codesign` kullanıcısına `0400` erişimle tutulur.
+  Desktop CI container'ı ve host firewall servisi `.15` üzerinde aktiftir;
+- WireGuard server `.15` üzerinde UDP/443 ile aktiftir. Denetim PC peer
+  endpoint'i `10.9.10.15:443` olarak runtime ve SYSTEM scheduled-task
+  persistence restart testiyle doğrulanmıştır. `k3d-wg-masq.service` ve
+  `k3d-wg-masq.timer` enabled/active, host-rule check PASS'tir;
+- `.15` üzerinde ilk prod/test PostgreSQL dump, Vault Raft snapshot ve
+  Keycloak full realm export setleri oluşturulmuş; JSON/gzip yapısı
+  doğrulanmıştır. `platform-backup-{pg,vault,keycloak,freshness}.timer`
+  etkin, freshness metriği iki k3d node'una kopyalanmıştır;
+- `.53` üzerinde k3d/container workload'ları, WireGuard, deploy/signing/desktop
+  runner'ları, geçici cutover bridge ve artık çalışmayan remote-bridge `socat`
+  zinciri durdurulmuş; restart policy'leri kapatılmıştır. Eski kullanıcı cron'u
+  `/home/halil/cutover-backup/20260723/` altında geri dönüş kopyası alınarak
+  devre dışı bırakılmıştır.
+
+Production sınırı:
+
+- `.15` prod cluster'ında `prod-deploy-smoke` least-privilege RBAC matrisi
+  izin verilen 6 işlem ve reddedilen 4 işlemle doğrulanmıştır;
+- `PROD_DEPLOY_SMOKE_KUBECONFIG_B64` ve `ARGOCD_PROD_SYNC_TOKEN` production
+  environment secret'ları `.15` hedefi için rotate edilmiştir;
+- canlı ArgoCD `server.rootpath=/argocd` kullanır. Workflow ve runbook CLI
+  çağrıları `--grpc-web-root-path /argocd` taşımalıdır;
+- production deploy dispatch'i hâlâ GitHub Environment required-reviewer insan
+  kapısındadır. Bu cutover, onay taklidi veya production sync kanıtı değildir;
+- `.53` OS kapatma ancak son bağımlılık envanteri ile `.15` external/internal
+  smoke yeniden geçtikten sonra uygulanır. Kaynak diskleri rollback penceresi
+  boyunca silinmez.
+
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 
 This delta supersedes only the 2026-07-17 statements below that TEST Vault had

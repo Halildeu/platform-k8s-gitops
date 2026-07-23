@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# aiserver (.15) host backup dispatcher.
+# Secret values are consumed from root-only files and are never printed.
+
+set -euo pipefail
+
+REPO_ROOT="${REPO_ROOT:-/srv/platform/gitops/platform-k8s-gitops}"
+BACKUP_ROOT="${BACKUP_ROOT:-/srv/platform/backup}"
+AUTH_ROOT="${AUTH_ROOT:-/srv/platform/secrets/backup-auth}"
+METRIC_ROOT="${METRIC_ROOT:-/srv/platform/backup/metrics}"
+
+case "${1:-}" in
+  pg)
+    BACKUP_ROOT="${BACKUP_ROOT}/pg" \
+      exec "${REPO_ROOT}/bootstrap/pg-dump-cron.sh"
+    ;;
+  vault)
+    BACKUP_ROOT="${BACKUP_ROOT}/vault" \
+    VAULT_INIT_FILE_PROD="${AUTH_ROOT}/vault-init-prod.json" \
+    VAULT_INIT_FILE_TEST="${AUTH_ROOT}/vault-init-test.json" \
+      exec "${REPO_ROOT}/bootstrap/vault-snapshot-cron.sh"
+    ;;
+  keycloak)
+    BACKUP_ROOT="${BACKUP_ROOT}/keycloak" \
+    KC_ADMIN_PASSWORD_FILE_PROD="${REPO_ROOT}/host-compose/keycloak/prod/secrets/kc_admin_password.txt" \
+    KC_ADMIN_PASSWORD_FILE_TEST="${REPO_ROOT}/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+      exec "${REPO_ROOT}/bootstrap/kc-export-cron.sh"
+    ;;
+  freshness)
+    install -d -m 0750 "${METRIC_ROOT}"
+    PG_BACKUP_DIR="${BACKUP_ROOT}/pg" \
+    KC_BACKUP_DIR="${BACKUP_ROOT}/keycloak" \
+    VAULT_BACKUP_DIR="${BACKUP_ROOT}/vault" \
+    OUTPUT_FILE="${METRIC_ROOT}/backup_freshness.prom" \
+      "${REPO_ROOT}/bootstrap/backup-freshness-exporter.sh"
+
+    for node in k3d-prod-server-0 k3d-test-server-0; do
+      [[ "$(docker inspect --format '{{.State.Running}}' "${node}" 2>/dev/null || true)" == "true" ]] || continue
+      docker exec "${node}" mkdir -p /var/lib/node_exporter
+      docker cp "${METRIC_ROOT}/backup_freshness.prom" "${node}:/var/lib/node_exporter/backup_freshness.prom"
+      docker exec "${node}" chmod 0644 /var/lib/node_exporter/backup_freshness.prom
+    done
+    ;;
+  *)
+    echo "usage: $0 {pg|vault|keycloak|freshness}" >&2
+    exit 64
+    ;;
+esac

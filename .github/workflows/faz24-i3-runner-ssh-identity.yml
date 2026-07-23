@@ -1,6 +1,6 @@
 name: Faz 24 I3 Runner SSH Identity
 
-# Controlled preflight/repair for the self-hosted staging-sw runner identity
+# Controlled preflight/repair for the self-hosted aiserver runner identity
 # used by platform-k8s-gitops#1864. This workflow may create a runner-local SSH
 # private key, but it never uploads the private key. The uploaded artifact
 # contains only JSON metadata and the public key needed for Denetim-side
@@ -28,8 +28,8 @@ concurrency:
 
 jobs:
   identity:
-    name: preflight/repair staging-sw SSH identity
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    name: preflight/repair aiserver SSH identity
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 10
 
     env:
@@ -102,7 +102,7 @@ jobs:
           {
             echo "## Faz 24 I3 runner SSH identity"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Mode: \`${MODE_INPUT}\`"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-i3-runner-ssh-identity-${{ github.run_id }}\`"

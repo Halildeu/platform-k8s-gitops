@@ -1126,7 +1126,7 @@ fi
         self.assertIn("Only verify exact Argo revision, image/config binding", self.recovery_workflow)
         self.assertIn('"refs/heads/main"', self.recovery_workflow)
         self.assertIn("APPLY_FAZ25_FULLATS_TEST_RECOVERY", self.recovery_workflow)
-        self.assertIn("[self-hosted, staging-sw, testai-deploy]", self.recovery_workflow)
+        self.assertIn("[self-hosted, aiserver, testai-deploy]", self.recovery_workflow)
         self.assertIn(
             "bash scripts/ats/provision-test-pg-vault.sh --roles-only",
             self.recovery_workflow,

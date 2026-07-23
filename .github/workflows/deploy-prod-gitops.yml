@@ -35,7 +35,7 @@ name: Deploy prod GitOps sync
 #   Helm upgrade (account+RBAC) → `argocd account generate-token` →
 #   `gh secret set ARGOCD_PROD_SYNC_TOKEN --env production`.
 #
-# Runner: `staging-sw-testai-deploy` (tek online self-hosted runner). Ölü
+# Runner: `aiserver-testai-deploy` (production sync için tek yetkili self-hosted runner).
 #   `prod-deploy` label'ını bekleyen image-only `deploy-backend-prod.yml` /
 #   `deploy-frontend-prod.yml` workflow'ları PR-2 ile emekli edildi (silindi)
 #   — prod'un tek deploy/rollback yolu bu workflow.
@@ -204,7 +204,7 @@ jobs:
   sync:
     name: ArgoCD sync (production env-gate'li)
     needs: preflight
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 30
     environment:
       name: production
@@ -264,11 +264,11 @@ jobs:
           # positive — workflow'un gereken TÜM yetkileri fail-fast doğrulanır
           # (RBAC/secret drift'i ArgoCD sync'e gelmeden yakala)
           want() {  # ns verb resource [subresource]
-            local sr=""
-            [ -n "${4:-}" ] && sr="--subresource=$4"
+            local -a sr=()
+            [ -n "${4:-}" ] && sr=("--subresource=$4")
             if ! kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" -n "$1" \
-                 auth can-i "$2" "$3" $sr >/dev/null 2>&1; then
-              echo "::error::restricted kubeconfig: '$2 $3 $sr' ($1 ns) yetkisi yok — RBAC drift"
+                 auth can-i "$2" "$3" "${sr[@]}" >/dev/null 2>&1; then
+              echo "::error::restricted kubeconfig: '$2 $3 ${sr[*]}' ($1 ns) yetkisi yok — RBAC drift"
               exit 1
             fi
           }
@@ -347,7 +347,10 @@ jobs:
 
           export ARGOCD_SERVER="127.0.0.1:${PF_PORT}"
           export ARGOCD_AUTH_TOKEN="${ARGOCD_PROD_SYNC_TOKEN}"
-          ARGOCD=(argocd --plaintext)
+          # Target ArgoCD is published below /argocd. Without this gRPC-web
+          # root path, login can succeed at the edge while sync calls hit the
+          # wrong upstream path.
+          ARGOCD=(argocd --plaintext --grpc-web-root-path /argocd)
 
           # --- hard refresh (auth + RBAC applications,get ilk kez sınanır) ---
           if ! "${ARGOCD[@]}" app get "${ARGOCD_APP}" --hard-refresh -o wide; then

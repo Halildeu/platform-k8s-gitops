@@ -28,7 +28,7 @@ HEAD = "0123456789abcdef0123456789abcdef01234567"
 REPOSITORY = "Halildeu/platform-k8s-gitops"
 ENVIRONMENT = "faz22-view-only-pilot"
 WORKFLOW = ".github/workflows/apply-view-only-viewer-pilot-protected.yml"
-LABELS = ["self-hosted", "staging-sw", "testai-deploy"]
+LABELS = ["self-hosted", "aiserver", "testai-deploy"]
 CREDENTIAL = b"B" * 64
 
 
