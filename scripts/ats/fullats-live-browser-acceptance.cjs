@@ -553,10 +553,10 @@ try {
   await candidateLink.click();
   await waitVisible(candidatePage.getByTestId('candidate-portal-page'), 'candidate portal');
   await waitVisible(candidatePage.getByRole('heading', { name: 'Başvuru yolculuğum' }), 'candidate journey');
-  const submittedStep = candidatePage.getByRole('heading', {
-    name: 'Başvuru alındı',
-    exact: true,
-  });
+  const currentStatusCard = candidatePage.getByText('Güncel durum', { exact: true }).locator('..');
+  const currentStatusHeading = (name) =>
+    currentStatusCard.getByRole('heading', { name, exact: true });
+  const submittedStep = currentStatusHeading('Başvuru alındı');
   await waitVisible(submittedStep, 'submitted current state');
   await assertAxeClean(candidatePage, 'candidate-portal-mobile');
   await assertNoHorizontalOverflow(candidatePage, 'candidate-portal-mobile');
@@ -585,10 +585,7 @@ try {
   await reviewPanel.getByRole('button', { name: 'İnsan incelemesini başlat' }).click();
   await waitVisible(reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }), 'under review transition');
   const refreshStatusButton = candidatePage.getByRole('button', { name: 'Durumu yenile' });
-  const reviewStep = candidatePage.getByRole('heading', {
-    name: 'İnsan incelemesinde',
-    exact: true,
-  });
+  const reviewStep = currentStatusHeading('İnsan incelemesinde');
   await refreshUntilVisible(refreshStatusButton, reviewStep, 'candidate sees under review');
 
   await reviewPanel.getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' }).click();
@@ -644,10 +641,7 @@ try {
   }
   await assertAxeClean(recruiterPage, 'recruiter-workspace-terminal-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-terminal-desktop');
-  const interviewStep = candidatePage.getByRole('heading', {
-    name: 'Mülakat planlaması',
-    exact: true,
-  });
+  const interviewStep = currentStatusHeading('Mülakat planlaması');
   await refreshUntilVisible(refreshStatusButton, interviewStep, 'candidate sees interview pending');
 
   await recruiterPage.getByRole('button', { name: 'Aday detayını kapat' }).click();
