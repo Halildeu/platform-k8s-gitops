@@ -254,6 +254,21 @@ GitOps preflight verifies that source/workflow/SLSA binding; Gate 4 then proves
 the same boundary against the running TEST environment, including wrong-org and
 OpenFGA-denied personas. Neither source tests nor attestation replace Gate 4.
 
+Before any synthetic report is created, run the ES-106 privacy boundary
+verifier from the exact merged GitOps checkout:
+
+```bash
+SSH_TARGET=staging-sw ./scripts/faz35/verify-test-public-no-correlation.sh
+```
+
+It verifies both public Ingresses in desired and live state, inspects the
+generated NGINX server blocks, exercises UI plus API denial paths with
+non-personal synthetic sentinels, and scans only a bounded post-start log
+window. Raw logs remain in a mode-700 temporary directory and are deleted by
+the verifier; only boolean results and the zero leak count are publishable.
+`NO_CORRELATION_ACCEPTED=true` is required before Gate 4. A merge, annotation
+presence, healthy pod, or source-only test does not replace this live result.
+
 ## Gate 4: customer closed-loop acceptance
 
 Use only synthetic content.

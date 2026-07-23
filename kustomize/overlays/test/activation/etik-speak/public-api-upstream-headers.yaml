@@ -6,9 +6,18 @@ metadata:
     app.kubernetes.io/name: ethics-service
     app.kubernetes.io/part-of: etik-speak
 data:
-  # ingress-nginx consumes the browser Basic credential at the edge. Public
-  # ethics endpoints must never receive it as an application credential.
+  # ES-106 fail-closed reporter boundary. The edge may use client IP only in
+  # volatile process memory for rate limiting; identity and suite state must
+  # never cross into the public UI/API workloads or their telemetry.
   Authorization: ""
+  Cookie: ""
+  Forwarded: ""
+  Referer: ""
+  User-Agent: ""
+  X-Forwarded-For: ""
+  X-Original-Forwarded-For: ""
+  X-Real-IP: ""
+  X-Request-ID: ""
   # This fixed value overwrites any caller-supplied header. The backend accepts
   # public mutations only through the ingress-only NetworkPolicy boundary.
   X-Etik-Speak-Transport: https

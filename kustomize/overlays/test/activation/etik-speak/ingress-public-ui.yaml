@@ -5,6 +5,15 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # ES-106 anonymous reporter boundary: public request metadata may be used
+    # in-memory for rate limiting but must not become a durable access record.
+    nginx.ingress.kubernetes.io/enable-access-log: "false"
+    nginx.ingress.kubernetes.io/enable-opentelemetry: "false"
+    nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
+    # The anonymous reporter UI has no cookie dependency. Suppressing every
+    # upstream Set-Cookie is a fail-closed superset of the Domain=.acik.com
+    # prohibition and prevents suite-cookie propagation across public aliases.
+    nginx.ingress.kubernetes.io/proxy-hide-headers: "Set-Cookie"
     # ES-313 (2026-07-21, owner explicit "riskleri anladım hemen aç"):
     # sentetik-test Basic Auth gate KALDIRILDI. Reporter UI artık anonim
     # erişime açık. Anti-abuse ingress rate-limit ile enforce edilir.

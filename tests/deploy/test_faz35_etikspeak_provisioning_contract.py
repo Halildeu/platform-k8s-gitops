@@ -127,6 +127,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/public-api-upstream-headers.yaml"
         ).read_text()
+        cls.no_correlation_verifier = (
+            ROOT / "scripts/faz35/verify-test-public-no-correlation.sh"
+        ).read_text()
         image_sets = list(
             (ROOT / "docs/faz-35-evidence/image-set").glob("*.json")
         )
@@ -1636,6 +1639,17 @@ spec:
     def test_public_test_hosts_are_open_rate_limited_and_redirect_to_https(self):
         for ingress in (self.public_api_ingress, self.public_ui_ingress):
             self.assertIn('nginx.ingress.kubernetes.io/force-ssl-redirect: "true"', ingress)
+            self.assertIn('nginx.ingress.kubernetes.io/enable-access-log: "false"', ingress)
+            self.assertIn('nginx.ingress.kubernetes.io/enable-opentelemetry: "false"', ingress)
+            self.assertIn(
+                "nginx.ingress.kubernetes.io/proxy-set-headers: "
+                "platform-test/etik-speak-public-upstream-headers",
+                ingress,
+            )
+            self.assertIn(
+                'nginx.ingress.kubernetes.io/proxy-hide-headers: "Set-Cookie"',
+                ingress,
+            )
             self.assertNotIn("nginx.ingress.kubernetes.io/auth-type:", ingress)
             self.assertNotIn("nginx.ingress.kubernetes.io/auth-secret:", ingress)
             self.assertNotIn("nginx.ingress.kubernetes.io/auth-realm:", ingress)
@@ -1657,14 +1671,51 @@ spec:
             'nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"',
         ):
             self.assertIn(expected, self.public_ui_ingress)
-        self.assertIn(
-            "nginx.ingress.kubernetes.io/proxy-set-headers: "
-            "platform-test/etik-speak-public-upstream-headers",
-            self.public_api_ingress,
-        )
-        self.assertIn('Authorization: ""', self.public_upstream_headers)
+        for header in (
+            "Authorization",
+            "Cookie",
+            "Forwarded",
+            "Referer",
+            "User-Agent",
+            "X-Forwarded-For",
+            "X-Original-Forwarded-For",
+            "X-Real-IP",
+            "X-Request-ID",
+        ):
+            self.assertIn(f'{header}: ""', self.public_upstream_headers)
         self.assertIn("X-Etik-Speak-Transport: https", self.public_upstream_headers)
         self.assertNotIn("api-gateway", self.netpol)
+
+    def test_public_no_correlation_runtime_verifier_is_fail_closed(self):
+        for expected in (
+            'readonly KUBE_CONTEXT="k3d-test"',
+            'readonly KUBE_NS="platform-test"',
+            'readonly SSH_TARGET="${SSH_TARGET:-staging-sw}"',
+            "enable-access-log",
+            "enable-opentelemetry",
+            "proxy-set-headers",
+            "proxy-hide-headers",
+            "X-Original-Forwarded-For",
+            "synthetic sentinel leaked",
+            "Domain=.acik.com",
+            "NO_CORRELATION_ACCEPTED=true",
+        ):
+            self.assertIn(expected, self.no_correlation_verifier)
+        for forbidden in (
+            "kubectl apply",
+            "kubectl patch",
+            "kubectl edit",
+            "kubectl set image",
+            "platform-prod",
+            "ai.acik.com",
+        ):
+            self.assertNotIn(forbidden, self.no_correlation_verifier)
+        self.assertIn(
+            "SSH_TARGET=staging-sw "
+            "./scripts/faz35/verify-test-public-no-correlation.sh",
+            self.activation_runbook,
+        )
+        self.assertIn("NO_CORRELATION_ACCEPTED=true", self.activation_runbook)
 
     def test_manager_ui_is_isolated_at_the_exact_test_path(self):
         self.assertIn("name: etik-speak-manager-ui", self.manager_ui_ingress)
