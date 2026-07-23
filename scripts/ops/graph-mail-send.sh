@@ -53,7 +53,7 @@ BODY_FILE=""
 CONTENT_TYPE="text"   # text | html
 DO_SEND=0
 CONFIRM_RECIPIENTS=""
-SSH_HOST="halil@staging-sw"
+SSH_HOST="aiserver"
 VAULT_PATH="kv/platform/graph"
 
 usage() {
@@ -71,7 +71,7 @@ Options:
   --content-type text|html   Body content type (default: text)
   --send                  ACTUALLY send (default is dry-run, no network call)
   --confirm-recipients X  Required with --send: must equal normalized to+cc set
-  --ssh-host HOST         SSH host for Vault access (default: halil@staging-sw)
+  --ssh-host HOST         SSH host for Vault access (default: aiserver)
   --vault-path PATH       Vault KV path (default: kv/platform/graph)
   -h, --help              Show this help
 
@@ -209,7 +209,7 @@ echo "  external_recipients: $(printf '%s' "$EXTERNAL_RECIPIENTS" | paste -sd, -
 # base64-encode payload → embed in heredoc script stream (NOT argv/env)
 PAYLOAD_B64=$(printf '%s' "$PAYLOAD" | base64 | tr -d '\n')
 
-# Execute on staging-sw — Vault credential + token + Graph POST, all in-band.
+# Execute on the selected Vault host — credential + token + Graph POST, all in-band.
 # PAYLOAD_B64 is base64 (special-char-free) so it is safe inside the single-quoted
 # heredoc assignment. It travels in the bash -s SCRIPT STREAM, not argv → invisible
 # in the remote process list. Quoted heredoc <<'EOSSH' = no client expansion except
@@ -218,8 +218,32 @@ ssh -o BatchMode=yes "$SSH_HOST" \
     "VAULT_PATH='${VAULT_PATH}' FROM='${FROM}' PAYLOAD_B64='${PAYLOAD_B64}' bash -s" <<'EOSSH'
 set -euo pipefail
 
-VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \
-                   jq -r .root_token /home/halil/bootstrap-drill/vault-init.json)
+read_vault_root_token() {
+    local candidate token
+    for candidate in \
+        /srv/platform/secrets/backup-auth/vault-init-prod.json \
+        /home/halil/bootstrap-drill/vault-init-prod.json \
+        /home/halil/bootstrap-drill/vault-init.json; do
+        if [[ -r "$candidate" ]]; then
+            token=$(jq -er '.root_token | select(type == "string" and length > 0)' \
+                "$candidate" 2>/dev/null) && {
+                printf '%s' "$token"
+                return 0
+            }
+        elif sudo -n test -r "$candidate" 2>/dev/null; then
+            token=$(sudo -n jq -er \
+                '.root_token | select(type == "string" and length > 0)' \
+                "$candidate" 2>/dev/null) && {
+                printf '%s' "$token"
+                return 0
+            }
+        fi
+    done
+    echo "ERROR: no readable Vault bootstrap token source on remote host" >&2
+    return 1
+}
+
+VAULT_ROOT_TOKEN=$(read_vault_root_token)
 
 GRAPH_DATA=$(docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
     vault kv get -format=json "${VAULT_PATH}" 2>/dev/null || \

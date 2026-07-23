@@ -6,7 +6,7 @@
 # Runbook: docs/runbooks/RB-graph-mail-agent-read.md
 #
 # Boundary:
-# - Vault credential read on staging-sw (D43 stdin-pipe pattern — credential never logged)
+# - Vault credential read on aiserver (D43 stdin-pipe pattern — credential never logged)
 # - Client-credentials token (~1h TTL Graph default); NO persistent token cache (default)
 # - Graph REST GET /users/ai@acik.com/messages (read-only; no write/delete/move)
 # - ApplicationAccessPolicy restricts app to ai@acik.com mailbox only (Exchange Online)
@@ -37,7 +37,7 @@ TOP=5
 INCLUDE_BODY=0
 SEARCH=""
 FILTER=""
-SSH_HOST="halil@staging-sw"
+SSH_HOST="aiserver"
 VAULT_PATH="kv/platform/graph"
 
 usage() {
@@ -50,7 +50,7 @@ Options:
   --include-body      Include bodyPreview (truncated 500 chars)
   --search QUERY      Graph $search filter (e.g., "alert", "subject:bounce")
   --filter EXPR       Graph $filter expression (OData)
-  --ssh-host HOST     SSH host for Vault access (default: halil@staging-sw)
+  --ssh-host HOST     SSH host for Vault access (default: aiserver)
   -h, --help          Show this help
 
 Output: JSON array of message metadata.
@@ -88,31 +88,57 @@ else
 fi
 
 # Build Graph query
-GRAPH_QUERY="/users/${MAILBOX}/messages?\$top=${TOP}&\$select=${SELECT_FIELDS}&\$orderby=receivedDateTime%20desc"
+GRAPH_QUERY="/users/${MAILBOX}/messages?\$top=${TOP}&\$select=${SELECT_FIELDS}"
 if [[ -n "$SEARCH" ]]; then
     SEARCH_ENC=$(printf '%s' "$SEARCH" | jq -sRr @uri)
     GRAPH_QUERY="${GRAPH_QUERY}&\$search=%22${SEARCH_ENC}%22"
+else
+    GRAPH_QUERY="${GRAPH_QUERY}&\$orderby=receivedDateTime%20desc"
 fi
 if [[ -n "$FILTER" ]]; then
     FILTER_ENC=$(printf '%s' "$FILTER" | jq -sRr @uri)
     GRAPH_QUERY="${GRAPH_QUERY}&\$filter=${FILTER_ENC}"
 fi
 
-# Execute on staging-sw — Vault credential read + token + Graph call all in-band
+# Execute on the selected Vault host — credential read + token + Graph call all in-band
 # D43 pattern: credential never echoed; SSH session output only sanitized result
 #
 # Robust pattern: helper params (MAILBOX, GRAPH_QUERY, VAULT_PATH) are passed as
 # single-quoted env vars in the SSH command string (protects $top/$select/& chars),
 # and the remote body is a QUOTED heredoc (<<'EOSSH') so NO client-side expansion
-# occurs — every $VAR inside is evaluated on staging-sw only. This keeps Vault
+# occurs — every $VAR inside is evaluated on the remote host only. This keeps Vault
 # credentials (CLIENT_SECRET, VAULT_ROOT_TOKEN, ACCESS_TOKEN) from ever leaving
 # the server, and avoids the double-expansion that breaks OData $-prefixed params.
 ssh -o BatchMode=yes "$SSH_HOST" \
     "VAULT_PATH='${VAULT_PATH}' MAILBOX='${MAILBOX}' GRAPH_QUERY='${GRAPH_QUERY}' bash -s" <<'EOSSH'
 set -euo pipefail
 
-VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \
-                   jq -r .root_token /home/halil/bootstrap-drill/vault-init.json)
+read_vault_root_token() {
+    local candidate token
+    for candidate in \
+        /srv/platform/secrets/backup-auth/vault-init-prod.json \
+        /home/halil/bootstrap-drill/vault-init-prod.json \
+        /home/halil/bootstrap-drill/vault-init.json; do
+        if [[ -r "$candidate" ]]; then
+            token=$(jq -er '.root_token | select(type == "string" and length > 0)' \
+                "$candidate" 2>/dev/null) && {
+                printf '%s' "$token"
+                return 0
+            }
+        elif sudo -n test -r "$candidate" 2>/dev/null; then
+            token=$(sudo -n jq -er \
+                '.root_token | select(type == "string" and length > 0)' \
+                "$candidate" 2>/dev/null) && {
+                printf '%s' "$token"
+                return 0
+            }
+        fi
+    done
+    echo "ERROR: no readable Vault bootstrap token source on remote host" >&2
+    return 1
+}
+
+VAULT_ROOT_TOKEN=$(read_vault_root_token)
 
 # Read Graph credentials from Vault (no echo)
 GRAPH_DATA=$(docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
@@ -154,6 +180,12 @@ GRAPH_RESPONSE=$(curl -sS \
     -H "Accept: application/json" \
     -H "ConsistencyLevel: eventual")
 
+GRAPH_ERROR=$(echo "$GRAPH_RESPONSE" | jq -r '.error.code // empty')
+if [[ -n "$GRAPH_ERROR" ]]; then
+    echo "ERROR: Graph mailbox query failed: ${GRAPH_ERROR}" >&2
+    exit 4
+fi
+
 # Sanitize output — strip @odata.context noise + flatten
 echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
     mailbox: $mailbox,
@@ -172,5 +204,5 @@ echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
 }'
 
 # Cleanup
-unset ACCESS_TOKEN CLIENT_SECRET VAULT_ROOT_TOKEN GRAPH_DATA TOKEN_RESPONSE
+unset ACCESS_TOKEN CLIENT_SECRET VAULT_ROOT_TOKEN GRAPH_DATA TOKEN_RESPONSE GRAPH_ERROR
 EOSSH
