@@ -123,13 +123,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/resource-quota.yaml"
         ).read_text()
-        cls.public_upstream_headers = (
-            ROOT
-            / "kustomize/overlays/test/activation/etik-speak/public-api-upstream-headers.yaml"
-        ).read_text()
-        cls.public_upstream_headers_rbac = (
-            ROOT
-            / "kustomize/overlays/test/activation/etik-speak/public-upstream-headers-rbac.yaml"
+        cls.host_edge = (
+            ROOT / "host-compose/web-nginx/default.conf"
         ).read_text()
         cls.no_correlation_verifier = (
             ROOT / "scripts/faz35/verify-test-public-no-correlation.sh"
@@ -1645,43 +1640,75 @@ spec:
             self.assertIn('nginx.ingress.kubernetes.io/force-ssl-redirect: "true"', ingress)
             self.assertIn('nginx.ingress.kubernetes.io/enable-access-log: "false"', ingress)
             self.assertIn('nginx.ingress.kubernetes.io/enable-opentelemetry: "false"', ingress)
-            self.assertIn(
-                "nginx.ingress.kubernetes.io/proxy-set-headers: "
-                "platform-test/etik-speak-public-upstream-headers",
-                ingress,
-            )
-            self.assertIn(
-                "etik-speak.acik.com/no-correlation-policy: es106-v2",
-                ingress,
-            )
-            self.assertIn(
-                'nginx.ingress.kubernetes.io/proxy-hide-headers: "Set-Cookie"',
-                ingress,
-            )
             self.assertNotIn("nginx.ingress.kubernetes.io/auth-type:", ingress)
             self.assertNotIn("nginx.ingress.kubernetes.io/auth-secret:", ingress)
             self.assertNotIn("nginx.ingress.kubernetes.io/auth-realm:", ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/limit-rps:", ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/limit-rpm:", ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/limit-connections:", ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/limit-burst-multiplier:", ingress)
+            for forbidden in (
+                "nginx.ingress.kubernetes.io/proxy-set-headers:",
+                "nginx.ingress.kubernetes.io/proxy-hide-headers:",
+                "nginx.ingress.kubernetes.io/limit-rps:",
+                "nginx.ingress.kubernetes.io/limit-rpm:",
+                "nginx.ingress.kubernetes.io/limit-connections:",
+                "nginx.ingress.kubernetes.io/limit-burst-multiplier:",
+            ):
+                self.assertNotIn(forbidden, ingress)
+
         for expected in (
-            'nginx.ingress.kubernetes.io/limit-rps: "3"',
-            'nginx.ingress.kubernetes.io/limit-rpm: "60"',
-            'nginx.ingress.kubernetes.io/limit-connections: "10"',
-            'nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"',
+            "server_name etik.acik.com speakup.acik.com;",
+            "map $http_cookie $etik_speak_public_cookie",
+            "__Host-etik_mailbox=[^;]+",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_api_rps:10m rate=3r/s;",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_api_rpm:10m rate=60r/m;",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_ui_rps:10m rate=10r/s;",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_ui_rpm:10m rate=300r/m;",
+            "limit_conn_zone $binary_remote_addr zone=etik_speak_public_conn:10m;",
+            "location ^~ /api/v1/public/ethics",
+            "limit_req zone=etik_speak_api_rps burst=6 nodelay;",
+            "limit_req zone=etik_speak_api_rpm burst=120 nodelay;",
+            "limit_conn etik_speak_public_conn 10;",
+            "limit_req zone=etik_speak_ui_rps burst=30 nodelay;",
+            "limit_req zone=etik_speak_ui_rpm burst=900 nodelay;",
+            "limit_conn etik_speak_public_conn 20;",
+            "proxy_set_header Cookie $etik_speak_public_cookie;",
+            "proxy_set_header X-Etik-Speak-Transport https;",
+            "map $upstream_http_set_cookie $etik_speak_mailbox_set_cookie_name",
+            "map $etik_speak_mailbox_set_cookie_httponly $etik_speak_public_set_cookie",
+            "proxy_hide_header Set-Cookie;",
+            "add_header Set-Cookie $etik_speak_public_set_cookie always;",
+            '"~*;\\s*Domain=" "";',
+            '"~*;\\s*Path=/(?:;|$)" $etik_speak_mailbox_set_cookie_domain;',
+            '"~*;\\s*Secure(?:;|$)" $etik_speak_mailbox_set_cookie_path;',
+            '"~*;\\s*HttpOnly(?:;|$)" $etik_speak_mailbox_set_cookie_secure;',
+            '"~*;\\s*SameSite=Strict(?:;|$)" $etik_speak_mailbox_set_cookie_httponly;',
         ):
-            self.assertIn(expected, self.public_api_ingress)
-        for expected in (
-            'nginx.ingress.kubernetes.io/limit-rps: "10"',
-            'nginx.ingress.kubernetes.io/limit-rpm: "300"',
-            'nginx.ingress.kubernetes.io/limit-connections: "20"',
-            'nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"',
+            self.assertIn(expected, self.host_edge)
+        self.assertGreaterEqual(self.host_edge.count("access_log off;"), 2)
+        self.assertEqual(
+            self.host_edge.count(
+                "proxy_set_header Cookie $etik_speak_public_cookie;"
+            ),
+            2,
+        )
+        self.assertEqual(self.host_edge.count("proxy_hide_header Set-Cookie;"), 2)
+        self.assertEqual(
+            self.host_edge.count(
+                "add_header Set-Cookie $etik_speak_public_set_cookie always;"
+            ),
+            2,
+        )
+        for security_header in (
+            "Strict-Transport-Security",
+            "X-Content-Type-Options",
+            "X-Frame-Options",
+            "Referrer-Policy",
+            "Permissions-Policy",
         ):
-            self.assertIn(expected, self.public_ui_ingress)
+            self.assertGreaterEqual(
+                self.host_edge.count(f"add_header {security_header} "),
+                3,
+            )
         for header in (
             "Authorization",
-            "Cookie",
             "Forwarded",
             "Referer",
             "User-Agent",
@@ -1690,43 +1717,11 @@ spec:
             "X-Real-IP",
             "X-Request-ID",
         ):
-            self.assertIn(f'{header}: ""', self.public_upstream_headers)
-        self.assertIn("X-Etik-Speak-Transport: https", self.public_upstream_headers)
+            self.assertEqual(
+                self.host_edge.count(f'proxy_set_header {header} "";'),
+                2,
+            )
         self.assertNotIn("api-gateway", self.netpol)
-
-    def test_public_header_policy_rbac_is_exact_and_namespace_scoped(self):
-        for expected in (
-            "kind: Role",
-            "kind: RoleBinding",
-            "name: ingress-nginx-read-etik-speak-public-upstream-headers",
-            "resourceNames: [etik-speak-public-upstream-headers]",
-            "verbs: [get]",
-            "name: ingress-nginx",
-            "namespace: ingress-nginx",
-            'argocd.argoproj.io/sync-wave: "-1"',
-        ):
-            self.assertIn(expected, self.public_upstream_headers_rbac)
-        self.assertEqual(
-            self.public_upstream_headers_rbac.count(
-                'argocd.argoproj.io/sync-wave: "-1"'
-            ),
-            2,
-        )
-        for forbidden in (
-            "kind: ClusterRole",
-            "kind: ClusterRoleBinding",
-            "verbs: [get, list",
-            "verbs: ['*']",
-            'resources: ["*"]',
-        ):
-            self.assertNotIn(forbidden, self.public_upstream_headers_rbac)
-        self.assertIn(
-            "- public-upstream-headers-rbac.yaml",
-            (
-                ROOT
-                / "kustomize/overlays/test/activation/etik-speak/kustomization.yaml"
-            ).read_text(),
-        )
 
     def test_public_no_correlation_runtime_verifier_is_fail_closed(self):
         for expected in (
@@ -1735,11 +1730,12 @@ spec:
             'readonly SSH_TARGET="${SSH_TARGET:-staging-sw}"',
             "enable-access-log",
             "enable-opentelemetry",
-            "proxy-set-headers",
-            "proxy-hide-headers",
+            "platform-web-nginx",
+            "etik_speak_public_cookie",
             "X-Original-Forwarded-For",
-            "configmap/etik-speak-public-upstream-headers",
-            "LIVE_INGRESS_HEADER_POLICY_RBAC=true",
+            "LIVE_HOST_EDGE_ACCESS_LOG_DISABLED=true",
+            "LIVE_HOST_EDGE_VOLATILE_RATE_LIMIT=true",
+            "LIVE_SUITE_COOKIE_FILTER=true",
             "synthetic sentinel leaked",
             "Domain=.acik.com",
             "NO_CORRELATION_ACCEPTED=true",
