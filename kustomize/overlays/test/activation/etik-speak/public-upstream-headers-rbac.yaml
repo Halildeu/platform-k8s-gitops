@@ -1,0 +1,28 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ingress-nginx-read-etik-speak-public-upstream-headers
+  labels:
+    app.kubernetes.io/name: etik-speak
+    app.kubernetes.io/part-of: etik-speak
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [etik-speak-public-upstream-headers]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingress-nginx-read-etik-speak-public-upstream-headers
+  labels:
+    app.kubernetes.io/name: etik-speak
+    app.kubernetes.io/part-of: etik-speak
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ingress-nginx-read-etik-speak-public-upstream-headers
+subjects:
+  - kind: ServiceAccount
+    name: ingress-nginx
+    namespace: ingress-nginx

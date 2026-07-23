@@ -92,6 +92,17 @@ tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 chmod 700 "$tmp_dir"
 
+can_read_header_policy=$(
+  kubectl --context "$kube_context" auth can-i get \
+    configmap/etik-speak-public-upstream-headers \
+    -n "$kube_ns" \
+    --as system:serviceaccount:ingress-nginx:ingress-nginx || true
+)
+[ "$can_read_header_policy" = "yes" ] || {
+  echo "FATAL: ingress controller cannot read the exact public header policy" >&2
+  exit 11
+}
+
 for ingress_name in etik-speak-public-ui etik-speak-public-api; do
   live_annotations=$(
     kubectl --context "$kube_context" -n "$kube_ns" get ingress "$ingress_name" \
@@ -100,22 +111,22 @@ for ingress_name in etik-speak-public-ui etik-speak-public-api; do
   grep -Fq '"nginx.ingress.kubernetes.io/enable-access-log":"false"' \
     <<<"$live_annotations" || {
       echo "FATAL: live public ingress access log is not disabled" >&2
-      exit 11
+      exit 12
     }
   grep -Fq '"nginx.ingress.kubernetes.io/enable-opentelemetry":"false"' \
     <<<"$live_annotations" || {
       echo "FATAL: live public ingress telemetry is not disabled" >&2
-      exit 12
+      exit 13
     }
   grep -Fq "\"nginx.ingress.kubernetes.io/proxy-set-headers\":\"$expected_header_config\"" \
     <<<"$live_annotations" || {
       echo "FATAL: live public ingress header boundary is missing" >&2
-      exit 13
+      exit 14
     }
   grep -Fq '"nginx.ingress.kubernetes.io/proxy-hide-headers":"Set-Cookie"' \
     <<<"$live_annotations" || {
       echo "FATAL: live public ingress cookie response guard is missing" >&2
-      exit 14
+      exit 15
     }
 done
 
@@ -126,7 +137,7 @@ controller=$(
 )
 [ -n "$controller" ] || {
   echo "FATAL: ingress controller pod is missing" >&2
-  exit 15
+  exit 16
 }
 kubectl --context "$kube_context" -n "$ingress_ns" exec "$controller" -- \
   cat /etc/nginx/nginx.conf >"$tmp_dir/nginx.conf"
@@ -141,12 +152,12 @@ for host in "${hosts[@]}"; do
 
   [ -s "$tmp_dir/server.conf" ] || {
     echo "FATAL: generated NGINX server block is missing" >&2
-    exit 16
+    exit 17
   }
   access_log_off_count=$(grep -Ec '^[[:space:]]*access_log[[:space:]]+off;' "$tmp_dir/server.conf" || true)
   [ "$access_log_off_count" -ge 3 ] || {
     echo "FATAL: generated NGINX public locations still have access logging" >&2
-    exit 17
+    exit 18
   }
   for header in \
     Authorization Cookie Forwarded Referer User-Agent X-Forwarded-For \
@@ -155,7 +166,7 @@ for host in "${hosts[@]}"; do
     grep -Eq "proxy_set_header[[:space:]]+$header[[:space:]]+\\\"\\\";" \
       "$tmp_dir/server.conf" || {
         echo "FATAL: generated NGINX identity header is not stripped: $header" >&2
-        exit 18
+        exit 19
       }
   done
 done
@@ -177,12 +188,12 @@ for host in "${hosts[@]}"; do
     200|204|301|302|307|308) ;;
     *)
       echo "FATAL: public reporter host is unavailable (HTTP $http_code)" >&2
-      exit 19
+      exit 20
       ;;
   esac
   if grep -Eiq '^Set-Cookie:.*Domain=\.?acik\.com([;[:space:]]|$)' "$response_headers"; then
     echo "FATAL: Domain=.acik.com cookie escaped the public boundary" >&2
-    exit 20
+    exit 21
   fi
 done
 
@@ -200,7 +211,7 @@ case "$api_code" in
   400|401|403|404|405|409|415|422) ;;
   *)
     echo "FATAL: synthetic public API negative control was not denied (HTTP $api_code)" >&2
-    exit 21
+    exit 22
     ;;
 esac
 
@@ -227,9 +238,10 @@ for log_file in "$tmp_dir"/*.log; do
 done
 [ "$leak_count" -eq 0 ] || {
   echo "FATAL: synthetic sentinel leaked into a durable log surface" >&2
-  exit 22
+  exit 23
 }
 
+echo "LIVE_INGRESS_HEADER_POLICY_RBAC=true"
 echo "LIVE_INGRESS_ACCESS_LOG_DISABLED=true"
 echo "LIVE_UPSTREAM_IDENTITY_HEADERS_STRIPPED=true"
 echo "PUBLIC_PARENT_DOMAIN_COOKIE_ABSENT=true"
