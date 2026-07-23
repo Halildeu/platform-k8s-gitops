@@ -54,6 +54,18 @@ First run the read-only preflight from the reviewed local checkout:
 PREFLIGHT_STAGE=foundation ./scripts/faz35/preflight-test-activation.sh
 ```
 
+Doğrudan VPN rotası `10.9.10.15:22` erişimini taşımıyorsa, eski hostta
+workload çalıştırmadan yalnız SSH jump kullan:
+
+```bash
+SSH_PROXY_JUMP=staging-sw-legacy \
+  PREFLIGHT_STAGE=foundation \
+  ./scripts/faz35/preflight-test-activation.sh
+```
+
+Script her iki yolda da terminal hedefin `aiserver` ve `10.9.10.15` olduğunu
+doğrular; başka jump alias'ını fail-closed reddeder.
+
 It binds the current host-container IPs to the Kubernetes Endpoints and the
 reviewed NetworkPolicy, verifies ESO/OpenFGA availability, checks the external
 Sectigo wildcard TLS path for both public hosts, renders the immutable
