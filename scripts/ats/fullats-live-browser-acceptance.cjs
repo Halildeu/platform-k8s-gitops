@@ -448,7 +448,7 @@ try {
   if (
     !/^ri_[A-Za-z0-9_-]{24}$/u.test(submittedPayload.resumeImportId ?? '') ||
     !Number.isSafeInteger(submittedPayload.resumeDraftVersion) ||
-    submittedPayload.resumeDraftVersion < 1
+    submittedPayload.resumeDraftVersion < 0
   ) {
     throw new Error('candidate submission is not bound to the confirmed resume draft');
   }
