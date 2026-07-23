@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Read-only, host-side Faz 35 TEST authorization proof. This script is sent to
-# staging-sw over SSH by preflight-test-activation.sh; it never prints tokens,
+# aiserver over SSH by preflight-test-activation.sh; it never prints tokens,
 # passwords or resolved subject IDs.
 set -euo pipefail
 set +x
@@ -92,11 +92,11 @@ print(json.dumps({
 }
 
 STAFF_SUBJECT=$(resolve_persona_subject ethics-manager-test \
-  /home/halil/bootstrap-drill/ethics-manager-test.password "$ETHICS_ORG_ID" staff)
+  /srv/platform/secrets/faz35-test/ethics-manager-test.password "$ETHICS_ORG_ID" staff)
 WRONG_ORG_SUBJECT=$(resolve_persona_subject ethics-manager-wrong-org-test \
-  /home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password "$WRONG_ETHICS_ORG_ID" wrong-org)
+  /srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password "$WRONG_ETHICS_ORG_ID" wrong-org)
 DENIED_SUBJECT=$(resolve_persona_subject ethics-manager-denied-test \
-  /home/halil/bootstrap-drill/ethics-manager-denied-test.password "$ETHICS_ORG_ID" denied)
+  /srv/platform/secrets/faz35-test/ethics-manager-denied-test.password "$ETHICS_ORG_ID" denied)
 [ "$STAFF_SUBJECT" != "$WRONG_ORG_SUBJECT" ] && \
   [ "$STAFF_SUBJECT" != "$DENIED_SUBJECT" ] && \
   [ "$WRONG_ORG_SUBJECT" != "$DENIED_SUBJECT" ] || {

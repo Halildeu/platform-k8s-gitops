@@ -35,7 +35,7 @@
 ### 2. ArgoCD Application source path override (test)
 
 ```bash
-ssh staging-sw
+ssh aiserver
 kubectl --context k3d-prod -n argocd patch app platform-test --type=merge -p '{
   "spec": {
     "source": {
