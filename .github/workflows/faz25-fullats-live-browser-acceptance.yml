@@ -79,11 +79,29 @@ jobs:
           FULL_SYNC_TIMEOUT=900 \
           REPORT_PATH="$EVIDENCE_DIR/argocd-convergence.json" \
             bash scripts/deploy/reconcile-testai-backend-sequential.sh
+          effective_revision="$(
+            jq -er '
+              select(
+                .schemaVersion == "testai-backend-argocd-auto-sync-v4" and
+                .verdict == "PASS" and
+                (.effectiveRevision | type == "string" and test("^[a-f0-9]{40}$")) and
+                .effectiveRevision == .observedRevision
+              ) |
+              .effectiveRevision
+            ' "$EVIDENCE_DIR/argocd-convergence.json"
+          )"
+          git merge-base --is-ancestor "$GITHUB_SHA" "$effective_revision" || {
+            echo "::error::effective GitOps revision is not a descendant of the dispatched revision"
+            exit 1
+          }
+          git checkout --detach "$effective_revision"
+          [[ "$(git rev-parse HEAD)" == "$effective_revision" ]]
+          echo "effective_gitops_sha=$effective_revision" >> "$GITHUB_OUTPUT"
 
       - name: Bind pre-journey runtime to this exact GitOps revision
         id: runtime
         env:
-          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          EXPECTED_GITOPS_SHA: ${{ steps.convergence.outputs.effective_gitops_sha }}
           PHASE: pre
           EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash scripts/ats/verify-fullats-live-runtime.sh
@@ -108,7 +126,7 @@ jobs:
       - name: Rebind post-journey runtime to the same exact revision
         id: final-runtime
         env:
-          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          EXPECTED_GITOPS_SHA: ${{ steps.convergence.outputs.effective_gitops_sha }}
           PHASE: post
           EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash scripts/ats/verify-fullats-live-runtime.sh
