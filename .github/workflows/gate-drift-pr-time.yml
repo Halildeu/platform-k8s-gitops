@@ -14,6 +14,7 @@ on:
       - 'tests/deploy/test_faz35_etikspeak_provisioning_contract.py'
       - 'tests/deploy/test_faz35_market_entry_contract.py'
       - 'tests/deploy/test_faz35_first_customer_contract.py'
+      - 'tests/deploy/test_faz35_privacy_no_collect_contract.py'
       - 'docs/faz-35-evidence/**'
       - 'runtime-artifacts/faz35-etik-speak/**'
       - 'runtime-artifacts/openfga-model/**'
@@ -21,7 +22,10 @@ on:
       - 'docs/contracts/faz35-etik-speak-api-mfe-v1.md'
       - 'docs/contracts/faz35-market-entry-controls.v1.json'
       - 'docs/contracts/faz35-first-customer-journey.v1.json'
+      - 'docs/contracts/faz35-privacy-no-collect.v1.json'
       - 'docs/faz-35-etik-speak-product-charter.md'
+      - 'docs/security/faz35-privacy-anonymity-threat-model.md'
+      - 'docs/legal/faz35-privacy-notice-tr.md'
       - 'docs/adr/0046-faz35-etik-speak-product-cell-topology.md'
       - '.github/workflows/gate-drift-pr-time.yml'
       - 'docs/operations/services.yaml'
@@ -115,4 +119,5 @@ jobs:
             scripts/drift_detection/tests/test_catalog_runtime_contracts.py \
             tests/deploy/test_faz35_etikspeak_provisioning_contract.py \
             tests/deploy/test_faz35_market_entry_contract.py \
-            tests/deploy/test_faz35_first_customer_contract.py
+            tests/deploy/test_faz35_first_customer_contract.py \
+            tests/deploy/test_faz35_privacy_no_collect_contract.py
