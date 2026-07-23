@@ -2,6 +2,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: ingress-nginx-read-etik-speak-public-upstream-headers
+  annotations:
+    # The controller must be authorized before the public Ingress objects are
+    # reconciled, otherwise proxy-set-headers is silently rendered empty.
+    argocd.argoproj.io/sync-wave: "-1"
   labels:
     app.kubernetes.io/name: etik-speak
     app.kubernetes.io/part-of: etik-speak
@@ -15,6 +19,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ingress-nginx-read-etik-speak-public-upstream-headers
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
   labels:
     app.kubernetes.io/name: etik-speak
     app.kubernetes.io/part-of: etik-speak
