@@ -634,12 +634,10 @@ try {
   if (terminalResponse.status() !== 200) {
     throw new Error(`interview pending transition HTTP ${terminalResponse.status()}`);
   }
-  const terminalStatus = reviewPanel.getByRole('status');
+  const terminalStatusText = 'Durum güncellendi: Mülakat planlaması bekliyor.';
+  const terminalStatus = reviewPanel.getByRole('status').filter({ hasText: terminalStatusText });
   await waitVisible(terminalStatus, 'interview pending terminal status');
-  if (
-    (await terminalStatus.textContent())?.trim() !==
-    'Durum güncellendi: Mülakat planlaması bekliyor.'
-  ) {
+  if ((await terminalStatus.textContent())?.trim() !== terminalStatusText) {
     throw new Error('interview pending terminal status text mismatch');
   }
   await assertAxeClean(recruiterPage, 'recruiter-workspace-terminal-desktop');
