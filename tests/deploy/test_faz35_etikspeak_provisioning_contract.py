@@ -1651,7 +1651,7 @@ spec:
                 ingress,
             )
             self.assertIn(
-                "etik-speak.acik.com/no-correlation-policy: es106-v1",
+                "etik-speak.acik.com/no-correlation-policy: es106-v2",
                 ingress,
             )
             self.assertIn(
@@ -1703,8 +1703,15 @@ spec:
             "verbs: [get]",
             "name: ingress-nginx",
             "namespace: ingress-nginx",
+            'argocd.argoproj.io/sync-wave: "-1"',
         ):
             self.assertIn(expected, self.public_upstream_headers_rbac)
+        self.assertEqual(
+            self.public_upstream_headers_rbac.count(
+                'argocd.argoproj.io/sync-wave: "-1"'
+            ),
+            2,
+        )
         for forbidden in (
             "kind: ClusterRole",
             "kind: ClusterRoleBinding",
