@@ -32,7 +32,7 @@ Doğrudan canlı kanıt:
   doğrulanmıştır. `platform-backup-{pg,vault,keycloak,freshness}.timer`
   etkin, freshness metriği iki k3d node'una kopyalanmıştır;
 - `.53` üzerinde k3d/container workload'ları, WireGuard, deploy/signing/desktop
-  runner'ları, geçici cutover bridge ve artık çalışmayan remote-bridge `socat`
+  runner'ları, geçici cutover bridge ve artık çalışmayan legacy L4 uyumluluk
   zinciri durdurulmuş; restart policy'leri kapatılmıştır. Eski kullanıcı cron'u
   `/home/halil/cutover-backup/20260723/` altında geri dönüş kopyası alınarak
   devre dışı bırakılmıştır.
