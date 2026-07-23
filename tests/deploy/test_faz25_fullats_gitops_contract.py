@@ -823,7 +823,26 @@ fi
             "frontend frontend app.kubernetes.io/name=frontend",
             self.fullats_runtime,
         )
-        self.assertIn(".status.sync.revision == $revision", self.fullats_runtime)
+        self.assertIn(
+            'test("^[a-f0-9]{40}$")',
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            'git merge-base --is-ancestor "$EXPECTED_GITOPS_SHA" "$observed_argo_revision"',
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            'git merge-base --is-ancestor "$observed_argo_revision" "$observed_main_revision"',
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            'revisionRelationship:"dispatched-equals-or-ancestor-of-observed"',
+            self.fullats_runtime,
+        )
+        self.assertNotIn(
+            '"$(git rev-parse origin/main)" == "$EXPECTED_GITOPS_SHA"',
+            self.fullats_runtime,
+        )
         self.assertIn('.status.sync.status == "Synced"', self.fullats_runtime)
         self.assertIn('.status.health.status == "Healthy"', self.fullats_runtime)
         self.assertIn("origin/main", self.fullats_runtime)
