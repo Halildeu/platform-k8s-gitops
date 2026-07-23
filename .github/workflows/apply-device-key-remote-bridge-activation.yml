@@ -37,7 +37,7 @@ env:
 jobs:
   apply:
     name: "Apply owner-gated #548 device-key remote-bridge activation"
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     steps:

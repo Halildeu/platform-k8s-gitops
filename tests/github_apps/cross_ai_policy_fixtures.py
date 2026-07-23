@@ -359,8 +359,8 @@ class FixtureFactory:
                                 "runnerId": 98765,
                                 "runnerNameSha256": digest("testai-deploy-runner"),
                                 "labels": [
+                                    "aiserver",
                                     "self-hosted",
-                                    "staging-sw",
                                     "testai-deploy",
                                 ],
                             }
@@ -373,7 +373,7 @@ class FixtureFactory:
                     {
                         "runnerId": 98765,
                         "runnerNameSha256": digest("testai-deploy-runner"),
-                        "labels": ["self-hosted", "staging-sw", "testai-deploy"],
+                        "labels": ["self-hosted", "aiserver", "testai-deploy"],
                         "attestationClass": "acik-testai-deploy-v1",
                     }
                 ],
@@ -411,7 +411,7 @@ class FixtureFactory:
                 "dependencyLockSha256": digest("apply-lock"),
                 "runtimeBundleSha256": None,
                 "concurrencyGroupSha256": concurrency_group_sha256,
-                "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
+                "runsOnLabels": ["self-hosted", "aiserver", "testai-deploy"],
                 "maxUses": 1,
             },
             {
@@ -424,7 +424,7 @@ class FixtureFactory:
                 "runtimeBundleSha256": digest("browser-runtime"),
                 "concurrencyGroupSha256": concurrency_group_sha256,
                 "priorStageOutcomeSchemaSha256": digest("outcome-schema"),
-                "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
+                "runsOnLabels": ["self-hosted", "aiserver", "testai-deploy"],
                 "runnerGroupId": 1234,
                 "runnerAttestationClass": "acik-testai-deploy-v1",
                 "maxUses": 1,
@@ -438,7 +438,7 @@ class FixtureFactory:
                 "dependencyLockSha256": digest("rollback-lock"),
                 "runtimeBundleSha256": None,
                 "concurrencyGroupSha256": concurrency_group_sha256,
-                "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
+                "runsOnLabels": ["self-hosted", "aiserver", "testai-deploy"],
                 "maxUses": 1,
             },
         ]

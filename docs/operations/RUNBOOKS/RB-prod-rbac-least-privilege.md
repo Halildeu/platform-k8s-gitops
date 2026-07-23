@@ -21,9 +21,9 @@ kubeconfig + CI runner + ArgoCD'nin üçü de cluster-admin. PR-1 (#780) prod'un
 `get`+`sync`'e scoped). PR-2 (#789) image-only `kubectl set image` prod
 workflow'larını sildi.
 
-Kalan risk yüzeyi: `deploy-prod-gitops.yml` sync job, `staging-sw-testai-deploy`
-runner'ında `kubectl --context k3d-prod` çağırıyor — runner kubeconfig hâlâ
-`admin@k3d-prod` cluster-admin. Workflow'un gerçek kubectl ihtiyacı dar:
+Kalan risk yüzeyi artık `deploy-prod-gitops.yml` sync job'unun `.15`
+`aiserver-testai-deploy` runner'ında kullandığı runtime kimliktir. Workflow'un
+gerçek kubectl ihtiyacı dar:
 
 | Adım | Namespace | İhtiyaç |
 |---|---|---|
@@ -52,17 +52,19 @@ hiçbir şey uygulanmaz.
 
 > **Boundary**: state-mutation (production). Owner/operator açık onayı gerek.
 >
-> **DURUM (2026-05-18)**:
+> **DURUM (2026-07-23 live recheck)**:
 > - **Adım 1-2 yürütüldü** — `prod-deploy-smoke` SA + 4 RBAC objesi k3d-prod'da
 >   canlı, `auth can-i` acceptance matrisi 10/10 (Codex `019e3a40` Verdict A;
 >   agent-otonom — additive RBAC ≠ destructive).
 > - **Adım 3 yeniden tasarlandı** — runner host inventory (2026-05-18) eski
->   "runner `~/.kube/config`'ini swap'la" modelini geçersiz kıldı (Adım 3'teki
->   bulgu kutusuna bak). Yeni model: `deploy-prod-gitops.yml` restricted
->   kubeconfig'i `production` env secret'tan runtime materialize eder;
->   `~/.kube/config` el değmez. Codex `019e3a40` AGREE-with-revision.
-> - Adım 3.1-3.2 + workflow PR owner "sen yap" onayıyla agent-infazına açıldı;
->   Adım 4 dispatch `production` env-gate (operator tıklaması) gerektirir.
+>   "runner `~/.kube/config`'ini swap'la" modelini geçersiz kıldı. Yeni model:
+>   workflow restricted kubeconfig'i `production` environment secret'tan
+>   runtime materialize eder.
+> - `.15` üzerinde `prod-deploy-smoke` SA/RBAC canlıdır; izin matrisi ilk 6
+>   `yes`, son 4 `no` olarak yeniden doğrulanmıştır.
+> - `PROD_DEPLOY_SMOKE_KUBECONFIG_B64` secret'ı `.15` cluster CA/server/token
+>   bilgisiyle rotate edilmiştir. Production dispatch hâlâ required-reviewer
+>   insan kapısındadır.
 
 ### Adım 1 — staged manifest'i prod cluster'a apply
 
@@ -107,15 +109,10 @@ Devam eşiği: ilk 6 `yes`, son 4 `no`. Aksi halde Role kapsamını incele,
 
 ### Adım 3 — restricted kubeconfig'i `production` env secret olarak ver
 
-> **Plan-değiştiren bulgu (2026-05-18 runner host inventory)**: `deploy-prod-gitops.yml`
-> runner'ı (`/home/halil/actions-runner-stage`, etiket `[self-hosted, staging-sw,
-> testai-deploy]`) **`halil` user'ı** olarak koşar — operator'ün login user'ının ta
-> kendisi. Aynı runner `deploy-testai.yml` + `deploy-backend-testai.yml`'i de koşar
-> (k3d-test). Workflow `KUBECONFIG` set etmiyordu → `~/.kube/config` (`k3d-prod`
-> admin + `k3d-test` admin) kullanılıyordu. **Eski "runner `~/.kube/config`'ini
-> swap'la" modeli bu düzende GEÇERSİZ** — (a) testai (k3d-test) deploy path'ini
-> kırar, (b) runner user = operator login user → o kubeconfig = operator'ün günlük
-> kubeconfig'i → PR-3D (operator identity) ile çakışır.
+> **2026-07-23 host inventory**: `deploy-prod-gitops.yml` runner'ı artık
+> `/home/aiadmin/actions-runner-gitops-testai` üzerinde
+> `[self-hosted, aiserver, testai-deploy]` etiketiyle `aiadmin` kullanıcısı
+> olarak çalışır. Eski `.53` runner kaydı silinmiştir.
 
 **Yeni mekanizma**: `deploy-prod-gitops.yml` restricted kubeconfig'i **`production`
 GitHub environment secret**'tan (`PROD_DEPLOY_SMOKE_KUBECONFIG_B64`) runtime

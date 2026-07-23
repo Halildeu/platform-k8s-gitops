@@ -115,7 +115,7 @@ browser_workflow_text="$(cat "$BROWSER_WORKFLOW")"
 
 grep -q 'RUN_FAZ22_6_VIEW_ONLY_ATTENDED_SMOKE' <<<"$workflow_text"
 grep -q 'empty derives from rendered overlay SSOT' <<<"$workflow_text"
-grep -q 'runs-on: \[self-hosted, staging-sw, testai-deploy\]' <<<"$workflow_text"
+grep -q 'runs-on: \[self-hosted, aiserver, testai-deploy\]' <<<"$workflow_text"
 grep -q 'contents: read' <<<"$workflow_text"
 grep -q 'issues: write' <<<"$workflow_text"
 grep -Fq "KC_TEST_ADMIN_PASSWORD: \${{ secrets.KC_TEST_ADMIN_PASSWORD }}" <<<"$workflow_text"

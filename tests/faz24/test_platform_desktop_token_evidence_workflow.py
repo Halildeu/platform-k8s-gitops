@@ -426,7 +426,7 @@ def test_controlled_claim_mapper_jq_contract_compiles_and_rejects_duplicates():
 def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "runs-on: [self-hosted, staging-sw, testai-deploy]" in workflow
+    assert "runs-on: [self-hosted, aiserver, testai-deploy]" in workflow
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert "run_session_expiry_smoke:" in workflow

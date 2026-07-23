@@ -23,7 +23,7 @@ concurrency:
 jobs:
   verify:
     name: Reconcile merged pin and verify runtime
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     steps:

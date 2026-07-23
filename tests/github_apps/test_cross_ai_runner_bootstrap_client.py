@@ -39,7 +39,7 @@ class RunnerBootstrapClientTest(unittest.TestCase):
             stage_overrides={
                 "apply": {
                     "workflowPath": WORKFLOW,
-                    "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
+                    "runsOnLabels": ["self-hosted", "aiserver", "testai-deploy"],
                     "runnerAttestationClass": "acik-testai-deploy-v1",
                 }
             },

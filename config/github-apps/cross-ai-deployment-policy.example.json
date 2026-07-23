@@ -32,7 +32,7 @@
       "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
       "requiredRunsOnLabels": [
         "self-hosted",
-        "staging-sw",
+        "aiserver",
         "testai-deploy"
       ],
       "requireRunnerGroup": false
@@ -42,7 +42,7 @@
       "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
       "requiredRunsOnLabels": [
         "self-hosted",
-        "staging-sw",
+        "aiserver",
         "testai-deploy"
       ],
       "requireRunnerGroup": false
@@ -52,7 +52,7 @@
       "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
       "requiredRunsOnLabels": [
         "self-hosted",
-        "staging-sw",
+        "aiserver",
         "testai-deploy"
       ],
       "requireRunnerGroup": false

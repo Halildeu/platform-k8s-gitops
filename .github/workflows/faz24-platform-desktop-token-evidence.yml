@@ -1,7 +1,7 @@
 name: Faz 24 Platform Desktop Token Evidence
 
 # Runs the #1995/#1996/#1997 external-recorder evidence chain on the
-# self-hosted staging-sw runner. Boundary: platform-test Keycloak only;
+# self-hosted aiserver runner. Boundary: platform-test Keycloak only;
 # direct grants are restored, the temp user is deleted, token/password/admin
 # material is never uploaded, and production/direct-STT readiness is not
 # claimed by this workflow.
@@ -56,7 +56,7 @@ concurrency:
 jobs:
   evidence:
     name: platform-desktop token + external recorder evidence
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 20
 
     env:
@@ -418,7 +418,7 @@ jobs:
           {
             echo "## Faz 24 platform-desktop token evidence"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}\`"
             echo "- Chain exit code: \`${CHAIN_EXIT_CODE:-missing}\`"

@@ -1,6 +1,6 @@
 name: Faz 25 Full ATS test recovery and acceptance
 
-# Mac-side SSH staging-sw'de kapali olsa da self-hosted runner test cluster ve
+# Mac-side SSH aiserver'de kapali olsa da self-hosted runner test cluster ve
 # host Docker control'una erisebilir. Bu workflow yalniz test ortaminda,
 # kullanici tarafindan acikca dispatch edilen fail-closed recovery hattidir.
 # Flyway history'de failed satir varsa otomatik repair/silme yapmaz; runbook'a
@@ -42,7 +42,7 @@ env:
 jobs:
   recover:
     name: Recover ATS migration and run Full ATS acceptance
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 25
 
     steps:
@@ -242,7 +242,7 @@ jobs:
           {
             echo "## Faz 25 Full ATS test recovery"
             echo ""
-            echo "- runner: self-hosted staging-sw"
+            echo "- runner: self-hosted aiserver"
             echo "- canonical ref: \`$GITHUB_REF\`"
             echo "- dry_run: \`$DRY_RUN_INPUT\`"
             echo "- immutable ATS digest: \`$EXPECTED_ATS_DIGEST\`"

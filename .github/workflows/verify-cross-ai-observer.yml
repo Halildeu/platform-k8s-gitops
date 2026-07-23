@@ -14,7 +14,7 @@ jobs:
   verify:
     name: Immutable runtime + signed HMAC + dedup
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 5
 
     env:

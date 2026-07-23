@@ -18,7 +18,7 @@ done
 
 grep -Fq 'environment: testai-product-acceptance' "${WORKFLOW}" || \
   fail 'testai environment approval gate missing'
-grep -Fq 'runs-on: [self-hosted, staging-sw, testai-deploy]' "${WORKFLOW}" || \
+grep -Fq 'runs-on: [self-hosted, aiserver, testai-deploy]' "${WORKFLOW}" || \
   fail 'canonical self-hosted runner labels missing'
 grep -Fq "default: 'RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT'" "${WORKFLOW}" || \
   fail 'explicit confirmation literal missing'

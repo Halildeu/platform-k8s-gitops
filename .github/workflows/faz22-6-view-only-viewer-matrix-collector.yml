@@ -35,7 +35,7 @@ concurrency:
 jobs:
   collect:
     name: Protected attended matrix collector
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 60
     environment:
       name: faz22-view-only-pilot

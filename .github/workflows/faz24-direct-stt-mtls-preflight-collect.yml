@@ -1,7 +1,7 @@
 name: Faz 24 Direct-STT mTLS Preflight Collect
 
 # Metadata-only live collector for the seed-after / flag-before point in
-# platform-ai#182. This runs on the self-hosted staging-sw runner because the
+# platform-ai#182. This runs on the self-hosted aiserver runner because the
 # preflight must read k3d-test/platform-test runtime shape and execute the
 # mTLS health probe from the real audio-gateway pod.
 #
@@ -38,7 +38,7 @@ concurrency:
 jobs:
   collect:
     name: collect direct-STT mTLS preflight evidence
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 10
 
     env:
@@ -167,7 +167,7 @@ jobs:
           {
             echo "## Faz 24 direct-STT mTLS preflight collect"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-direct-stt-mtls-preflight-collect-${{ github.run_id }}\`"
             echo "- Collector exit code: \`${COLLECT_EXIT_CODE:-missing}\`"
