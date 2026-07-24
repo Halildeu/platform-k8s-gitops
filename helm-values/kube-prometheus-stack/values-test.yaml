@@ -67,12 +67,24 @@ prometheus:
           #                           hikaricp_connections_pending + jvm used|max
           #                           heap-util için; cardinality düşük — pool=1,
           #                           uri seti dar.)
+          #   kube_* (5 seri)       → yalnız kube-state-metrics job'ı.
+          #                           gitops#2863: auth-service 106 dk boyunca
+          #                           ImagePullBackOff + endpoints BOŞ kaldı ve
+          #                           HİÇBİR bildirim üretmedi. Sebep tam olarak
+          #                           yukarıdaki "sahte kapsama" tuzağı:
+          #                           rollout-replicaset-crash kuralları prod-hub'da
+          #                           duruyordu ama girdi serileri (kube_*) bu
+          #                           allowlist'ten geçmediği için değerlendirilemedi;
+          #                           test'te ise Alertmanager kapalı olduğundan
+          #                           kural yansa bile gidecek yer yoktu.
+          #                           Ölçülen kardinalite (2026-07-24): 210+1+67+67+67
+          #                           = 412 seri ≈ H0 tabanının %0,36'sı.
           # Test infra federation'ı (kubelet/apiserver/ksm/node-exporter)
           # BİLİNÇLİ dışarıda — ayrı karar (Codex). Guard: prod'da aktif test
           # serisi <= Tallow*1.15 + RSS<=850Mi sustained (issue #1459).
           - sourceLabels: ["job", "__name__"]
             separator: ";"
-            regex: "(?:redis-streams-exporter;(?:redis_up|redis_stream_.*)|audio-gateway;(?:http_server_requests_(?:seconds|active_seconds).*|lettuce_command_(?:completion|firstresponse)_seconds.*|jvm_memory_used_bytes)|(?:meeting-service|transcript-service);(?:http_server_requests_(?:seconds|active_seconds).*|hikaricp_connections_pending|jvm_memory_(?:used|max)_bytes)|[^;]*;(?:up|stt:.*|stt_.*))"
+            regex: "(?:redis-streams-exporter;(?:redis_up|redis_stream_.*)|audio-gateway;(?:http_server_requests_(?:seconds|active_seconds).*|lettuce_command_(?:completion|firstresponse)_seconds.*|jvm_memory_used_bytes)|(?:meeting-service|transcript-service);(?:http_server_requests_(?:seconds|active_seconds).*|hikaricp_connections_pending|jvm_memory_(?:used|max)_bytes)|kube-state-metrics;(?:kube_deployment_status_condition|kube_pod_container_status_waiting_reason|kube_replicaset_owner|kube_replicaset_spec_replicas|kube_replicaset_status_ready_replicas)|[^;]*;(?:up|stt:.*|stt_.*))"
             action: keep
           # Test cluster label ekle (prod Grafana'da ayrım için)
           - sourceLabels: ["__name__"]
