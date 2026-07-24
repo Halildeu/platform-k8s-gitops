@@ -6,6 +6,9 @@ resources:
   - secretstore.yaml
   - externalsecret.yaml
   - externalsecret-notification.yaml
+  - externalsecret-evidence-worker.yaml
+  - evidence-worker.yaml
+  - evidence-scanner.yaml
   - ingress-public-api.yaml
   - ingress-public-ui.yaml
   - ingress-staff-api.yaml
@@ -14,23 +17,22 @@ resources:
   - resource-quota.yaml
   - priority-class.yaml
 images:
-  # Exact branch artifacts: backend merge 782cb42c / run 30061630961 (Faz 35
-  # ES-207 append-only audit delivery + ES-208 durable privacy-safe notification
-  # delivery + ES-306/M2 intake hardening, platform-backend PR #926), public-web
-  # source 4eaf02bf / run 29710051185, and dedicated manager-web source
-  # 2fae733d / run 29787052080. Their immutable identities are content-bound
+  # Exact merged artifacts: backend 068a45ce / run 30066318848 (ES-104
+  # attachment custody + response-loss-safe upload capability), and web
+  # 111c7219 / dedicated public+manager runs 30066319115 and 30066319173
+  # (ES-105A attachment UX). Their immutable identities are content-bound
   # by signed provenance in the Faz 35 image-set ledger. Root activation is
   # included only by the post-provisioning commit that pins the reviewed
   # Vault role and OpenFGA store/model IDs.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:d88581e6e96453835e7e515ab0c66c53e2aeabfe10ece0fe40c6cda551b22875
+    digest: sha256:02f3f836175ed42cc0225a30e21272dfad1c8a5648c911fcee1f40e6b1c5463a
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
-    digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
+    digest: sha256:27327fda9dd661b62029081d13bad0260c7c20c6a2f33b7d6d08677c7af0bb39
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    digest: sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28
+    digest: sha256:013ae2ac2cd9c93e7775fc4f4a0b762e95a6d291dcebcddb32605b1cf029a25f
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
@@ -58,6 +60,48 @@ patches:
       - op: add
         path: /data/ETHICS_NOTIFICATION_RETRY_MAX_DELAY
         value: "15m"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_POLICY_VERSION
+        value: "faz35-evidence-custody/v1"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_MAX_BYTES
+        value: "26214400"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_UPLOAD_TTL
+        value: "10m"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_SEALED_RETENTION
+        value: "30d"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_PIPELINE_ENABLED
+        value: "false"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_PROCESSOR_MODE
+        value: "disabled"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_S3_ENDPOINT
+        value: "http://minio:9000"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_S3_REGION
+        value: "us-east-1"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_S3_PATH_STYLE
+        value: "true"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_QUARANTINE_BUCKET
+        value: "ethics-evidence-quarantine"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_SEALED_BUCKET
+        value: "ethics-evidence-sealed"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_DERIVATIVE_BUCKET
+        value: "ethics-evidence-derivative"
+      - op: add
+        path: /data/ETHICS_EVIDENCE_S3_SSE
+        value: "AES256"
   - target: {kind: Deployment, name: ethics-service}
     patch: |-
       - op: replace

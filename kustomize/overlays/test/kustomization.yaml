@@ -8466,9 +8466,10 @@ patches:
       # reconcile. 2026-07-03: Faz 24 #2186 meeting-ai test bridge found live
       # services=32/32 after Endpoints/NetPolicy synced; keep small test-only
       # headroom so the selectorless Service can reconcile via GitOps.
-      # 2026-07-19: Faz 35 Etik Speak adds three Services. Live was 34/36, so
-      # the old ceiling could not admit the product cell; 40 leaves three slots
-      # after activation. Test-only; prod quota is unchanged.
+      # 2026-07-24: Faz 35 now owns five Services (API, two UIs, private
+      # evidence-worker management and scanner). Three are already live; the
+      # two ES-104G additions leave six steady-state slots at hard=40.
+      # Test-only; prod quota is unchanged.
       - op: replace
         path: /spec/hard/services
         value: "40"
@@ -8476,12 +8477,16 @@ patches:
       # isolated ExternalSecret-owned Secrets (runtime, TLS, signer). Live
       # namespace was already secrets=30/30, so keep this test-only object
       # quota honest instead of reusing the shared broker secret path.
-      # Faz 35 adds two ESO-owned Secrets; 44 retains four steady-state slots.
+      # Faz 35 uses four product/auth ESO-owned Secrets. Two are already live;
+      # ES-208 + ES-104G add the remaining two while hard=44 retains repair
+      # headroom. Production quota is unchanged.
       - op: replace
         path: /spec/hard/secrets
         value: "44"
-      # Faz 35 steady state adds three pods; simultaneous maxSurge adds three.
-      # Live was 26/30, so 34 preserves two slots at the six-pod rollout peak.
+      # Faz 35 steady state is five pods; all five Deployments use maxSurge=1.
+      # Three product pods are already counted in live usage. At used=24,
+      # hard=34 covers the incremental path to the ten-pod product rollout
+      # peak and still retains the two-pod repair reserve.
       - op: replace
         path: /spec/hard/pods
         value: "34"

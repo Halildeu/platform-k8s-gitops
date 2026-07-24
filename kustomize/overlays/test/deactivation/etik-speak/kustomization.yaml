@@ -4,7 +4,7 @@ kind: Kustomization
 # Fail-closed rollback target for the TEST product cell while platform-test
 # ArgoCD intentionally runs with prune=false. Importing the activation keeps
 # every existing object under GitOps ownership; the patches remove all active
-# user routes and scale all three product workloads to zero without relying on
+# user routes and scale all five product workloads to zero without relying on
 # cluster-side deletion.
 resources:
   - ../../activation/etik-speak
@@ -12,7 +12,7 @@ resources:
 patches:
   - target:
       kind: Deployment
-      name: ethics-service|etik-speak-public|etik-speak-manager
+      name: ethics-service|etik-speak-public|etik-speak-manager|ethics-evidence-worker|ethics-evidence-scanner
     patch: |-
       - op: replace
         path: /spec/replicas

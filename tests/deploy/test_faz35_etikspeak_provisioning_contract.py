@@ -48,6 +48,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.notification_identity = (
             ROOT / "scripts/faz35/provision-test-notification-service-identity.sh"
         ).read_text()
+        cls.evidence_storage = (
+            ROOT / "scripts/faz35/provision-test-evidence-storage.sh"
+        ).read_text()
         cls.keycloak_binding_lib = (
             ROOT / "scripts/faz35/lib-test-keycloak-binding.sh"
         ).read_text()
@@ -88,6 +91,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.notification_external_secret = (
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret-notification.yaml"
+        ).read_text()
+        cls.evidence_worker_external_secret = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/externalsecret-evidence-worker.yaml"
+        ).read_text()
+        cls.evidence_worker = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/evidence-worker.yaml"
+        ).read_text()
+        cls.evidence_scanner = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/evidence-scanner.yaml"
         ).read_text()
         cls.auth_ethics_external_secret = (
             ROOT
@@ -1347,6 +1362,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "platform-pg-test",
             "platform-kc-test",
             "platform-vault-test",
+            "minio-minio-test-1",
             "etik-speak-vault-approle",
             "PENDING_FAZ35_",
             "EXPECTED_MODEL_JSON_SHA256",
@@ -1361,11 +1377,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "--max-time 10",
             'if [ "$PREFLIGHT_STAGE" = foundation ]',
             "check_object_headroom secrets 1 1",
-            "check_object_headroom services 3 2",
+            "check_object_headroom services 5 2",
             "check_object_headroom configmaps 2 2",
-            "check_object_headroom secrets 2 2",
-            "check_object_headroom pods 6 2",
-            "activation must render exactly three ExternalSecrets",
+            "check_object_headroom secrets 4 2",
+            'check_object_headroom pods 10 2 "$existing_product_pods"',
+            "MinIO must be single-homed on platform-test-net 172.19.0.252",
+            'remote \'bash -s -- check\' <"$SCRIPT_DIR/provision-test-evidence-storage.sh"',
+            "activation must render exactly four ExternalSecrets",
             "public reporter ingresses must not retain the removed Basic Auth gate",
             "public reporter ingress displaced edge",
             "platform-web-nginx nginx -T",
@@ -1524,7 +1542,7 @@ spec:
             json.dumps(self.image_set, sort_keys=True, separators=(",", ":")) + "\n"
         ).encode()
         self.assertEqual(hashlib.sha256(canonical).hexdigest(), self.image_set_path.stem)
-        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v2")
+        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v3")
         self.assertEqual(
             self.image_set["images"]["ethics_service"]["source_head"],
             self.image_set["source_heads"]["backend"],
@@ -1536,6 +1554,17 @@ spec:
         self.assertEqual(
             self.image_set["images"]["manager_web"]["source_head"],
             self.image_set["source_heads"]["web_manager"],
+        )
+        self.assertEqual(
+            self.image_set["images"]["clamav_scanner"],
+            {
+                "digest": "sha256:83130a3b60654a4f226feffea549792cfcf28ea6b9de1dee210c8064cd114006",
+                "platform": "linux/amd64",
+                "repository": "docker.io/clamav/clamav",
+                "rules_version": "ClamAV 1.5.3/28058/Sun Jul 12 06:25:26 2026",
+                "supply_chain": "digest-pinned-upstream-runtime-verified",
+                "upstream_version": "1.5.3",
+            },
         )
 
         rendered = subprocess.run(
@@ -1931,12 +1960,137 @@ spec:
         self.assertIn("intentionally an isolated SPA", self.activation_runbook)
         self.assertIn("Neither source tests nor attestation replace Gate 4", self.activation_runbook)
 
+    def test_evidence_runtime_is_split_least_privilege_and_fail_closed(self):
+        for resource in (
+            "externalsecret-evidence-worker.yaml",
+            "evidence-worker.yaml",
+            "evidence-scanner.yaml",
+        ):
+            self.assertIn(resource, self.activation_kustomization)
+
+        self.assertIn("name: ethics-evidence-worker", self.evidence_worker)
+        self.assertIn("automountServiceAccountToken: false", self.evidence_worker)
+        self.assertIn("name: ethics-evidence-worker-secrets", self.evidence_worker)
+        self.assertIn(
+            '{name: ETHICS_EVIDENCE_PIPELINE_ENABLED, value: "true"}',
+            self.evidence_worker,
+        )
+        self.assertIn(
+            '{name: ETHICS_AUDIT_DELIVERY_ENABLED, value: "false"}',
+            self.evidence_worker,
+        )
+        self.assertIn(
+            '{name: ETHICS_NOTIFICATION_DELIVERY_ENABLED, value: "false"}',
+            self.evidence_worker,
+        )
+        self.assertIn(
+            "{name: ETHICS_EVIDENCE_PROCESSOR_MODE, value: clamav-reference}",
+            self.evidence_worker,
+        )
+        self.assertIn(
+            "value: ClamAV 1.5.3/28058/Sun Jul 12 06:25:26 2026",
+            self.evidence_worker,
+        )
+        self.assertNotIn("kind: Ingress", self.evidence_worker)
+
+        scanner_digest = (
+            "docker.io/clamav/clamav@sha256:"
+            "83130a3b60654a4f226feffea549792cfcf28ea6b9de1dee210c8064cd114006"
+        )
+        self.assertIn(scanner_digest, self.evidence_scanner)
+        self.assertIn("command: [/init-unprivileged]", self.evidence_scanner)
+        self.assertIn('{name: CLAMAV_NO_FRESHCLAMD, value: "true"}', self.evidence_scanner)
+        self.assertIn("readOnlyRootFilesystem: true", self.evidence_scanner)
+        self.assertIn("capabilities: {drop: [ALL]}", self.evidence_scanner)
+        self.assertNotIn("kind: Ingress", self.evidence_scanner)
+
+        self.assertIn("metadata: {name: ethics-evidence-worker}", self.netpol)
+        self.assertIn("metadata: {name: ethics-evidence-scanner}", self.netpol)
+        scanner_policy = self.netpol.split(
+            "metadata: {name: ethics-evidence-scanner}", 1
+        )[1]
+        self.assertIn("egress: []", scanner_policy)
+        self.assertIn("app.kubernetes.io/name: ethics-evidence-worker", scanner_policy)
+
+        for api_property, worker_property in (
+            (
+                "ETHICS_EVIDENCE_API_S3_ACCESS_KEY",
+                "ETHICS_EVIDENCE_WORKER_S3_ACCESS_KEY",
+            ),
+            (
+                "ETHICS_EVIDENCE_API_S3_SECRET_KEY",
+                "ETHICS_EVIDENCE_WORKER_S3_SECRET_KEY",
+            ),
+        ):
+            self.assertIn(api_property, self.external_secret)
+            self.assertNotIn(api_property, self.evidence_worker_external_secret)
+            self.assertIn(worker_property, self.evidence_worker_external_secret)
+            self.assertNotIn(worker_property, self.external_secret)
+        self.assertIn(
+            "ETHICS_EVIDENCE_MANIFEST_SIGNING_KEY",
+            self.evidence_worker_external_secret,
+        )
+        self.assertNotRegex(
+            self.external_secret + self.evidence_worker_external_secret,
+            r"(?i)(access-key|secret-key|signing-key):\s*[A-Za-z0-9+/=_-]{12,}",
+        )
+
+    def test_evidence_storage_provisioner_is_test_only_idempotent_and_cas_bound(self):
+        for exact_binding in (
+            "$MINIO_CONTAINER=minio-minio-test-1",
+            "$VAULT_CONTAINER=platform-vault-test",
+            "$VAULT_INIT_FILE=/srv/platform/secrets/backup-auth/vault-init-test.json",
+            "$VAULT_PATH=kv/platform/etik-speak",
+            "$QUARANTINE_BUCKET=ethics-evidence-quarantine",
+            "$SEALED_BUCKET=ethics-evidence-sealed",
+            "$DERIVATIVE_BUCKET=ethics-evidence-derivative",
+        ):
+            self.assertIn(exact_binding, self.evidence_storage)
+        for required in (
+            "set +x",
+            "case \"$ACTION\" in",
+            "check|apply",
+            "mc mb --with-lock",
+            "mc retention set --default COMPLIANCE 30d",
+            "mc version enable",
+            "mc admin user svcacct add --json --policy",
+            "mc admin user svcacct edit --policy",
+            "service_account_policy_matches",
+            "service_account_authenticates",
+            "vault kv put -cas=\"$2\"",
+            "Vault evidence credential read-after-write mismatch",
+            "Recover a response-loss/cleanup split",
+            "Vault CAS + readback is the commit point",
+            "credentials redacted",
+        ):
+            self.assertIn(required, self.evidence_storage)
+        self.assertIn('"s3:DeleteObject"', self.evidence_storage)
+        api_policy = self.evidence_storage.split("API_POLICY=", 1)[1].split(
+            "WORKER_POLICY=", 1
+        )[0]
+        self.assertNotIn('"s3:DeleteObject"', api_policy)
+        self.assertNotIn('"s3:BypassGovernanceRetention"', self.evidence_storage)
+        self.assertNotIn("kubectl apply", self.evidence_storage)
+        self.assertNotIn("kubectl patch", self.evidence_storage)
+        self.assertNotRegex(
+            self.evidence_storage,
+            r"(?i)(password|secret|token)=[A-Za-z0-9+/=_-]{20,}",
+        )
+        for acceptance_boundary in (
+            "only one attachment identity",
+            "attachment becomes `AVAILABLE`",
+            "sanitized derivative",
+            "synthetic EICAR upload becomes `REJECTED`",
+            "dedicated no-network PDF CDR",
+        ):
+            self.assertIn(acceptance_boundary, self.activation_runbook)
+
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
-            'requests.cpu: "500m"',
-            "requests.memory: 896Mi",
-            'limits.cpu: "2500m"',
-            "limits.memory: 2Gi",
+            'requests.cpu: "1"',
+            "requests.memory: 2Gi",
+            'limits.cpu: "6500m"',
+            "limits.memory: 5Gi",
         ):
             self.assertIn(expected, self.product_quota)
 
@@ -1969,8 +2123,8 @@ spec:
             rollout_peak += int(replicas.group(1)) + int(max_surge.group(1))
 
         repair_reserve = 2
-        self.assertEqual(len(deployment_documents), 3)
-        self.assertEqual(service_count, 3)
+        self.assertEqual(len(deployment_documents), 5)
+        self.assertEqual(service_count, 5)
         self.assertIn(f'pods: "{rollout_peak + repair_reserve}"', self.product_quota)
         self.assertIn(
             f"check_object_headroom pods {rollout_peak} {repair_reserve}",
@@ -2002,7 +2156,7 @@ spec:
             capture_output=True,
             text=True,
         ).stdout
-        self.assertEqual(rendered.count("replicas: 0"), 3)
+        self.assertEqual(rendered.count("replicas: 0"), 5)
         for active_host in (
             "host: etik.acik.com",
             "host: speakup.acik.com",
