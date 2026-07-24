@@ -438,7 +438,25 @@ images:
     # 782cb42c adds the dedicated ethics-service identity, restricted to
     # audience=notification-orchestrator and permission=notify:intents:system.
     # CI image run 30061630961, signed GitHub provenance subject below.
-    digest: sha256:7de0635d0e59e57cfc4caa6f44cdd30dfad0c6652092f9b715689c399094262b
+    #
+    # 2026-07-25 GERI ALINDI — auth-service DOWN (endpoints bos, ImagePullBackOff).
+    # Yukaridaki sha-7de0635d CI build cikisindan pin'lendi ama kubelet onu
+    # CEKEMIYOR:
+    #   403 Forbidden — HEAD ghcr.io/v2/halildeu/platform-backend-auth-service/blobs/...
+    # Kok neden #2876: k3d-test'in `ghcr-pull` kimligi yeni paket surumlerine
+    # yetkisiz. Pod calisiyorken imaj node cache'inde tutuluyordu; pod
+    # sonlanip containerd o imaji GC edince bir daha cekilemedi ve servis
+    # olu kaldi (selfHeal her denemede yeniden ayni digest'i istedi).
+    #
+    # Asagidaki sha-58ec61b0 node cache'inde MEVCUT ve calisiyor (canli
+    # dogrulandi: 1/1 Ready, endpoints dolu). ES-208 ethics-service kimligi
+    # bu digest'te YOK — bilincli takas: calisan auth-service, calismayan
+    # yeni ozellikten iyidir. #2876 (PAT read:packages yenilemesi) kapaninca
+    # ES-208 digest'i pull-edilebilirligi KANITLANARAK yeniden pin'lenmeli.
+    #
+    # KURAL: bir digest'i pin'lemeden once node'a pull denemesi yap. Build
+    # log'unda `pushing manifest for ...@sha256:` gormek YETMEZ.
+    digest: sha256:58ec61b09ced0c160853ac41ebcd2e5070be6f191dae3fbd44526ab11e1bea87
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
