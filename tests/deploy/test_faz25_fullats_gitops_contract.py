@@ -1180,6 +1180,30 @@ fi
         self.assertIn("Halildeu/ats#176", self.runbook)
         self.assertIn("test `ats` veritabanı/şema/tablolarının sahibidir", self.runbook)
 
+    def test_flyway_v16_migrator_role_is_admin_preprovisioned(self):
+        """V16 ats_migrator'i IF NOT EXISTS ile kullanir; runtime CREATEROLE almadigi
+        icin rol admin duzleminde on-provision edilmezse app hic boot etmez
+        (2026-07-24 canli: 'permission denied to create role' -> CrashLoopBackOff)."""
+        self.assertIn("CREATE ROLE ats_migrator", self.pg_bootstrap)
+        self.assertIn("GRANT ats_migrator TO ats_app", self.pg_bootstrap)
+        # Rol, governance_writer ile ayni least-privilege setinde olusturulur.
+        migrator_at = self.pg_bootstrap.index("CREATE ROLE ats_migrator")
+        attrs_at = self.pg_bootstrap.index(
+            "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS",
+            migrator_at,
+        )
+        self.assertLess(migrator_at, attrs_at)
+        # Guvensiz attribute tasiyan mevcut rol fail-closed reddedilir.
+        self.assertIn("ats_migrator guvensiz role attribute tasiyor", self.pg_bootstrap)
+        # Assert, Vault/parola islemlerinden ONCE calisir (roles-only kurtarma yolu).
+        self.assertIn("FATAL: ats_migrator NOLOGIN/least-privilege assert basarisiz", self.pg_bootstrap)
+        self.assertLess(
+            self.pg_bootstrap.index("PG: ats_migrator NOLOGIN role OK"),
+            self.pg_bootstrap.index("PW=$(openssl rand"),
+        )
+        # ats_app'a CREATEROLE verilmesi hala yasak.
+        self.assertNotRegex(self.pg_bootstrap, r"ALTER\s+ROLE\s+ats_app[^\n;]*CREATEROLE")
+
     def test_model_governance_transition_is_digest_bound_secret_safe_and_compensated(self):
         script = self.governance_transition
         self.assertTrue(self.governance_transition_path.stat().st_mode & 0o100)
