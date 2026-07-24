@@ -92,6 +92,8 @@ jobs:
         run: bash scripts/test/faz24-edge-nginx-ws-contract-static.sh
       - name: Faz 24 GPU exact-SHA rollout static guard
         run: bash scripts/test/faz24-gpu-host-exact-sha-rollout-static.sh
+      - name: Faz 24 live-analyze test-only enable guard
+        run: bash scripts/test/faz24-live-analyze-enable-static.sh
       - name: testai frontend and Full ATS desired-state promotion contracts
         run: |
           python3 -m unittest \
