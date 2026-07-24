@@ -58,6 +58,16 @@ patches:
       - op: add
         path: /data/ETHICS_NOTIFICATION_RETRY_MAX_DELAY
         value: "15m"
+      # Faz 35 — CANLI/TEST adres ayrımı (owner kararı 2026-07-23).
+      #   etik.acik.com     = CANLI  -> default org ...0001 (gerçek çalışan ihbarları)
+      #   speakup.acik.com  = TEST   -> org ...0003 (sentetik doğrulama)
+      # M2 multi-tenant resolver (platform-backend #925) host'tan org çözer;
+      # haritada olmayan host default org'a düşer. Bu ayrım sayesinde test
+      # ihbarları canlı kayıtlarla ASLA aynı org'a yazılmaz — silme gerekmez,
+      # kanunî delil zinciri temiz kalır.
+      - op: add
+        path: /data/SPRING_APPLICATION_JSON
+        value: '{"ethics":{"tenancy":{"public-hosts":{"speakup.acik.com":"00000000-0000-0000-0000-000000000003"}}}}'
   - target: {kind: Deployment, name: ethics-service}
     patch: |-
       - op: replace
