@@ -17,7 +17,7 @@ images:
   # ES-207 append-only audit delivery + ES-306/M2 intake hardening,
   # platform-backend PR #924), public-web
   # source 4eaf02bf / run 29710051185, and dedicated manager-web source
-  # 308a2777 / run 29716679615. Their immutable identities are content-bound
+  # 2fae733d / run 29787052080. Their immutable identities are content-bound
   # by signed provenance in the Faz 35 image-set ledger. Root activation is
   # included only by the post-provisioning commit that pins the reviewed
   # Vault role and OpenFGA store/model IDs.
@@ -29,7 +29,7 @@ images:
     digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    digest: sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da
+    digest: sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
