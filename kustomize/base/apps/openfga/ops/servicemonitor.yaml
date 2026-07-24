@@ -10,7 +10,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: openfga
   endpoints:
-    - port: http
+    # `http` (8080) is OpenFGA's API port and returns 404 on /metrics. Metrics
+    # live on the dedicated 2112 listener — scraping the wrong port kept
+    # up{job="openfga"} at 0 and EtikSpeakOpenFgaDown (SEV1) firing forever.
+    - port: metrics
       path: /metrics
       interval: 30s
       scrapeTimeout: 10s
