@@ -51,6 +51,23 @@ def catalog() -> ServicesCatalog:
                     "jwt_validates": False,
                     "environments": {"test": "enabled", "prod": "deferred"},
                 },
+                {
+                    "name": "ethics-evidence-worker",
+                    "workload_kind": "Deployment",
+                    "runtime_class": "spring-backend",
+                    "probe_contract": "spring-actuator",
+                    "jwt_validates": False,
+                    "environments": {"test": "enabled", "prod": "deferred"},
+                },
+                {
+                    "name": "ethics-evidence-scanner",
+                    "workload_kind": "Deployment",
+                    "runtime_class": "lab-tool",
+                    "probe_contract": "exempt",
+                    "third_party": True,
+                    "jwt_validates": False,
+                    "environments": {"test": "enabled", "prod": "deferred"},
+                },
             ]
         }
     )
@@ -79,11 +96,19 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
             deployment("ethics-service", "sha256:" + "a" * 64),
             deployment("etik-speak-public", "sha256:" + "b" * 64),
             deployment("etik-speak-manager", "sha256:" + "c" * 64),
+            deployment("ethics-evidence-worker", "sha256:" + "d" * 64),
+            deployment("ethics-evidence-scanner", "sha256:" + "e" * 64),
         ]
         digests = desired_image_digests(documents, catalog(), "test")
         self.assertEqual(
             set(digests),
-            {"ethics-service", "etik-speak-public", "etik-speak-manager"},
+            {
+                "ethics-service",
+                "etik-speak-public",
+                "etik-speak-manager",
+                "ethics-evidence-worker",
+                "ethics-evidence-scanner",
+            },
         )
 
     def test_manager_and_public_digest_mismatches_are_p1_findings(self):
@@ -396,7 +421,11 @@ class CatalogRuntimeContractsTest(unittest.TestCase):
         pr_time = (root / "scripts/drift-detection/check_pr_time.sh").read_text()
         self.assertIn("Check 2b: Faz 35 exact image-set existence (strict)", pr_time)
         self.assertIn("GHCR_STRICT=true python3", pr_time)
-        self.assertIn("Faz 35 exact image-set: 3/3", pr_time)
+        self.assertIn(
+            "Faz 35 exact image-set: 3/3 GHCR manifests verified; "
+            "1/1 upstream scanner digest contract verified",
+            pr_time,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

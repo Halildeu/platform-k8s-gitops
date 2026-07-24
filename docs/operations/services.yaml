@@ -211,6 +211,31 @@ services:
       test: enabled
       prod: deferred
 
+  - name: ethics-evidence-worker
+    repo: platform-backend
+    description: Faz 35 isolated attachment quarantine, malware scan and sanitized-derivative worker
+    jwt_validates: false
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    environments:
+      test: enabled
+      prod: deferred
+
+  - name: ethics-evidence-scanner
+    repo: upstream/clamav
+    description: Faz 35 digest-pinned, no-ingress and no-egress ClamAV attachment scanner
+    jwt_validates: false
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: lab-tool
+    probe_contract: exempt
+    third_party: true
+    environments:
+      test: enabled
+      prod: deferred
+
   - name: artifact-host
     repo: platform-agent
     description: |

@@ -96,7 +96,7 @@ image_set_digest=$(jq -cS . "$IMAGE_SET" | sha256_stream)
 }
 
 container_state=$(remote \
-  'timeout 15 docker inspect -f "{{.Name}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" platform-pg-test platform-kc-test platform-vault-test')
+  'timeout 15 docker inspect -f "{{.Name}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" platform-pg-test platform-kc-test platform-vault-test minio-minio-test-1')
 while IFS='|' read -r container status health; do
   [ "$status" = running ] || {
     echo "FATAL: $container is not running" >&2
@@ -110,10 +110,15 @@ done <<<"$container_state"
 
 pg_ip=$(remote 'timeout 15 docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" platform-pg-test')
 kc_ip=$(remote 'timeout 15 docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" platform-kc-test')
+minio_binding=$(remote \
+  'timeout 15 docker inspect minio-minio-test-1 | jq -r ".[0].NetworkSettings.Networks | (length|tostring) + \"|\" + (.\"platform-test-net\".IPAddress // \"\")"')
+IFS='|' read -r minio_network_count minio_ip <<<"$minio_binding"
 pg_endpoint=$(remote \
   'kubectl --request-timeout=10s --context k3d-test -n platform-test get endpoints postgres -o jsonpath="{.subsets[0].addresses[0].ip}"')
 kc_endpoint=$(remote \
   'kubectl --request-timeout=10s --context k3d-test -n platform-test get endpoints keycloak -o jsonpath="{.subsets[0].addresses[0].ip}"')
+minio_endpoint=$(remote \
+  'kubectl --request-timeout=10s --context k3d-test -n platform-test get endpoints minio -o jsonpath="{.subsets[0].addresses[0].ip}"')
 [ -n "$pg_ip" ] && [ "$pg_ip" = "$pg_endpoint" ] || {
   echo "FATAL: Postgres container/Endpoint IP drift" >&2
   exit 1
@@ -122,12 +127,21 @@ kc_endpoint=$(remote \
   echo "FATAL: Keycloak container/Endpoint IP drift" >&2
   exit 1
 }
+[ "$minio_network_count" = 1 ] && [ "$minio_ip" = 172.19.0.252 ] &&
+  [ "$minio_ip" = "$minio_endpoint" ] || {
+  echo "FATAL: MinIO must be single-homed on platform-test-net 172.19.0.252 and match its Endpoint" >&2
+  exit 1
+}
 grep -Fq "cidr: $pg_ip/32" "$NETPOL" || {
   echo "FATAL: Faz 35 NetworkPolicy does not pin current Postgres Endpoint" >&2
   exit 1
 }
 grep -Fq "cidr: $kc_ip/32" "$NETPOL" || {
   echo "FATAL: Faz 35 NetworkPolicy does not pin current Keycloak Endpoint" >&2
+  exit 1
+}
+grep -Fq "cidr: $minio_ip/32" "$NETPOL" || {
+  echo "FATAL: Faz 35 NetworkPolicy does not pin current MinIO Endpoint" >&2
   exit 1
 }
 
@@ -140,6 +154,7 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
     echo "FATAL: dedicated Etik Speak AppRole secret is missing or too short" >&2
     exit 1
   }
+  remote 'bash -s -- check' <"$SCRIPT_DIR/provision-test-evidence-storage.sh"
 fi
 remote \
   'kubectl --request-timeout=10s --context k3d-test -n platform-test exec deploy/meeting-service -- curl --connect-timeout 5 --max-time 10 -fsS "http://openfga:8080/stores?page_size=1" >/dev/null'
@@ -153,7 +168,8 @@ quota_json=$(remote \
   'kubectl --request-timeout=10s --context k3d-test -n platform-test get resourcequota platform-quota -o json')
 quota_failures=0
 check_object_headroom() {
-  local resource=$1 activation_peak=$2 repair_reserve=$3 hard used available required
+  local resource=$1 activation_peak=$2 repair_reserve=$3 existing=${4:-0}
+  local hard used available required
   hard=$(printf '%s' "$quota_json" | jq -r --arg r "$resource" '.status.hard[$r] // "0"')
   used=$(printf '%s' "$quota_json" | jq -r --arg r "$resource" '.status.used[$r] // "0"')
   [[ "$hard" =~ ^[0-9]+$ ]] && [[ "$used" =~ ^[0-9]+$ ]] || {
@@ -162,8 +178,16 @@ check_object_headroom() {
     return
   }
   available=$((hard - used))
-  required=$((activation_peak + repair_reserve))
-  echo "Quota: $resource used=$used hard=$hard available=$available required=$required"
+  [[ "$existing" =~ ^[0-9]+$ ]] && [ "$existing" -le "$activation_peak" ] || {
+    echo "FATAL: invalid existing in-scope count for $resource" >&2
+    quota_failures=$((quota_failures + 1))
+    return
+  }
+  # ResourceQuota.status.used already includes currently running product
+  # objects. Require only the remaining path to the simultaneous rollout peak,
+  # then retain the independent repair reserve.
+  required=$((activation_peak - existing + repair_reserve))
+  echo "Quota: $resource used=$used hard=$hard available=$available required=$required existing_in_scope=$existing"
   if [ "$available" -lt "$required" ]; then
     echo "FATAL: $resource quota lacks activation + repair headroom" >&2
     quota_failures=$((quota_failures + 1))
@@ -175,10 +199,12 @@ if [ "$PREFLIGHT_STAGE" = foundation ]; then
   # foundation provisioning depend on workload quotas that activation owns.
   check_object_headroom secrets 1 1
 else
-  check_object_headroom services 3 2
+  existing_product_pods=$(remote \
+    'kubectl --request-timeout=10s --context k3d-test -n platform-test get pods -l app.kubernetes.io/part-of=etik-speak --field-selector=status.phase!=Succeeded,status.phase!=Failed -o name | wc -l | tr -d " "')
+  check_object_headroom services 5 2
   check_object_headroom configmaps 2 2
-  check_object_headroom secrets 2 2
-  check_object_headroom pods 6 2
+  check_object_headroom secrets 4 2
+  check_object_headroom pods 10 2 "$existing_product_pods"
 fi
 [ "$quota_failures" -eq 0 ] || exit 1
 
@@ -273,16 +299,16 @@ external_secret_count=$(awk '
   /^kind: ExternalSecret$/ { count++ }
   END { print count + 0 }
 ' "$rendered")
-[ "$external_secret_count" -eq 3 ] || {
-  echo "FATAL: activation must render exactly three ExternalSecrets" >&2
+[ "$external_secret_count" -eq 4 ] || {
+  echo "FATAL: activation must render exactly four ExternalSecrets" >&2
   exit 1
 }
 [ "$(grep -c '^kind: SecretStore$' "$rendered")" -eq 1 ] || {
   echo "FATAL: activation must render exactly one namespaced SecretStore" >&2
   exit 1
 }
-[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 4 ] || {
-  echo "FATAL: all three ExternalSecrets must reference the namespaced SecretStore" >&2
+[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 5 ] || {
+  echo "FATAL: all four ExternalSecrets must reference the namespaced SecretStore" >&2
   exit 1
 }
 grep -Fq 'name: vault-platform-gitops' "$rendered" && {
@@ -390,18 +416,26 @@ image_set_sha=$(jq -cS . "$IMAGE_SET" | sha256_stream)
   exit 1
 }
 jq -e '
-  .schema_version == "faz35-test-image-set-v2" and
+  .schema_version == "faz35-test-image-set-v3" and
   (.source_heads.backend | test("^[0-9a-f]{40}$")) and
   (.source_heads.web_public | test("^[0-9a-f]{40}$")) and
   (.source_heads.web_manager | test("^[0-9a-f]{40}$")) and
   (.images.ethics_service.source_head == .source_heads.backend) and
   (.images.public_web.source_head == .source_heads.web_public) and
   (.images.manager_web.source_head == .source_heads.web_manager) and
-  ([.images[] |
-    (.repository | test("^ghcr\\.io/halildeu/[a-z0-9-]+$")) and
-    (.digest | test("^sha256:[0-9a-f]{64}$")) and
-    (.workflow_run | type == "number" and . > 0)
-  ] | all)
+  ([.images.ethics_service, .images.public_web, .images.manager_web] |
+    all(.[];
+      (.repository | test("^ghcr\\.io/halildeu/[a-z0-9-]+$")) and
+      (.digest | test("^sha256:[0-9a-f]{64}$")) and
+      (.workflow_run | type == "number" and . > 0)
+    )
+  ) and
+  (.images.clamav_scanner.repository == "docker.io/clamav/clamav") and
+  (.images.clamav_scanner.digest | test("^sha256:[0-9a-f]{64}$")) and
+  (.images.clamav_scanner.platform == "linux/amd64") and
+  (.images.clamav_scanner.upstream_version == "1.5.3") and
+  (.images.clamav_scanner.rules_version == "ClamAV 1.5.3/28058/Sun Jul 12 06:25:26 2026") and
+  (.images.clamav_scanner.supply_chain == "digest-pinned-upstream-runtime-verified")
 ' "$IMAGE_SET" >/dev/null || {
   echo "FATAL: image set schema/source-head binding is invalid" >&2
   exit 1
@@ -409,6 +443,7 @@ jq -e '
 expected_backend=$(jq -r '.images.ethics_service | .repository + "@" + .digest' "$IMAGE_SET")
 expected_public=$(jq -r '.images.public_web | .repository + "@" + .digest' "$IMAGE_SET")
 expected_manager=$(jq -r '.images.manager_web | .repository + "@" + .digest' "$IMAGE_SET")
+expected_scanner=$(jq -r '.images.clamav_scanner | .repository + "@" + .digest' "$IMAGE_SET")
 backend_source_head=$(jq -r '.images.ethics_service.source_head' "$IMAGE_SET")
 public_source_head=$(jq -r '.images.public_web.source_head' "$IMAGE_SET")
 manager_source_head=$(jq -r '.images.manager_web.source_head' "$IMAGE_SET")
@@ -425,6 +460,8 @@ faz35_verify_image_attestation "$expected_manager" \
   Halildeu/platform-web .github/workflows/release-etik-speak-manager-image.yml \
   "$manager_source_head" "$manager_workflow_run"
 faz35_assert_rendered_deployment_image "$rendered" ethics-service "$expected_backend"
+faz35_assert_rendered_deployment_image "$rendered" ethics-evidence-worker "$expected_backend"
+faz35_assert_rendered_deployment_image "$rendered" ethics-evidence-scanner "$expected_scanner"
 faz35_assert_rendered_deployment_image "$rendered" etik-speak-public "$expected_public"
 faz35_assert_rendered_deployment_image "$rendered" etik-speak-manager "$expected_manager"
 
@@ -508,6 +545,8 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_root_activation_binding "$ROOT_OVERLAY"
   kustomize build "$REPO_ROOT/kustomize/overlays/test" >"$rendered_root"
   faz35_assert_rendered_deployment_image "$rendered_root" ethics-service "$expected_backend"
+  faz35_assert_rendered_deployment_image "$rendered_root" ethics-evidence-worker "$expected_backend"
+  faz35_assert_rendered_deployment_image "$rendered_root" ethics-evidence-scanner "$expected_scanner"
   faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-public "$expected_public"
   faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-manager "$expected_manager"
 fi
@@ -517,16 +556,22 @@ fi
 live_activation_resources=$(remote '
   set -eu
   for target in \
-    deployment/ethics-service deployment/etik-speak-public deployment/etik-speak-manager \
-    service/ethics-service service/etik-speak-public service/etik-speak-manager \
-    serviceaccount/ethics-service serviceaccount/etik-speak-public serviceaccount/etik-speak-manager \
+    deployment/ethics-service deployment/ethics-evidence-worker deployment/ethics-evidence-scanner \
+    deployment/etik-speak-public deployment/etik-speak-manager \
+    service/ethics-service service/ethics-evidence-worker service/ethics-evidence-scanner \
+    service/etik-speak-public service/etik-speak-manager \
+    serviceaccount/ethics-service serviceaccount/ethics-evidence-worker serviceaccount/ethics-evidence-scanner \
+    serviceaccount/etik-speak-public serviceaccount/etik-speak-manager \
     configmap/ethics-service-config \
     ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api ingress/etik-speak-manager-ui \
     networkpolicy/etik-speak-public networkpolicy/etik-speak-manager networkpolicy/ethics-service \
+    networkpolicy/ethics-evidence-worker networkpolicy/ethics-evidence-scanner \
     externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
     externalsecret/ethics-service-notification-secret externalsecret/auth-service-ethics-secret \
+    externalsecret/ethics-evidence-worker-secrets \
     secret/ethics-service-secrets secret/etik-speak-public-gate \
     secret/ethics-service-notification-secret secret/auth-service-ethics-secret \
+    secret/ethics-evidence-worker-secrets \
     secretstore/etik-speak-vault resourcequota/etik-speak-budget; do
     kubectl --request-timeout=10s --context k3d-test -n platform-test get "$target" \
       --ignore-not-found -o name
@@ -547,7 +592,7 @@ if [ "$PREFLIGHT_STAGE" = foundation ]; then
   }
 fi
 
-echo "Host bridge: postgres=$pg_ip keycloak=$kc_ip (Endpoint + NetworkPolicy match)"
+echo "Host bridge: postgres=$pg_ip keycloak=$kc_ip minio=$minio_ip (Endpoint + NetworkPolicy match)"
 echo "Dependencies: Vault ESO Ready; OpenFGA in-cluster path reachable"
 echo "Capacity: object quotas cover activation peak plus bounded repair reserve"
 echo "Desired state: activation render immutable; root=$root_state; live_resource_count=$existing_count"

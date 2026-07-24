@@ -116,11 +116,26 @@ if [[ "$ENV" == test ]]; then
     IMAGE_SET=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print)
     image_set_name=$(basename "$IMAGE_SET" .json)
     image_set_sha=$(jq -cS . "$IMAGE_SET" | shasum -a 256 | awk '{print $1}')
-    faz35_refs=$(jq -r '.images[] | "image: \(.repository)@\(.digest)"' "$IMAGE_SET")
+    faz35_image_count=$(jq -r '.images | length' "$IMAGE_SET")
+    faz35_refs=$(jq -r '
+      .images[]
+      | select(.repository | startswith("ghcr.io/"))
+      | "image: \(.repository)@\(.digest)"
+    ' "$IMAGE_SET")
     faz35_ref_count=$(printf '%s\n' "$faz35_refs" | sed '/^$/d' | wc -l | tr -d ' ')
+    faz35_scanner_valid=$(jq -r '
+      if (
+        .images.clamav_scanner.repository == "docker.io/clamav/clamav" and
+        (.images.clamav_scanner.digest | test("^sha256:[0-9a-f]{64}$")) and
+        .images.clamav_scanner.platform == "linux/amd64" and
+        .images.clamav_scanner.supply_chain == "digest-pinned-upstream-runtime-verified"
+      ) then "true" else "false" end
+    ' "$IMAGE_SET")
     if [[ ! "$image_set_name" =~ ^[0-9a-f]{64}$ ]] || \
        [[ "$image_set_sha" != "$image_set_name" ]] || \
-       [[ "$faz35_ref_count" -ne 3 ]]; then
+       [[ "$faz35_image_count" -ne 4 ]] || \
+       [[ "$faz35_ref_count" -ne 3 ]] || \
+       [[ "$faz35_scanner_valid" != true ]]; then
       echo "[FAIL] Faz 35 image-set content address or exact cardinality is invalid"
       EXIT_CODE=1
     else
@@ -132,7 +147,7 @@ if [[ "$ENV" == test ]]; then
         echo "[FAIL] Faz 35 exact image-set was not fully proven (rc=$check2b_rc)"
         EXIT_CODE=1
       else
-        echo "[OK]  Faz 35 exact image-set: 3/3 registry manifests verified"
+        echo "[OK]  Faz 35 exact image-set: 3/3 GHCR manifests verified; 1/1 upstream scanner digest contract verified"
       fi
     fi
   fi

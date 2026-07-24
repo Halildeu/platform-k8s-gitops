@@ -7,6 +7,8 @@ This runbook activates only the synthetic `platform-test` product cell:
 - reporter UI: `etik.acik.com` and `speakup.acik.com`, same immutable digest;
 - staff UI: `https://testai.acik.com/ethic`;
 - public/staff API: dedicated `ethics-service` routes;
+- evidence custody: versioned quarantine, COMPLIANCE-locked sealed original,
+  sanitized derivative, isolated worker and no-egress malware scanner;
 - tenant: `00000000-0000-0000-0000-000000000001`.
 
 It does not authorize production DNS, production secrets, `ai.acik.com`
@@ -19,18 +21,18 @@ activation is GitOps-only through `kustomize/overlays/test`; direct
 Before provisioning or root-overlay activation, record all of the following:
 
 1. Backend and web source PR checks are green.
-2. Direct Codex review has a valid `AGREE` receipt bound to the current exact
-   head, live-refreshed base ref/base-tip, recomputed merge-base and canonical
-   scope hash. After a `REVISE`, all of these values are derived again from the
-   post-fix commit; an older receipt is invalid. A usage-limit error remains
-   `tracked_pending` and does not authorize merge/deploy. #2688, Faz 22.6 and
-   their handoffs are not Faz 35 activation dependencies. This is the newer,
-   binding product-owner decision; until #2688 reaches `main`, stale
-   Claude-first repository text is not applied to Faz 35 and no Claude receipt
-   is requested. Test/CI/live evidence and real human or production gates remain
-   independent and cannot be replaced by this review.
+2. Consultation mode is `none` unless the product owner explicitly requests a
+   Cross-AI review. When requested, the current Codex-only owner decision is
+   used: direct `codex exec --ephemeral --sandbox read-only`, exact live-listed
+   model, `P0/P1/P2 + VERDICT`, and a new exact head/base/base-tip/canonical
+   scope after every fix. No Claude, MiniMax, wrapper or caller-authored receipt
+   is accepted. Consultation never replaces test, signed provenance, live
+   acceptance or a human/production gate.
 3. Backend, public-web and the dedicated `platform-web-etik-speak-manager`
    workflows published immutable image digests from their exact source heads.
+   The scanner is also pinned to one platform-specific upstream digest and its
+   exact runtime-reported engine/signature version in the content-addressed
+   image-set ledger.
    The Faz 35 activation scope does not reference or mutate the shared
    `platform-web-frontend-testai`; independent frontend promotions remain
    allowed.
@@ -70,8 +72,8 @@ It binds the current host-container IPs to the Kubernetes Endpoints and the
 reviewed NetworkPolicy, verifies ESO/OpenFGA availability, checks the external
 Sectigo wildcard TLS path for both public hosts, renders the immutable
 activation, and reports whether the root overlay/live resource set is still
-inactive. It also requires object-count quota for the six-pod rollout peak of
-the three deployments plus a bounded repair reserve; an exact-fit quota is
+inactive. It also requires object-count quota for the ten-pod rollout peak of
+the five deployments plus a bounded repair reserve; an exact-fit quota is
 rejected because it would block rollback or recovery resources. The test overlay raises only the
 test object ceilings to `services=40`, `secrets=44`, `pods=34`, and
 `configmaps=35`; production quota is unchanged. The cluster TLS Secret may be
@@ -98,6 +100,9 @@ does not authorize real PII or assert production legal go.
 
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
+./scripts/faz35/provision-test-evidence-storage.sh check
+./scripts/faz35/provision-test-evidence-storage.sh apply
+./scripts/faz35/provision-test-evidence-storage.sh check
 ./scripts/faz35/provision-test-notification-service-identity.sh --check
 CONFIRM_TEST_NOTIFICATION_IDENTITY=seed-faz35-es208 \
   ./scripts/faz35/provision-test-notification-service-identity.sh --apply
@@ -110,6 +115,19 @@ docker exec platform-kc-test cat /run/secrets/kc_admin_password | \
     --keycloak-admin-password-stdin
 ./scripts/faz35/provision-test-ethic-entitlement.sh
 ```
+
+The evidence-storage provisioner is pinned to `minio-minio-test-1`,
+`platform-vault-test`, the ACL-limited canonical
+`/srv/platform/secrets/backup-auth/vault-init-test.json`,
+`kv/platform/etik-speak` and the three TEST bucket names. `apply` creates or
+reconciles versioned quarantine/derivative buckets,
+creates the sealed bucket with Object Lock and default `COMPLIANCE 30DAYS`,
+and assigns distinct least-privilege API/worker service accounts. It generates
+the manifest signing key only when absent and updates the existing Vault
+document with KV-v2 compare-and-set; a concurrent version change fails closed.
+Credentials are server-generated, passed only over stdin/private process
+memory and verified by policy readback plus authenticated bucket listing.
+Neither raw keys nor the manifest key are printed.
 
 The credential-only repair first proves or rotates the exact writer login while
 accepting only its known pre-reconciliation identity (`1204`) or dedicated
@@ -177,6 +195,10 @@ Expected non-secret results:
   password instead of rotating it underneath an active ESO/workload;
 - Vault `kv/platform/etik-speak`: public edge htpasswd hash, while the raw gate
   password remains only in the reported host-local file;
+- MinIO `ethics-evidence-quarantine` and `ethics-evidence-derivative`:
+  versioning enabled; `ethics-evidence-sealed`: versioning plus default
+  `COMPLIANCE 30DAYS`; API and worker credentials are distinct and carry no
+  retention-bypass or MinIO admin privilege;
 - a dedicated `etik-speak-eso-test` read-only Vault policy/AppRole and
   `platform-test/etik-speak-vault-approle` Kubernetes Secret;
 - Keycloak access token contract: `aud` includes `ethics-manager`, `scope`
@@ -197,9 +219,10 @@ The provisioners print three non-secret bindings:
 Create a new GitOps commit that replaces the three `PENDING_FAZ35_*` values in
 `secretstore.yaml` and `ethics-service-config.yaml`. Update the OpenFGA runtime
 ledger with the actual test store/model ID, canonical digest and evidence.
-Then derive a new exact head/base-tip/merge-base/canonical scope and obtain a
-fresh direct-Codex `AGREE`; the provisioning-stage receipt cannot authorize
-activation. Finally run the full read-only preflight:
+Then derive a new exact head/base-tip/merge-base/canonical scope. If the owner
+explicitly requested consultation for this activation, obtain a fresh
+Codex-only `AGREE`; an older provisioning-stage receipt cannot authorize the
+changed scope. Finally run the full read-only preflight:
 
 ```bash
 ./scripts/faz35/preflight-test-activation.sh
@@ -219,13 +242,15 @@ In the GitOps PR:
    their exact reviewed source heads. Verify the root TEST pins for
    `auth-service` and `notification-orchestrator` against the same merged
    backend head and signed image-build run.
-2. Pin the exact reviewed `platform-web-etik-speak-manager` digest in the Faz 35
-   activation overlay and verify that the activation does not reference or
+2. Pin the exact reviewed `platform-web-etik-speak-manager` digest and the
+   platform-specific ClamAV digest/rules receipt in the Faz 35 activation
+   overlay, and verify that the activation does not reference or
    mutate the shared `platform-web-frontend-testai`; independent frontend
    promotions are outside this activation scope.
 3. Add `activation/etik-speak` to the root test overlay resources.
 4. Render the root test overlay and run the repository CI gates.
-5. Merge only after the exact-head review receipt and normal CI are valid.
+5. Merge only after normal CI is valid and, when owner-requested consultation
+   is active, its exact-head receipt is valid.
 6. Let ArgoCD reconcile; do not apply the activation directory selectively.
 
 ### Fail-closed TEST deactivation and rollback
@@ -239,10 +264,11 @@ Rollback uses a reviewed GitOps fix-forward commit instead:
 1. Replace the root resource `activation/etik-speak` with
    `deactivation/etik-speak`; restore a prior reviewed dedicated manager digest
    in the same commit only when manager artifact rollback is required.
-2. Render the root TEST overlay, run normal CI, derive a fresh exact scope and
-   obtain the required exact-head review before merge.
+2. Render the root TEST overlay, run normal CI, derive a fresh exact scope and,
+   only when owner-requested consultation is active, obtain its exact-head
+   review before merge.
 3. Let normal ArgoCD self-heal update the same object identities. The
-   deactivation overlay retains every object under GitOps ownership, sets all three
+   deactivation overlay retains every object under GitOps ownership, sets all five
    product Deployments to `replicas: 0`, and replaces all public/staff Ingress
    hosts with DNS-reserved `.invalid` names. It does not depend on pruning.
 4. Verify desired/live replicas are zero, `etik.acik.com`, `speakup.acik.com`
@@ -257,9 +283,11 @@ After reconciliation, verify ExternalSecret and immutable image identity:
 
 ```bash
 kubectl --context k3d-test -n platform-test get externalsecret \
-  ethics-service-secrets etik-speak-public-gate
+  ethics-service-secrets ethics-evidence-worker-secrets \
+  ethics-service-notification-secret etik-speak-public-gate
 kubectl --context k3d-test -n platform-test get deploy \
-  ethics-service etik-speak-public etik-speak-manager
+  ethics-service ethics-evidence-worker ethics-evidence-scanner \
+  etik-speak-public etik-speak-manager
 kubectl --context k3d-test -n platform-test get pods \
   -l app.kubernetes.io/part-of=etik-speak \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
@@ -276,9 +304,9 @@ kubectl --context k3d-test -n platform-test exec deploy/etik-speak-manager -- \
   sha256sum /usr/share/nginx/html/ethic/index.html
 ```
 
-Backend, public UI and manager pod `imageID` values must match the reviewed
-digests, and the manager entrypoint hash must be recorded against the same immutable
-image. `Up` alone is not functional acceptance.
+Backend API/worker, scanner, public UI and manager pod `imageID` values must
+match the reviewed digests, and the manager entrypoint hash must be recorded
+against the same immutable image. `Up` alone is not functional acceptance.
 
 The ES-1 manager is intentionally an isolated SPA, not the shared suite shell.
 Its trusted source workflow must bind the exact source head and image digest
@@ -312,16 +340,29 @@ Use only synthetic content.
 
 1. Open `https://etik.acik.com`, submit an anonymous report, and save the
    receipt/access secret before navigating away.
-2. Repeat the public artifact/header check on `https://speakup.acik.com`; both
+2. In the reporter mailbox declare and upload a synthetic UTF-8 text or
+   JPEG/PNG attachment, intentionally repeat the same capability request after
+   a simulated lost response, and prove that only one attachment identity is
+   created. Poll until the attachment becomes `AVAILABLE`; record only
+   attachment state, size and digests, never content or the receipt secret.
+3. Repeat the public artifact/header check on `https://speakup.acik.com`; both
    hosts must serve the same bytes and image digest.
-3. Sign in to `https://testai.acik.com/ethic` with the dedicated synthetic
+4. Sign in to `https://testai.acik.com/ethic` with the dedicated synthetic
    manager; confirm the new case is visible.
-4. Add an internal note and a reporter-visible reply. The internal note must
+5. Download the attachment through the manager route and prove it is the
+   sanitized derivative with the manifest-bound digest, not the sealed
+   original. Then download the same derivative through the reporter mailbox
+   and compare digest/size.
+6. Add an internal note and a reporter-visible reply. The internal note must
    never appear in the reporter mailbox.
-5. Reopen the mailbox on the original public host, read the staff reply, send a
+7. Reopen the mailbox on the original public host, read the staff reply, send a
    reporter reply, then log out and prove the expired host-only cookie no longer
    authorizes reads.
-6. Prove open reporter access without Basic Auth, invalid/missing idempotency
+8. Prove a synthetic EICAR upload becomes `REJECTED`, its quarantine object is
+   removed, no derivative is downloadable, and the sealed original remains
+   retained. Prove PDF and active/container formats fail closed until a
+   dedicated no-network PDF CDR artifact is separately approved and pinned.
+9. Prove open reporter access without Basic Auth, invalid/missing idempotency
    denial, ingress rate limits, cross-host mailbox login denial, public
    suite-cookie confusion denial,
    wrong-org staff isolation, live OpenFGA allow/deny plus source-level outage
@@ -352,6 +393,9 @@ Rollback is a reviewed GitOps fix-forward replacement of
 with a re-pin to a previous immutable dedicated product digest. Removing only
 the activation resource is forbidden because `prune: false` would leave live,
 unmanaged workloads and public Ingresses. The database migration is additive;
-do not drop the `ethics` database, schema, receipt grants, messages, or audit
-outbox during rollback. OpenFGA model versions remain append-only. Production
+do not drop the `ethics` database, schema, receipt grants, messages, evidence
+custody rows,
+sealed object versions or audit outbox during rollback. Quarantine cleanup is
+performed only by the bounded worker contract; retained originals are never
+deleted as rollback. OpenFGA model versions remain append-only. Production
 workloads are not stopped by this runbook.

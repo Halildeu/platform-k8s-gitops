@@ -8,11 +8,11 @@ spec:
         operator: In
         values: [etik-speak-test]
   hard:
-    requests.cpu: "500m"
-    # All three Deployments may surge by one pod at the same time. These
-    # ceilings cover the six-pod rollout peak plus two repair/rollback pods.
-    # An exact six-pod fit would make rollback/recovery impossible.
-    requests.memory: 896Mi
-    limits.cpu: "2500m"
-    limits.memory: 2Gi
-    pods: "8"
+    requests.cpu: "1"
+    # Five Deployments may surge by one pod at the same time. The ceilings
+    # cover the ten-pod rollout peak plus two repair/rollback pods, including
+    # the memory-heavy immutable malware scanner.
+    requests.memory: 2Gi
+    limits.cpu: "6500m"
+    limits.memory: 5Gi
+    pods: "12"
