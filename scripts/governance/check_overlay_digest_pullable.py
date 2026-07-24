@@ -49,6 +49,16 @@ DOES NOT PROVE the *cluster* can pull it. CI and the cluster authenticate as
         #2876 while CI still succeeds. For that class, run the pull-probe this
         script prints -- see docs/operations/RUNBOOKS/RB-image-digest-promotion.md.
 
+Coverage, stated so nobody has to infer it
+------------------------------------------
+Both shapes a digest reaches the cluster in are read: the ``images:``
+transformer list in an overlay ``kustomization.yaml``, and an ``image:``
+reference pinned straight into a pod spec (CronJobs, activation overlays,
+lab-deps). Out of scope, deliberately: ``newTag`` pins, which are a mutable-tag
+problem rather than an unretrievable-digest one, and registries other than
+GHCR -- Docker Hub images such as ``curlimages/curl`` and ``node`` are pinned by
+digest here but are public upstream and not what took a service down.
+
 Usage
 -----
     check_overlay_digest_pullable.py --base-ref origin/main [--head-ref HEAD]
@@ -63,6 +73,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -77,7 +88,18 @@ except ImportError:  # pragma: no cover - CI installs PyYAML==6.0.3
     raise SystemExit(2)
 
 REGISTRY = "ghcr.io"
-OVERLAY_GLOBS = ("kustomize/overlays/**/kustomization.yaml",)
+
+# Digests reach the cluster two ways, and a guard that watched only the first
+# would have a silent hole: CronJobs, activation overlays and lab-deps pin
+# `image: ghcr.io/...@sha256:...` straight in the pod spec.
+OVERLAY_GLOBS = ("kustomize/overlays/**/*.yaml",)
+
+INLINE_IMAGE_RE = re.compile(
+    r"""image:\s*["']?(?P<repo>"""
+    + re.escape(REGISTRY)
+    + r"""/[^"'\s@]+)@(?P<digest>sha256:[0-9a-f]{64})""",
+    re.MULTILINE,
+)
 
 MANIFEST_ACCEPT = ", ".join(
     (
@@ -115,13 +137,30 @@ def _run(cmd: list[str]) -> tuple[int, str]:
     return proc.returncode, proc.stdout
 
 
+def _inline_pins(text: str, path: str) -> list[Pin]:
+    """Digests written directly into a pod spec (`image: ghcr.io/x@sha256:...`)."""
+    return [
+        Pin(
+            path=path,
+            name=match.group("repo").rsplit("/", 1)[-1],
+            repo=match.group("repo")[len(REGISTRY) + 1 :],
+            digest=match.group("digest"),
+        )
+        for match in INLINE_IMAGE_RE.finditer(text)
+    ]
+
+
 def parse_pins(text: str, path: str) -> list[Pin]:
-    """Extract digest-pinned image entries from a kustomization document."""
+    """Extract every digest-pinned image reference from one overlay document."""
+    pins: list[Pin] = list(_inline_pins(text, path))
+    if not path.endswith("kustomization.yaml"):
+        return pins  # only kustomizations carry an `images:` transformer list
     try:
         doc = yaml.safe_load(text) or {}
     except yaml.YAMLError as exc:
         raise SystemExit(f"ERROR: {path} is not parseable YAML: {exc}")
-    pins: list[Pin] = []
+    if not isinstance(doc, dict):
+        return pins
     for entry in doc.get("images") or []:
         if not isinstance(entry, dict):
             continue

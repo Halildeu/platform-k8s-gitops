@@ -97,6 +97,30 @@ def test_parses_digest_pins_from_kustomization():
     assert [(p.repo, p.digest) for p in pins] == [(PKG, GOOD)]
 
 
+def test_reads_digests_pinned_straight_into_a_pod_spec():
+    """CronJobs / activation overlays pin `image: ...@sha256:` outside kustomization."""
+    pod_spec = (
+        "apiVersion: batch/v1\n"
+        "kind: CronJob\n"
+        "spec:\n"
+        "  jobTemplate:\n"
+        "    spec:\n"
+        "      template:\n"
+        "        spec:\n"
+        "          containers:\n"
+        "            - name: probe\n"
+        f"              image: ghcr.io/{PKG}@{GOOD}\n"
+    )
+    pins = guard.parse_pins(pod_spec, "kustomize/overlays/test/cronjob.yaml")
+    assert [(p.repo, p.digest) for p in pins] == [(PKG, GOOD)]
+
+
+def test_pod_spec_digests_from_other_registries_stay_out_of_scope():
+    """Docker Hub images are pinned by digest here too, but are not the failure."""
+    pod_spec = "          image: curlimages/curl:8.10.1@" + GOOD + "\n"
+    assert guard.parse_pins(pod_spec, "kustomize/overlays/test/cronjob.yaml") == []
+
+
 def test_ignores_tag_pins_and_foreign_registries():
     doc = (
         "images:\n"
