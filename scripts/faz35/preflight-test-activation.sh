@@ -273,16 +273,16 @@ external_secret_count=$(awk '
   /^kind: ExternalSecret$/ { count++ }
   END { print count + 0 }
 ' "$rendered")
-[ "$external_secret_count" -eq 2 ] || {
-  echo "FATAL: activation must render exactly two ExternalSecrets" >&2
+[ "$external_secret_count" -eq 3 ] || {
+  echo "FATAL: activation must render exactly three ExternalSecrets" >&2
   exit 1
 }
 [ "$(grep -c '^kind: SecretStore$' "$rendered")" -eq 1 ] || {
   echo "FATAL: activation must render exactly one namespaced SecretStore" >&2
   exit 1
 }
-[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 3 ] || {
-  echo "FATAL: both ExternalSecrets must reference the namespaced SecretStore" >&2
+[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 4 ] || {
+  echo "FATAL: all three ExternalSecrets must reference the namespaced SecretStore" >&2
   exit 1
 }
 grep -Fq 'name: vault-platform-gitops' "$rendered" && {
@@ -368,6 +368,10 @@ if [ "$canonical_edge_access_log_off" -lt 2 ] ||
 fi
 grep -Fq 'ETHICS_AUDIT_DELIVERY_ENABLED: "true"' "$rendered" || {
   echo "FATAL: TEST activation must explicitly enable ethics audit delivery" >&2
+  exit 1
+}
+grep -Fq 'ETHICS_NOTIFICATION_DELIVERY_ENABLED: "true"' "$rendered" || {
+  echo "FATAL: TEST activation must explicitly enable ethics notification delivery" >&2
   exit 1
 }
 
@@ -520,7 +524,9 @@ live_activation_resources=$(remote '
     ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api ingress/etik-speak-manager-ui \
     networkpolicy/etik-speak-public networkpolicy/etik-speak-manager networkpolicy/ethics-service \
     externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
+    externalsecret/ethics-service-notification-secret externalsecret/auth-service-ethics-secret \
     secret/ethics-service-secrets secret/etik-speak-public-gate \
+    secret/ethics-service-notification-secret secret/auth-service-ethics-secret \
     secretstore/etik-speak-vault resourcequota/etik-speak-budget; do
     kubectl --request-timeout=10s --context k3d-test -n platform-test get "$target" \
       --ignore-not-found -o name

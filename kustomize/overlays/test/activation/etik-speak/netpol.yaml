@@ -57,6 +57,10 @@ spec:
       # keep using the stable Service port 8090. This remains correct across
       # kube-proxy DNAT ordering differences between NetworkPolicy engines.
       ports: [{port: http, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: auth-service}}}]
+      ports: [{port: http, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: notification-orchestrator}}}]
+      ports: [{port: http, protocol: TCP}]
 ---
 # The destination pods are selected by the namespace default-deny and their
 # broad intra-namespace allow accepts only part-of=platform sources. Etik Speak
@@ -89,4 +93,32 @@ spec:
               app.kubernetes.io/part-of: etik-speak
       # NetworkPolicy ingress is evaluated at the destination pod, not at the
       # Service's public port 8090; `http` resolves to containerPort 8084.
+      ports: [{port: http, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ethics-service-to-auth-service}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: auth-service}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-service
+              app.kubernetes.io/part-of: etik-speak
+      ports: [{port: http, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ethics-service-to-notification-orchestrator}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: notification-orchestrator}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-service
+              app.kubernetes.io/part-of: etik-speak
       ports: [{port: http, protocol: TCP}]

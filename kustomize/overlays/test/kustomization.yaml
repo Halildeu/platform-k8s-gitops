@@ -70,6 +70,7 @@ resources:
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
+  - auth-service-ethics-externalsecret.yaml  # Faz 35 #2856: isolated service identity; missing key cannot stall core auth secret rotation
   - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
   - netpol-meeting-ai-private-ingress.yaml  # ingress-nginx -> auth:8088 + meeting:8097 only
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
@@ -432,10 +433,11 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    # 2026-07-12 update: sha-20ee06d (platform-backend#816) enforces the
-    # client-bound meeting-ai service-token policy and blank-secret fail-closed
-    # behavior. Digest source: CI - Image Build + GHCR Push run 29177080417.
-    digest: sha256:58ec61b09ced0c160853ac41ebcd2e5070be6f191dae3fbd44526ab11e1bea87
+    # 2026-07-24 Faz 35 ES-208 update: platform-backend#926 main
+    # 782cb42c adds the dedicated ethics-service identity, restricted to
+    # audience=notification-orchestrator and permission=notify:intents:system.
+    # CI image run 30061630961, signed GitHub provenance subject below.
+    digest: sha256:7de0635d0e59e57cfc4caa6f44cdd30dfad0c6652092f9b715689c399094262b
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -6228,7 +6230,10 @@ images:
     # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
     # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
     # pending — operator action runbook externalsecret-notify.yaml).
-    digest: sha256:66f79088c766545e7fbbfba7fd5a537fd8b89f2d6cf8714b4e78d0763c29489e
+    # 2026-07-24 Faz 35 ES-208 update: platform-backend#926 main
+    # 782cb42c seeds the fixed-copy, external-disabled ethics.case.activity
+    # templates. CI image run 30061630961, signed GitHub provenance.
+    digest: sha256:b28e8614f5f9129300759b914af540bf5a9b02e8a15285cd43d75fcc1c0f7556
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.16:
@@ -6433,6 +6438,15 @@ patches:
               name: auth-service-meeting-ai-secret
               key: SERVICE_CLIENT_MEETING_AI_SECRET
               optional: true  # core auth stays available; meeting-ai mint remains fail-closed
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_ETHICS_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-ethics-secret
+              key: SERVICE_CLIENT_ETHICS_SERVICE_SECRET
+              optional: true  # core auth stays available; ethics client remains fail-closed
   - target:
       kind: Deployment
       name: api-gateway

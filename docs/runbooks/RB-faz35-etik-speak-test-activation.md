@@ -98,6 +98,9 @@ does not authorize real PII or assert production legal go.
 
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
+./scripts/faz35/provision-test-notification-service-identity.sh --check
+CONFIRM_TEST_NOTIFICATION_IDENTITY=seed-faz35-es208 \
+  ./scripts/faz35/provision-test-notification-service-identity.sh --apply
 ./scripts/faz35/provision-test-keycloak.sh
 docker exec platform-kc-test cat /run/secrets/kc_admin_password | \
   ./scripts/faz24/repair-d35-permission-writer-credential.sh \
@@ -137,6 +140,17 @@ never emitted.
 Every password file must be regular, non-symlink, owned by the invoking user
 and inaccessible to group/other users. Do not paste a password or AppRole
 secret ID into chat, GitHub, logs, shell argv, or an evidence document.
+
+The notification identity provisioner first reads the two approved TEST Vault
+documents and fails closed if their existing values differ. On a first run it
+generates one 256-bit credential, streams it over stdin to
+`kv/platform/auth-service.service_client_ethics_service_secret` and
+`kv/platform/etik-speak.ETHICS_NOTIFICATION_CLIENT_SECRET`, then performs an
+exact read-after-write comparison. A partial prior run fills only the missing
+side; it never silently rotates an existing matched pair. Output contains only
+presence state and a one-way SHA-256 identity. The two isolated
+ExternalSecrets ensure a missing optional product key cannot stall the core
+auth or Etik Speak database Secret.
 
 Use the printed subject to promote the isolated OpenFGA model and seed only the
 allow-persona product relations:
@@ -200,9 +214,11 @@ GitHub evidence, or command tracing during activation.
 
 In the GitOps PR:
 
-1. Verify backend and public digests in
+1. Verify the ethics backend and public digests in
    `kustomize/overlays/test/activation/etik-speak/kustomization.yaml` against
-   their exact reviewed source heads.
+   their exact reviewed source heads. Verify the root TEST pins for
+   `auth-service` and `notification-orchestrator` against the same merged
+   backend head and signed image-build run.
 2. Pin the exact reviewed `platform-web-etik-speak-manager` digest in the Faz 35
    activation overlay and verify that the activation does not reference or
    mutate the shared `platform-web-frontend-testai`; independent frontend
