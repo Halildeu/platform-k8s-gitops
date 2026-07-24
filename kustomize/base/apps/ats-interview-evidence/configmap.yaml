@@ -30,3 +30,13 @@ data:
   # retention default-off (Codex 019f4c6c: sentetik-fixture sınırında kabul;
   # gerçek-veri kapısından önce retention/purge ayrı acceptance)
   ATS_RETENTION_ENABLED: "false"
+  # Aday verisi politikası (ats#200) — TEK OTORİTE: hem başvuru formu hem CV import
+  # bunu izler. Base'de KASITLI olarak en kısıtlayıcı değerler durur; yalnız test
+  # activation overlay'i non-prod beyanıyla gevşetir. Prod overlay bu bloğa
+  # dokunmadığı sürece gerçek aday verisi kapalı kalır.
+  #
+  # app-boot FAIL-CLOSED invariant'ı: mode=real-allowed + environment=prod
+  # kombinasyonu boot'u düşürür (machine-enforced; config ile atlatılamaz).
+  # Gerçek aday PII'sinin production aktivasyonu Legal/DPO owner gate'indedir.
+  ATS_CANDIDATE_DATA_MODE: "synthetic-only"
+  ATS_CANDIDATE_DATA_ENVIRONMENT: "prod"
