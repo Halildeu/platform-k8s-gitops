@@ -1,0 +1,66 @@
+name: "Overlay digest pullable (#2863/#2876)"
+
+# Fail-closed guard against the failure mode that took two services down on
+# 2026-07-24: a digest that looks valid everywhere a reviewer would check --
+# present in the build log as `pushing manifest for ...@sha256:...`, commit on
+# main, package name matching the service -- but that the registry will not
+# serve back. Applying such a pin yields ImagePullBackOff and empty Endpoints.
+#
+#   auth-service  106 minutes down (#2863)
+#   user-service  down until rolled back (#2874 -> #2875)
+#
+# The guard only judges digests this PR adds or changes, and only after a
+# control digest proves it can read that package at all -- GHCR answers an
+# unauthorized manifest lookup with the same 404 it uses for a missing one, so
+# without the control this check would fail honest PRs whenever its credential
+# lapsed. When it cannot read a package it reports INCONCLUSIVE and exits 0
+# rather than inventing a verdict.
+#
+# GHCR_TOKEN (a PAT with read:packages) upgrades this from advisory to
+# enforcing for private packages. Without it the guard still catches public
+# packages and still prints the cluster pull-probe command. No code change is
+# needed when the secret is added -- see #2876.
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/overlays/**/kustomization.yaml'
+      - 'scripts/governance/check_overlay_digest_pullable.py'
+      - 'tests/governance/test_check_overlay_digest_pullable.py'
+      - '.github/workflows/gate-overlay-digest-pullable.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  overlay-digest-pullable:
+    name: overlay-digest-pullable
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # the guard diffs head against the PR base
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyYAML
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+
+      - name: Guard self-test (verdict logic, no network)
+        run: python3 -m pytest tests/governance/test_check_overlay_digest_pullable.py -q
+
+      - name: Verify new digest pins are retrievable
+        env:
+          # GHCR_TOKEN is optional; GITHUB_TOKEN covers packages this repo owns.
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/governance/check_overlay_digest_pullable.py \
+            --base-ref "origin/${{ github.base_ref }}" \
+            --head-ref HEAD
