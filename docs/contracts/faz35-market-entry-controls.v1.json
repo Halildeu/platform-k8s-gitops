@@ -1,0 +1,255 @@
+{
+  "schema": "faz35-market-entry-controls/v1",
+  "product": "etik-speak",
+  "release": "ES-ALPHA",
+  "environmentAuthority": "test-first",
+  "legalBoundary": "Engineering evidence is not legal advice, jurisdiction acceptance, certification, or production authorization.",
+  "classes": [
+    "CORE-MUST",
+    "CORE-CONFIG",
+    "FEATURE",
+    "INTEGRATION"
+  ],
+  "applicabilityClasses": [
+    "global-baseline",
+    "jurisdiction-pack",
+    "assurance",
+    "post-baseline-feature"
+  ],
+  "controls": [
+    {
+      "id": "ME-ISO37002-01",
+      "class": "CORE-MUST",
+      "applicability": "global-baseline",
+      "domain": "whistleblowing-lifecycle",
+      "source": {
+        "name": "ISO 37002:2021",
+        "url": "https://www.iso.org/standard/65035.html"
+      },
+      "control": "Receive, assess, address and conclude lifecycle with trust, impartiality and protection boundaries.",
+      "owners": ["Product", "Legal"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Versioned lifecycle and role matrix", "Conflict-of-interest deny evidence", "Tamper-evident case audit"],
+      "evidence": ["API state-transition contract", "OpenFGA negative tests", "Merged-head closed-loop browser evidence"],
+      "releaseGate": "ES-1",
+      "doesNotProve": "Organizational independence, legal adequacy, or ISO certification."
+    },
+    {
+      "id": "ME-EU1937-01",
+      "class": "CORE-CONFIG",
+      "applicability": "jurisdiction-pack",
+      "domain": "acknowledgment-feedback-clock",
+      "source": {
+        "name": "EU Directive 2019/1937 Article 9",
+        "url": "https://eur-lex.europa.eu/eli/dir/2019/1937/oj"
+      },
+      "control": "Confidential channel with authorized follow-up, configurable seven-day acknowledgment and three-month feedback controls.",
+      "owners": ["Legal", "Product"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Versioned jurisdiction policy", "Overdue evidence without narrative or identity disclosure"],
+      "evidence": ["Durable receipt timestamp", "Policy-clock tests", "Escalation audit event"],
+      "releaseGate": "ES-3",
+      "doesNotProve": "Applicability to a specific entity, country implementation, or legal sign-off."
+    },
+    {
+      "id": "ME-ISO37301-01",
+      "class": "CORE-CONFIG",
+      "applicability": "global-baseline",
+      "domain": "compliance-governance",
+      "source": {
+        "name": "ISO 37301:2021",
+        "url": "https://www.iso.org/standard/75080.html"
+      },
+      "control": "Versioned speak-up governance, segregation of duties, escalation ownership and continual improvement evidence.",
+      "owners": ["Compliance", "Product"],
+      "machineVerifiable": false,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Named governance owners", "Approved escalation and review policy"],
+      "evidence": ["Signed policy reference", "Periodic effectiveness review record"],
+      "releaseGate": "ES-3",
+      "doesNotProve": "ISO certification or operating effectiveness without independent assessment."
+    },
+    {
+      "id": "ME-PRIVACY-01",
+      "class": "CORE-MUST",
+      "applicability": "global-baseline",
+      "domain": "privacy-minimization",
+      "source": {
+        "name": "GDPR Articles 5, 25, 32 and KVKK principles",
+        "url": "https://eur-lex.europa.eu/eli/reg/2016/679/oj"
+      },
+      "control": "No-collect and no-correlation defaults for reporter identity, transport metadata, secrets, logs, traces and analytics.",
+      "owners": ["DPO", "Security"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Anonymous mode persists no identity", "Public edge and application leak sentinels absent", "Retention is versioned and fail-closed"],
+      "evidence": ["Cookie and log negative tests", "Data inventory", "Retention and deletion state-machine tests"],
+      "releaseGate": "ES-1",
+      "doesNotProve": "DPIA acceptance, KVKK/GDPR legal basis, VERBIS status, or production legal go."
+    },
+    {
+      "id": "ME-ISO27001-01",
+      "class": "CORE-MUST",
+      "applicability": "global-baseline",
+      "domain": "information-security",
+      "source": {
+        "name": "ISO/IEC 27001:2022, ISO/IEC 27002 and ISO/IEC 27701",
+        "url": "https://www.iso.org/standard/27001"
+      },
+      "control": "Least privilege, product-cell isolation, cryptographic secret handling, incident response, backup and restore controls.",
+      "owners": ["Security", "Platform"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Org and product scoped deny matrix", "Immutable artifact provenance", "Restore and rollback drill"],
+      "evidence": ["OpenFGA tests", "GitOps render and imageID evidence", "Backup integrity and restore evidence"],
+      "releaseGate": "ES-3",
+      "doesNotProve": "ISO certification, control operating effectiveness, or customer assurance acceptance."
+    },
+    {
+      "id": "ME-SOX-01",
+      "class": "CORE-CONFIG",
+      "applicability": "jurisdiction-pack",
+      "domain": "accounting-complaints",
+      "source": {
+        "name": "Sarbanes-Oxley Act Sections 301 and 806",
+        "url": "https://www.govinfo.gov/content/pkg/COMPS-1883/pdf/COMPS-1883.pdf"
+      },
+      "control": "Customer-configured audit-committee routing for confidential and anonymous accounting complaints with anti-retaliation governance.",
+      "owners": ["Legal", "Audit Committee"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Explicit applicability decision", "Authorized routing and recusal matrix", "Retaliation escalation policy"],
+      "evidence": ["Versioned customer policy", "Routing deny tests", "Named owner acceptance"],
+      "releaseGate": "ES-3",
+      "doesNotProve": "Issuer status, U.S. legal applicability, or audit-committee approval."
+    },
+    {
+      "id": "ME-DOJECCP-01",
+      "class": "CORE-CONFIG",
+      "applicability": "jurisdiction-pack",
+      "domain": "program-effectiveness",
+      "source": {
+        "name": "U.S. DOJ Evaluation of Corporate Compliance Programs",
+        "url": "https://www.justice.gov/criminal/criminal-fraud/page/file/937501/dl"
+      },
+      "control": "Confidential reporting, channel awareness, investigation quality, retaliation monitoring and effectiveness review.",
+      "owners": ["Compliance", "Legal"],
+      "machineVerifiable": false,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Named investigation process owner", "Periodic channel effectiveness review", "Retaliation monitoring policy"],
+      "evidence": ["Review record", "Training or awareness evidence", "Investigation SLA report"],
+      "releaseGate": "ES-3",
+      "doesNotProve": "DOJ acceptance, legal compliance, or program operating effectiveness."
+    },
+    {
+      "id": "ME-OWASP-01",
+      "class": "CORE-MUST",
+      "applicability": "global-baseline",
+      "domain": "application-security",
+      "source": {
+        "name": "OWASP ASVS 4.x and API Security Top 10",
+        "url": "https://owasp.org/www-project-application-security-verification-standard/"
+      },
+      "control": "Fail-closed authentication and authorization, input limits, enumeration resistance, rate limiting and secret-safe error handling.",
+      "owners": ["AppSec", "Engineering"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": false,
+      "acceptance": ["BOLA and BFLA negative tests", "Replay, stale-writer and enumeration denials", "No raw secret in error or telemetry"],
+      "evidence": ["API contract tests", "DAST and dependency scans", "Merged-head browser negative matrix"],
+      "releaseGate": "ES-1",
+      "doesNotProve": "Penetration-test coverage or absence of all vulnerabilities."
+    },
+    {
+      "id": "ME-WCAG-01",
+      "class": "CORE-MUST",
+      "applicability": "global-baseline",
+      "domain": "accessibility",
+      "source": {
+        "name": "WCAG 2.2 AA and EN 301 549",
+        "url": "https://www.w3.org/TR/WCAG22/"
+      },
+      "control": "Public intake, receipt, mailbox and staff critical paths remain keyboard, assistive-technology and contrast accessible.",
+      "owners": ["Web", "QA"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Automated axe gate", "Keyboard-only critical path", "Manual screen-reader evidence"],
+      "evidence": ["Playwright accessibility checks", "Manual acceptance record"],
+      "releaseGate": "ES-2",
+      "doesNotProve": "Full legal accessibility conformance without manual and user testing."
+    },
+    {
+      "id": "ME-NIST63B-01",
+      "class": "CORE-MUST",
+      "applicability": "global-baseline",
+      "domain": "mailbox-secret",
+      "source": {
+        "name": "NIST SP 800-63B",
+        "url": "https://pages.nist.gov/800-63-4/sp800-63b.html"
+      },
+      "control": "High-entropy accountless mailbox secret with verifier-side protection, throttling, replay resistance and revocation.",
+      "owners": ["Security", "Backend"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": false,
+      "acceptance": ["Canonical entropy and format", "Secret is not server-returned or logged", "Logout revokes the mailbox session"],
+      "evidence": ["Generation and hash assertions", "Rate-limit tests", "Closed-loop browser evidence"],
+      "releaseGate": "ES-1",
+      "doesNotProve": "NIST identity-assurance conformance for an accountless reporter."
+    },
+    {
+      "id": "ME-OTEL-01",
+      "class": "INTEGRATION",
+      "applicability": "global-baseline",
+      "domain": "telemetry-redaction",
+      "source": {
+        "name": "OpenTelemetry semantic conventions",
+        "url": "https://opentelemetry.io/docs/specs/semconv/"
+      },
+      "control": "Allowlisted operational telemetry without reporter identity, case narrative, receipt, access secret, client IP, referrer or user-agent correlation.",
+      "owners": ["Platform", "Security"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": false,
+      "acceptance": ["Public ingress access logs disabled", "Forwarded client identity stripped", "Synthetic sentinel absent from logs, traces and metric labels"],
+      "evidence": ["Rendered ingress contract", "Runtime NGINX config check", "Bounded synthetic leak scan"],
+      "releaseGate": "ES-1",
+      "doesNotProve": "Absence in unmanaged external infrastructure or production systems not included in the scan."
+    },
+    {
+      "id": "ME-SOC2-01",
+      "class": "INTEGRATION",
+      "applicability": "assurance",
+      "domain": "assurance-evidence",
+      "source": {
+        "name": "AICPA SOC 2 Trust Services Criteria",
+        "url": "https://www.aicpa-cima.com/topic/audit-assurance/audit-and-assurance-greater-than-soc-2"
+      },
+      "control": "Traceable logical-access, change-management, confidentiality, monitoring and availability evidence.",
+      "owners": ["Platform", "Audit"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["Content-addressed source and image evidence", "D29 evidence layers", "Alert and restore drills"],
+      "evidence": ["CI and GitOps provenance", "Runtime acceptance record", "Independent assurance evidence register"],
+      "releaseGate": "assurance",
+      "doesNotProve": "SOC 2 examination, auditor opinion, or customer assurance acceptance."
+    },
+    {
+      "id": "ME-AI-RMF-01",
+      "class": "FEATURE",
+      "applicability": "post-baseline-feature",
+      "domain": "ai-assisted-casework",
+      "source": {
+        "name": "NIST AI Risk Management Framework",
+        "url": "https://www.nist.gov/itl/ai-risk-management-framework"
+      },
+      "control": "Optional AI assistance is redacted, purpose-limited, human-reviewed and unable to decide culpability, discipline or case closure.",
+      "owners": ["Product", "DPO", "Legal"],
+      "machineVerifiable": true,
+      "humanAcceptanceRequired": true,
+      "acceptance": ["CORE acceptance remains independent of AI", "Provider data-flow and redaction policy approved", "Human override and audit are enforced"],
+      "evidence": ["Feature-specific threat model", "Redaction tests", "Named owner acceptance"],
+      "releaseGate": "post-ES-2",
+      "doesNotProve": "AI legal compliance, model safety, fairness, or authorization for production use."
+    }
+  ]
+}

@@ -1,0 +1,284 @@
+{
+  "schema": "faz35-privacy-no-collect/v1",
+  "product": "etik-speak",
+  "mode": "anonymous",
+  "claimBoundary": "Product anonymity prevents application-controlled identity and transport metadata from being persisted or correlated with a report. It does not claim invisibility from the reporter device, ISP, public CA, DNS resolver, or upstream network operator.",
+  "compartments": [
+    {
+      "id": "case-narrative",
+      "anonymousMode": "allowed",
+      "separateFrom": ["mailbox-verifier", "audit", "transport-abuse-state"]
+    },
+    {
+      "id": "reporter-identity",
+      "anonymousMode": "forbidden",
+      "separateFrom": ["case-narrative", "mailbox-verifier", "audit"]
+    },
+    {
+      "id": "mailbox-verifier",
+      "anonymousMode": "verifier-only",
+      "separateFrom": ["case-narrative", "audit", "transport-abuse-state"]
+    },
+    {
+      "id": "attachment",
+      "anonymousMode": "fail-closed-until-quarantine",
+      "separateFrom": ["case-narrative", "reporter-identity", "audit"]
+    },
+    {
+      "id": "audit",
+      "anonymousMode": "redacted-events-only",
+      "separateFrom": ["reporter-identity", "mailbox-verifier", "transport-abuse-state"]
+    },
+    {
+      "id": "transport-abuse-state",
+      "anonymousMode": "volatile-only",
+      "separateFrom": ["case-narrative", "reporter-identity", "mailbox-verifier", "audit"]
+    }
+  ],
+  "actors": [
+    {
+      "id": "reporter",
+      "trustedFor": ["report-content"],
+      "denied": ["staff-api", "case-list", "internal-note", "sealed-evidence"]
+    },
+    {
+      "id": "case-worker",
+      "trustedFor": ["authorized-case-work"],
+      "denied": ["reporter-identity", "mailbox-secret", "sealed-original"]
+    },
+    {
+      "id": "subject-of-report",
+      "trustedFor": [],
+      "denied": ["case-existence", "case-content", "reporter-identity"]
+    },
+    {
+      "id": "platform-operator",
+      "trustedFor": ["workload-health"],
+      "denied": ["case-narrative", "reporter-identity", "mailbox-secret"]
+    },
+    {
+      "id": "database-operator",
+      "trustedFor": ["database-availability"],
+      "denied": ["application-authorization", "reporter-identity-linkage"]
+    },
+    {
+      "id": "observability-operator",
+      "trustedFor": ["aggregate-service-health"],
+      "denied": ["raw-uri", "client-network-identity", "case-or-receipt-linkage"]
+    },
+    {
+      "id": "backup-operator",
+      "trustedFor": ["content-addressed-backup"],
+      "denied": ["plaintext-case-browse", "reporter-identity-linkage"]
+    },
+    {
+      "id": "key-custodian",
+      "trustedFor": ["key-lifecycle"],
+      "denied": ["case-content", "authorization-bypass", "single-party-reveal"]
+    },
+    {
+      "id": "public-edge-operator",
+      "trustedFor": ["tls-termination", "volatile-rate-limit"],
+      "denied": ["durable-client-identity-log", "case-or-receipt-linkage"]
+    }
+  ],
+  "neverCollectInAnonymousMode": [
+    "name",
+    "email",
+    "phone",
+    "employee-id",
+    "suite-user-id",
+    "advertising-id",
+    "device-fingerprint",
+    "client-ip-durable",
+    "user-agent-durable",
+    "referrer-durable",
+    "tls-session-durable"
+  ],
+  "neverLogOrTrace": [
+    "raw-access-secret",
+    "mailbox-session-cookie",
+    "receipt-id",
+    "case-narrative",
+    "attachment-name",
+    "attachment-content",
+    "reporter-identity",
+    "client-ip",
+    "x-forwarded-for",
+    "x-real-ip",
+    "user-agent",
+    "referrer",
+    "tls-session-id",
+    "suite-cookie",
+    "authorization-header"
+  ],
+  "volatileTransportUse": [
+    {
+      "field": "client-ip",
+      "purpose": "edge-rate-limit-only",
+      "durable": false,
+      "hashed": false,
+      "caseCorrelated": false,
+      "lifetime": "process-memory-window-only"
+    },
+    {
+      "field": "tls-handshake-metadata",
+      "purpose": "connection-establishment-only",
+      "durable": false,
+      "hashed": false,
+      "caseCorrelated": false,
+      "lifetime": "connection-only"
+    }
+  ],
+  "allowedOperationalTelemetry": [
+    "service-name",
+    "route-template-without-identifiers",
+    "status-class",
+    "bounded-error-code",
+    "aggregate-latency-histogram",
+    "aggregate-request-count",
+    "coarse-time-bucket",
+    "deployment-digest",
+    "queue-depth"
+  ],
+  "trustBoundaries": [
+    {
+      "id": "reporter-to-public-edge",
+      "input": "untrusted-public-request",
+      "requiredControls": ["tls", "volatile-rate-limit", "access-log-disabled", "no-third-party-analytics"]
+    },
+    {
+      "id": "public-edge-to-reporter-app",
+      "input": "public-ui-request",
+      "requiredControls": ["client-identity-headers-stripped", "host-only-cookie", "no-referrer"]
+    },
+    {
+      "id": "public-edge-to-public-api",
+      "input": "anonymous-api-request",
+      "requiredControls": ["client-identity-headers-stripped", "suite-credential-rejected", "body-and-uri-redaction"]
+    },
+    {
+      "id": "public-api-to-database",
+      "input": "validated-report-command",
+      "requiredControls": ["anonymous-identity-columns-null", "own-database-commit", "outbox-atomicity"]
+    },
+    {
+      "id": "manager-to-staff-api",
+      "input": "suite-sso-token",
+      "requiredControls": ["org-product-scope", "openfga-deny", "recusal"]
+    },
+    {
+      "id": "runtime-to-observability",
+      "input": "allowlisted-operational-event",
+      "requiredControls": ["structured-allowlist", "no-high-cardinality-user-label", "bounded-retention"]
+    },
+    {
+      "id": "database-to-backup",
+      "input": "encrypted-product-cell-backup",
+      "requiredControls": ["content-addressed-manifest", "separate-key-custody", "restore-audit"]
+    }
+  ],
+  "threats": [
+    {
+      "id": "T01-edge-log-correlation",
+      "actor": "public-edge-operator",
+      "attack": "Join client IP, user-agent, URI or precise timestamp with a case or receipt.",
+      "controls": ["access-log-disabled", "client-identity-headers-stripped", "no-identifier-uri", "aggregate-only-metrics"],
+      "verification": ["rendered-ingress-contract", "runtime-nginx-config", "synthetic-sentinel-leak-scan"]
+    },
+    {
+      "id": "T02-application-log-exfiltration",
+      "actor": "platform-operator",
+      "attack": "Recover narrative, receipt, access secret or identity from logs, traces or errors.",
+      "controls": ["structured-allowlist", "secret-safe-errors", "trace-payload-disabled"],
+      "verification": ["bounded-log-scan", "error-contract-tests"]
+    },
+    {
+      "id": "T03-database-linkage",
+      "actor": "database-operator",
+      "attack": "Link anonymous report content to identity or transport metadata columns.",
+      "controls": ["identity-compartment-absent", "transport-columns-forbidden", "mailbox-verifier-separated"],
+      "verification": ["schema-contract", "anonymous-row-negative-query"]
+    },
+    {
+      "id": "T04-authorized-insider-overreach",
+      "actor": "case-worker",
+      "attack": "Use broad organization access, conflict or technical administration to read a case.",
+      "controls": ["org-product-openfga", "recusal", "technical-admin-deny", "existence-hiding"],
+      "verification": ["wrong-org-deny", "openfga-denied-404", "recusal-test"]
+    },
+    {
+      "id": "T05-cookie-cross-subdomain",
+      "actor": "subject-of-report",
+      "attack": "Replay suite or parent-domain cookies against public reporter endpoints.",
+      "controls": ["no-domain-cookie", "suite-cookie-rejected", "host-only-mailbox-cookie"],
+      "verification": ["set-cookie-scan", "credential-confusion-test"]
+    },
+    {
+      "id": "T06-timing-correlation",
+      "actor": "observability-operator",
+      "attack": "Join precise public request time with staff-visible case creation time.",
+      "controls": ["coarse-operational-buckets", "no-public-request-log", "no-exported-transport-timestamp"],
+      "verification": ["telemetry-schema-contract", "export-field-scan"]
+    },
+    {
+      "id": "T07-backup-or-key-collusion",
+      "actor": "key-custodian",
+      "attack": "Combine backup access and key custody to browse plaintext or reconstruct identity linkage.",
+      "controls": ["separate-key-custody", "encrypted-backup", "named-restore-ceremony", "no-identity-compartment"],
+      "verification": ["restore-role-matrix", "backup-manifest-test"]
+    },
+    {
+      "id": "T08-client-side-disclosure",
+      "actor": "reporter",
+      "attack": "Browser history, extension, screen capture or shared device discloses the report or access secret.",
+      "controls": ["secret-not-in-url", "no-local-storage", "no-third-party-script", "clear-guidance"],
+      "verification": ["browser-url-console-storage-scan", "csp-contract"]
+    }
+  ],
+  "requiredNegativeTests": [
+    "no-domain-dot-acik-cookie",
+    "suite-cookie-rejected-on-public-api",
+    "client-identity-forwarding-headers-empty",
+    "public-ingress-access-log-disabled",
+    "synthetic-ip-ua-referrer-sentinel-absent",
+    "raw-secret-receipt-narrative-absent-from-telemetry",
+    "anonymous-identity-columns-null-or-absent",
+    "wrong-org-and-openfga-denied-existence-hiding",
+    "internal-note-hidden-from-reporter",
+    "secret-absent-from-url-console-and-storage"
+  ],
+  "residualRisks": [
+    {
+      "id": "R01-upstream-network-observation",
+      "statement": "The product cannot prevent the reporter device, ISP, DNS resolver, public CA or upstream network operator from observing connection metadata.",
+      "owner": "Security-DPO",
+      "productionGate": true
+    },
+    {
+      "id": "R02-free-text-self-identification",
+      "statement": "A reporter may place identifying information in narrative or attachments; the system cannot promise semantic anonymity of user-supplied content.",
+      "owner": "Product-DPO",
+      "productionGate": true
+    },
+    {
+      "id": "R03-timing-side-channel",
+      "statement": "A local observer may correlate employee activity and report timing even when application logs are disabled.",
+      "owner": "Security",
+      "productionGate": true
+    },
+    {
+      "id": "R04-client-device-compromise",
+      "statement": "Malware, browser extensions, shared devices and screenshots remain outside server-side protection.",
+      "owner": "Security-Product",
+      "productionGate": true
+    }
+  ],
+  "productionHumanGates": [
+    "Named DPO acceptance of residual risks",
+    "Named Legal approval of the published privacy notice and legal basis",
+    "Named Security acceptance of edge and upstream-provider boundaries",
+    "Named retention parameters with refuse-to-store default",
+    "Real-user communication and pilot consent"
+  ]
+}

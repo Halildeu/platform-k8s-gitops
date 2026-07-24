@@ -13,15 +13,27 @@
 #     scope'ları (Faz 25 #2441: ats.screening.{read,write} eklendi; default scope
 #     + rol-kapısı ats#96/#168 modeli değişmez)
 #
-# Güncel Faz 25 #2615 branch-acceptance imaj pini. Numerik UID (10001:10001) ve deployment
-# securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:
-#   source  ats#183 f4d2b4f79b10fa879e610a102acf1eb54eba9964
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-f4d2b4f
-#   digest  sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
-#   build   https://github.com/Halildeu/ats/actions/runs/29629811674
-# Son canlı D29 kanıtlı baseline: sha-e6b7409 /
-#   sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
-# Yeni 8812ab4e pini için canlı D29, #2615 recovery + acceptance koşumunda üretilecektir.
+# Faz 25 #2526 Full ATS ilk müşteri yüzeyinin backend pini. Bu kaynak;
+# güvenli PDF alan önerisi, kalıcı başvuru makbuzu, recruiter detay/evaluation
+# ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
+# (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
+# tag yalnız provenance alias'ıdır:
+#   source  ats@f03391f9fdb382297dd103a8620c2a7f88469fda (ats#200 / PR #201)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-f03391f
+#   digest  sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
+#   run     https://github.com/Halildeu/ats/actions/runs/30073102559
+# ats#200: aday verisi politikası ortam-parametrik oldu. Bu pin, ATS_CANDIDATE_DATA_*
+# anahtarlarını OKUYAN ilk imajdır (önceki pinler bu env'leri yok sayar; guard
+# onlarda hâlâ hardcoded sentetik-yalnızdır). Önceki pin: sha-c7cf82c /
+#   sha256:f5e596662772e6fdce722fa2e6723e308c78c603d1908171a8c9835a3f103119
+# Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
+# migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
+# identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
+# ilan, CV import, pipeline/evaluation ve mülakat akışlarını taşır; DSAR
+# remediation ayrı owner-gated iş olarak fail-closed kalır.
+#   build   https://github.com/Halildeu/ats/actions/runs/29788943515
+# Canlı D29 + aday/İK yolculuğu bu GitOps değişikliği ArgoCD ile
+# eşitlendikten sonra faz25-fullats-live-browser-acceptance ile üretilecektir.
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
@@ -41,7 +53,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+    digest: sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
@@ -86,3 +98,17 @@ patches:
       - op: add
         path: /data/ATS_AI_MTLS_TRUSTSTORE
         value: "/etc/ats-mtls/truststore.p12"
+      # ats#200 — aday verisi politikası TEST ortamı beyanı.
+      # Owner kararı (2026-07-23): KVKK kısıtı test ortamında uçtan uca
+      # doğrulamayı engellememeli; prod'a geçişte engellemeli.
+      # Bu iki satır YALNIZ test activation overlay'indedir; base
+      # (synthetic-only + prod) prod tarafında değişmeden kalır ve app-boot
+      # real-allowed+prod kombinasyonunda fail-closed boot düşürür.
+      # Kapsam: sentetik olmayan e-posta/CV yalnız TEST tenant'ında kabul edilir;
+      # gerçek aday PII production pilotu hâlâ Legal/DPO owner gate'indedir.
+      - op: replace
+        path: /data/ATS_CANDIDATE_DATA_MODE
+        value: "real-allowed"
+      - op: replace
+        path: /data/ATS_CANDIDATE_DATA_ENVIRONMENT
+        value: "test"

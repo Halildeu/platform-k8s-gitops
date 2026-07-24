@@ -1,9 +1,11 @@
 #!/bin/bash
 # Read-only Faz 35 Etik Speak test activation preflight.
-# Runs from a reviewed local GitOps checkout and inspects staging-sw over SSH.
+# Runs from a reviewed local GitOps checkout and inspects the authoritative
+# aiserver runtime over SSH.
 set -euo pipefail
 
-SSH_TARGET="${SSH_TARGET:-halil@staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiserver}"
+SSH_PROXY_JUMP="${SSH_PROXY_JUMP:-}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 PREFLIGHT_STAGE="${PREFLIGHT_STAGE:-activation}"
@@ -20,12 +22,12 @@ NETPOL="$ACTIVATION/netpol.yaml"
 ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
 SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.yaml"
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
+HOST_EDGE_CONFIG="$REPO_ROOT/host-compose/web-nginx/default.conf"
 EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
 EXPECTED_MODEL_JSON="$REPO_ROOT/bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
 MODEL_LEDGER="$REPO_ROOT/runtime-artifacts/openfga-model/$EXPECTED_MODEL_JSON_SHA256.json"
 EXPECTED_OPENFGA_STORE_NAME="platform-test-etik-speak"
 EXPECTED_OPENFGA_STORE_REF="platform-test/etik-speak"
-FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 IMAGE_SET_DIR="$REPO_ROOT/docs/faz-35-evidence/image-set"
 image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print | wc -l | tr -d ' ')
 [ "$image_set_count" -eq 1 ] || {
@@ -34,10 +36,17 @@ image_set_count=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -prin
 }
 IMAGE_SET=$(find "$IMAGE_SET_DIR" -maxdepth 1 -type f -name '*.json' -print)
 
-[ "$SSH_TARGET" = "halil@staging-sw" ] || {
-  echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
+[ "$SSH_TARGET" = "aiserver" ] || {
+  echo "FATAL: Faz 35 preflight is pinned to the aiserver SSH alias" >&2
   exit 1
 }
+case "$SSH_PROXY_JUMP" in
+  ""|staging-sw-legacy) ;;
+  *)
+    echo "FATAL: SSH_PROXY_JUMP must be empty or staging-sw-legacy" >&2
+    exit 1
+    ;;
+esac
 [ "$KUBE_CONTEXT" = "k3d-test" ] && [ "$KUBE_NS" = "platform-test" ] || {
   echo "FATAL: Faz 35 preflight is pinned to k3d-test/platform-test" >&2
   exit 1
@@ -61,6 +70,9 @@ ssh_opts=(
   -o ServerAliveInterval=5
   -o ServerAliveCountMax=2
 )
+if [ -n "$SSH_PROXY_JUMP" ]; then
+  ssh_opts=(-J "$SSH_PROXY_JUMP" "${ssh_opts[@]}")
+fi
 # shellcheck disable=SC2029 # target/context are exact-guarded above; callers pass static read-only commands.
 remote() { ssh "${ssh_opts[@]}" "$SSH_TARGET" "$@"; }
 sha256_stream() {
@@ -70,6 +82,13 @@ sha256_stream() {
     shasum -a 256 | awk '{print $1}'
   fi
 }
+target_hostname=$(remote 'hostname -s')
+target_ips=$(remote 'hostname -I')
+if [ "$target_hostname" != "aiserver" ] ||
+  ! printf '%s\n' "$target_ips" | grep -qw '10.9.10.15'; then
+  echo "FATAL: SSH path does not terminate on authoritative aiserver 10.9.10.15" >&2
+  exit 1
+fi
 image_set_digest=$(jq -cS . "$IMAGE_SET" | sha256_stream)
 [ "$(basename "$IMAGE_SET" .json)" = "$image_set_digest" ] || {
   echo "FATAL: Faz 35 image-set filename is not content-addressed" >&2
@@ -165,7 +184,7 @@ fi
 
 public_ip=""
 for host in etik.acik.com speakup.acik.com; do
-  resolve_args=()
+  resolve_ip=""
   if ! edge=$(curl --connect-timeout 5 --max-time 10 -sS -o /dev/null \
       -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' "https://$host/"); then
     # FortiClient split-DNS can omit newly-created public records even while
@@ -177,8 +196,9 @@ for host in etik.acik.com speakup.acik.com; do
       echo "FATAL: $host is absent from both system and public DNS" >&2
       exit 1
     }
-    resolve_args=(--resolve "$host:443:$public_dns_ip")
-    if ! edge=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 -sS \
+    resolve_ip=$public_dns_ip
+    if ! edge=$(curl --resolve "$host:443:$resolve_ip" \
+        --connect-timeout 5 --max-time 10 -sS \
         -o /dev/null -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' \
         "https://$host/"); then
       # The VPN intentionally has no hairpin route to the public WAN address.
@@ -189,8 +209,9 @@ for host in etik.acik.com speakup.acik.com; do
         echo "FATAL: public DNS exists but no VPN edge is resolvable via testai.acik.com" >&2
         exit 1
       }
-      resolve_args=(--resolve "$host:443:$vpn_edge_ip")
-      edge=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 -sS \
+      resolve_ip=$vpn_edge_ip
+      edge=$(curl --resolve "$host:443:$resolve_ip" \
+        --connect-timeout 5 --max-time 10 -sS \
         -o /dev/null -w '%{http_code}|%{ssl_verify_result}|%{remote_ip}' \
         "https://$host/")
       echo "DNS: $host public=$public_dns_ip; VPN split-edge=$vpn_edge_ip"
@@ -207,8 +228,13 @@ for host in etik.acik.com speakup.acik.com; do
     echo "FATAL: $host did not resolve to a reachable edge" >&2
     exit 1
   }
-  edge_headers=$(curl "${resolve_args[@]}" --connect-timeout 5 --max-time 10 \
-    -sSI "https://$host/")
+  if [ -n "$resolve_ip" ]; then
+    edge_headers=$(curl --resolve "$host:443:$resolve_ip" \
+      --connect-timeout 5 --max-time 10 -sSI "https://$host/")
+  else
+    edge_headers=$(curl --connect-timeout 5 --max-time 10 \
+      -sSI "https://$host/")
+  fi
   printf '%s\n' "$edge_headers" | grep -Eqi \
     '^strict-transport-security:[[:space:]]*max-age=31536000(;|$)' || {
     echo "FATAL: $host lacks the required one-year HSTS header" >&2
@@ -247,32 +273,105 @@ external_secret_count=$(awk '
   /^kind: ExternalSecret$/ { count++ }
   END { print count + 0 }
 ' "$rendered")
-[ "$external_secret_count" -eq 2 ] || {
-  echo "FATAL: activation must render exactly two ExternalSecrets" >&2
+[ "$external_secret_count" -eq 3 ] || {
+  echo "FATAL: activation must render exactly three ExternalSecrets" >&2
   exit 1
 }
 [ "$(grep -c '^kind: SecretStore$' "$rendered")" -eq 1 ] || {
   echo "FATAL: activation must render exactly one namespaced SecretStore" >&2
   exit 1
 }
-[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 3 ] || {
-  echo "FATAL: both ExternalSecrets must reference the namespaced SecretStore" >&2
+[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 4 ] || {
+  echo "FATAL: all three ExternalSecrets must reference the namespaced SecretStore" >&2
   exit 1
 }
 grep -Fq 'name: vault-platform-gitops' "$rendered" && {
   echo "FATAL: Etik Speak must not use the broad shared ClusterSecretStore" >&2
   exit 1
 }
-[ "$(grep -c 'nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate' "$rendered")" -eq 2 ] || {
-  echo "FATAL: both public ingresses must use the synthetic test access gate" >&2
+if grep -Fq 'nginx.ingress.kubernetes.io/auth-' "$rendered"; then
+  echo "FATAL: public reporter ingresses must not retain the removed Basic Auth gate" >&2
+  exit 1
+fi
+for rate_limit_annotation in limit-rps limit-rpm limit-connections limit-burst-multiplier; do
+  public_rate_limit_count=$(awk -v annotation="nginx.ingress.kubernetes.io/${rate_limit_annotation}:" '
+    function finish_document() {
+      if (kind == "Ingress" &&
+          (name == "etik-speak-public-api" || name == "etik-speak-public-ui") &&
+          has_annotation) {
+        count++
+      }
+    }
+    /^---$/ {
+      finish_document()
+      kind = ""
+      name = ""
+      has_annotation = 0
+      next
+    }
+    /^kind: / { kind = $2 }
+    /^  name: / { name = $2 }
+    index($0, annotation) { has_annotation = 1 }
+    END {
+      finish_document()
+      print count + 0
+    }
+  ' "$rendered")
+  [ "$public_rate_limit_count" -eq 0 ] || {
+    echo "FATAL: public reporter ingress displaced edge ${rate_limit_annotation} policy" >&2
+    exit 1
+  }
+done
+live_edge_config=$(remote \
+  'timeout 15 docker exec platform-web-nginx nginx -T 2>&1')
+# Real client identity exists only at the host edge. Rate limiting in
+# ingress-nginx would collapse clients onto proxy identities and move the
+# policy behind the privacy boundary, so prove canonical + live edge controls.
+# shellcheck disable=SC2016 # literal NGINX variables are contract text.
+for edge_rate_requirement in \
+  'server_name etik.acik.com speakup.acik.com;' \
+  'limit_req_zone $binary_remote_addr zone=etik_speak_api_rps:10m rate=3r/s;' \
+  'limit_req_zone $binary_remote_addr zone=etik_speak_api_rpm:10m rate=60r/m;' \
+  'limit_req_zone $binary_remote_addr zone=etik_speak_ui_rps:10m rate=10r/s;' \
+  'limit_req_zone $binary_remote_addr zone=etik_speak_ui_rpm:10m rate=300r/m;' \
+  'limit_conn_zone $binary_remote_addr zone=etik_speak_public_conn:10m;' \
+  'limit_req zone=etik_speak_api_rps burst=6 nodelay;' \
+  'limit_req zone=etik_speak_api_rpm burst=120 nodelay;' \
+  'limit_conn etik_speak_public_conn 10;' \
+  'limit_req zone=etik_speak_ui_rps burst=30 nodelay;' \
+  'limit_req zone=etik_speak_ui_rpm burst=900 nodelay;' \
+  'limit_conn etik_speak_public_conn 20;' \
+  'limit_req_status 429;' \
+  'limit_conn_status 429;' \
+  'proxy_set_header X-Etik-Speak-Transport https;'
+do
+  grep -Fq "$edge_rate_requirement" "$HOST_EDGE_CONFIG" || {
+    echo "FATAL: canonical host edge misses Etik Speak rate-limit policy" >&2
+    exit 1
+  }
+  printf '%s\n' "$live_edge_config" | grep -Fq "$edge_rate_requirement" || {
+    echo "FATAL: live host edge misses Etik Speak rate-limit policy" >&2
+    exit 1
+  }
+done
+canonical_edge_access_log_off=$(
+  grep -Ec '^[[:space:]]*access_log[[:space:]]+off;' "$HOST_EDGE_CONFIG" || true
+)
+live_edge_access_log_off=$(
+  printf '%s\n' "$live_edge_config" |
+    grep -Ec '^[[:space:]]*access_log[[:space:]]+off;' || true
+)
+if [ "$canonical_edge_access_log_off" -lt 2 ] ||
+  [ "$live_edge_access_log_off" -lt 2 ]; then
+  echo "FATAL: Etik Speak host edge access logs are not disabled" >&2
+  exit 1
+fi
+grep -Fq 'ETHICS_AUDIT_DELIVERY_ENABLED: "true"' "$rendered" || {
+  echo "FATAL: TEST activation must explicitly enable ethics audit delivery" >&2
   exit 1
 }
-[ "$(grep -c 'nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers' "$rendered")" -eq 1 ] || {
-  echo "FATAL: public API ingress must bind the reviewed upstream-header contract" >&2
-  exit 1
-}
-grep -Fq 'X-Etik-Speak-Transport: https' "$rendered" || {
-  echo "FATAL: public API transport proof header is missing" >&2
+grep -Fq 'ETHICS_NOTIFICATION_DELIVERY_ENABLED: "true"' "$rendered" || {
+  echo "FATAL: TEST activation must explicitly enable ethics notification delivery" >&2
   exit 1
 }
 
@@ -401,15 +500,10 @@ else
   root_state=not-included
 fi
 
-root_frontend_pin=$(awk '
-  $1 == "newName:" && $2 == "ghcr.io/halildeu/platform-web-frontend-testai" { found=1; next }
-  found && $1 == "newTag:" { tag=$2 }
-  found && $1 == "digest:" { print tag "|" $2; exit }
-' "$ROOT_OVERLAY")
-[ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
-  echo "FATAL: Faz 35 must not mutate the shared test frontend pin" >&2
+if grep -R -Fq 'platform-web-frontend-testai' "$ACTIVATION"; then
+  echo "FATAL: Faz 35 activation must not reference the shared test frontend" >&2
   exit 1
-}
+fi
 if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_root_activation_binding "$ROOT_OVERLAY"
   kustomize build "$REPO_ROOT/kustomize/overlays/test" >"$rendered_root"
@@ -418,7 +512,7 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-manager "$expected_manager"
 fi
 
-# Variables in this single-quoted program intentionally expand on staging-sw.
+# Variables in this single-quoted program intentionally expand on aiserver.
 # shellcheck disable=SC2016
 live_activation_resources=$(remote '
   set -eu
@@ -426,11 +520,13 @@ live_activation_resources=$(remote '
     deployment/ethics-service deployment/etik-speak-public deployment/etik-speak-manager \
     service/ethics-service service/etik-speak-public service/etik-speak-manager \
     serviceaccount/ethics-service serviceaccount/etik-speak-public serviceaccount/etik-speak-manager \
-    configmap/ethics-service-config configmap/etik-speak-public-upstream-headers \
+    configmap/ethics-service-config \
     ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api ingress/etik-speak-manager-ui \
     networkpolicy/etik-speak-public networkpolicy/etik-speak-manager networkpolicy/ethics-service \
     externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
+    externalsecret/ethics-service-notification-secret externalsecret/auth-service-ethics-secret \
     secret/ethics-service-secrets secret/etik-speak-public-gate \
+    secret/ethics-service-notification-secret secret/auth-service-ethics-secret \
     secretstore/etik-speak-vault resourcequota/etik-speak-budget; do
     kubectl --request-timeout=10s --context k3d-test -n platform-test get "$target" \
       --ignore-not-found -o name

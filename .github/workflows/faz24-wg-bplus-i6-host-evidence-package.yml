@@ -1,7 +1,7 @@
 name: Faz 24 WG-B+ I6 Host Evidence Package
 
 # Builds a metadata-only operator package for platform-k8s-gitops#1867.
-# It does not connect to staging-sw and does not collect or upload host command
+# It does not connect to aiserver and does not collect or upload host command
 # output. The package only contains a shell wrapper, metadata, README, and
 # SHA256SUMS so an operator can run the existing collector/verifier from a
 # protected host context.
@@ -12,7 +12,7 @@ on:
       target_host:
         description: "Host where the operator will run the package"
         required: true
-        default: "staging-sw"
+        default: "aiserver"
       cluster_cidr:
         description: "k3s cluster CIDR (test=10.44.0.0/16, prod=10.42.0.0/16). No wrong default."
         required: true
@@ -42,7 +42,7 @@ on:
         required: true
         default: "3"
       kube_context:
-        description: "Kubernetes context on staging-sw"
+        description: "Kubernetes context on aiserver"
         required: true
         default: "k3d-test"
       namespace:
@@ -211,7 +211,7 @@ jobs:
             echo "- Artifact: \`faz24-i6-host-evidence-package-${{ github.run_id }}\`"
             echo "- Target host: \`${{ inputs.target_host }}\`"
             echo
-            echo "Boundary: metadata-only operator package. This workflow does not connect to staging-sw, collect host command output, change host iptables/nftables, WireGuard, Kubernetes objects, platform-ai, secrets, or production state."
+            echo "Boundary: metadata-only operator package. This workflow does not connect to aiserver, collect host command output, change host iptables/nftables, WireGuard, Kubernetes objects, platform-ai, secrets, or production state."
             echo
             if [ -s "${PACKAGE_DIR}/expected-i6-host-evidence-metadata.json" ]; then
               echo '```json'

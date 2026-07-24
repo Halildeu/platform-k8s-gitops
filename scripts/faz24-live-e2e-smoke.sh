@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Faz 24 live e2e smoke — Zeynep attended smoke'un otomasyona alınmış hali.
 #
-# Runs on staging-sw (or any host with kubectl context "k3d-test" + vault-test
-# root token at /home/halil/bootstrap-drill/vault-init-test.json).
+# Runs on aiserver (or any host with kubectl context "k3d-test" + the TEST
+# Vault bootstrap file supplied through VAULT_INIT_FILE).
 #
 # Zeynep 07-20 attended smoke 8-madde checklist'inin backend preflight'ini
 # çalıştırır. Tam kullanıcı yolculuğu veya audio:start acceptance değildir.
@@ -27,7 +27,7 @@ KC_TOKEN_URL="$BASE/realms/platform-test/protocol/openid-connect/token"
 KC_CLIENT="${KC_CLIENT:-smoke-client}"
 CTX="${KUBE_CTX:-k3d-test}"
 NS="${KUBE_NS:-platform-test}"
-VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
 
 log() { printf '[smoke] %s\n' "$*" >&2; }

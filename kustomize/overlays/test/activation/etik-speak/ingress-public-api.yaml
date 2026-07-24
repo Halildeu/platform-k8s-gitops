@@ -5,16 +5,18 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    # The production hostnames intentionally target the synthetic cell during
-    # test-first acceptance, but must not accept uninvited real reports. The
-    # dedicated basic-auth gate is removed only by the production/legal change.
-    nginx.ingress.kubernetes.io/auth-type: basic
-    nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate
-    nginx.ingress.kubernetes.io/auth-realm: "Etik Speak sentetik test"
-    nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers
+    # ES-106 anonymous reporter boundary: public request metadata may be used
+    # in-memory for rate limiting but must not become a durable access record.
+    nginx.ingress.kubernetes.io/enable-access-log: "false"
+    nginx.ingress.kubernetes.io/enable-opentelemetry: "false"
+    # ES-313 (2026-07-21, owner explicit "riskleri anladım hemen aç"):
+    # sentetik-test Basic Auth gate KALDIRILDI. Kanal artık gerçek muhbir
+    # trafiğine açık. Anti-abuse ingress rate-limit + boundary NetworkPolicy
+    # + backend ES-306 hardening ile enforce edilir. ES-106 header/cookie
+    # minimization and per-client rate limit run at the host edge, before the
+    # cluster boundary.
     nginx.ingress.kubernetes.io/proxy-body-size: "2m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
-    nginx.ingress.kubernetes.io/limit-rps: "5"
 spec:
   ingressClassName: nginx
   tls:

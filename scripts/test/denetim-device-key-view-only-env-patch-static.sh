@@ -834,7 +834,7 @@ trap 'rm -rf "$orchestrator_harness"' EXIT
 mkdir -p "$orchestrator_harness/bin"
 cat >"$orchestrator_harness/bin/hostname" <<'SH'
 #!/usr/bin/env bash
-printf 'stagingsw\n'
+printf 'aiserver\n'
 SH
 cat >"$orchestrator_harness/bin/kubectl" <<'SH'
 #!/usr/bin/env bash

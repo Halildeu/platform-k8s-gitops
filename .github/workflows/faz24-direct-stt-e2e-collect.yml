@@ -1,7 +1,7 @@
 name: Faz 24 Direct-STT E2E Collect
 
 # Runs the real-recorder Gate 2 path for platform-ai#182 on the self-hosted
-# staging-sw runner. Boundary: platform-test only; temporary Keycloak user and
+# aiserver runner. Boundary: platform-test only; temporary Keycloak user and
 # token files are cleaned up by the token chain; uploaded artifacts are
 # metadata-only and must not contain tokens, PEM material, raw audio, raw
 # transcript text, destination URLs, or raw command output.
@@ -71,7 +71,7 @@ concurrency:
 jobs:
   collect:
     name: collect direct-STT e2e evidence
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 30
 
     env:
@@ -371,7 +371,7 @@ jobs:
           {
             echo "## Faz 24 direct-STT e2e collect"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-direct-stt-e2e-collect-${{ github.run_id }}\`"
             echo "- Token/external chain exit code: \`${CHAIN_EXIT_CODE:-missing}\`"

@@ -55,12 +55,16 @@ Meeting, Endpoint veya suite arızasından etkilenmemelidir.
   altyapısını doğrudan kullanır. `check-sso` + PKCE S256 sonrası `aud` içinde
   `ethics-manager`, scope içinde `ethics:case:manage` ve realm role içinde
   `ethics-manager` üçlüsünün tamamı yoksa hassas UI render edilmez.
-- TEST manager image'ı exact source head `308a2777e79d1a54ee367d47f19c39cc513db42d`
-  ve digest `sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da`
+- TEST manager image'ı exact source head `2fae733d31f574908859307f8af0dbc375e053eb`
+  ve digest `sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28`
   ile ayrı provenance taşır. Trusted main release workflow'u source auth
   unit testlerini, container HTTP/browser smoke'u ve SLSA attestation'ı
   image yayınından önce çalıştırır; GitOps preflight exact signer/source/digest
   zincirini yeniden doğrular.
+- Bu source, scope'suz mevcut suite SSO tokenının manager audience/scope'una
+  sessiz redirect döngüsüyle geri düşmesini engeller: bounded upgrade
+  `prompt=login` ile açık yeniden doğrulama ister. `2fae733d...` ile
+  platform-web current `main` arasında `apps/etik-speak-manager` farkı yoktur.
 - Public artifact staff MFE bundle'ını, Keycloak adapter'ını veya suite shared
   singleton'larını içermez.
 

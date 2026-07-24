@@ -5,6 +5,7 @@ resources:
   - ../../../../base/apps/etik-speak
   - secretstore.yaml
   - externalsecret.yaml
+  - externalsecret-notification.yaml
   - ingress-public-api.yaml
   - ingress-public-ui.yaml
   - ingress-staff-api.yaml
@@ -12,26 +13,61 @@ resources:
   - netpol.yaml
   - resource-quota.yaml
   - priority-class.yaml
-  - public-api-upstream-headers.yaml
 images:
-  # Exact branch artifacts: backend source a5b6d3a5 / run 29803062932 (Faz 35
-  # ES-306 transport boundary hardening — X-Forwarded-Proto fallback +
-  # empty-Authorization bypass fix, platform-backend PR #908), public-web
+  # Exact branch artifacts: backend merge 782cb42c / run 30061630961 (Faz 35
+  # ES-207 append-only audit delivery + ES-208 durable privacy-safe notification
+  # delivery + ES-306/M2 intake hardening, platform-backend PR #926), public-web
   # source 4eaf02bf / run 29710051185, and dedicated manager-web source
-  # 308a2777 / run 29716679615. Their immutable identities are content-bound
+  # 2fae733d / run 29787052080. Their immutable identities are content-bound
   # by signed provenance in the Faz 35 image-set ledger. Root activation is
   # included only by the post-provisioning commit that pins the reviewed
   # Vault role and OpenFGA store/model IDs.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:f8fe0cd588c99ef78848bb4e0200d1268e0a4d6c6afc8599812dc7c18657db53
+    digest: sha256:d88581e6e96453835e7e515ab0c66c53e2aeabfe10ece0fe40c6cda551b22875
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    digest: sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da
+    digest: sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28
 patches:
+  - target: {kind: ConfigMap, name: ethics-service-config}
+    patch: |-
+      - op: add
+        path: /data/ETHICS_AUDIT_DELIVERY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_DELIVERY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID
+        value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_CHANNEL
+        value: "inapp"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_LOCALE
+        value: "tr-TR"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_MAX_ATTEMPTS
+        value: "8"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_RETRY_BASE_DELAY
+        value: "10s"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_RETRY_MAX_DELAY
+        value: "15m"
+      # Faz 35 — CANLI/TEST adres ayrımı (owner kararı 2026-07-23).
+      #   etik.acik.com     = CANLI  -> default org ...0001 (gerçek çalışan ihbarları)
+      #   speakup.acik.com  = TEST   -> org ...0003 (sentetik doğrulama)
+      # M2 multi-tenant resolver (platform-backend #925) host'tan org çözer;
+      # haritada olmayan host default org'a düşer. Bu ayrım sayesinde test
+      # ihbarları canlı kayıtlarla ASLA aynı org'a yazılmaz — silme gerekmez,
+      # kanunî delil zinciri temiz kalır.
+      - op: add
+        path: /data/SPRING_APPLICATION_JSON
+        value: '{"ethics":{"tenancy":{"public-hosts":{"speakup.acik.com":"00000000-0000-0000-0000-000000000003"}}}}'
   - target: {kind: Deployment, name: ethics-service}
     patch: |-
       - op: replace
@@ -40,6 +76,12 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ethics-service-notification-secret
+            optional: false
   - target: {kind: Deployment, name: etik-speak-public}
     patch: |-
       - op: replace

@@ -28,14 +28,14 @@ jobs:
   rollout:
     name: immutable GPU rollout and metadata acceptance
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     environment: testai-product-acceptance
     timeout-minutes: 30
     env:
       EVIDENCE_DIR: /tmp/faz24-gpu-rollout-${{ github.run_id }}
       EVIDENCE_JSON: >-
         /tmp/faz24-gpu-rollout-${{ github.run_id }}/gpu-host-rollout.json
-      SSH_CONFIG_PATH: /home/halil/.ssh/config
+      SSH_CONFIG_PATH: /home/aiadmin/.ssh/config
       SSH_TARGET: denetim-pc
 
     steps:

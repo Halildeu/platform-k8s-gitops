@@ -33,11 +33,11 @@ KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_REALM="${KC_REALM:-platform-test}"
 KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 STAFF_USERNAME="${STAFF_USERNAME:-ethics-manager-test}"
-STAFF_PASSWORD_FILE="${STAFF_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
+STAFF_PASSWORD_FILE="${STAFF_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
-WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password}"
+WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password}"
 DENIED_USERNAME="${DENIED_USERNAME:-ethics-manager-denied-test}"
-DENIED_PASSWORD_FILE="${DENIED_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-denied-test.password}"
+DENIED_PASSWORD_FILE="${DENIED_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-denied-test.password}"
 RECUSAL_SENTINEL_CASE_ID="00000000-0000-0000-0000-000000000035"
 
 [ "$KUBE_NS" = "platform-test" ] && [ "$KUBE_CONTEXT" = "k3d-test" ] || {
@@ -54,11 +54,11 @@ for binding in \
   "$KC_BASE_URL=http://127.0.0.1:8082" \
   "$KC_REALM=platform-test" \
   "$STAFF_USERNAME=ethics-manager-test" \
-  "$STAFF_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password" \
+  "$STAFF_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-test.password" \
   "$WRONG_ORG_USERNAME=ethics-manager-wrong-org-test" \
-  "$WRONG_ORG_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password" \
+  "$WRONG_ORG_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password" \
   "$DENIED_USERNAME=ethics-manager-denied-test" \
-  "$DENIED_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-denied-test.password"; do
+  "$DENIED_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-denied-test.password"; do
   [ "${binding%%=*}" = "${binding#*=}" ] || {
     echo "FATAL: mutation target override refused: ${binding%%=*}" >&2
     exit 1

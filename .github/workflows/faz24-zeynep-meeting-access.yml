@@ -23,7 +23,7 @@ concurrency:
 jobs:
   provision:
     name: exact identity + least-privilege access
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 10
     env:
       OUT_PATH: /tmp/faz24-zeynep-meeting-access-${{ github.run_id }}.json

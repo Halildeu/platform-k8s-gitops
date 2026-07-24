@@ -29,11 +29,11 @@ WRITER_USERNAME="${WRITER_USERNAME:-d35-admin-persona}"
 WRITER_LOCAL_USER_ID="${WRITER_LOCAL_USER_ID:-12}"
 WRITER_PROVISIONER_ROLE="${WRITER_PROVISIONER_ROLE:-ETIK_SPEAK_PROVISIONER}"
 PERSONA_USERNAME="${PERSONA_USERNAME:-ethics-manager-test}"
-PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
+PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
-WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password}"
+WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password}"
 DENIED_USERNAME="${DENIED_USERNAME:-ethics-manager-denied-test}"
-DENIED_PASSWORD_FILE="${DENIED_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-denied-test.password}"
+DENIED_PASSWORD_FILE="${DENIED_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-denied-test.password}"
 PERMISSION_ROLE_NAME="${PERMISSION_ROLE_NAME:-ETIK_SPEAK_MANAGER}"
 
 for binding in \
@@ -48,11 +48,11 @@ for binding in \
   "$WRITER_LOCAL_USER_ID=12" \
   "$WRITER_PROVISIONER_ROLE=ETIK_SPEAK_PROVISIONER" \
   "$PERSONA_USERNAME=ethics-manager-test" \
-  "$PERSONA_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password" \
+  "$PERSONA_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-test.password" \
   "$WRONG_ORG_USERNAME=ethics-manager-wrong-org-test" \
-  "$WRONG_ORG_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password" \
+  "$WRONG_ORG_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password" \
   "$DENIED_USERNAME=ethics-manager-denied-test" \
-  "$DENIED_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-denied-test.password" \
+  "$DENIED_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-denied-test.password" \
   "$PERMISSION_ROLE_NAME=ETIK_SPEAK_MANAGER"; do
   [ "${binding%%=*}" = "${binding#*=}" ] || {
     echo "FATAL: Etik Speak entitlement mutation target override refused: ${binding%%=*}" >&2

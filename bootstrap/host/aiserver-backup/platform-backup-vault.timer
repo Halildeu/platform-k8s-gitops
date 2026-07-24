@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Vault Raft snapshots on aiserver
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+Unit=platform-backup@vault.service
+
+[Install]
+WantedBy=timers.target

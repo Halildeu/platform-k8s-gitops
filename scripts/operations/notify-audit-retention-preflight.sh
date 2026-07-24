@@ -46,8 +46,8 @@ KUBECTL="kubectl --context $CTX -n $NS"
 DOCKER_EXEC=""
 if ! kubectl --context "$CTX" version --request-timeout=5s &>/dev/null; then
   echo "INFO: kubectl context $CTX unreachable from this host; using SSH bridge" | tee -a "$LOG_FILE"
-  KUBECTL="ssh halil@staging-sw kubectl --context $CTX -n $NS"
-  DOCKER_EXEC="ssh halil@staging-sw"
+  KUBECTL="ssh aiadmin@aiserver kubectl --context $CTX -n $NS"
+  DOCKER_EXEC="ssh aiadmin@aiserver"
 fi
 
 section() {

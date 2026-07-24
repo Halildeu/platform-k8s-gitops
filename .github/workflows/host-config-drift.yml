@@ -28,9 +28,9 @@ permissions:
 
 jobs:
   host-config-drift:
-    # staging-sw is where the live host paths exist, so the diff is a local
+    # aiserver is where the live host paths exist, so the diff is a local
     # file comparison rather than a remote fetch.
-    runs-on: [self-hosted, staging-sw]
+    runs-on: [self-hosted, aiserver]
     timeout-minutes: 5
     steps:
       - name: Checkout

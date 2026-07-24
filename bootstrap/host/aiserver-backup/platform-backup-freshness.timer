@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly backup freshness metric on aiserver
+
+[Timer]
+OnCalendar=*-*-* *:10:00 UTC
+Persistent=true
+Unit=platform-backup@freshness.service
+
+[Install]
+WantedBy=timers.target

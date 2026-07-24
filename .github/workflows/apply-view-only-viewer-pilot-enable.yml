@@ -146,7 +146,7 @@ jobs:
     name: "Apply or rollback owner-gated #2373 VIEW_ONLY viewer product pilot surface"
     needs: [authorize-live-apply]
     if: always() && (inputs.action != 'apply' || needs.authorize-live-apply.result == 'success')
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 20
 
     steps:

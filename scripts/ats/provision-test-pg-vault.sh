@@ -6,6 +6,7 @@
 #   provision-test-pg-vault.sh --roles-only
 set -euo pipefail
 
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 MODE=${1:-full}
 case "$MODE" in
   full|--roles-only) ;;
@@ -86,7 +87,7 @@ fi
 echo "PG: ats_app role + ats db OK"
 
 # --- Vault seed: kv/platform/ats (root token dosyadan; ekrana basılmaz) ---
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 docker exec -e VAULT_TOKEN="$ROOT" -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv put kv/platform/ats \
     ATS_DB_URL="jdbc:postgresql://postgres:5432/ats" \

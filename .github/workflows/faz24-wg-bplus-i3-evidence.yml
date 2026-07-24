@@ -1,7 +1,7 @@
 name: Faz 24 WG-B+ I3 Evidence
 
 # Metadata-only v2 live evidence collector for platform-k8s-gitops#1864.
-# It runs on the self-hosted staging-sw runner because GitHub-hosted runners
+# It runs on the self-hosted aiserver runner because GitHub-hosted runners
 # cannot reach the WireGuard-canonical Denetim management path.
 # The six privileged Windows controls are read from a bounded LocalSystem
 # snapshot; the SSH service account remains a read-only transport identity.
@@ -18,7 +18,7 @@ on:
         required: true
         default: "2"
       wg_interface:
-        description: "staging-sw WireGuard interface or auto"
+        description: "aiserver WireGuard interface or auto"
         required: true
         default: "auto"
 
@@ -33,7 +33,7 @@ concurrency:
 jobs:
   collect:
     name: collect metadata-only I3 evidence
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 10
 
     env:
@@ -138,7 +138,7 @@ jobs:
           {
             echo "## Faz 24 WG-B+ I3 evidence"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Denetim target: redacted; stable hash is in the evidence JSON"
             echo "- Runner SSH identity: path hash and public-key metadata are in \`collector.denetimSshPreflight\`"
             echo "- Windows control contract: \`faz24.windows-audit-control.v1\` via bounded LocalSystem snapshot"

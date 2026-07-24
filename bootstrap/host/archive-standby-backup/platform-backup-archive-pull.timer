@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly off-host backup pull from aiserver
+
+[Timer]
+OnCalendar=*-*-* *:25:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+Unit=platform-backup-archive-pull.service
+
+[Install]
+WantedBy=timers.target

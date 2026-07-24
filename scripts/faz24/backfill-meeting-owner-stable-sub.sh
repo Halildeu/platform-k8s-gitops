@@ -42,7 +42,7 @@ require uniq
 
 MODE="${MODE:-plan}"
 ISSUE="${ISSUE:-2360}"
-SSH_TARGET="${SSH_TARGET:-halil@staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 POD_DEPLOY="${POD_DEPLOY:-deploy/meeting-service}"

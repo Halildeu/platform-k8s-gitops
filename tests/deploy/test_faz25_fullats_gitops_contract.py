@@ -37,6 +37,20 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             / "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml"
         ).read_text()
         cls.test_root = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text()
+        cls.frontend_pin = json.loads(
+            subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / "scripts/automation/test-overlay-frontend-image.py"),
+                    "inspect",
+                    "--kustomization",
+                    str(ROOT / "kustomize/overlays/test/kustomization.yaml"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        )
         cls.test_frontend_nginx = (
             ROOT / "kustomize/overlays/test/frontend-nginx-default.conf"
         ).read_text()
@@ -77,6 +91,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         ).read_text()
         cls.fullats_runtime = (
             ROOT / "scripts/ats/verify-fullats-live-runtime.sh"
+        ).read_text()
+        cls.testai_reconcile = (
+            ROOT / "scripts/deploy/reconcile-testai-backend-sequential.sh"
         ).read_text()
         cls.fullats_axe_evidence = (
             ROOT / "scripts/ats/fullats-axe-evidence.cjs"
@@ -382,7 +399,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             "'recruiter-workspace-terminal-desktop')"
         )
         candidate_terminal_refresh = self.fullats_browser.index(
-            "const interviewStep = candidatePage.getByRole('listitem')"
+            "const interviewStep = currentStatusHeading('Mülakat planlaması')"
         )
         self.assertLess(initial_scan, terminal_response_wait)
         self.assertLess(terminal_response_wait, terminal_transition_click)
@@ -397,8 +414,15 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
         self.assertIn("terminalResponse.status() !== 200", self.fullats_browser)
         self.assertIn(
-            "(await terminalStatus.textContent())?.trim() !== "
-            "'Mülakat planlaması bekleniyor.'",
+            "getByRole('status').filter({ hasText: terminalStatusText })",
+            self.fullats_browser,
+        )
+        self.assertIn(
+            "'Durum güncellendi: Mülakat planlaması bekliyor.'",
+            self.fullats_browser,
+        )
+        self.assertIn(
+            "(await terminalStatus.textContent())?.trim() !== terminalStatusText",
             self.fullats_browser,
         )
         self.assertIn(
@@ -629,7 +653,16 @@ fi
             "getByRole('button', { name: 'Önizle' })",
             "getByRole('button', { name: 'Yayınla' })",
             "getByRole('link', { name: 'Başvuru formuna geç' })",
+            "locator('#resume-import-notice')",
+            "getByTestId('candidate-resume').setInputFiles",
+            "getByRole('button', { name: 'Güvenli önerileri kabul et' })",
+            "getByRole('button', { name: 'Deneyim bilgilerime devam et' })",
+            "getByRole('button', { name: 'Başvuruyu kontrol et' })",
             "getByTestId('create-application-receipt')",
+            "getByRole('button', { name: 'İnsan incelemesini başlat' })",
+            "getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' })",
+            "getByRole('button', { name: 'Immutable değerlendirmeyi kaydet' })",
+            "getByRole('button', { name: 'Mülakat planlamasına al' })",
             "getByRole('button', { name: 'Duraklat' })",
             "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED')",
             "getByRole('button', { name: 'Yayınla' })",
@@ -645,10 +678,39 @@ fi
         self.assertIn("jobSlugSha256: sha256(jobSlug)", self.fullats_browser)
         self.assertIn("finalJobState: 'CLOSED'", self.fullats_browser)
         self.assertIn("getByTestId('candidate-resume').setInputFiles", self.fullats_browser)
+        self.assertIn("await resumeImportNotice.check()", self.fullats_browser)
+        self.assertIn("importedFieldCount < 2", self.fullats_browser)
+        self.assertIn("await fillIfEmpty('candidate-phone'", self.fullats_browser)
+        self.assertIn("'candidate-summary'", self.fullats_browser)
         self.assertIn("buildSyntheticResumePdf", self.fullats_browser)
         self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
         self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
         self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
+        self.assertNotIn("getByText('Şimdi')", self.fullats_browser)
+        self.assertIn(
+            "getByText('Güncel durum', { exact: true }).locator('..')",
+            self.fullats_browser,
+        )
+        self.assertIn("currentStatusHeading('Başvuru alındı')", self.fullats_browser)
+        self.assertIn("currentStatusHeading('İnsan incelemesinde')", self.fullats_browser)
+        self.assertIn("currentStatusHeading('Mülakat planlaması')", self.fullats_browser)
+        self.assertIn(
+            "candidate submission is not bound to the confirmed resume draft",
+            self.fullats_browser,
+        )
+        self.assertIn("submittedPayload.resumeDraftVersion < 0", self.fullats_browser)
+        self.assertIn("structured recruiter evaluation HTTP", self.fullats_browser)
+        self.assertIn(
+            "['recruiter', 'POST', `/api/ats/v1/recruiter/applications/"
+            "${publicRef}/evaluations`, 201]",
+            self.fullats_browser,
+        )
+        self.assertIn(
+            "['negative-probe', 'GET', '/api/ats/v1/recruiter/applications', 401]",
+            self.fullats_browser,
+        )
+        self.assertIn("anonymousRecruiterStatus !== 401", self.fullats_browser)
+        self.assertIn("credentials: 'omit'", self.fullats_browser)
         self.assertNotIn("getByTestId('fill-synthetic-resume').click()", self.fullats_browser)
         self.assertIn("attachNetworkEvidence(publicStatePage, 'negative-probe')", self.fullats_browser)
         self.assertIn("entry.persona === 'negative-probe'", self.fullats_browser)
@@ -682,42 +744,71 @@ fi
             self.fullats_browser_shell,
         )
         self.assertIn(
-            "recruiter role exact member snapshot mismatch",
+            "target recruiter exact role membership snapshot mismatch",
             self.fullats_browser_shell,
         )
-        self.assertIn("length == 1 and .[0].userId", self.fullats_browser_shell)
+        self.assertIn(
+            "[.[] | select(.userId == $recruiter_user_id)] | length == 1",
+            self.fullats_browser_shell,
+        )
+        self.assertNotIn(
+            "length == 1 and .[0].userId",
+            self.fullats_browser_shell,
+        )
         self.assertNotIn("def module_allowed", self.fullats_browser_shell)
         self.assertNotIn("def action_allowed", self.fullats_browser_shell)
         self.assertNotIn('{type:"MODULE",key:$ats_key,grant:"MANAGE"}', self.fullats_browser_shell)
 
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
-            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c",
+            "ats": "sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83",
+            "permission": "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4",
+            "frontend": self.frontend_pin["digest"],
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
             f"EXPECTED_PERMISSION_DIGEST: {expected['permission']}",
             self.fullats_browser_workflow,
         )
+        self.assertNotRegex(
+            self.fullats_browser_workflow,
+            r"(?m)^\s+EXPECTED_FRONTEND_(?:DIGEST|SHA):\s+(?:sha256:)?[a-f0-9]{40,64}$",
+        )
         self.assertIn(
-            f"EXPECTED_FRONTEND_DIGEST: {expected['frontend']}",
+            "Bind frontend runtime to canonical test overlay",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: 78466aa96f34a498d29b09500c6eeea2e81dd04a",
+            "python3 scripts/automation/test-overlay-frontend-image.py inspect",
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29896314673",
+            'echo "EXPECTED_FRONTEND_SHA=$source_sha"',
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29896314673/job/88847121773",
+            'echo "EXPECTED_FRONTEND_DIGEST=$digest"',
             self.fullats_browser_workflow,
         )
-        self.assertIn('echo "- frontend build job: ${FRONTEND_BUILD_JOB}"', self.fullats_browser_workflow)
+        checkout = self.fullats_browser_workflow.index(
+            "Checkout canonical acceptance scripts"
+        )
+        bind = self.fullats_browser_workflow.index(
+            "Bind frontend runtime to canonical test overlay"
+        )
+        convergence = self.fullats_browser_workflow.index(
+            "Wait for exact GitOps auto-sync convergence"
+        )
+        self.assertLess(checkout, bind)
+        self.assertLess(bind, convergence)
+        self.assertIn(
+            'echo "- frontend source: ${FRONTEND_SOURCE_URL}"',
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            'echo "- frontend immutable digest: ${EXPECTED_FRONTEND_DIGEST}"',
+            self.fullats_browser_workflow,
+        )
         self.assertIn("body.sha !== expectedFrontendSha", self.fullats_browser)
         self.assertIn("fetchBuildInfo('pre')", self.fullats_browser)
         self.assertIn("fetchBuildInfo('post')", self.fullats_browser)
@@ -732,7 +823,26 @@ fi
             "frontend frontend app.kubernetes.io/name=frontend",
             self.fullats_runtime,
         )
-        self.assertIn(".status.sync.revision == $revision", self.fullats_runtime)
+        self.assertIn(
+            'test("^[a-f0-9]{40}$")',
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            'git merge-base --is-ancestor "$EXPECTED_GITOPS_SHA" "$observed_argo_revision"',
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            'git merge-base --is-ancestor "$observed_argo_revision" "$observed_main_revision"',
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            'revisionRelationship:"dispatched-equals-or-ancestor-of-observed"',
+            self.fullats_runtime,
+        )
+        self.assertNotIn(
+            '"$(git rev-parse origin/main)" == "$EXPECTED_GITOPS_SHA"',
+            self.fullats_runtime,
+        )
         self.assertIn('.status.sync.status == "Synced"', self.fullats_runtime)
         self.assertIn('.status.health.status == "Healthy"', self.fullats_runtime)
         self.assertIn("origin/main", self.fullats_runtime)
@@ -741,8 +851,42 @@ fi
         self.assertIn("Cache-Control: no-cache", self.fullats_runtime)
         self.assertIn("PHASE: pre", self.fullats_browser_workflow)
         self.assertIn("PHASE: post", self.fullats_browser_workflow)
-        self.assertIn("id: d29", self.fullats_browser_workflow)
-        self.assertIn("bash scripts/ats/d29-smoke.sh", self.fullats_browser_workflow)
+        self.assertIn(
+            'echo "effective_gitops_sha=$effective_revision" >> "$GITHUB_OUTPUT"',
+            self.fullats_browser_workflow,
+        )
+        self.assertEqual(
+            2,
+            self.fullats_browser_workflow.count(
+                "EXPECTED_GITOPS_SHA: ${{ steps.convergence.outputs.effective_gitops_sha }}"
+            ),
+        )
+        self.assertIn(
+            'git checkout --detach "$effective_revision"',
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            '.effectiveRevision == .observedRevision',
+            self.fullats_browser_workflow,
+        )
+        for acceptance_path in (
+            ".github/workflows/faz25-fullats-live-browser-acceptance.yml",
+            "scripts/ats/verify-fullats-live-runtime.sh",
+            "scripts/ats/fullats-live-browser-acceptance.sh",
+            "scripts/ats/fullats-live-browser-acceptance.cjs",
+            "scripts/ats/d29-smoke.sh",
+        ):
+            self.assertIn(acceptance_path, self.testai_reconcile)
+        self.assertNotIn("id: d29", self.fullats_browser_workflow)
+        self.assertNotIn("bash scripts/ats/d29-smoke.sh", self.fullats_browser_workflow)
+        self.assertIn(
+            "customer-slice D29: exact runtime + real browser function",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            "meeting/STT model-governance matrix: separate product slice",
+            self.fullats_browser_workflow,
+        )
         self.assertNotRegex(self.d29, r"curl\s+-[^\n]*k")
         self.assertIn("capturedNetworkFields", self.fullats_browser)
         self.assertIn("redacted.replaceAll(value, marker)", self.fullats_browser)
@@ -765,42 +909,41 @@ fi
             self.rendered_test_root,
         )
 
-    def test_frontend_promotion_receipt_is_cross_file_bound(self):
-        source_sha = "78466aa96f34a498d29b09500c6eeea2e81dd04a"
-        tag = "sha-78466aa"
-        digest = "sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c"
-        run_id = "29896314673"
-        job_id = "88847121773"
+    def test_frontend_promotion_consumers_use_canonical_overlay_pin(self):
+        source_sha = self.frontend_pin["source_sha"]
+        tag = self.frontend_pin["tag"]
+        digest = self.frontend_pin["digest"]
 
+        self.assertRegex(source_sha, r"^[a-f0-9]{40}$")
+        self.assertEqual(tag, f"sha-{source_sha[:7]}")
+        self.assertRegex(digest, r"^sha256:[a-f0-9]{64}$")
         for exact in (
-            f"Build run {run_id} testai job {job_id}.",
             f"sourceRevision: {source_sha}",
             f"newTag: {tag}",
             f"digest: {digest}",
         ):
             self.assertIn(exact, self.test_root)
 
-        for exact in (
-            f'FRONTEND_NEW="{digest}"',
-            f'FRONTEND_NEW_SHA="{source_sha}"',
-            f'FRONTEND_NEW_TAG="{tag}"',
-        ):
-            self.assertIn(exact, self.rollback_script)
-
-        for exact in (
+        self.assertIn(
+            "Current machine-readable authority is the sourceRevision/newTag/digest",
+            self.test_root,
+        )
+        self.assertIn(
+            "test-overlay-frontend-image.py inspect",
+            self.fullats_browser_workflow,
+        )
+        self.assertNotIn(f'FRONTEND_NEW="{digest}"', self.rollback_script)
+        self.assertNotIn(
             f"EXPECTED_FRONTEND_DIGEST: {digest}",
-            f"EXPECTED_FRONTEND_SHA: {source_sha}",
-            f"actions/runs/{run_id}",
-            f"actions/runs/{run_id}/job/{job_id}",
-        ):
-            self.assertIn(exact, self.fullats_browser_workflow)
+            self.fullats_browser_workflow,
+        )
 
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
         self.assertIn("timeout-minutes: 90", self.fullats_browser_workflow)
         self.assertIn("id: preflight", self.fullats_browser_workflow)
         self.assertIn("id: runtime", self.fullats_browser_workflow)
         self.assertIn("id: browser", self.fullats_browser_workflow)
-        self.assertIn("id: d29", self.fullats_browser_workflow)
+        self.assertNotIn("id: d29", self.fullats_browser_workflow)
         self.assertIn("id: final-runtime", self.fullats_browser_workflow)
         self.assertIn("id: convergence", self.fullats_browser_workflow)
         self.assertIn("FULL_SYNC_TIMEOUT=900", self.fullats_browser_workflow)
@@ -810,9 +953,10 @@ fi
         )
         self.assertIn("steps.convergence.outcome == 'failure'", self.fullats_browser_workflow)
         self.assertIn(
-            "steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure'",
+            "steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure'",
             self.fullats_browser_workflow,
         )
+        self.assertNotIn("steps.d29.outcome", self.fullats_browser_workflow)
         self.assertIn("steps.rollback-checkout.outcome == 'success'", self.fullats_browser_workflow)
         self.assertIn("install-pinned-gh-cli.sh", self.fullats_browser_workflow)
         self.assertIn("steps.rollback-gh.outcome == 'success'", self.fullats_browser_workflow)
@@ -847,10 +991,10 @@ fi
         self.assertIn("printf 'ROLLED_BACK\\n'", self.rollback_script)
         self.assertIn("changed-file set escaped two-file contract", self.rollback_script)
         for digest in (
-            "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83",
+            "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4",
+            "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
-            "sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c",
         ):
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
@@ -953,7 +1097,7 @@ fi
 
     def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
-        current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
+        current_ats = "sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83"
         # #2555 Slice B (2026-07-20) - bumped from sha256:55f2f2f2 to sha256:a23c72fa
         # (sha-4a0dc67, platform-backend PR #896). AccessScopeService.grant()
         # widens the P0001 handler; POST /access/scope 500->400. Faz 25 ATS
@@ -973,8 +1117,8 @@ fi
         # recruiter-scope contract touched).
         current_permission = "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
         promoted = {
-            "frontend": "sha256:c0f738de2a7bf1e13ad75f1b8463e85a660a545fdca35b9cb86f87ad58ae227c",
-            "tag": "sha-78466aa",
+            "frontend": self.frontend_pin["digest"],
+            "tag": self.frontend_pin["tag"],
         }
         rolled_back = {
             "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
@@ -1091,7 +1235,7 @@ fi
         self.assertIn("Only verify exact Argo revision, image/config binding", self.recovery_workflow)
         self.assertIn('"refs/heads/main"', self.recovery_workflow)
         self.assertIn("APPLY_FAZ25_FULLATS_TEST_RECOVERY", self.recovery_workflow)
-        self.assertIn("[self-hosted, staging-sw, testai-deploy]", self.recovery_workflow)
+        self.assertIn("[self-hosted, aiserver, testai-deploy]", self.recovery_workflow)
         self.assertIn(
             "bash scripts/ats/provision-test-pg-vault.sh --roles-only",
             self.recovery_workflow,
@@ -1152,9 +1296,9 @@ fi
         self.assertIn("Full acceptance sonunda overall Argo `Synced/Healthy`", self.runbook)
         self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
         self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
-        self.assertIn("Faz 25 #2615 branch-acceptance pini", self.runbook)
-        self.assertIn("ATS #183 exact head `f4d2b4f`", self.runbook)
-        self.assertIn("canlı D29 pending", self.runbook)
+        self.assertIn("Faz 25 #2526 ilk müşteri yüzeyi backend pini", self.runbook)
+        self.assertIn("ATS exact main `29a8abb`", self.runbook)
+        self.assertIn("Canlı D29 ve uçtan uca aday/İK kanıtı", self.runbook)
         self.assertIn("aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir", self.runbook)
         self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)
         self.assertIn("modelGovernanceLedgerReader(DataSource, Flyway)", self.runbook)

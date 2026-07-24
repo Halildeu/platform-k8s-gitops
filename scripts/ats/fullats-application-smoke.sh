@@ -4,6 +4,7 @@
 set -euo pipefail
 
 EDGE="${ATS_EDGE:-https://testai.acik.com}"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 API="$EDGE/api/ats/v1"
 TENANT="00000000-0000-0000-0000-000000000001"
 OTHER_TENANT="t-platform-test"
@@ -11,7 +12,7 @@ T=$(mktemp -d); chmod 700 "$T"; umask 077
 trap 'rm -rf "$T"; unset RT OT CA ROOT S RPW OPW' EXIT
 N=0; ok(){ echo "PASS: $1"; N=$((N+1)); }; die(){ echo "FAIL: $1" >&2; exit 1; }
 
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 S=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/ats-smoke)

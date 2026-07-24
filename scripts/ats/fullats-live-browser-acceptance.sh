@@ -11,7 +11,7 @@ BASE_URL="${BASE_URL:-https://testai.acik.com}"
 REALM="${REALM:-platform-test}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_JSON="${VAULT_INIT_JSON:-/home/halil/bootstrap-drill/vault-init-test.json}"
+VAULT_INIT_JSON="${VAULT_INIT_JSON:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 KCADM="/opt/keycloak/bin/kcadm.sh"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
@@ -379,10 +379,11 @@ ROLE_MEMBERS_OUT="$(json_file recruiter-role-members.json)"
 ROLE_MEMBERS_CODE="$(api_request GET "/api/v1/roles/$ROLE_ID/members" "$ADMIN_HEADER_FILE" "$ROLE_MEMBERS_OUT")"
 if [[ "$ROLE_MEMBERS_CODE" != "200" ]] || ! jq -e \
     --argjson recruiter_user_id "$RECRUITER_USER_ID" '
-      length == 1 and .[0].userId == $recruiter_user_id and
+      (type == "array") and
+      ([.[] | select(.userId == $recruiter_user_id)] | length == 1) and
       (. | all((keys | sort) == ["assignedAt", "userId"]))
     ' "$ROLE_MEMBERS_OUT" >/dev/null; then
-  echo "FATAL: recruiter role exact member snapshot mismatch" >&2
+  echo "FATAL: target recruiter exact role membership snapshot mismatch" >&2
   exit 1
 fi
 

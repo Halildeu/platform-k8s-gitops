@@ -31,7 +31,9 @@ Before provisioning or root-overlay activation, record all of the following:
    independent and cannot be replaced by this review.
 3. Backend, public-web and the dedicated `platform-web-etik-speak-manager`
    workflows published immutable image digests from their exact source heads.
-   The shared `platform-web-frontend-testai` digest remains unchanged.
+   The Faz 35 activation scope does not reference or mutate the shared
+   `platform-web-frontend-testai`; independent frontend promotions remain
+   allowed.
 4. The public image pinned-container smoke proves `/healthz`, CSP,
    `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`.
 5. The GitOps activation overlay contains no all-zero digest and renders with
@@ -42,7 +44,7 @@ Before provisioning or root-overlay activation, record all of the following:
 
 ## Gate 2: test product-cell provisioning
 
-Run on `staging-sw` from the reviewed GitOps checkout. The scripts are
+Run on authoritative `10.9.10.15` (`aiserver`) from the reviewed GitOps checkout. The scripts are
 test-only and fail closed if pointed at other containers, namespace, or
 context.
 
@@ -51,6 +53,18 @@ First run the read-only preflight from the reviewed local checkout:
 ```bash
 PREFLIGHT_STAGE=foundation ./scripts/faz35/preflight-test-activation.sh
 ```
+
+Doğrudan VPN rotası `10.9.10.15:22` erişimini taşımıyorsa, eski hostta
+workload çalıştırmadan yalnız SSH jump kullan:
+
+```bash
+SSH_PROXY_JUMP=staging-sw-legacy \
+  PREFLIGHT_STAGE=foundation \
+  ./scripts/faz35/preflight-test-activation.sh
+```
+
+Script her iki yolda da terminal hedefin `aiserver` ve `10.9.10.15` olduğunu
+doğrular; başka jump alias'ını fail-closed reddeder.
 
 It binds the current host-container IPs to the Kubernetes Endpoints and the
 reviewed NetworkPolicy, verifies ESO/OpenFGA availability, checks the external
@@ -66,16 +80,27 @@ canonical host edge; `docs/S5-cert-renewal-runbook.md` defines it as optional
 when cluster TLS termination is not used. A valid edge certificate and
 authoritative public request remain mandatory.
 
-The public production-named hosts remain protected by a dedicated synthetic
-test Basic Auth gate until the separate production/legal change. ingress-nginx
-consumes that credential and removes `Authorization` before proxying the public
-API, then overwrites `X-Etik-Speak-Transport: https`. The ethics backend rejects
-public mutations without that exact transport proof, and its NetworkPolicy
-admits only the ingress namespace. This prevents uninvited real reports while
-preserving the application's bearer/cookie credential-confusion boundary.
+The public reporter hosts are open without Basic Auth under the explicit
+ES-313 owner decision recorded by PR #2789. Per-client request, minute and
+connection limits run at the canonical host edge, which is the only HTTP hop
+that still sees the real client address. The same edge clears caller identity,
+suite bearer and suite-cookie metadata before the cluster boundary, forwards
+only the host-scoped `__Host-etik_mailbox` cookie needed by the reporter
+follow-up journey, and sets `X-Etik-Speak-Transport: https`. Every upstream
+`Set-Cookie` is hidden; the edge republishes only an exact
+`__Host-etik_mailbox` cookie carrying `Path=/`, `Secure`, `HttpOnly` and
+`SameSite=Strict` with no `Domain` attribute. All other response cookies fail
+closed. Both the host edge and public ingresses keep access logging and
+OpenTelemetry disabled.
+The ethics backend rejects public mutations without the transport proof, and
+its NetworkPolicy admits only the ingress namespace. This technical opening
+does not authorize real PII or assert production legal go.
 
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
+./scripts/faz35/provision-test-notification-service-identity.sh --check
+CONFIRM_TEST_NOTIFICATION_IDENTITY=seed-faz35-es208 \
+  ./scripts/faz35/provision-test-notification-service-identity.sh --apply
 ./scripts/faz35/provision-test-keycloak.sh
 docker exec platform-kc-test cat /run/secrets/kc_admin_password | \
   ./scripts/faz24/repair-d35-permission-writer-credential.sh \
@@ -99,7 +124,7 @@ contract.
 The Keycloak script prints a non-secret `ETHICS_STAFF_SUBJECT=<uuid>` line and
 stores the dedicated allow, wrong-org and OpenFGA-denied synthetic persona
 passwords in the chmod-600 paths reported by the script. The PG/Vault script
-prints only the public-gate username, its chmod-600 local password-file path,
+prints only the legacy rollback-gate username, its chmod-600 local password-file path,
 and the dedicated Etik Speak Vault AppRole's non-secret role ID. It creates a
 namespaced Kubernetes secret for that AppRole; the role can read only
 `kv/platform/etik-speak` and cannot use the broad shared ClusterSecretStore.
@@ -115,6 +140,17 @@ never emitted.
 Every password file must be regular, non-symlink, owned by the invoking user
 and inaccessible to group/other users. Do not paste a password or AppRole
 secret ID into chat, GitHub, logs, shell argv, or an evidence document.
+
+The notification identity provisioner first reads the two approved TEST Vault
+documents and fails closed if their existing values differ. On a first run it
+generates one 256-bit credential, streams it over stdin to
+`kv/platform/auth-service.service_client_ethics_service_secret` and
+`kv/platform/etik-speak.ETHICS_NOTIFICATION_CLIENT_SECRET`, then performs an
+exact read-after-write comparison. A partial prior run fills only the missing
+side; it never silently rotates an existing matched pair. Output contains only
+presence state and a one-way SHA-256 identity. The two isolated
+ExternalSecrets ensure a missing optional product key cannot stall the core
+auth or Etik Speak database Secret.
 
 Use the printed subject to promote the isolated OpenFGA model and seed only the
 allow-persona product relations:
@@ -178,12 +214,15 @@ GitHub evidence, or command tracing during activation.
 
 In the GitOps PR:
 
-1. Verify backend and public digests in
+1. Verify the ethics backend and public digests in
    `kustomize/overlays/test/activation/etik-speak/kustomization.yaml` against
-   their exact reviewed source heads.
+   their exact reviewed source heads. Verify the root TEST pins for
+   `auth-service` and `notification-orchestrator` against the same merged
+   backend head and signed image-build run.
 2. Pin the exact reviewed `platform-web-etik-speak-manager` digest in the Faz 35
-   activation overlay and verify the shared `platform-web-frontend-testai`
-   digest did not change.
+   activation overlay and verify that the activation does not reference or
+   mutate the shared `platform-web-frontend-testai`; independent frontend
+   promotions are outside this activation scope.
 3. Add `activation/etik-speak` to the root test overlay resources.
 4. Render the root test overlay and run the repository CI gates.
 5. Merge only after the exact-head review receipt and normal CI are valid.
@@ -250,6 +289,23 @@ GitOps preflight verifies that source/workflow/SLSA binding; Gate 4 then proves
 the same boundary against the running TEST environment, including wrong-org and
 OpenFGA-denied personas. Neither source tests nor attestation replace Gate 4.
 
+Before any synthetic report is created, run the ES-106 privacy boundary
+verifier from the exact merged GitOps checkout:
+
+```bash
+SSH_TARGET=staging-sw ./scripts/faz35/verify-test-public-no-correlation.sh
+```
+
+It verifies both public Ingresses in desired and live state, inspects the live
+host-edge and generated ingress NGINX configuration, proves the mailbox-only
+cookie filter plus volatile per-client rate limits, exercises UI plus API
+denial paths with non-personal synthetic sentinels, and scans only a bounded
+post-start log window. Raw logs remain in a mode-700 temporary directory and
+are deleted by the verifier; only boolean results and the zero leak count are
+publishable. `NO_CORRELATION_ACCEPTED=true` is required before Gate 4. A merge,
+annotation presence, healthy pod, or source-only test does not replace this
+live result.
+
 ## Gate 4: customer closed-loop acceptance
 
 Use only synthetic content.
@@ -265,22 +321,22 @@ Use only synthetic content.
 5. Reopen the mailbox on the original public host, read the staff reply, send a
    reporter reply, then log out and prove the expired host-only cookie no longer
    authorizes reads.
-6. Prove missing Basic Auth denial, Basic Auth stripping at the backend,
-   cross-host mailbox login denial, public suite-cookie confusion denial,
+6. Prove open reporter access without Basic Auth, invalid/missing idempotency
+   denial, ingress rate limits, cross-host mailbox login denial, public
+   suite-cookie confusion denial,
    wrong-org staff isolation, live OpenFGA allow/deny plus source-level outage
    fail-closed behavior, stale `If-Match` `412`, same-payload replay and
    different-payload idempotency conflict. Both hosts must emit one-year HSTS.
 
-The canonical browser driver lives in `platform-web` and reads both synthetic
-gate passwords only from host-local chmod-600 files. It validates regular-file,
+The canonical browser driver lives in `platform-web` and reads the three
+synthetic manager persona passwords only from host-local chmod-600 files. It validates regular-file,
 non-symlink, owner and mode boundaries before reading them. It disables trace,
 video and screenshots so a receipt/access secret cannot enter CI artifacts:
 
 ```bash
-ETIK_MANAGER_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password \
-ETIK_WRONG_ORG_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password \
-ETIK_DENIED_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-denied-test.password \
-ETIK_PUBLIC_GATE_PASSWORD_FILE=/home/halil/bootstrap-drill/etik-speak-public-gate.password \
+ETIK_MANAGER_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-test.password \
+ETIK_WRONG_ORG_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password \
+ETIK_DENIED_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-manager-denied-test.password \
   pnpm test:e2e:etik-speak-runtime
 ```
 

@@ -9,7 +9,7 @@ on:
       evidence_dir:
         description: 'Endpoint evidence directory on the staging runner'
         required: true
-        default: '/home/halil/agentpc2-bootstrap-evidence/latest'
+        default: '/home/aiadmin/agentpc2-bootstrap-evidence/latest'
       trigger_acceptance:
         description: 'Dispatch #208 constrained-executor acceptance after verifier success'
         required: true
@@ -47,7 +47,7 @@ env:
 jobs:
   ingest:
     name: Verify endpoint-local bootstrap evidence
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 20
 
     steps:
@@ -88,7 +88,7 @@ jobs:
 
           canonical_evidence_dir="$(cd "${EVIDENCE_DIR}" && pwd -P)"
           case "${canonical_evidence_dir}" in
-            /home/halil/agentpc2-bootstrap-evidence/*|/tmp/agentpc2-first-install-endpoint-evidence-*|/tmp/agentpc2-bootstrap-evidence-*)
+            /home/aiadmin/agentpc2-bootstrap-evidence/*|/tmp/agentpc2-first-install-endpoint-evidence-*|/tmp/agentpc2-bootstrap-evidence-*)
               ;;
             *)
               echo "::error::evidence_dir must canonicalize under an approved staging-runner evidence root"

@@ -1,0 +1,391 @@
+{
+  "schema": "faz35-evidence-custody/v1",
+  "product": "etik-speak",
+  "defaultMode": "text-only-fail-closed-until-runtime-accepted",
+  "artifactRoles": [
+    "quarantine-upload",
+    "sealed-original",
+    "sanitized-derivative",
+    "controlled-export"
+  ],
+  "states": [
+    "DECLARED",
+    "UPLOADING",
+    "QUARANTINED",
+    "INTEGRITY_VERIFIED",
+    "ORIGINAL_SEALED",
+    "SCANNING",
+    "SANITIZING",
+    "DERIVATIVE_READY",
+    "AVAILABLE",
+    "REJECTED_INTEGRITY",
+    "REJECTED_POLICY",
+    "MALICIOUS_QUARANTINED",
+    "SCAN_PENDING",
+    "SANITIZE_FAILED",
+    "EXPIRED_UNBOUND",
+    "DISPOSED"
+  ],
+  "forwardTransitions": [
+    ["DECLARED", "UPLOADING"],
+    ["UPLOADING", "QUARANTINED"],
+    ["QUARANTINED", "INTEGRITY_VERIFIED"],
+    ["INTEGRITY_VERIFIED", "ORIGINAL_SEALED"],
+    ["ORIGINAL_SEALED", "SCANNING"],
+    ["SCANNING", "SANITIZING"],
+    ["SANITIZING", "DERIVATIVE_READY"],
+    ["DERIVATIVE_READY", "AVAILABLE"]
+  ],
+  "terminalOrBoundedStates": [
+    "REJECTED_INTEGRITY",
+    "REJECTED_POLICY",
+    "MALICIOUS_QUARANTINED",
+    "SCAN_PENDING",
+    "SANITIZE_FAILED",
+    "EXPIRED_UNBOUND",
+    "DISPOSED"
+  ],
+  "availabilityPreconditions": [
+    "transport-integrity-verified",
+    "sealed-original-immutable",
+    "malware-verdict-clean",
+    "sanitization-verdict-clean",
+    "derivation-manifest-control-plane-signed",
+    "correct-org-product-authz"
+  ],
+  "admission": {
+    "allowedMediaTypes": [
+      "application/pdf",
+      "text/plain; charset=utf-8",
+      "image/jpeg",
+      "image/png"
+    ],
+    "deniedClasses": [
+      "executable",
+      "script",
+      "html",
+      "svg",
+      "macro-enabled-office",
+      "disk-image",
+      "archive-or-container",
+      "unknown-or-polyglot"
+    ],
+    "mediaAuthority": "magic-and-bounded-structural-parse",
+    "extensionAuthority": false,
+    "maxBytes": 26214400,
+    "uploadCapabilityTtlSeconds": 600,
+    "exactContentLengthRequired": true,
+    "sha256Required": true,
+    "idempotencyBoundTo": [
+      "declared-sha256",
+      "declared-size",
+      "media-policy-version",
+      "opaque-upload-reference"
+    ],
+    "archivePolicy": {
+      "baseline": "deny",
+      "futureEnablementRequiresNewContractVersion": true,
+      "requiredBounds": [
+        "entry-count",
+        "nesting-depth",
+        "expanded-bytes",
+        "compression-ratio",
+        "parser-timeout"
+      ]
+    }
+  },
+  "storageZones": [
+    {
+      "id": "quarantine",
+      "purpose": "untrusted-upload-and-bounded-scan-input",
+      "objectLock": false,
+      "ordinaryStaffRead": false,
+      "publicRead": false
+    },
+    {
+      "id": "sealed-original",
+      "purpose": "byte-identical-encrypted-worm-original",
+      "objectLock": true,
+      "ordinaryStaffRead": false,
+      "publicRead": false
+    },
+    {
+      "id": "sanitized-derivative",
+      "purpose": "authorized-case-worker-safe-projection",
+      "objectLock": false,
+      "ordinaryStaffRead": true,
+      "publicRead": false
+    },
+    {
+      "id": "controlled-export",
+      "purpose": "named-gate-time-bound-export",
+      "objectLock": true,
+      "ordinaryStaffRead": false,
+      "publicRead": false
+    }
+  ],
+  "principals": [
+    {
+      "id": "upload-broker",
+      "standing": true,
+      "capabilities": [
+        "declare:quarantine",
+        "write-one:quarantine"
+      ],
+      "denied": [
+        "read:any-artifact",
+        "list:any-zone",
+        "overwrite:any-object",
+        "write:sealed-original"
+      ]
+    },
+    {
+      "id": "integrity-finalizer",
+      "standing": true,
+      "capabilities": [
+        "read-metadata:quarantine",
+        "verify-stream:quarantine",
+        "write-manifest:integrity"
+      ],
+      "denied": [
+        "read:sealed-original",
+        "read:sanitized-derivative",
+        "case-database",
+        "reporter-identity-database"
+      ]
+    },
+    {
+      "id": "sealed-promoter",
+      "standing": true,
+      "capabilities": [
+        "copy-exact-job-object:quarantine-to-sealed",
+        "write-manifest:sealed"
+      ],
+      "denied": [
+        "download:sealed-original",
+        "list:sealed-original",
+        "case-database",
+        "reporter-identity-database"
+      ]
+    },
+    {
+      "id": "scanner-sanitizer",
+      "standing": true,
+      "capabilities": [
+        "read-exact-job-object:quarantine",
+        "write-new:sanitized-derivative",
+        "write-verdict:scan-and-sanitize"
+      ],
+      "denied": [
+        "read:sealed-original",
+        "list:any-zone",
+        "public-ingress",
+        "general-internet-egress",
+        "case-database",
+        "reporter-identity-database"
+      ]
+    },
+    {
+      "id": "case-runtime",
+      "standing": true,
+      "capabilities": [
+        "read-authorized:sanitized-derivative"
+      ],
+      "denied": [
+        "read:quarantine",
+        "read:sealed-original",
+        "list:any-zone",
+        "storage-admin"
+      ]
+    },
+    {
+      "id": "sealed-reveal-session",
+      "standing": false,
+      "maxTtlSeconds": 600,
+      "capabilities": [
+        "read-once:one-sealed-original"
+      ],
+      "requires": [
+        "two-different-human-approvers",
+        "case-bound-request-digest",
+        "purpose",
+        "conflict-and-recusal-deny",
+        "wrong-org-deny",
+        "worm-audit"
+      ],
+      "denied": [
+        "list:sealed-original",
+        "bulk-read",
+        "reuse",
+        "proxy-approval",
+        "self-approval"
+      ]
+    }
+  ],
+  "scannerSandbox": {
+    "immutableImageDigestRequired": true,
+    "sbomAndProvenanceRequired": true,
+    "nonRoot": true,
+    "readOnlyRootFilesystem": true,
+    "network": "none",
+    "boundedCpuMemoryTimeAndOutput": true,
+    "inputScope": "one-opaque-job-object",
+    "secondScanOfDerivativeRequired": true,
+    "unknownVerdict": "fail-closed-unavailable"
+  },
+  "sanitization": {
+    "strip": [
+      "exif",
+      "author",
+      "company",
+      "path-and-history",
+      "comments",
+      "scripts-and-actions",
+      "forms",
+      "external-references",
+      "embedded-files",
+      "active-content"
+    ],
+    "reencodeImages": true,
+    "renderDocumentsInSandbox": true,
+    "overwriteExistingDerivative": false,
+    "newVersionCreatesAppendOnlyLineage": true
+  },
+  "manifest": {
+    "signer": "control-plane",
+    "hashAlgorithm": "sha256",
+    "appendOnly": true,
+    "hashChained": true,
+    "requiredFields": [
+      "opaque-attachment-reference",
+      "sealed-original-sha256-and-size",
+      "sanitized-derivative-sha256-and-size",
+      "input-and-output-media-type",
+      "scanner-sanitizer-parser-image-digests",
+      "signature-and-rule-versions",
+      "policy-version",
+      "transformation-profile",
+      "timestamps",
+      "bounded-outcomes",
+      "previous-manifest-hash"
+    ],
+    "forbiddenFields": [
+      "attachment-content",
+      "extracted-text",
+      "original-filename",
+      "reporter-identity",
+      "reporter-contact",
+      "narrative",
+      "receipt-or-access-secret",
+      "client-network-or-device-metadata",
+      "storage-credential-or-presigned-url"
+    ]
+  },
+  "accessProfiles": [
+    {
+      "id": "ordinary-case-read",
+      "artifactRole": "sanitized-derivative",
+      "requires": [
+        "staff-sso",
+        "product-entitlement",
+        "server-resolved-org",
+        "openfga-case-relation",
+        "same-origin-single-object-response"
+      ],
+      "responseControls": [
+        "content-disposition-attachment",
+        "x-content-type-options-nosniff",
+        "restrictive-csp-and-sandbox",
+        "no-object-store-credential"
+      ]
+    },
+    {
+      "id": "sealed-original-reveal",
+      "artifactRole": "sealed-original",
+      "requires": [
+        "non-standing-sealed-reveal-session",
+        "two-different-human-approvers",
+        "one-object-one-use",
+        "max-ten-minute-ttl",
+        "worm-audit"
+      ]
+    },
+    {
+      "id": "controlled-export",
+      "artifactRole": "controlled-export",
+      "requires": [
+        "named-export-gate",
+        "content-addressed-export-manifest",
+        "expiry",
+        "immutable-access-trail"
+      ]
+    }
+  ],
+  "failureModes": [
+    {
+      "failure": "scanner-or-sanitizer-unavailable",
+      "attachmentResult": "SCAN_PENDING-or-SANITIZE_FAILED",
+      "reportAndMailbox": "remain-functional",
+      "silentDowngrade": false
+    },
+    {
+      "failure": "integrity-or-media-mismatch",
+      "attachmentResult": "REJECTED_INTEGRITY",
+      "reportAndMailbox": "remain-functional",
+      "silentDowngrade": false
+    },
+    {
+      "failure": "malware-or-active-content",
+      "attachmentResult": "MALICIOUS_QUARANTINED-or-REJECTED_POLICY",
+      "reportAndMailbox": "remain-functional",
+      "silentDowngrade": false
+    },
+    {
+      "failure": "audit-sink-unavailable",
+      "attachmentResult": "durable-local-outbox-and-retry",
+      "reportAndMailbox": "remain-functional",
+      "silentDowngrade": false
+    },
+    {
+      "failure": "storage-unavailable",
+      "attachmentResult": "no-success-and-idempotent-retry",
+      "reportAndMailbox": "remain-functional-with-visible-attachment-failure",
+      "silentDowngrade": false
+    }
+  ],
+  "requiredNegativeTests": [
+    "extension-magic-mismatch-denied",
+    "oversized-upload-denied",
+    "unknown-and-polyglot-denied",
+    "archive-nesting-and-decompression-bomb-denied",
+    "synthetic-malware-and-active-content-denied",
+    "parser-timeout-fails-closed",
+    "scan-and-sanitize-outage-keeps-text-journey-functional",
+    "normal-case-role-cannot-read-quarantine-or-sealed-original",
+    "wrong-org-technical-admin-reporter-credential-denied",
+    "sealed-reveal-self-same-person-proxy-recused-expired-replay-denied",
+    "sealed-reveal-list-and-bulk-read-denied",
+    "attachment-content-filename-identity-secret-and-storage-url-absent-from-telemetry",
+    "idempotent-retry-does-not-duplicate-original-derivative-or-custody-event",
+    "tool-source-digest-live-imageid-and-rule-version-match",
+    "rollback-preserves-text-intake-and-mailbox"
+  ],
+  "standards": [
+    "ISO 37002:2021 confidentiality and need-to-know",
+    "ISO/IEC 27001:2022 and ISO/IEC 27002 access, malware, logging and cryptography controls",
+    "ISO/IEC 27037 evidence identification, collection, acquisition and preservation",
+    "GDPR Article 5, 25 and 32 privacy by design and security",
+    "KVKK Article 12 technical and organizational security",
+    "NIST SP 800-53 SI-3, AU-9 and SC-28",
+    "OWASP ASVS file handling controls",
+    "OWASP File Upload Cheat Sheet"
+  ],
+  "productionHumanGates": [
+    "Named Product Security acceptance of scanner, sanitizer and sandbox evidence",
+    "Named Privacy or DPO acceptance of metadata and residual re-identification risk",
+    "Named Legal owner acceptance of retention, malicious-content and mandatory-reporting handling",
+    "Named Secret Owner acceptance of encryption and reveal custody",
+    "Named Product owner acceptance of supported formats, size and user guidance"
+  ],
+  "doesNotProve": "This source contract does not prove runtime scanner effectiveness, malware-free content, legal admissibility, customer retention choices, production activation, human approval, or real-reporter safety."
+}

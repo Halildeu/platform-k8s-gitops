@@ -32,7 +32,7 @@ env:
 jobs:
   prepare-bootstrap:
     name: Prepare AgentPC2 first-install bootstrap package
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     steps:

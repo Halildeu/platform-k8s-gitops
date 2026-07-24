@@ -8,7 +8,7 @@ permissions:
 # Runs the non-attended backend preflight against k3d-test.
 #
 # Runs on-demand + nightly to catch handshake regressions BEFORE Zeynep hits them.
-# The script itself is scripts/faz24-live-e2e-smoke.sh — reuse locally on staging-sw
+# The script itself is scripts/faz24-live-e2e-smoke.sh — reuse locally on aiserver
 # with `bash scripts/faz24-live-e2e-smoke.sh` (needs vault-test root token + kubectl).
 #
 # HTTP 4xx is not handshake evidence: only HTTP 101 passes the WebSocket gate.
@@ -35,7 +35,7 @@ on:
 
 jobs:
   backend-preflight:
-    runs-on: [self-hosted, staging-sw]
+    runs-on: [self-hosted, aiserver]
     timeout-minutes: 8
     steps:
       - name: Checkout
@@ -47,7 +47,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash -n scripts/faz24-live-e2e-smoke.sh
 
-      - name: Run Faz 24 backend preflight on staging-sw
+      - name: Run Faz 24 backend preflight on aiserver
         if: github.event_name != 'pull_request'
         env:
           KUBE_CTX: k3d-test

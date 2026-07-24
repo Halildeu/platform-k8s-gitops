@@ -237,7 +237,7 @@ def test_redis_stream_records_keeps_kube_exec_partial_successes():
 def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "runs-on: [self-hosted, staging-sw, testai-deploy]" in workflow
+    assert "runs-on: [self-hosted, aiserver, testai-deploy]" in workflow
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "collect_direct_stt_e2e_evidence.py" in workflow
     assert "verify_direct_stt_e2e_evidence.py" in workflow

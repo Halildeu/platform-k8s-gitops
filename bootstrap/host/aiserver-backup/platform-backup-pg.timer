@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly PostgreSQL logical backups on aiserver
+
+[Timer]
+OnCalendar=*-*-* *:05:00 UTC
+Persistent=true
+Unit=platform-backup@pg.service
+
+[Install]
+WantedBy=timers.target

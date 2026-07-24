@@ -161,7 +161,12 @@ refresh_semantic_main_fence() {
     scripts/deploy/ensure-argocd-cli.sh \
     scripts/deploy/verify-testai-backend-runtime.sh \
     scripts/deploy/verify-pod-digest.sh \
-    scripts/deploy/gate-stability-window.sh || {
+    scripts/deploy/gate-stability-window.sh \
+    .github/workflows/faz25-fullats-live-browser-acceptance.yml \
+    scripts/ats/verify-fullats-live-runtime.sh \
+    scripts/ats/fullats-live-browser-acceptance.sh \
+    scripts/ats/fullats-live-browser-acceptance.cjs \
+    scripts/ats/d29-smoke.sh || {
       echo "FAIL: backend verifier contract was superseded on main" >&2
       return 1
     }

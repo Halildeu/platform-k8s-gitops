@@ -18,7 +18,7 @@ grep -q 'not start VIEW_ONLY' <<<"$help_out"
 workflow_text="$(cat "$WORKFLOW")"
 
 grep -q 'RUN_FAZ22_6_DENETIM_SSH_PREFLIGHT' <<<"$workflow_text"
-grep -q 'runs-on: \[self-hosted, staging-sw, testai-deploy\]' <<<"$workflow_text"
+grep -q 'runs-on: \[self-hosted, aiserver, testai-deploy\]' <<<"$workflow_text"
 grep -q 'contents: read' <<<"$workflow_text"
 grep -q 'issues: write' <<<"$workflow_text"
 grep -q 'svc-denetim-agent@10.99.0.2' <<<"$workflow_text"

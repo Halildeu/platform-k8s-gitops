@@ -45,6 +45,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.writer_credential_repair = (
             ROOT / "scripts/faz24/repair-d35-permission-writer-credential.sh"
         ).read_text()
+        cls.notification_identity = (
+            ROOT / "scripts/faz35/provision-test-notification-service-identity.sh"
+        ).read_text()
         cls.keycloak_binding_lib = (
             ROOT / "scripts/faz35/lib-test-keycloak-binding.sh"
         ).read_text()
@@ -81,6 +84,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.external_secret = (
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
+        ).read_text()
+        cls.notification_external_secret = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/externalsecret-notification.yaml"
+        ).read_text()
+        cls.auth_ethics_external_secret = (
+            ROOT
+            / "kustomize/overlays/test/auth-service-ethics-externalsecret.yaml"
+        ).read_text()
+        cls.activation_kustomization = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/kustomization.yaml"
         ).read_text()
         cls.secret_store = (
             ROOT
@@ -123,9 +138,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/resource-quota.yaml"
         ).read_text()
-        cls.public_upstream_headers = (
-            ROOT
-            / "kustomize/overlays/test/activation/etik-speak/public-api-upstream-headers.yaml"
+        cls.host_edge = (
+            ROOT / "host-compose/web-nginx/default.conf"
+        ).read_text()
+        cls.no_correlation_verifier = (
+            ROOT / "scripts/faz35/verify-test-public-no-correlation.sh"
         ).read_text()
         image_sets = list(
             (ROOT / "docs/faz-35-evidence/image-set").glob("*.json")
@@ -1321,7 +1338,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("public gate password fails the canonical length/format policy", self.pg_vault)
 
     def test_preflight_is_read_only_and_binds_live_dependencies(self):
-        self.assertIn('SSH_TARGET" = "halil@staging-sw', self.preflight)
+        self.assertIn('SSH_TARGET" = "aiserver', self.preflight)
+        self.assertNotIn('SSH_TARGET="${SSH_TARGET:-staging-sw', self.preflight)
+        self.assertNotIn('[ "$SSH_TARGET" = "staging-sw', self.preflight)
         self.assertIn('KUBE_CONTEXT" = "k3d-test', self.preflight)
         self.assertIn('KUBE_NS" = "platform-test', self.preflight)
         for required in (
@@ -1346,11 +1365,16 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "check_object_headroom configmaps 2 2",
             "check_object_headroom secrets 2 2",
             "check_object_headroom pods 6 2",
-            "activation must render exactly two ExternalSecrets",
-            "both public ingresses must use the synthetic test access gate",
+            "activation must render exactly three ExternalSecrets",
+            "public reporter ingresses must not retain the removed Basic Auth gate",
+            "public reporter ingress displaced edge",
+            "platform-web-nginx nginx -T",
+            "canonical host edge misses Etik Speak rate-limit policy",
+            "live host edge misses Etik Speak rate-limit policy",
+            "Etik Speak host edge access logs are not disabled",
             "one-year HSTS header",
             "foundation provisioning refuses an included Etik Speak activation root",
-            "Faz 35 must not mutate the shared test frontend pin",
+            "Faz 35 activation must not reference the shared test frontend",
             "foundation provisioning refuses existing or partial Etik Speak activation resources",
             "secretstore/etik-speak-vault",
             "secret/ethics-service-secrets",
@@ -1376,6 +1400,15 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.preflight,
             r"vault\s+(kv\s+)?(put|patch|delete|write)",
         )
+
+    def test_synthetic_persona_secrets_are_pinned_to_aiserver_secret_root(self):
+        secret_root = "/srv/platform/secrets/faz35-test"
+        verifier = (
+            ROOT / "scripts/faz35/verify-test-openfga-authz.sh"
+        ).read_text()
+        for script in (self.keycloak, self.openfga, self.entitlement, verifier):
+            self.assertIn(secret_root, script)
+            self.assertNotIn("/home/halil/bootstrap-drill/ethics-manager", script)
 
     def test_activation_artifact_helpers_reject_stale_duplicate_and_unbound_state(self):
         manifest = """apiVersion: apps/v1
@@ -1511,6 +1544,23 @@ spec:
             capture_output=True,
             text=True,
         ).stdout
+        self.assertNotIn("ETHICS_AUDIT_DELIVERY_ENABLED", self.service_config)
+        self.assertEqual(
+            rendered.count('ETHICS_AUDIT_DELIVERY_ENABLED: "true"'),
+            1,
+        )
+        self.assertEqual(
+            rendered.count('ETHICS_NOTIFICATION_DELIVERY_ENABLED: "true"'),
+            1,
+        )
+        self.assertIn(
+            'ETHICS_AUDIT_DELIVERY_ENABLED: "true"',
+            self.preflight,
+        )
+        self.assertIn(
+            'ETHICS_NOTIFICATION_DELIVERY_ENABLED: "true"',
+            self.preflight,
+        )
         with tempfile.TemporaryDirectory() as directory:
             manifest_path = Path(directory) / "activation.yaml"
             manifest_path.write_text(rendered)
@@ -1535,6 +1585,99 @@ spec:
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0)
+
+    def test_notification_delivery_is_isolated_least_privilege_and_fail_closed(self):
+        self.assertIn(
+            "auth-service-ethics-externalsecret.yaml",
+            self.test_root,
+        )
+        self.assertIn(
+            "externalsecret-notification.yaml",
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            "property: service_client_ethics_service_secret",
+            self.auth_ethics_external_secret,
+        )
+        self.assertIn(
+            "secretKey: SERVICE_CLIENT_ETHICS_SERVICE_SECRET",
+            self.auth_ethics_external_secret,
+        )
+        self.assertIn(
+            "property: ETHICS_NOTIFICATION_CLIENT_SECRET",
+            self.notification_external_secret,
+        )
+        self.assertIn(
+            "secretKey: ETHICS_NOTIFICATION_CLIENT_SECRET",
+            self.notification_external_secret,
+        )
+        self.assertIn(
+            "name: ethics-service-notification-secret",
+            self.notification_external_secret,
+        )
+        self.assertIn(
+            "name: ethics-service-notification-secret",
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            'path: /data/ETHICS_NOTIFICATION_DELIVERY_ENABLED',
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            'value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"',
+            self.activation_kustomization,
+        )
+        for destination in (
+            "allow-ethics-service-to-auth-service",
+            "allow-ethics-service-to-notification-orchestrator",
+        ):
+            self.assertIn(destination, self.netpol)
+        self.assertNotIn("client-secret:", self.activation_kustomization)
+        self.assertNotIn("client-secret:", self.auth_ethics_external_secret)
+        self.assertNotIn("client-secret:", self.notification_external_secret)
+
+    def test_notification_identity_provisioner_keeps_secret_off_argv_and_fails_closed(self):
+        for required in (
+            'AUTH_PATH="kv/platform/auth-service"',
+            'ETHICS_PATH="kv/platform/etik-speak"',
+            'CONFIRM_TEST_NOTIFICATION_IDENTITY:-',
+            "seed-faz35-es208",
+            "automatic rotation refused",
+            "read-after-write mismatch",
+            "IFS= read -r VAULT_TOKEN",
+            'vault kv patch "$1" "$2"=-',
+            "openssl rand -hex 32",
+            "10.9.10.15",
+        ):
+            self.assertIn(required, self.notification_identity)
+        self.assertNotRegex(
+            self.notification_identity,
+            r"vault kv patch[^\n]*\$(?:candidate|auth_value|ethics_value)",
+        )
+        self.assertNotRegex(
+            self.notification_identity,
+            r"-e\s+VAULT_TOKEN(?:=|\s|\\)",
+        )
+
+    def test_preflight_pins_new_aiserver_identity_and_bounds_optional_jump(self):
+        for required in (
+            'SSH_TARGET="${SSH_TARGET:-aiserver}"',
+            'SSH_PROXY_JUMP="${SSH_PROXY_JUMP:-}"',
+            '""|staging-sw-legacy)',
+            '[ "$target_hostname" != "aiserver" ]',
+            "grep -qw '10.9.10.15'",
+            "SSH path does not terminate on authoritative aiserver 10.9.10.15",
+            'resolve_ip=""',
+            '--resolve "$host:443:$resolve_ip"',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.preflight)
+
+        self.assertNotIn("resolve_args", self.preflight)
+        self.assertIn(
+            "SSH_PROXY_JUMP=staging-sw-legacy",
+            self.activation_runbook,
+        )
 
     def test_semantic_gate_triggers_for_every_authoritative_external_input(self):
         for required_path in (
@@ -1622,22 +1765,135 @@ spec:
         ):
             self.assertIn(required, self.image_attestation_lib)
 
-    def test_public_test_hosts_are_gated_and_redirect_to_https(self):
+    def test_public_test_hosts_are_open_rate_limited_and_redirect_to_https(self):
         for ingress in (self.public_api_ingress, self.public_ui_ingress):
             self.assertIn('nginx.ingress.kubernetes.io/force-ssl-redirect: "true"', ingress)
-            self.assertIn("nginx.ingress.kubernetes.io/auth-type: basic", ingress)
-            self.assertIn(
-                "nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate",
-                ingress,
-            )
-        self.assertIn(
-            "nginx.ingress.kubernetes.io/proxy-set-headers: "
-            "platform-test/etik-speak-public-upstream-headers",
-            self.public_api_ingress,
+            self.assertIn('nginx.ingress.kubernetes.io/enable-access-log: "false"', ingress)
+            self.assertIn('nginx.ingress.kubernetes.io/enable-opentelemetry: "false"', ingress)
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-type:", ingress)
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-secret:", ingress)
+            self.assertNotIn("nginx.ingress.kubernetes.io/auth-realm:", ingress)
+            for forbidden in (
+                "nginx.ingress.kubernetes.io/proxy-set-headers:",
+                "nginx.ingress.kubernetes.io/proxy-hide-headers:",
+                "nginx.ingress.kubernetes.io/limit-rps:",
+                "nginx.ingress.kubernetes.io/limit-rpm:",
+                "nginx.ingress.kubernetes.io/limit-connections:",
+                "nginx.ingress.kubernetes.io/limit-burst-multiplier:",
+            ):
+                self.assertNotIn(forbidden, ingress)
+
+        for expected in (
+            "server_name etik.acik.com speakup.acik.com;",
+            "map $http_cookie $etik_speak_public_cookie",
+            "__Host-etik_mailbox=[^;]+",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_api_rps:10m rate=3r/s;",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_api_rpm:10m rate=60r/m;",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_ui_rps:10m rate=10r/s;",
+            "limit_req_zone $binary_remote_addr zone=etik_speak_ui_rpm:10m rate=300r/m;",
+            "limit_conn_zone $binary_remote_addr zone=etik_speak_public_conn:10m;",
+            "location ^~ /api/v1/public/ethics",
+            "limit_req zone=etik_speak_api_rps burst=6 nodelay;",
+            "limit_req zone=etik_speak_api_rpm burst=120 nodelay;",
+            "limit_conn etik_speak_public_conn 10;",
+            "limit_req zone=etik_speak_ui_rps burst=30 nodelay;",
+            "limit_req zone=etik_speak_ui_rpm burst=900 nodelay;",
+            "limit_conn etik_speak_public_conn 20;",
+            "proxy_set_header Cookie $etik_speak_public_cookie;",
+            "proxy_set_header X-Etik-Speak-Transport https;",
+            "map $upstream_http_set_cookie $etik_speak_mailbox_set_cookie_name",
+            "map $etik_speak_mailbox_set_cookie_httponly $etik_speak_public_set_cookie",
+            "proxy_hide_header Set-Cookie;",
+            "add_header Set-Cookie $etik_speak_public_set_cookie always;",
+            '"~*;\\s*Domain=" "";',
+            '"~*;\\s*Path=/(?:;|$)" $etik_speak_mailbox_set_cookie_domain;',
+            '"~*;\\s*Secure(?:;|$)" $etik_speak_mailbox_set_cookie_path;',
+            '"~*;\\s*HttpOnly(?:;|$)" $etik_speak_mailbox_set_cookie_secure;',
+            '"~*;\\s*SameSite=Strict(?:;|$)" $etik_speak_mailbox_set_cookie_httponly;',
+        ):
+            self.assertIn(expected, self.host_edge)
+        self.assertGreaterEqual(self.host_edge.count("access_log off;"), 2)
+        self.assertEqual(
+            self.host_edge.count(
+                "proxy_set_header Cookie $etik_speak_public_cookie;"
+            ),
+            2,
         )
-        self.assertIn('Authorization: ""', self.public_upstream_headers)
-        self.assertIn("X-Etik-Speak-Transport: https", self.public_upstream_headers)
+        self.assertEqual(self.host_edge.count("proxy_hide_header Set-Cookie;"), 2)
+        self.assertEqual(
+            self.host_edge.count(
+                "add_header Set-Cookie $etik_speak_public_set_cookie always;"
+            ),
+            2,
+        )
+        for security_header in (
+            "Strict-Transport-Security",
+            "X-Content-Type-Options",
+            "X-Frame-Options",
+            "Referrer-Policy",
+            "Permissions-Policy",
+        ):
+            self.assertGreaterEqual(
+                self.host_edge.count(f"add_header {security_header} "),
+                3,
+            )
+        for header in (
+            "Authorization",
+            "Forwarded",
+            "Referer",
+            "User-Agent",
+            "X-Forwarded-For",
+            "X-Original-Forwarded-For",
+            "X-Real-IP",
+            "X-Request-ID",
+        ):
+            self.assertEqual(
+                self.host_edge.count(f'proxy_set_header {header} "";'),
+                2,
+            )
         self.assertNotIn("api-gateway", self.netpol)
+
+    def test_public_no_correlation_runtime_verifier_is_fail_closed(self):
+        for expected in (
+            'readonly KUBE_CONTEXT="k3d-test"',
+            'readonly KUBE_NS="platform-test"',
+            'readonly SSH_TARGET="${SSH_TARGET:-staging-sw}"',
+            "enable-access-log",
+            "enable-opentelemetry",
+            "platform-web-nginx",
+            "etik_speak_public_cookie",
+            "X-Original-Forwarded-For",
+            "LIVE_HOST_EDGE_ACCESS_LOG_DISABLED=true",
+            "LIVE_HOST_EDGE_VOLATILE_RATE_LIMIT=true",
+            "LIVE_SUITE_COOKIE_FILTER=true",
+            "PUBLIC_DNS_A_RECORD_VERIFIED=true",
+            'dig +short @1.1.1.1 A "$host"',
+            '--resolve "${host}:443:${public_ip}"',
+            "server_name[[:space:]]+etik\\.acik\\.com",
+            "synthetic sentinel leaked",
+            "Domain=.acik.com",
+            "NO_CORRELATION_ACCEPTED=true",
+        ):
+            self.assertIn(expected, self.no_correlation_verifier)
+        for forbidden in (
+            "kubectl apply",
+            "kubectl patch",
+            "kubectl edit",
+            "kubectl set image",
+            "platform-prod",
+            "ai.acik.com",
+        ):
+            self.assertNotIn(forbidden, self.no_correlation_verifier)
+        self.assertNotIn(
+            "sed -n '/# Faz 35 ES-106/,$p'",
+            self.no_correlation_verifier,
+        )
+        self.assertIn(
+            "SSH_TARGET=staging-sw "
+            "./scripts/faz35/verify-test-public-no-correlation.sh",
+            self.activation_runbook,
+        )
+        self.assertIn("NO_CORRELATION_ACCEPTED=true", self.activation_runbook)
 
     def test_manager_ui_is_isolated_at_the_exact_test_path(self):
         self.assertIn("name: etik-speak-manager-ui", self.manager_ui_ingress)
@@ -1645,7 +1901,10 @@ spec:
         self.assertIn("path: /ethic", self.manager_ui_ingress)
         self.assertIn("name: etik-speak-manager", self.manager_ui_ingress)
         self.assertIn("name: etik-speak-manager", self.netpol)
-        self.assertIn("Faz 35 must not mutate the shared test frontend pin", self.preflight)
+        self.assertIn(
+            "Faz 35 activation must not reference the shared test frontend",
+            self.preflight,
+        )
 
     def test_manager_route_matches_canonical_isolated_auth_contract(self):
         for expected in (
@@ -1654,8 +1913,9 @@ spec:
             "PKCE S256",
             "credentials: omit",
             "401/403",
-            "308a2777e79d1a54ee367d47f19c39cc513db42d",
-            "sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da",
+            "2fae733d31f574908859307f8af0dbc375e053eb",
+            "sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28",
+            "prompt=login",
         ):
             self.assertIn(expected, self.topology_adr)
         for expected in (

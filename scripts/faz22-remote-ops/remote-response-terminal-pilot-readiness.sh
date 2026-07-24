@@ -25,7 +25,9 @@ EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-${EXPECTED_RELEASE_TAG#v}}"
 DEVICE_ID="${DEVICE_ID:-423b6fc3-7497-4083-bd2f-5e2fe543bfe9}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-SRB-AIDENETIMPC}"
 
-STAGING_SSH_TARGET="${STAGING_SSH_TARGET:-halil@staging-sw}"
+# Variable name is retained for caller compatibility; the active platform is
+# aiserver. staging-sw is archive/rollback-only after the 2026-07-23 cutover.
+STAGING_SSH_TARGET="${STAGING_SSH_TARGET:-aiadmin@aiserver}"
 SSH_CONNECT_TIMEOUT_SECONDS="${SSH_CONNECT_TIMEOUT_SECONDS:-8}"
 PG_CONTAINER="${PG_CONTAINER:-platform-pg-test}"
 PG_DATABASE="${PG_DATABASE:-endpoint_admin}"

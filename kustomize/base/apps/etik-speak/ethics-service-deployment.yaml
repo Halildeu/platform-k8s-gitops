@@ -41,8 +41,9 @@ spec:
             limits: {cpu: 400m, memory: 384Mi}
           startupProbe:
             httpGet: {path: /actuator/health, port: management}
-            periodSeconds: 5
-            failureThreshold: 30
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: {path: /actuator/health/liveness, port: management}
             periodSeconds: 15

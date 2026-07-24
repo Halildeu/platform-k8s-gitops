@@ -20,7 +20,7 @@
 set -uo pipefail
 
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8201}"   # platform-vault-test
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd || echo /home/halil/platform-k8s-gitops)}"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd || echo /srv/platform/gitops/platform-k8s-gitops)}"
 POLDIR="$REPO_ROOT/bootstrap/vault-policies"
 DRY_RUN=0
 EMIT_SEED=""

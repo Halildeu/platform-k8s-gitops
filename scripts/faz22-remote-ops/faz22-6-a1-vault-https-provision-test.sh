@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Provision the test-only Vault HTTPS listener material for Faz 22.6 #548 A1.
 #
-# This script generates non-production TLS material on staging-sw without
+# This script generates non-production TLS material on aiserver without
 # printing private keys or tokens. It is idempotent by default: existing files
 # are not overwritten unless FORCE=1 is set.
 
 set -euo pipefail
 
-SSH_TARGET="${SSH_TARGET:-staging-sw}"
-VAULT_TLS_DIR="${VAULT_TLS_DIR:-/home/halil/platform-stateful/test/vault/tls}"
-VAULT_COMPOSE_DIR="${VAULT_COMPOSE_DIR:-/home/halil/platform-k8s-gitops/host-compose/vault/test}"
-VAULT_INIT_JSON="${VAULT_INIT_JSON:-/home/halil/bootstrap-drill/vault-init-test.json}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
+VAULT_TLS_DIR="${VAULT_TLS_DIR:-/srv/platform/stateful/test/vault/tls}"
+VAULT_COMPOSE_DIR="${VAULT_COMPOSE_DIR:-/srv/platform/gitops/platform-k8s-gitops/host-compose/vault/test}"
+VAULT_INIT_JSON="${VAULT_INIT_JSON:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 RESTART_VAULT="${RESTART_VAULT:-0}"
 AUTO_UNSEAL_AFTER_RESTART="${AUTO_UNSEAL_AFTER_RESTART:-1}"
 FORCE="${FORCE:-0}"
@@ -79,9 +79,9 @@ docker_inspect_vault() {
 
 docker_vault_has_required_mounts() {
   docker_inspect_vault | jq -e \
-    --arg data "/home/halil/platform-stateful/test/vault/data" \
-    --arg logs "/home/halil/platform-stateful/test/vault/logs" \
-    --arg tls "/home/halil/platform-stateful/test/vault/tls" '
+    --arg data "/srv/platform/stateful/test/vault/data" \
+    --arg logs "/srv/platform/stateful/test/vault/logs" \
+    --arg tls "/srv/platform/stateful/test/vault/tls" '
       ([.Mounts[] | select(.Destination == "/vault/data" and (.Source | startswith($data)))] | length == 1) and
       ([.Mounts[] | select(.Destination == "/vault/logs" and (.Source | startswith($logs)))] | length == 1) and
       ([.Mounts[] | select(.Destination == "/vault/tls" and (.Source | startswith($tls)) and .RW == false)] | length == 1)
@@ -314,7 +314,7 @@ if [ "$RESTART_VAULT" = "1" ]; then
   fi
   echo "PASS vault https 8202 CA-pinned status works"
 else
-  echo "INFO restart skipped; set RESTART_VAULT=1 after the compose/config change is present on staging-sw"
+  echo "INFO restart skipped; set RESTART_VAULT=1 after the compose/config change is present on aiserver"
 fi
 
 echo "A1_VAULT_HTTPS_PROVISION_END"

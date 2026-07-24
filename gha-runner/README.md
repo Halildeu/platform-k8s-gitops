@@ -1,15 +1,15 @@
-# gha-runner — Self-hosted GitHub Actions runner (staging-sw)
+# gha-runner — Self-hosted GitHub Actions runner (aiserver)
 
 > iter-50 Step 3.4a — testai-deploy event'leri için tek amaçlı self-hosted runner.
 
 ## Bağlam
 
-`platform-k8s-gitops/.github/workflows/deploy-testai.yml` workflow'u `runs-on: [self-hosted, staging-sw, testai-deploy]` etiketli runner bekler. GitHub-hosted runner'lar staging-sw'nin private intranet'ine ulaşamadığı için (`10.9.10.53`, `kubectl k3d-test`, `host nginx mount`) self-hosted runner zorunlu.
+`platform-k8s-gitops` deployment workflow'ları `runs-on: [self-hosted, aiserver, testai-deploy]` etiketli runner bekler. GitHub-hosted runner'lar aktif platformun private intranet'ine ulaşamadığı için (`10.9.10.15`, `kubectl k3d-test`, `host nginx mount`) self-hosted runner zorunlu.
 
 Codex `019dded6` S1 sertleştirmesi:
 - **Tek amaçlı runner**: sadece testai-deploy event'leri için, label-fenced
 - **`docker.sock` NO mount**: deploy işi container build / job-container çalıştırmamalı
-- **Mount'lar**: kubeconfig RO + `/home/halil/platform/web-stage/releases` RW
+- **Mount'lar**: kubeconfig RO + `/srv/platform/web-stage/releases` RW
 - **Ephemeral mode**: her job sonrası container restart, yeni registration token
 - **Secret-safe token fetch**: `RUNNER_PAT` curl process argümanına konmaz;
   GitHub API egress kapalıysa bounded backoff ile bekler.
@@ -35,11 +35,11 @@ Codex `019dded6` S1 sertleştirmesi:
 
 #### PAT #2 — `RUNNER_PAT` (runner entrypoint → registration-token endpoint)
 
-> Bu PAT staging-sw host'ta `.env` dosyasında saklanır. Codex 019dded6 ek sertleştirme: `--ephemeral` runner her start'ta TAZE registration token alır; PAT bunu API'den fetch etmeyi sağlar.
+> Bu PAT aiserver host'ta `.env` dosyasında saklanır. Codex 019dded6 ek sertleştirme: `--ephemeral` runner her start'ta TAZE registration token alır; PAT bunu API'den fetch etmeyi sağlar.
 
 1. GitHub UI: Settings → Developer settings → Personal access tokens → Fine-grained tokens
 2. **Generate new token**:
-   - Token name: `staging-sw runner → registration-token`
+   - Token name: `aiserver runner → registration-token`
    - Expiration: 1 yıl
    - Repository access: **Only select repositories** → `Halildeu/platform-k8s-gitops`
    - Repository permissions: **Administration: Write** (`POST /repos/.../actions/runners/registration-token` endpoint için)
@@ -48,12 +48,12 @@ Codex `019dded6` S1 sertleştirmesi:
 
 ### Runner image build + start
 
-staging-sw'de:
+aiserver üzerinde:
 
 ```bash
 # 1. Repo clone
-ssh halil@staging-sw
-cd /home/halil/platform
+ssh aiadmin@aiserver
+cd /srv/platform/gitops
 git clone git@github.com:Halildeu/platform-k8s-gitops.git
 cd platform-k8s-gitops/gha-runner
 
@@ -73,10 +73,10 @@ docker compose up -d
 
 # 5. Logs ile runner registration kontrol
 docker compose logs -f runner --tail=50
-# Beklenen: "[entrypoint] Registered: staging-sw-testai-deploy (labels: ...)"
+# Beklenen: "[entrypoint] Registered: aiserver-testai-deploy (labels: ...)"
 
 # 6. GitHub UI: Settings → Actions → Runners
-#    `staging-sw-testai-deploy` runner online görünmeli (yeşil nokta)
+#    `aiserver-testai-deploy` runner online görünmeli (yeşil nokta)
 ```
 
 ### 3. Verify (manual workflow_dispatch test)
@@ -99,8 +99,8 @@ Beklenen: 4 verify gate koşar (1a, 1b, 1c pass; Gate 2 secret yoksa skip).
 ### Runner restart
 
 ```bash
-ssh halil@staging-sw
-cd /home/halil/platform/platform-k8s-gitops/gha-runner
+ssh aiadmin@aiserver
+cd /srv/platform/gitops/platform-k8s-gitops/gha-runner
 
 # Önce egress preflight; bu fail ise runner'ı restart etme.
 curl -fsS --connect-timeout 5 --max-time 8 -I https://api.github.com | head -1
@@ -125,7 +125,7 @@ docker compose restart runner
 
 ```bash
 ssh halil@staging-sw
-cd /home/halil/platform/platform-k8s-gitops
+cd /srv/platform/gitops/platform-k8s-gitops
 git pull
 cd gha-runner
 
@@ -153,7 +153,7 @@ docker compose down  # entrypoint.sh trap unregister yapar
 - **`docker.sock` NO mount**: docker-compose.yml içinde özellikle silinmiş. Codex S1: deploy işi container build/job çalıştırmamalı; runner sadece kubectl + rsync + curl + jq ile çalışır.
 - **Network mode: host**: kubeconfig'in API URL'i `https://localhost:RANDOM` ise host network gerek (k3d-test default). Bridge yetersiz olabilir.
 - **Ephemeral mode**: `--ephemeral` flag ile her job sonrası container restart. Bu hem güvenlik (state pollution riski azalır) hem upgrade için kolaylık.
-- **`/home/halil/platform/web-stage/releases` RW**: runner host'taki releases dir'e yazıyor (rsync target). Permission'lar host'ta runner UID (1000) için writable olmalı. Default `halil:halil` ile `halil` UID 1000 ise sorun yok.
+- **`/srv/platform/web-stage/releases` RW**: runner host'taki releases dir'e yazıyor (rsync target). Permission'lar runner servis kimliği için writable olmalı.
 - **Test persona**: Gate 2 (Playwright dblclick smoke) için `SMOKE_AUTH_USERNAME` + `SMOKE_AUTH_PASSWORD` secret'ları gitops repo'ya ekle. Yoksa Gate 2 skip eder. CLAUDE.md HARD RULE — kullanıcı login user'ının şifresine dokunma; ayrı persona zorunlu.
 
 ## İlişkili dosyalar

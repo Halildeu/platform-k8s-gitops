@@ -1,6 +1,6 @@
 name: Faz 25 Full ATS test recovery and acceptance
 
-# Mac-side SSH staging-sw'de kapali olsa da self-hosted runner test cluster ve
+# Mac-side SSH aiserver'de kapali olsa da self-hosted runner test cluster ve
 # host Docker control'una erisebilir. Bu workflow yalniz test ortaminda,
 # kullanici tarafindan acikca dispatch edilen fail-closed recovery hattidir.
 # Flyway history'de failed satir varsa otomatik repair/silme yapmaz; runbook'a
@@ -35,14 +35,14 @@ env:
   ARGOCD_NAMESPACE: argocd
   ARGOCD_APPLICATION: platform-test
   ATS_IMAGE_REPOSITORY: ghcr.io/halildeu/ats-app-boot
-  EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+  EXPECTED_ATS_DIGEST: sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
   EXPECTED_ATS_ENDPOINT_REF: faz24-stt-prod
   EXPECTED_ATS_APPROVAL_REF: mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43
 
 jobs:
   recover:
     name: Recover ATS migration and run Full ATS acceptance
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 25
 
     steps:
@@ -242,7 +242,7 @@ jobs:
           {
             echo "## Faz 25 Full ATS test recovery"
             echo ""
-            echo "- runner: self-hosted staging-sw"
+            echo "- runner: self-hosted aiserver"
             echo "- canonical ref: \`$GITHUB_REF\`"
             echo "- dry_run: \`$DRY_RUN_INPUT\`"
             echo "- immutable ATS digest: \`$EXPECTED_ATS_DIGEST\`"

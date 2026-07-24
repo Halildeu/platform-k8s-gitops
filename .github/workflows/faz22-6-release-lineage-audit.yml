@@ -1,7 +1,7 @@
 name: Faz 22.6 Release Lineage Audit
 
 # Read-only live release-lineage evidence workflow for the Faz 22.6 bounded
-# pilot. It runs on the self-hosted staging-sw runner because GitHub-hosted
+# pilot. It runs on the self-hosted aiserver runner because GitHub-hosted
 # runners cannot reach the private k3d clusters, and Mac-side SSH may be
 # unavailable.
 
@@ -20,8 +20,8 @@ concurrency:
 
 jobs:
   release-lineage-audit:
-    name: release-lineage audit (staging-sw local kubectl)
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    name: release-lineage audit (aiserver local kubectl)
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 5
 
     env:
@@ -71,7 +71,7 @@ jobs:
           {
             echo "## Faz 22.6 release-lineage audit"
             echo
-            echo "- Runner: self-hosted staging-sw"
+            echo "- Runner: self-hosted aiserver"
             echo "- Kube context: \`${KUBE_CONTEXT}\`"
             echo "- Namespace: \`${KUBE_NAMESPACE}\`"
             echo "- Artifact-host mode: \`${RELEASE_LINEAGE_KUBECTL_MODE}\`"

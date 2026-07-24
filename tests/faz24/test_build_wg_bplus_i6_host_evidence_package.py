@@ -33,7 +33,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 "--output-dir",
                 tmpdir,
                 "--target-host",
-                "staging-sw",
+                "aiserver",
                 "--cluster-cidr",
                 "10.44.0.0/16",
                 "--wg-interface",
@@ -62,7 +62,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 (output / "expected-i6-host-evidence-metadata.json").read_text(encoding="utf-8")
             )
             self.assertEqual("faz24.i6.host-evidence-package.v2", metadata["schemaVersion"])
-            self.assertEqual("staging-sw", metadata["targetHost"])
+            self.assertEqual("aiserver", metadata["targetHost"])
             self.assertEqual("10.44.0.0/16", metadata["defaults"]["clusterCIDR"])
             self.assertEqual("k3d-test-server-0", metadata["defaults"]["wgNode"])
             self.assertEqual("platform-test-net", metadata["defaults"]["dockerNetwork"])
@@ -97,7 +97,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 "--output-dir",
                 tmpdir,
                 "--target-host",
-                "staging-sw",
+                "aiserver",
                 "--cluster-cidr",
                 "10.44.0.0/16",
                 "--rollback-tested-ref",
@@ -113,7 +113,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 "--output-dir",
                 tmpdir,
                 "--target-host",
-                "staging-sw",
+                "aiserver",
                 "--cluster-cidr",
                 "10.44.0.0/16",
                 "--rollback-tested-ref",
@@ -129,7 +129,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 "--output-dir",
                 tmpdir,
                 "--target-host",
-                "staging-sw",
+                "aiserver",
             )
 
         self.assertNotEqual(0, result.returncode)
@@ -142,7 +142,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
         self.assertIn('(cd "${PACKAGE_DIR}" && sha256sum --check SHA256SUMS)', workflow)
         self.assertIn("grep -Eq -- '-----BEGIN .*PRIVATE KEY-----", workflow)
         self.assertIn("package contains forbidden private/secret-like material", workflow)
-        self.assertIn("does not connect to staging-sw", workflow)
+        self.assertIn("does not connect to aiserver", workflow)
 
 
 if __name__ == "__main__":

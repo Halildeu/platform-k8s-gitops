@@ -16,7 +16,7 @@ endpoint_agent_release_policy_load "$REPO_ROOT"
 # shellcheck source=scripts/faz22-remote-ops/lib-github-read-api.sh
 source "$SCRIPT_DIR/lib-github-read-api.sh"
 
-SSH_TARGET="${SSH_TARGET:-staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
 SSH_OPTS="${SSH_OPTS:-}"
 RELEASE_LINEAGE_KUBECTL_MODE="${RELEASE_LINEAGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"

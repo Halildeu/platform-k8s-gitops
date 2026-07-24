@@ -12,12 +12,26 @@ on:
       - 'bootstrap/vault-policies/test/etik-speak-eso.hcl'
       - 'bootstrap/openfga/faz35-etik-speak/**'
       - 'tests/deploy/test_faz35_etikspeak_provisioning_contract.py'
+      - 'tests/deploy/test_faz35_market_entry_contract.py'
+      - 'tests/deploy/test_faz35_first_customer_contract.py'
+      - 'tests/deploy/test_faz35_privacy_no_collect_contract.py'
+      - 'tests/deploy/test_faz35_compartment_adr.py'
+      - 'tests/deploy/test_faz35_evidence_custody_contract.py'
       - 'docs/faz-35-evidence/**'
       - 'runtime-artifacts/faz35-etik-speak/**'
       - 'runtime-artifacts/openfga-model/**'
       - 'docs/runbooks/RB-faz35-etik-speak-test-activation.md'
       - 'docs/contracts/faz35-etik-speak-api-mfe-v1.md'
+      - 'docs/contracts/faz35-market-entry-controls.v1.json'
+      - 'docs/contracts/faz35-first-customer-journey.v1.json'
+      - 'docs/contracts/faz35-privacy-no-collect.v1.json'
+      - 'docs/contracts/faz35-evidence-custody.v1.json'
+      - 'docs/faz-35-etik-speak-product-charter.md'
+      - 'docs/security/faz35-privacy-anonymity-threat-model.md'
+      - 'docs/legal/faz35-privacy-notice-tr.md'
       - 'docs/adr/0046-faz35-etik-speak-product-cell-topology.md'
+      - 'docs/adr/0047-faz35-case-identity-link-compartments.md'
+      - 'docs/adr/0048-faz35-evidence-dual-artifact-custody.md'
       - '.github/workflows/gate-drift-pr-time.yml'
       - 'docs/operations/services.yaml'
 
@@ -103,9 +117,15 @@ jobs:
 
       # These tests resolve the real Service -> targetPort -> containerPort
       # chain, verify TEST-only immutable OpenFGA Job hook recreation, and keep the
-      # complete Faz 35 provisioning/manager/quota/rollback contract executable.
+      # complete Faz 35 provisioning/manager/quota/rollback and evidence-custody
+      # contracts executable.
       - name: Run Faz 35 semantic regression suite
         run: |
           python3 -m pytest -q \
             scripts/drift_detection/tests/test_catalog_runtime_contracts.py \
-            tests/deploy/test_faz35_etikspeak_provisioning_contract.py
+            tests/deploy/test_faz35_etikspeak_provisioning_contract.py \
+            tests/deploy/test_faz35_market_entry_contract.py \
+            tests/deploy/test_faz35_first_customer_contract.py \
+            tests/deploy/test_faz35_privacy_no_collect_contract.py \
+            tests/deploy/test_faz35_compartment_adr.py \
+            tests/deploy/test_faz35_evidence_custody_contract.py

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 39d-8..11 canlı receipt/artifact/replay/repair smoke'u (RB-ats-39d ek-matrisi).
-# staging-sw'de koşar; d29-smoke.sh desenini izler: persona şifreleri Vault'tan
+# aiserver'da koşar; d29-smoke.sh desenini izler: persona şifreleri Vault'tan
 # (stdout'a DÜŞMEZ), token'lar yalnız bu süreçte. iv-smoke-2 kullanılır
 # (iv-smoke-1'in 39d-4 state'i kirletilmez). Ledger doğrulamaları platform-pg-test
 # üzerinden salt-okuma psql'dir (mutasyon YOK — WORM'a dokunulmaz).
@@ -8,6 +8,7 @@
 # yalnız onay-kapısı (rolsüz 403) doğrulanır — canlı R4 fixture'ı state bozar.
 set -uo pipefail
 EDGE="https://testai.acik.com"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 KCTOK="$EDGE/realms/platform-test/protocol/openid-connect/token"
 IV="iv-smoke-2"
 API="$EDGE/api/ats/v1/interviews/$IV"
@@ -15,7 +16,7 @@ PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 SMOKE=$(docker exec -e VAULT_TOKEN="$ROOT" -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test vault kv get -format=json kv/platform/ats-smoke)
 pw(){ printf '%s' "$SMOKE" | python3 -c "import json,sys;print(json.load(sys.stdin)['data']['data']['$1'])"; }
 tok(){

@@ -26,7 +26,7 @@ source "$REPO_ROOT/scripts/governance/lib-remote-bridge-digest.sh"
 RBD_PRIMARY_OVERLAY="$REPO_ROOT/kustomize/overlays/test"
 RBD_BRIDGE_OVERLAY="$REPO_ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge"
 
-SSH_TARGET="${SSH_TARGET:-staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
 SSH_OPTS="${SSH_OPTS:-}"
 REMOTE_BRIDGE_KUBECTL_MODE="${REMOTE_BRIDGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"

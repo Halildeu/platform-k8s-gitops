@@ -1,6 +1,9 @@
-# Etik Speak — Aydınlatma Metni ve Gizlilik Bildirimi (KVKK + EU 2019/1937)
+# Etik Speak — Aydınlatma Metni ve Gizlilik Bildirimi TASLAĞI
 
-> **Yayın:** `https://ai.acik.com/privacy`
+> **Durum:** YAYINLANAMAZ TASLAK. Named Legal + DPO kabulü, versioned retention
+> parametreleri ve production gate tamamlanmadan kullanıcıya sunulmaz.
+>
+> **Hedef yayın:** `https://ai.acik.com/privacy`
 > **Sorumlu:** Acık A.Ş. (Veri Sorumlusu, KVKK Md.3(ç)) — VERBIS: [tescil no], adres, e-posta, telefon
 > **Kabul tarihi:** [ES-311 imzalar sonrası; ES-313 real reporter open tarihi]
 > **Sürüm:** v1.0 (`noticeVersion=v1` backend zorunlu alan — sürüm değişince eski receipt'ler yeniden gösterilir).
@@ -20,9 +23,14 @@ Bu bildirim:
 - **Ek dosyalar** (opsiyonel, malware tarama sonrası)
 - **Access-secret** (256-bit rastgele; yalnız sizin cihazınızda saklanır — biz saklamaz, sadece hash'ini tutarız)
 - **Bildirim zamanı** ve **kanal** (web/mobil)
-- **Rate-limit için** IP hash (rate-limit süresi sonrası atılır)
 
-**Kimlik verisi TALEP EDİLMEZ**. IP, cookie, e-mail, telefon, ad-soyad **toplanmaz**.
+**Kimlik verisi TALEP EDİLMEZ**. IP, tracking/suite cookie, e-mail, telefon ve
+ad-soyad **toplanmaz**. Reporter mailbox açıldığında yalnız host-only,
+HttpOnly ve kısa ömürlü mailbox session cookie kullanılabilir; bu cookie
+identity veya cross-subdomain tracking alanı değildir.
+Kaynak IP yalnız edge'in volatile rate-limit durumunda anlık olarak kullanılabilir;
+hash'lenmez, durable storage'a veya log/trace/metric label'a yazılmaz ve
+case/receipt ile ilişkilendirilmez.
 
 ### 2.2 Gizli bildirim modu (opsiyonel, sonraki dilim)
 
@@ -35,27 +43,27 @@ Bu bildirim:
 - Whistleblower kendi kimliğini staff'a açık olarak paylaşır.
 - Yasal koruma tam olarak devam eder (EU 2019/1937 Art.19 retaliation yasağı).
 
-## 3. Verilerinizi hangi hukuki gerekçeyle işleriz?
+## 3. Hukuki dayanak — Legal/DPO tarafından seçilecek
 
-- **KVKK Md.5(2)(ç) hukuki yükümlülük** — İç Denetim Standartları, TİDE, Sarbanes-Oxley uyumlu whistleblowing kanalı bulundurma yükümlülüğü.
-- **KVKK Md.5(2)(a) açık rıza** — İsimli bildirim modu tercihinde whistleblower'ın kendi rızası.
-- **KVKK Md.5(2)(e) hukuki menfaat** — Etik ihlal soruşturması + delil koruma + hukuki takip.
-- **EU 2019/1937 Art.9** — İç bildirim kanalı zorunluluğu (250+ çalışan işletmeler).
+Bu ürün veya mühendislik belgesi müşteri adına hukuki dayanak seçmez. KVKK,
+GDPR, EU 2019/1937, SOX veya başka bir düzenlemenin kuruma uygulanabilirliği;
+veri sorumlusu, Legal ve DPO tarafından versioned policy içinde belirlenir.
+Seçim yapılmadan production durable storage fail-closed kalır.
 
 ## 4. Verileriniz ne kadar saklanır?
 
 | Veri türü | Saklama süresi | Yasal dayanak |
 |---|---|---|
-| Bildirim içeriği (anonim) | 5 yıl (case closure sonrası) | ISO 37002:2021 §8.6 + iç denetim standartları |
-| Bildirim içeriği (gizli/isimli) | 5 yıl (case closure sonrası) — kimlik alanları ayrı silinebilir | KVKK Md.7 |
-| WORM audit log | 10 yıl (immutable) | Sarbanes-Oxley Sec.802 + KVKK Md.7(2) |
-| Ek dosyalar | Case ile aynı süre | (yukarı) |
-| Access-secret hash | Case retention süresi + 1 yıl (fallback recovery) | Operasyonel |
-| Basic-auth gate cookie | Session süresi (15 dk max) | Operasyonel |
-| Rate-limit IP hash | 24 saat | Operasyonel |
-| SLO/observability metrik | 90 gün | Operasyonel |
-| Alertmanager log | 1 yıl | Operasyonel + audit |
-| Legal reveal request log | 10 yıl (WORM) | KVKK Md.28 + hukuki takip |
+| Bildirim içeriği (anonim) | Named Legal/DPO versioned policy parametresi | Owner-supplied |
+| Bildirim içeriği (gizli/isimli) | Named Legal/DPO versioned policy; identity ayrı parametre | Owner-supplied |
+| WORM audit log | Named Legal/Audit versioned policy parametresi | Owner-supplied |
+| Ek dosyalar | Ayrı attachment policy; varsayılan fail-closed | Owner-supplied |
+| Access-secret verifier | Case policy sınırı içinde; ek fallback yılı yok | Operasyonel + owner policy |
+| Public auth cookie | Yok | No-collect |
+| Rate-limit IP/hash | Saklanmaz; yalnız volatile edge state | No-collect |
+| SLO/observability metrik | Yalnız aggregate allowlist; owner-supplied kısa pencere | Operasyonel |
+| Alert/incident kaydı | Narrative/identity/secret içermez; owner-supplied süre | Operasyonel + owner policy |
+| Legal reveal request log | Yalnız confidential/named mod etkinse owner-supplied policy | Owner-supplied |
 
 Detay: `docs/legal/faz35-retention-policy.md`
 
@@ -88,26 +96,24 @@ Etik Speak üzerinden bildirim yapmanız nedeniyle karşı karşıya kalabilece�
 
 **Anonimlik hakkı** — Bildirim modunda anonim kalırsanız, kimlik açığa çıkarma yalnız §8'de sayılan hukuki gerekçelerle mümkündür.
 
-## 8. Anonimlik + reveal koşulları
+## 8. Anonimlik ve ayrı kimlik compartment'ı
 
-**Anonimliğiniz** yalnız aşağıdaki hukuki-etik gerekçelerle geri alınabilir (bkz. `docs/runbooks/RB-faz35-legal-reveal-request.md`):
+Gerçek anonim modda reporter identity toplanmaz; bu nedenle ürün içinde sonradan
+“reveal” edilebilecek bir kimlik kaydı yoktur. IP/UA/referrer/TLS metadata'sı da
+kimlik yerine kullanılacak correlation alanı olarak tutulmaz.
 
-- **Yargı kararı** (mahkeme veya savcılık) — CMK Md.135 benzeri.
-- **Bilinçli sahte bildirim** — iç soruşturma sonucu, kişilere iftira etmek amacıyla yapıldığı kanıtlanırsa.
-- **Whistleblower'ın kendi yazılı rızası**.
-- **Hayati tehlike** — whistleblower veya üçüncü şahıslar için.
-
-Reveal ceremony:
-- **3 imza gerekli**: Reveal Officer + Legal counsel + Business owner.
-- **WORM audit log** (immutable) her reveal event'i tamperproof kayıt eder.
-- **TTL max 60 dakika** — grant sonrası otomatik reseal.
-- **Reveal edildikten sonra bile Art.19 retaliation koruması devam eder.**
+Gelecekte confidential veya named mod açılırsa identity; narrative'dan ayrı
+compartment, ayrı anahtar, ayrı OpenFGA ilişkileri ve named Legal/DPO owner
+kararı gerektirir. Bu taslak herhangi bir reveal gerekçesi, imza sayısı, TTL
+veya hukuki yetki üretmez; ilgili production policy ve runbook ayrıca accepted
+olmadan identity storage refuse-to-store kalır.
 
 ## 9. Bildirim içeriği güvenliği
 
 - **TLS 1.2+** her bağlantıda.
 - **Sertifika**: `*.acik.com` wildcard, Sectigo (public CA).
-- **Basic-auth gate** test döneminde sentetik veri koruması; production'da kaldırılır.
+- **Public erişim** hesap ve suite oturumu istemez; Basic Auth veya suite cookie
+  public reporter credential'ı değildir.
 - **Session cookie**: `__Host-etik_mailbox` — Secure + HttpOnly + SameSite=Strict + 15 dakika TTL.
 - **Backend erişim ayrımı** (compartmentalization): Reporter mailbox verileri + staff case yönetimi + Reveal Officer identity alanları ayrı schema + ayrı encryption key.
 - **Vault-managed** DB parolaları + AppRole rotation.

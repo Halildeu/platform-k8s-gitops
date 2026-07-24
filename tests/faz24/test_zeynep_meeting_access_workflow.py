@@ -245,7 +245,7 @@ def _run_ambiguous_reset_scenario(
         bin_dir / "jq",
         f"""#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$*" == *'/home/halil/bootstrap-drill/vault-init-test.json'* ]]; then
+if [[ -n "${{VAULT_INIT_FILE:-}}" && "$*" == *"${{VAULT_INIT_FILE}}"* ]]; then
   printf '%s' 'mock-root-token'
   exit 0
 fi
@@ -548,6 +548,10 @@ fi
     )
     event_log = tmp_path / "events.log"
     event_log.write_text("", encoding="utf-8")
+    vault_init_file = tmp_path / "vault-init-test.json"
+    vault_init_file.write_text(
+        json.dumps({"root_token": "mock-root-token"}), encoding="utf-8"
+    )
     result_path = tmp_path / "result.json"
     env = os.environ.copy()
     env.update(
@@ -571,6 +575,7 @@ fi
             "MOCK_PROFILE_PUT_SCENARIO": profile_put_scenario,
             "MOCK_VAULT_SCENARIO": vault_scenario,
             "MOCK_EVENT_LOG": str(event_log),
+            "VAULT_INIT_FILE": str(vault_init_file),
         }
     )
     command = ["bash", str(REPAIR_SCRIPT), "--out", str(result_path)]
