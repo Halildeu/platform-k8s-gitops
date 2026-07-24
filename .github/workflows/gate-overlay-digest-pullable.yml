@@ -49,8 +49,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyYAML
-        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Install deps
+        run: |
+          python3 -m pip install --disable-pip-version-check \
+            "PyYAML==6.0.3" "pytest==8.3.3"
 
       - name: Guard self-test (verdict logic, no network)
         run: python3 -m pytest tests/governance/test_check_overlay_digest_pullable.py -q
