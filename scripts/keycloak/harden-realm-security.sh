@@ -12,6 +12,16 @@
 #   A1 — brute-force protection (failureFactor=5 + TÜM ilgili param converge,
 #        bruteForceStrategy + maxTemporaryLockouts dahil — Codex REVISE-2)
 #   A2 — ROPC migrasyon + frontend.directAccessGrants=false   [sonraki PR]
+#   A2-obs — login event logging (eventsEnabled + 7g retention). A2c'nin
+#        (frontend.directAccessGrants=false) önündeki engel bir "ekip karari"
+#        degil, VERI YOKLUGU idi: events kapali oldugu icin `frontend` uzerinden
+#        ROPC kullanan kalmis mi kimse bilmiyordu. Bu iki alan acildiginda karar
+#        olculebilir hale gelir: N gun boyunca clientId=frontend +
+#        grant_type=password event'i YOKSA A2c guvenle uygulanir; VARSA hangi
+#        tuketicinin tasinmasi gerektigi de ayni kayittan cikar.
+#        (Not: `frontend` public client + directAccessGrants=true, yani parola
+#        grant'i client kimlik dogrulamasi olmadan calisiyor — A2c'nin kapatmak
+#        istedigi risk tam olarak bu.)
 #   A3 — redirectUri + webOrigins narrowing                   [sonraki PR]
 #   B  — conditional-OTP privileged                           [ayrı flow PR]
 # Bu sürüm: A1.
@@ -79,7 +89,9 @@ DESIRED_JSON='{
   "maxFailureWaitSeconds": 900,
   "minimumQuickLoginWaitSeconds": 60,
   "quickLoginCheckMilliSeconds": 1000,
-  "maxDeltaTimeSeconds": 43200
+  "maxDeltaTimeSeconds": 43200,
+  "eventsEnabled": true,
+  "eventsExpiration": 604800
 }'
 
 # Beklenen -s arg sayısı (alan × 2). count-assert için (Codex REVISE-3).
@@ -94,7 +106,7 @@ EXPECTED_ARGS=$(( NKEYS * 2 ))
 PYENGINE='
 import json, os, sys
 DESIRED = json.loads(os.environ["DESIRED_JSON"])
-BOOL_KEYS = {"bruteForceProtected", "permanentLockout"}
+BOOL_KEYS = {"bruteForceProtected", "permanentLockout", "eventsEnabled"}
 STR_KEYS  = {"bruteForceStrategy"}
 INT_KEYS  = set(DESIRED) - BOOL_KEYS - STR_KEYS
 # KC 26.5.5 BruteForceStrategy enum (canli dogrulandi: MULTIPLE; LINEAR digeri).
