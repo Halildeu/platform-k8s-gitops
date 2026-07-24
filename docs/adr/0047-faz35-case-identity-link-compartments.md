@@ -8,6 +8,7 @@ ayrıca named Secret Owner, Privacy Officer ve Reveal Officer kabulü gerektirir
 **Supersedes:** Etik Speak verisini tek veritabanı, tek Vault snapshot'ı veya tek
 backup operatörü altında yeniden birleştiren tüm taslak/örnek yollar
 **Related:** [ADR-0046](./0046-faz35-etik-speak-product-cell-topology.md),
+[ADR-0048 evidence dual-artifact custody](./0048-faz35-evidence-dual-artifact-custody.md),
 [privacy contract](../faz-35-etik-speak-product-charter.md),
 [ES-209](https://github.com/Halildeu/platform-k8s-gitops/issues/2661)
 

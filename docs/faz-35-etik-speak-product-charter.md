@@ -73,6 +73,13 @@ insan kapısını ayrı tutar.
 | TR baseline, EN-ready localization | ES-105/307 | User-visible stringler sözlükten; receipt/mailbox TR tam | locale tests, screenshots |
 | Product-cell isolation ve rollback | ES-002/101/209 | DB/authz/storage/netpol/resource/rollback ayrı | rendered manifests, D29, rollback drill |
 
+Evidence attachment baseline'ı
+[`faz35-evidence-custody/v1`](./contracts/faz35-evidence-custody.v1.json) ve
+[ADR-0048](./adr/0048-faz35-evidence-dual-artifact-custody.md) ile
+makine-okunur olarak sabitlenir. ES-104/ES-206 runtime kabulü oluşana kadar
+ürün açıkça text-only çalışır; attachment hiçbir zaman narrative içine
+gizlice gömülmez veya taranmadan case rolüne gösterilmez.
+
 ### 3.2 CORE-CONFIG — müşteriye göre parametre
 
 - kategori, kanal ve öncelik sözlükleri;
