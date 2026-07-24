@@ -1817,8 +1817,9 @@ spec:
             "PKCE S256",
             "credentials: omit",
             "401/403",
-            "308a2777e79d1a54ee367d47f19c39cc513db42d",
-            "sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da",
+            "2fae733d31f574908859307f8af0dbc375e053eb",
+            "sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28",
+            "prompt=login",
         ):
             self.assertIn(expected, self.topology_adr)
         for expected in (
