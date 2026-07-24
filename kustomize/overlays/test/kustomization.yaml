@@ -699,6 +699,12 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
+    # 2026-07-24 GERİ ALINDI: sha-068a45c digest'i cluster'dan ÇEKİLEMİYOR (ImagePullBackOff).
+    # Build log'unda `pushing manifest for …@sha256:c2f37d80…` görünüyor ve commit main'de,
+    # ama kubelet çekemedi → uygulanınca user-service DOWN oldu, geri alındı. Bu sabahki
+    # auth-service kesintisiyle (#2863) AYNI imza: build-log digest'i ≠ pull edilebilir digest.
+    # #2582 sayacı hâlâ canlı DEĞİL; promote için digest'in pull-edilebilirliği önce
+    # doğrulanmalı (node'a pull denemesi), sonra pin'lenmeli.
     digest: sha256:64ea404e2eef5f83624abdff0aa97329289410ebf1a4623c070ac4af58de0660
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service

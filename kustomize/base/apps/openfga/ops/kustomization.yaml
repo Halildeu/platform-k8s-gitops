@@ -16,3 +16,6 @@ labels:
 
 resources:
   - servicemonitor.yaml
+  # Without this the ServiceMonitor above has a target it can never reach:
+  # the namespace is default-deny and no policy admitted the monitoring ns.
+  - netpol-from-monitoring.yaml

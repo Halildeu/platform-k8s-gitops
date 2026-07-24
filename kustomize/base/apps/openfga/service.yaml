@@ -23,3 +23,9 @@ spec:
       port: 3000
       targetPort: playground
       protocol: TCP
+    # Prometheus scrape target. Without this the ServiceMonitor cannot reach
+    # OpenFGA's metrics endpoint at all (see statefulset.yaml `metrics` port).
+    - name: metrics
+      port: 2112
+      targetPort: metrics
+      protocol: TCP
