@@ -1,0 +1,81 @@
+# Faz 24 GPU host (Denetim) erişilebilirlik alarmları.
+#
+# NEDEN VAR — 2026-07-24 sessiz kesintisi:
+# live-stt'nin mTLS ön kapısı Caddy, Windows zamanlanmış görevinde
+# `ExecutionTimeLimit` tanımsız olduğu için varsayılan 3 günün sonunda Windows
+# tarafından öldürüldü. Arkasındaki her şey ayaktaydı — live-stt :8200 22
+# Temmuz'dan beri kesintisiz, meeting-ai :8300 sağlıklı, Ollama çalışıyor — ama
+# :8243 kapandığı için canlı transkripsiyon TAMAMEN durdu.
+#
+# Hiçbir alarm üretilmedi. Arıza ancak kullanıcı "transkript gelmiyor" dediğinde,
+# saatler sonra fark edildi. Bu kural tam o boşluğu kapatır.
+#
+# NEDEN TÜKETİCİ METRİĞİ YETMEZ: audio-gateway'in hata sayacına alarm bağlamak
+# bu vakayı YAKALAYAMAZDI — kesinti gece, hiç kayıt yokken başladı. İstek yoksa
+# hata da yoktur. Sentetik probe trafikten bağımsız ölçer; asıl fark budur.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: faz24-gpu-host-reachability
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: faz24.gpu-host.reachability
+      interval: 1m
+      rules:
+        # live-stt mTLS ön kapısı — direct-STT'nin TEK giriş noktası.
+        # Bu düşerse canlı transkripsiyon tamamen durur (2026-07-24 vakası).
+        - alert: Faz24LiveSttGateDown
+          expr: probe_success{job="blackbox-gpu-host-tcp", instance="10.99.0.2:8243"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: faz24-live-stt
+            host: denetim-pc
+          annotations:
+            summary: "Faz 24 canlı transkripsiyon kapalı — live-stt mTLS ucu (8243) yanıt vermiyor"
+            description: >-
+              GPU host üzerindeki Caddy mTLS dinleyicisi 5 dakikadır TCP bağlantısı
+              kabul etmiyor. audio-gateway direct-STT için yalnız bu ucu kullanır;
+              kapalıyken ses işlenmez ve kullanıcı boş transkript görür.
+              İlk kontrol: GPU host'ta `CaddyI7AppMtls` zamanlanmış görevinin durumu.
+            runbook_url: docs/runbooks/RB-faz24-direct-stt-mtls-enable.md
+
+        # meeting-ai — canlı özet / karar / aksiyon üretimi.
+        # Düştüğünde transkript akmaya devam eder ama analiz sessizce boş kalır.
+        - alert: Faz24MeetingAiDown
+          expr: probe_success{job="blackbox-gpu-host-tcp", instance="10.99.0.2:8300"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: faz24-meeting-ai
+            host: denetim-pc
+          annotations:
+            summary: "Faz 24 canlı analiz kapalı — meeting-ai (8300) yanıt vermiyor"
+            description: >-
+              GPU host üzerindeki meeting-ai 5 dakikadır TCP bağlantısı kabul etmiyor.
+              Transkripsiyon etkilenmez, ancak canlı özet/karar/aksiyon üretimi durur —
+              ve bu yüzey hatayı yüzeye çıkarmaz, sessizce boş döner.
+            runbook_url: docs/faz24-meeting-ai-host-deploy-runbook.md
+
+        # Probe'un KENDİSİ kaybolursa yukarıdaki iki alarm da sessizce ölür
+        # (veri yoksa `== 0` hiç eşleşmez). Bu, izleme katmanının kendi
+        # sessizliğine karşı guard: hedef seti beklenen boyutta değilse uyar.
+        - alert: Faz24GpuHostProbeMissing
+          expr: count(probe_success{job="blackbox-gpu-host-tcp"}) < 2
+          for: 15m
+          labels:
+            severity: warning
+            component: faz24-monitoring
+          annotations:
+            summary: "Faz 24 GPU host probe'ları eksik — kesinti alarmları kör olabilir"
+            description: >-
+              blackbox-gpu-host-tcp job'ı beklenen 2 hedeften azını raporluyor.
+              Probe CR silinmiş, blackbox-exporter düşmüş ya da scrape kırılmış
+              olabilir. Bu durumda LiveSttGateDown/MeetingAiDown alarmları
+              tetiklenmez — kesinti yine sessiz kalır.
+            runbook_url: docs/runbooks/RB-faz24-direct-stt-mtls-enable.md
