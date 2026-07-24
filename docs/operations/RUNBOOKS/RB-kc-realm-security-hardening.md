@@ -21,11 +21,32 @@
 |---|---|---|
 | **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) — `harden-realm-security.sh` | ✅ LIVE (PR #2479) |
 | **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
-| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 + impersonation 201 pending** (persona seed — ayrı fixture paketi) |
+| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | ✅ **LIVE — authz sınırı kanıtlandı** (2026-07-24). Ölçülen: endpoint-admin **ALLOW 200 / DENY 401** · `/authz/me` **200** · impersonation non-superAdmin **403 `INSUFFICIENT_AUTHORITY`** · notify user-token **403** (tasarım gereği — aşağıdaki nota bak) · fail-closed 4/4. Kalan tek kalem variant → [#2530](https://github.com/Halildeu/platform-k8s-gitops/issues/2530) authz-drift (backend kod fix'i) |
 | A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
 | A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
 | **A3** | redirectUri + webOrigins narrowing — [`narrow-frontend-client.sh`](../../../scripts/keycloak/narrow-frontend-client.sh) | ✅ **LIVE** (2026-07-23) — `frontend.webOrigins` `["+",…,localhost]`→`["https://testai.acik.com"]` (açık CORS `+` kapatıldı), `redirectUris`→`["https://testai.acik.com/*"]` (localhost çıkarıldı); `frontend-local` dev client oluşturuldu. Canlı kanıt: prod authorize 200 + CORS ACAO=testai + `frontend`+localhost redirect **HTTP 400** + `frontend-local`+localhost 200 + browser KC login formu render (invalid-redirect YOK, console temiz). |
 | **B** | Conditional-OTP privileged (admin/manager) — [`setup-privileged-mfa.sh`](../../../scripts/keycloak/setup-privileged-mfa.sh) | 🟡 **FLOW LIVE + browser-verified; aktivasyon owner-gated** (2026-07-23). `requires-mfa` marker rolü + 6 privileged rol (ENDPOINT_ADMIN/MEETING_ADMIN/TRANSCRIPT_ADMIN/ethics-manager/remote-bridge-approver/-operator) composite; `browser`→`browser-privileged-mfa` kopyası + `privileged-force-otp` CONDITIONAL subflow (Condition-user-role=requires-mfa REQUIRED + OTP Form REQUIRED). **Canlı kanıt** (client-override izole test): admin persona → "Mobile Authenticator Setup" **zorlandı**; viewer persona → **OTP yok**. Realm `browserFlow=browser` (inert) → login değişmedi; `--activate` (`CONFIRM_MFA_ACTIVATE`) **owner-gated** çünkü tüm privileged kullanıcılar (owner hesabı dahil) OTP kurmaya zorlanır. Rollback: `--deactivate`. |
+
+> **A2b.1 beklenti düzeltmesi (2026-07-24, ölçüme dayalı).** Bu satırın eski hâli
+> *"notification **202** + impersonation **201**"* bekliyordu; ikisi de bir **kullanıcı
+> persona'sı** için yanlış beklentiydi:
+>
+> - **notify** — `/api/v1/internal/notify/**` uçları
+>   `hasAuthority("SVC_notify:intents:system")` ister (`notification-orchestrator`
+>   `SecurityConfig`). Bu bir **servis kimliği** yetkisidir (auth-service imzalı),
+>   Keycloak kullanıcı token'ı değil. Kullanıcı token'ı için **doğru sonuç 403'tür**
+>   ve ölçülen sonuç budur. `202` ayağının gerçek sahibi **user-service**
+>   (`PendingActivationNotificationClient`) — ayrı bir **ürün yolculuğu**, bu
+>   token-contract slice'ının konusu değil. Servis credential'ını çıkarıp sentetik
+>   token üretmek ürün yolunu **bypass** ederdi (No Fake Work), bu yüzden yapılmadı.
+> - **impersonation** — `201` yalnız **superAdmin** için geçerli. Yetkisiz persona
+>   için doğru sonuç **403 `INSUFFICIENT_AUTHORITY`** ("Only super admins can start
+>   impersonation sessions") ve ölçülen sonuç budur. DTO'da `reason` da **zorunlu**
+>   (eski 8-alan listesi eksikti; doğrusu **9 alan**).
+>
+> Yani A2b.1'in amacı olan **yetkilendirme sınırı** her iki uçta da kanıtlanmıştır;
+> "202/201" satırları allow-path **entegrasyon** testleridir ve kendi sahibi
+> slice'lara aittir. Kanıt: board #2476 yorumları (2026-07-24).
 
 Realm-level slice'lar `harden-realm-security.sh` `DESIRED_JSON`'a eklenir; **client-level** işler ayrı
 resource-specific script'lerde (Codex: realm ve client farklı lifecycle/rollback semantiği).
