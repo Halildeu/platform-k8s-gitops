@@ -45,6 +45,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.writer_credential_repair = (
             ROOT / "scripts/faz24/repair-d35-permission-writer-credential.sh"
         ).read_text()
+        cls.notification_identity = (
+            ROOT / "scripts/faz35/provision-test-notification-service-identity.sh"
+        ).read_text()
         cls.keycloak_binding_lib = (
             ROOT / "scripts/faz35/lib-test-keycloak-binding.sh"
         ).read_text()
@@ -81,6 +84,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.external_secret = (
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
+        ).read_text()
+        cls.notification_external_secret = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/externalsecret-notification.yaml"
+        ).read_text()
+        cls.auth_ethics_external_secret = (
+            ROOT
+            / "kustomize/overlays/test/auth-service-ethics-externalsecret.yaml"
+        ).read_text()
+        cls.activation_kustomization = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/kustomization.yaml"
         ).read_text()
         cls.secret_store = (
             ROOT
@@ -1350,7 +1365,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "check_object_headroom configmaps 2 2",
             "check_object_headroom secrets 2 2",
             "check_object_headroom pods 6 2",
-            "activation must render exactly two ExternalSecrets",
+            "activation must render exactly three ExternalSecrets",
             "public reporter ingresses must not retain the removed Basic Auth gate",
             "public reporter ingress displaced edge",
             "platform-web-nginx nginx -T",
@@ -1534,8 +1549,16 @@ spec:
             rendered.count('ETHICS_AUDIT_DELIVERY_ENABLED: "true"'),
             1,
         )
+        self.assertEqual(
+            rendered.count('ETHICS_NOTIFICATION_DELIVERY_ENABLED: "true"'),
+            1,
+        )
         self.assertIn(
             'ETHICS_AUDIT_DELIVERY_ENABLED: "true"',
+            self.preflight,
+        )
+        self.assertIn(
+            'ETHICS_NOTIFICATION_DELIVERY_ENABLED: "true"',
             self.preflight,
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -1562,6 +1585,79 @@ spec:
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0)
+
+    def test_notification_delivery_is_isolated_least_privilege_and_fail_closed(self):
+        self.assertIn(
+            "auth-service-ethics-externalsecret.yaml",
+            self.test_root,
+        )
+        self.assertIn(
+            "externalsecret-notification.yaml",
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            "property: service_client_ethics_service_secret",
+            self.auth_ethics_external_secret,
+        )
+        self.assertIn(
+            "secretKey: SERVICE_CLIENT_ETHICS_SERVICE_SECRET",
+            self.auth_ethics_external_secret,
+        )
+        self.assertIn(
+            "property: ETHICS_NOTIFICATION_CLIENT_SECRET",
+            self.notification_external_secret,
+        )
+        self.assertIn(
+            "secretKey: ETHICS_NOTIFICATION_CLIENT_SECRET",
+            self.notification_external_secret,
+        )
+        self.assertIn(
+            "name: ethics-service-notification-secret",
+            self.notification_external_secret,
+        )
+        self.assertIn(
+            "name: ethics-service-notification-secret",
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            'path: /data/ETHICS_NOTIFICATION_DELIVERY_ENABLED',
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            'value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"',
+            self.activation_kustomization,
+        )
+        for destination in (
+            "allow-ethics-service-to-auth-service",
+            "allow-ethics-service-to-notification-orchestrator",
+        ):
+            self.assertIn(destination, self.netpol)
+        self.assertNotIn("client-secret:", self.activation_kustomization)
+        self.assertNotIn("client-secret:", self.auth_ethics_external_secret)
+        self.assertNotIn("client-secret:", self.notification_external_secret)
+
+    def test_notification_identity_provisioner_keeps_secret_off_argv_and_fails_closed(self):
+        for required in (
+            'AUTH_PATH="kv/platform/auth-service"',
+            'ETHICS_PATH="kv/platform/etik-speak"',
+            'CONFIRM_TEST_NOTIFICATION_IDENTITY:-',
+            "seed-faz35-es208",
+            "automatic rotation refused",
+            "read-after-write mismatch",
+            "IFS= read -r VAULT_TOKEN",
+            'vault kv patch "$1" "$2"=-',
+            "openssl rand -hex 32",
+            "10.9.10.15",
+        ):
+            self.assertIn(required, self.notification_identity)
+        self.assertNotRegex(
+            self.notification_identity,
+            r"vault kv patch[^\n]*\$(?:candidate|auth_value|ethics_value)",
+        )
+        self.assertNotRegex(
+            self.notification_identity,
+            r"-e\s+VAULT_TOKEN(?:=|\s|\\)",
+        )
 
     def test_preflight_pins_new_aiserver_identity_and_bounds_optional_jump(self):
         for required in (
