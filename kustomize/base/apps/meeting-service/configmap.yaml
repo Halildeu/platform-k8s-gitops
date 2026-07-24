@@ -54,7 +54,14 @@ data:
   MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI: "http://auth-service:8088/oauth2/jwks"
   MEETING_INTERNAL_SERVICE_JWT_ISSUER: "auth-service"
   MEETING_INTERNAL_SERVICE_JWT_AUDIENCE: "meeting-service"
-  MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID: "meeting-ai"
+  # CSV allowlist — exact, virgulle ayrilir (SecurityConfig `csvToList`).
+  # `transcript-service` gitops#2568 ile eklendi: canonical transcript
+  # persistence icin meeting-service /api/v1/internal/.../sessions/resolve
+  # ucunu cagirir ve orada `SVC_meeting:session:resolve` yetkisi ister.
+  # Her client kendi audience/permission kapsamiyla auth-service'te ayri
+  # tanimli (least-privilege); bu liste yalnizca HANGI servis token'inin
+  # internal zincire GIREBILECEGINI belirler, rota yetkisini vermez.
+  MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID: "meeting-ai,transcript-service"
 
   # Spring profile — activates application-k8s.yml (KEYCLOAK_JWKS_URI binding,
   # OpenFGA gate). Without it SecurityConfig falls back to the serban realm JWKS.

@@ -70,6 +70,7 @@ resources:
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
+  - auth-service-transcript-service-externalsecret.yaml  # gitops#2568: transcript-service servis client secret (ayni izolasyon gerekcesi)
   - auth-service-ethics-externalsecret.yaml  # Faz 35 #2856: isolated service identity; missing key cannot stall core auth secret rotation
   - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
   - netpol-meeting-ai-private-ingress.yaml  # ingress-nginx -> auth:8088 + meeting:8097 only
@@ -6443,6 +6444,18 @@ patches:
             secretKeyRef:
               name: auth-service-meeting-ai-secret
               key: SERVICE_CLIENT_MEETING_AI_SECRET
+      # gitops#2568 — transcript-service servis client'i. auth-service
+      # tarafinda blank secret = client DISABLED (fail-closed aktivasyon
+      # kapisi); bu env olmadan `transcript-service` client_credentials
+      # token'i alamaz ve resolver cagrisi 401 doner.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-transcript-service-secret
+              key: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
               optional: true  # core auth stays available; meeting-ai mint remains fail-closed
       - op: add
         path: /spec/template/spec/containers/0/env/-
@@ -6520,7 +6533,9 @@ patches:
         template:
           metadata:
             annotations:
-              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-17-2568-v2"
+              # v3: resolver aktivasyonu (gitops#2568). ConfigMap/Secret degisimi
+              # envFrom ile otomatik pickup ETMEZ; bu damga rollout'u tetikler.
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-25-2568-v3-resolver"
           spec:
             containers:
               - name: transcript-service
@@ -6562,6 +6577,35 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_REDIS_HEALTH_ENABLED
         value: "true"
+      # gitops#2568 ikinci aktivasyon kapisi — RESOLVER.
+      #
+      # Stream tuketimini acmak TEK BASINA yetmiyor: kaynak kod bunu acikca
+      # belgeliyor ("enabling stream ingestion without a canonical resolver
+      # remains fail-closed and exhausts into the metadata-only DLQ").
+      # 2026-07-25 canli olcum: stream'de 1650 mesaj, consumer group lag=0,
+      # pending=0 — ama DLQ'da da 1650. Yani her mesaj okunup dead-letter'a
+      # atiliyordu, tek sebep `reason=RESOLVE`.
+      #
+      # Bu flag acilinca transcript-service, auth-service'ten `transcript-service`
+      # servis client'i ile client_credentials token alir ve meeting-service
+      # /api/v1/internal/meetings/{id}/sessions/resolve ucunu cagirir.
+      # Baglantili zorunluluklar (ucu birlikte olmali, aksi halde 401/DLQ):
+      #   1. auth-service SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET (ESO)
+      #   2. transcript-service TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET (ESO)
+      #   3. meeting-service CLIENT_ID CSV'sinde `transcript-service`
+      #
+      # ROLLBACK: bu uc satiri kaldir (resolver default `false`) + Deployment
+      # revizyonunu bump et. Zincir yine fail-closed DLQ'ya doner; veri kaybi
+      # olmaz, mesajlar metadata-only DLQ'da birikir.
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SESSION_RESOLVER_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_BASE_URL
+        value: "http://meeting-service:8097"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_TOKEN_URL
+        value: "http://auth-service:8088/oauth2/token"
 
   # Faz 24 KVKK audit pipeline (#1249): replica 1 default (HARD RULE —
   # Scale-to-Zero YASAK). Pure Redis consumer (no mTLS, no inbound API) → base
