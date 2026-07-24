@@ -699,7 +699,14 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
-    digest: sha256:64ea404e2eef5f83624abdff0aa97329289410ebf1a4623c070ac4af58de0660
+    # 2026-07-24 bump: sha-068a45c — #2582 slice 1 (platform-backend a9a9d11c / #920)
+    # canlıya çıkmamıştı. Ölçüm: user-service actuator/prometheus 200 dönüyor, 552 metrik
+    # satırı var, ama `identity_principal_without_company_total` YOK → sayaç kodu bu imajda
+    # değildi. Kod main'de duruyordu, promote edilmemişti. Soy bağı doğrulandı:
+    # `git merge-base --is-ancestor a9a9d11c 068a45ce` → true.
+    # Etki: org'suz kimlikleri (users_db'de %82) SAYAN metrik canlıya çıkar; hiçbir
+    # authorization sonucu değişmez — yalnız bugüne kadar sessiz olan popülasyon görünür olur.
+    digest: sha256:c2f37d8014eabb50d4055b0fa5e88db1cab5c8d15b81623e4c36234f7c319231
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
