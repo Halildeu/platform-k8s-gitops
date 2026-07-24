@@ -67,7 +67,12 @@ patches:
       # kanunî delil zinciri temiz kalır.
       - op: add
         path: /data/SPRING_APPLICATION_JSON
-        value: '{"ethics":{"tenancy":{"public-hosts":{"speakup.acik.com":"00000000-0000-0000-0000-000000000003"}}}}'
+        # Köşeli parantez ZORUNLU: Spring, SPRING_APPLICATION_JSON'ı düz
+        # property'lere açarken noktalı key'i iç içe map sanır
+        # (speakup -> acik -> com) ve host eşleşmesi sessizce kaçar; ihbar
+        # default org'a düşer. `[...]` key'i tek parça olarak bağlar.
+        # 2026-07-24 canlı doğrulamada bu tuzağa düşüldü, kanıtla saptandı.
+        value: '{"ethics":{"tenancy":{"public-hosts":{"[speakup.acik.com]":"00000000-0000-0000-0000-000000000003"}}}}'
   - target: {kind: Deployment, name: ethics-service}
     patch: |-
       - op: replace
