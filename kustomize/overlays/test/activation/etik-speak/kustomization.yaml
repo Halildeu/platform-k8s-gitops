@@ -37,11 +37,12 @@ images:
     digest: sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
-    # platform-web #1015 — reddedilen ekler artik ihbarcinin listesinde kaliyor.
-    # Kaynak: ab066c87bcc62ba240b9df8d950a78115695e6bd
-    # Etiket: sha-ab066c87bcc62ba240b9df8d950a78115695e6bd (bu hat TAM sha kullanir).
+    # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
+    # birden fazla ek eklenebilir, yuklemeler sirali.
+    # Kaynak: 598f79538360bf001d35496893aeea5ee02e2b2e
+    # Etiket: sha-598f79538360bf001d35496893aeea5ee02e2b2e (bu hat TAM sha kullanir).
     # Digest hedef kumeye gercek pull ile okundu, build log'undan kopyalanmadi.
-    digest: sha256:ad59a6bcb595d3f827ef1b150c3938b96aac1e21625e00fd6f912c62627bdcc3
+    digest: sha256:10675d11e6ece4c71e222dff0089075f316b77db2a429f2a16207661773ae445
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1005 — panel sessiz SSO ile acilir; /ethic tek sahipli.
