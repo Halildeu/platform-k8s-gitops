@@ -8,11 +8,16 @@ spec:
         operator: In
         values: [etik-speak-test]
   hard:
-    requests.cpu: "500m"
-    # All three Deployments may surge by one pod at the same time. These
-    # ceilings cover the six-pod rollout peak plus two repair/rollback pods.
-    # An exact six-pod fit would make rollback/recovery impossible.
-    requests.memory: 896Mi
-    limits.cpu: "2500m"
-    limits.memory: 2Gi
-    pods: "8"
+    # ES-104G added two workloads: the evidence worker and the malware scanner.
+    # Both use the Recreate strategy and therefore never surge, but the three
+    # request-facing Deployments still may, so the headroom that makes rollback
+    # possible is preserved rather than consumed by the new pods.
+    #
+    # clamd dominates the memory line: it loads the whole signature database
+    # into RSS, and a ceiling that merely looks generous gets it OOM-killed
+    # during startup — which presents as a crash-loop with no scan ever run.
+    requests.cpu: "700m"
+    requests.memory: 2560Mi
+    limits.cpu: "4000m"
+    limits.memory: 5Gi
+    pods: "10"

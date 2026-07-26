@@ -985,10 +985,40 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 f"/authorization-models/{model_id}"
             )
         )
-        self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 2)
-        self.assertEqual(self.external_secret.count("kind: SecretStore"), 2)
-        self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 2)
+        self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 3)
+        self.assertEqual(self.external_secret.count("kind: SecretStore"), 3)
+        self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 3)
         self.assertNotIn("ClusterSecretStore", self.external_secret)
+        # ES-104G separation of duties. The worker's Secret must resolve the
+        # WORKER Vault properties: the two ExternalSecrets deliberately expose
+        # the same variable names, so a copy-paste that pointed the worker at
+        # the request-facing identity would collapse the whole split silently —
+        # everything would still work, and one credential would be able to
+        # accept an upload, seal it and read the derivative back.
+        self.assertEqual(
+            self.external_secret.count("property: ETHICS_EVIDENCE_WORKER_S3_ACCESS_KEY"),
+            1,
+        )
+        self.assertEqual(
+            self.external_secret.count("property: ETHICS_EVIDENCE_WORKER_S3_SECRET_KEY"),
+            1,
+        )
+        worker_document = next(
+            document
+            for document in self.external_secret.split("\n---\n")
+            if "name: ethics-evidence-worker-secrets" in document
+        )
+        self.assertIn("property: ETHICS_EVIDENCE_WORKER_S3_ACCESS_KEY", worker_document)
+        self.assertNotIn(
+            "property: ETHICS_EVIDENCE_S3_ACCESS_KEY", worker_document
+        )
+        # The request-facing Secret must not carry the worker identity either.
+        service_document = next(
+            document
+            for document in self.external_secret.split("\n---\n")
+            if "name: ethics-service-secrets" in document
+        )
+        self.assertNotIn("WORKER_S3", service_document)
         self.assertEqual(self.external_secret.count("name: etik-speak-public-gate"), 2)
         self.assertEqual(self.external_secret.count("secretKey: auth"), 1)
         self.assertEqual(
@@ -1361,11 +1391,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "--max-time 10",
             'if [ "$PREFLIGHT_STAGE" = foundation ]',
             "check_object_headroom secrets 1 1",
-            "check_object_headroom services 3 2",
-            "check_object_headroom configmaps 2 2",
-            "check_object_headroom secrets 2 2",
-            "check_object_headroom pods 6 2",
-            "activation must render exactly three ExternalSecrets",
+            "check_object_headroom services 4 2",
+            "check_object_headroom configmaps 3 2",
+            "check_object_headroom secrets 3 2",
+            "check_object_headroom pods 8 2",
+            "activation must render exactly four ExternalSecrets",
             "public reporter ingresses must not retain the removed Basic Auth gate",
             "public reporter ingress displaced edge",
             "platform-web-nginx nginx -T",
@@ -1933,10 +1963,10 @@ spec:
 
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
-            'requests.cpu: "500m"',
-            "requests.memory: 896Mi",
-            'limits.cpu: "2500m"',
-            "limits.memory: 2Gi",
+            'requests.cpu: "700m"',
+            "requests.memory: 2560Mi",
+            'limits.cpu: "4000m"',
+            "limits.memory: 5Gi",
         ):
             self.assertIn(expected, self.product_quota)
 
@@ -1963,14 +1993,28 @@ spec:
         rollout_peak = 0
         for document in deployment_documents:
             replicas = re.search(r"(?m)^  replicas: ([0-9]+)$", document)
-            max_surge = re.search(r"(?m)^      maxSurge: ([0-9]+)$", document)
             self.assertIsNotNone(replicas)
-            self.assertIsNotNone(max_surge)
-            rollout_peak += int(replicas.group(1)) + int(max_surge.group(1))
+            # A Recreate rollout never runs an extra pod, so it contributes no
+            # surge. Demanding a maxSurge from every Deployment would force the
+            # quota to reserve capacity that can never be used — and would
+            # block any workload that must not run two instances at once, which
+            # is exactly the case for the lease-holding evidence worker.
+            strategy = re.search(r"(?m)^    type: (\w+)$", document)
+            max_surge = re.search(r"(?m)^      maxSurge: ([0-9]+)$", document)
+            if strategy is not None and strategy.group(1) == "Recreate":
+                self.assertIsNone(max_surge)
+                surge = 0
+            else:
+                self.assertIsNotNone(max_surge)
+                surge = int(max_surge.group(1))
+            rollout_peak += int(replicas.group(1)) + surge
 
         repair_reserve = 2
-        self.assertEqual(len(deployment_documents), 3)
-        self.assertEqual(service_count, 3)
+        # Three request-facing Deployments plus the ES-104G evidence worker and
+        # its scanner; the worker answers no traffic and therefore has no
+        # Service of its own.
+        self.assertEqual(len(deployment_documents), 5)
+        self.assertEqual(service_count, 4)
         self.assertIn(f'pods: "{rollout_peak + repair_reserve}"', self.product_quota)
         self.assertIn(
             f"check_object_headroom pods {rollout_peak} {repair_reserve}",

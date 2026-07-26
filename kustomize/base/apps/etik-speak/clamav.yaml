@@ -1,0 +1,95 @@
+# Malware gate for the evidence pipeline. Reachable only by the evidence
+# worker: it is not a platform-wide scanner, and nothing else in the namespace
+# is allowed to talk to it (see the overlay NetworkPolicy).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clamav
+  labels:
+    app.kubernetes.io/name: clamav
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clamav
+  labels:
+    app.kubernetes.io/name: clamav
+spec:
+  selector: {app.kubernetes.io/name: clamav}
+  ports:
+    - {name: clamd, port: 3310, targetPort: 3310, protocol: TCP}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+  labels:
+    app.kubernetes.io/name: clamav
+    app.kubernetes.io/component: scanner
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app.kubernetes.io/name: clamav}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clamav
+        app.kubernetes.io/component: scanner
+        app.kubernetes.io/part-of: etik-speak
+    spec:
+      serviceAccountName: clamav
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image ships /var/lib/clamav owned by uid 100 (clamav).
+        runAsUser: 100
+        runAsGroup: 100
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: clamav
+          image: docker.io/clamav/clamav:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          env:
+            # Definitions are the ones baked into the pinned image. Turning the
+            # updater off is what makes "no general internet egress" true rather
+            # than aspirational, and what makes the pinned rules version honest.
+            - {name: CLAMAV_NO_FRESHCLAMD, value: "true"}
+            - {name: CLAMAV_NO_MILTERD, value: "true"}
+          ports:
+            - {name: clamd, containerPort: 3310, protocol: TCP}
+          resources:
+            # clamd loads the whole signature database into memory; below ~1Gi
+            # it is OOM-killed during startup rather than at scan time, which
+            # reads as a crash-loop with no scan ever attempted.
+            requests: {cpu: 100m, memory: 1200Mi}
+            limits: {cpu: 1000m, memory: 2Gi}
+          startupProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            # clamd writes its socket and pid under /run and unpacks archives
+            # into /tmp; both are emptyDir, the image layers stay untouched.
+            readOnlyRootFilesystem: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: run, mountPath: /run}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: run
+          emptyDir: {sizeLimit: 64Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 512Mi}
+      terminationGracePeriodSeconds: 30
