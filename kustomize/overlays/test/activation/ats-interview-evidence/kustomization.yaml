@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@6319a1f (ats#212 — Turkce CV eslesme + korumali etiket kesinligi)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-6319a1f
-#   digest  sha256:2215d61c633059e24b0227f16a09914a063bc1b26d939b6e957bbfd43cf38739
+#   source  ats@ef2b3cc (ats#216 — yapisal deneyim/egitim girdileri, genisletme adimi)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-ef2b3cc
+#   digest  sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -41,7 +41,17 @@
 # yanlis bastirma 10 -> 5; Ingilizce referans CV 9/10 korundu; 4 CV'de
 # PII sizinti kontrolu temiz (dogum tarihi/cinsiyet/medeni durum/adres yok).
 # KALAN: kariyer.net iki-kolon + mixed-case baslik duzeni ayri is (ats#213).
-# CANLI OLCUM bu pin esitlendikten sonra 4 CV ile yapilacaktir.
+# ats#216 (#215 A): experience/education artik YAPISAL girdi olarak da kabul edilir.
+# Genislet/daralt: V17 experience_entries/education_entries JSONB + languages/
+# certifications TEXT kolonlarini ESKILERIN YANINA ekler; mevcut satirlar tek
+# girdiye backfill edilir. Yeni istemci yalniz girdi gonderebilir, backend eski
+# tek-string alani ondan turetir (effectiveExperience/-Education) — boylece IK
+# gorunumu, export ve DSAR yuzeyleri degismez ve frontend ile backend'i ayni
+# anda deploy etmek GEREKMEZ. Frontend hala eski bicimi gonderiyor; cogaltilabilir
+# arayuz ayri PR (#215 B).
+# API: experience/education artik `required` DEGIL (dogrulama turetilmis deger
+# uzerinde kosar). OpenAPI snapshot diff'i incelenerek yeniden pinlendi:
+# 2 yeni sema, 4 opsiyonel alan, silinen sema/yol YOK.
 # Onceki pin: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
 #   sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
 # Ondan onceki: sha-755c745 / v5 davranisi + v5 provenance (tutarli) /
@@ -73,7 +83,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:2215d61c633059e24b0227f16a09914a063bc1b26d939b6e957bbfd43cf38739
+    digest: sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
