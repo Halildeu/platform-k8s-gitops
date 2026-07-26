@@ -13,7 +13,7 @@ trap 'rm -rf "$T"; unset ROOT SMOKE READER REVIEWER OPERATOR ROLELESS RT' EXIT
 # Beklenen imaj digest'i — default aktivasyon kustomization pin'i ile senkron
 # tutulur (pin bump PR'ı bu default'u da günceller); ad-hoc koşum için env
 # override: ATS_EXPECTED_DIGEST=sha256:... ./d29-smoke.sh
-PIN="${ATS_EXPECTED_DIGEST:-sha256:4be622bee47bbced406c57c2f8364cdaaba08c2b90bc9e6d7d5ca72ff275e55d}"
+PIN="${ATS_EXPECTED_DIGEST:-sha256:2215d61c633059e24b0227f16a09914a063bc1b26d939b6e957bbfd43cf38739}"
 PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }

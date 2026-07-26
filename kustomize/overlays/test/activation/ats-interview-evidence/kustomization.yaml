@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@8d2be10 (ats#208 / PR #209 + PR #211 surum bump)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-8d2be10
-#   digest  sha256:4be622bee47bbced406c57c2f8364cdaaba08c2b90bc9e6d7d5ca72ff275e55d
+#   source  ats@6319a1f (ats#212 — Turkce CV eslesme + korumali etiket kesinligi)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-6319a1f
+#   digest  sha256:2215d61c633059e24b0227f16a09914a063bc1b26d939b6e957bbfd43cf38739
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -30,11 +30,18 @@
 # Lokal olcum (gercek CV, ayni motor) v5 -> v6:
 #   education 61c -> 51c, languages 168c -> 45c, certifications 467c -> 158c,
 #   kapsam 9/10 korundu.
-# v6 DAVRANISI CANLI DOGRULANDI (2026-07-26, ayni CV): education 51c,
-# languages 45c, certifications 158c — lokal olcumle 10/10 uyum, kapsam 9/10.
-# Bu pin ayrica #211 duzeltmesini tasir: #209 davranisi degistirdi ama
-# parserVersion sabitini bump etmemisti; canli olcumde v6 davranisi "v5" diye
-# raporlaniyordu. Artik provenance pdfbox-3.0.5-rules-v6 der.
+# ats#212 (parserVersion v7): (a) Turkce ekli basliklar eslesir —
+# "IS DENEYIMLERI" sozlukteki "deneyim" ile artik tutuyor, ek toleransi yalniz
+# 5+ karakter etiketlerde acik; (b) korumali etiket eslesmesi kesinlestirildi —
+# bare "saglik" onek eslesmesiyle MESRU IS UNVANINI siliyordu
+# ("Saglik Emniyet Cevre Koordinatoru"), bu da aktif bolumu kapatip adayin tum
+# deneyimini yok ediyordu. Cok kelimeli biçimler acikca listelendi; tek
+# kelimeliler tam eslesmeyle korunmaya devam eder.
+# Lokal olcum (4 gercek CV): kariyer.net CV'sinde deneyim 35c -> 170c,
+# yanlis bastirma 10 -> 5; Ingilizce referans CV 9/10 korundu; 4 CV'de
+# PII sizinti kontrolu temiz (dogum tarihi/cinsiyet/medeni durum/adres yok).
+# KALAN: kariyer.net iki-kolon + mixed-case baslik duzeni ayri is (ats#213).
+# CANLI OLCUM bu pin esitlendikten sonra 4 CV ile yapilacaktir.
 # Onceki pin: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
 #   sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
 # Ondan onceki: sha-755c745 / v5 davranisi + v5 provenance (tutarli) /
@@ -66,7 +73,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:4be622bee47bbced406c57c2f8364cdaaba08c2b90bc9e6d7d5ca72ff275e55d
+    digest: sha256:2215d61c633059e24b0227f16a09914a063bc1b26d939b6e957bbfd43cf38739
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
