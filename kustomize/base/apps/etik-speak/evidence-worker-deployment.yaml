@@ -51,9 +51,21 @@ spec:
             # so the process can read quarantine, seal originals and publish
             # derivatives — and cannot read a derivative back.
             - secretRef: {name: ethics-evidence-worker-secrets, optional: false}
+          env:
+            # Without an explicit budget the JVM takes 25% of the container
+            # limit as heap, which is far below what a contract-maximum
+            # attachment needs while it is held in memory.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70"
           resources:
-            requests: {cpu: 75m, memory: 192Mi}
-            limits: {cpu: 500m, memory: 512Mi}
+            # The processor holds the whole attachment in memory and then its
+            # sanitized derivative alongside it, so the floor is roughly twice
+            # ethics.evidence.max-bytes (25 MiB) plus the Spring baseline. At
+            # 512Mi the worker was OOM-killed mid-scan at exactly the size the
+            # contract admits: the lease expired, another attempt started, and
+            # the attachment livelocked while every pod stayed green.
+            requests: {cpu: 75m, memory: 512Mi}
+            limits: {cpu: 1000m, memory: 1536Mi}
           startupProbe:
             httpGet: {path: /actuator/health, port: management}
             periodSeconds: 10
@@ -75,5 +87,5 @@ spec:
             - {name: tmp, mountPath: /tmp}
       volumes:
         - name: tmp
-          emptyDir: {sizeLimit: 256Mi}
+          emptyDir: {sizeLimit: 512Mi}
       terminationGracePeriodSeconds: 60

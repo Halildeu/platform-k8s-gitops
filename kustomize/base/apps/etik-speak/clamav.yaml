@@ -47,6 +47,9 @@ spec:
         # The image ships /var/lib/clamav owned by uid 100 (clamav).
         runAsUser: 100
         runAsGroup: 100
+        # Makes the mounted socket directory group-writable for uid 100 without
+        # requiring a chown the container is not allowed to perform.
+        fsGroup: 100
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: clamav
@@ -85,7 +88,12 @@ spec:
             readOnlyRootFilesystem: false
             capabilities: {drop: [ALL]}
           volumeMounts:
-            - {name: run, mountPath: /run}
+            # Mounted at the socket directory itself, not at /run: the image's
+            # entrypoint runs `install -d -o clamav /run/clamav`, which cannot
+            # chown a fresh volume as a non-root user and killed the first
+            # start. The container only came up on the retry, because the failed
+            # attempt had already created the directory.
+            - {name: run, mountPath: /run/clamav}
             - {name: tmp, mountPath: /tmp}
       volumes:
         - name: run
