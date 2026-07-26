@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@7fbe88f (ats#218 — coklu deneyim/egitim yapisal kayit olarak yayinlaniyor)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-7fbe88f
-#   digest  sha256:35da6411f134fa039e9db26cae2fc1933227c386fdd01491fa6c9f43f346090f
+#   source  ats@fd56617 (ats#218 — tarih satirindan yalniz tarih araligi alinir, kalan subtitle)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-fd56617
+#   digest  sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -94,7 +94,9 @@
 # pull-proof edildi: crictl pull + inspecti repoDigests == bu digest.
 # (crictl pull ekrana sha256:e3655e03… yaziyor — o local image ID, cekilebilir
 # manifest digest'i DEGIL; gecmiste bu tuzak auth-service'i 106dk indirdi.)
-# Onceki pin: sha-e1eca6d / ats#217 form etiketi + parserVersion v8 /
+# Onceki pin: sha-7fbe88f / #218 gruplama /
+#   sha256:35da6411f134fa039e9db26cae2fc1933227c386fdd01491fa6c9f43f346090f
+# Ondan onceki: sha-e1eca6d / ats#217 form etiketi + parserVersion v8 /
 #   sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
 # Ondan onceki: sha-ef2b3cc / #215 A yapisal girdiler + V17 /
 #   sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
@@ -127,7 +129,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:35da6411f134fa039e9db26cae2fc1933227c386fdd01491fa6c9f43f346090f
+    digest: sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
