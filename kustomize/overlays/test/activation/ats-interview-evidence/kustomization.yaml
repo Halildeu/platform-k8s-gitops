@@ -18,15 +18,22 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@a5922489d (ats#204 / PR #206)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-a592248
-#   digest  sha256:e943fe3736a464123954664c5656daffaef3edf47e19e03864d7563035ddd0b9
-#   run     https://github.com/Halildeu/ats/actions/runs/30192674769
-# ats#204: PDF->CV parser'i dekore basliklari taniyor ve iki kolonlu CV'leri
-# ayiriyor (parserVersion pdfbox-3.0.5-rules-v2). Canli olcum: alan kapsami
-# 3/10 -> 8/10, deneyim metni artik skills alanina sizmiyor.
-# Onceki pin: sha-f03391f /
-#   sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
+#   source  ats@755c745b1 (ats#204 / PR #207)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-755c745
+#   digest  sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
+#   run     https://github.com/Halildeu/ats/actions/runs/30194039119
+# ats#204: PDF->CV parser'i ayni taban hizasindaki iki kolonu satir ICINDE
+# ayiriyor (parserVersion pdfbox-3.0.5-rules-v5). PDFBox boyle bir satiri TEK
+# satir olarak yayar ve oluk glifsizdir; onceki pin satiri baslangic x'ine gore
+# siniflandirdigi icin yan cubuk basliklari hic gorulmuyordu.
+# Lokal olcum (gercek CV, ayni motor): kapsam 7/10 -> 9/10; education ve
+# languages artik cikiyor, certifications 3561c -> 467c (deneyimi yutmuyor).
+# CANLI OLCUM HENUZ YAPILMADI: bu pin ArgoCD ile esitlendikten sonra ayni CV
+# ile ucuncu olcum yapilacaktir. Onceki iki turda prototip canliyi yanlis
+# tahmin etti (8/10 iddia, 7/10 gerceklesti), bu yuzden lokal sonuc canli
+# kanit sayilmaz.
+# Onceki pin: sha-a592248 /
+#   sha256:e943fe3736a464123954664c5656daffaef3edf47e19e03864d7563035ddd0b9
 # Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
 # migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
 # identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
@@ -54,7 +61,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:e943fe3736a464123954664c5656daffaef3edf47e19e03864d7563035ddd0b9
+    digest: sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
