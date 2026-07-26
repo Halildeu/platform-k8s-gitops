@@ -151,6 +151,7 @@ images:
     #
     # GERI DONUS: #2876 kapaninca canonical GHCR digest'ine donulmeli (o zaman
     # pull-edilebilirlik KANITLANARAK pin'lenir — bkz. #2883 dersi).
+    # LOCAL-REGISTRY-EXCEPTION: gitops#2876
     newName: platform-test-registry:5000/platform-backend-audio-gateway-service
     # 2026-06-24 update: sha-23a7607 (platform-backend#745) adds
     # POST /api/v1/audio-gateway/consents as the server-time recorder consent
