@@ -13,6 +13,14 @@ jobs:
   kustomize-build:
     name: Kustomize Build Sanity
     runs-on: ubuntu-latest
+    # endpoint-agent release-policy guard'lari platform-agent'in (public) release
+    # kaydini api.github.com'dan cekiyor. Token verilmediginde cagri ANONIM gider
+    # ve paylasimli runner IP'sinde 60 istek/saat kotasi tukendiginde GitHub 403
+    # doner; guard "release metadata fetch failed" diye oluyor. Bu, degisiklikle
+    # ilgisiz rastgele kirmizi uretir (gitops#2896: ayni digest bayat base'te
+    # gecti, guncel base'te iki kez dustu). Kimlikli cagri 5000/saat verir.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
