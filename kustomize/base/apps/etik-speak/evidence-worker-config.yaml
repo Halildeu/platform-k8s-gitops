@@ -37,6 +37,12 @@ data:
   # NetworkPolicy admits nothing but the Prometheus scrape.
   SERVER_PORT: "8099"
   MANAGEMENT_SERVER_PORT: "8081"
+  # Delivery loops belong to the request-facing deployment, which is the only
+  # one holding the notification credential. Inheriting them here made the
+  # worker demand a secret it must not have — and would have put two pollers on
+  # the same outbox rows. The worker writes audit entries; it does not ship them.
+  ETHICS_AUDIT_DELIVERY_ENABLED: "false"
+  ETHICS_NOTIFICATION_DELIVERY_ENABLED: "false"
   # Migrations belong to the request-facing deployment. Flyway would take its
   # own lock and converge safely, but running it from two places makes the
   # schema owner ambiguous for no benefit.
