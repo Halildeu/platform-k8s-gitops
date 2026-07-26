@@ -346,7 +346,8 @@ for edge_rate_requirement in \
   'limit_conn etik_speak_public_conn 20;' \
   'limit_req_status 429;' \
   'limit_conn_status 429;' \
-  'proxy_set_header X-Etik-Speak-Transport https;'
+  'proxy_set_header X-Etik-Speak-Transport https;' \
+  'client_max_body_size 26m;'
 do
   grep -Fq "$edge_rate_requirement" "$HOST_EDGE_CONFIG" || {
     echo "FATAL: canonical host edge misses Etik Speak rate-limit policy" >&2
