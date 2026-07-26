@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@7d89faf (ats#222 — aday kimlikli uclar hiz siniri kapsamina alindi)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-7d89faf
-#   digest  sha256:0579c457434a678717c139b6b93053c09b2b6d4994afc19886aa38e4f95e63cf
+#   source  ats@7fbe88f (ats#218 — coklu deneyim/egitim yapisal kayit olarak yayinlaniyor)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-7fbe88f
+#   digest  sha256:35da6411f134fa039e9db26cae2fc1933227c386fdd01491fa6c9f43f346090f
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -127,7 +127,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:0579c457434a678717c139b6b93053c09b2b6d4994afc19886aa38e4f95e63cf
+    digest: sha256:35da6411f134fa039e9db26cae2fc1933227c386fdd01491fa6c9f43f346090f
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
