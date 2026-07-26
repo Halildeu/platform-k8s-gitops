@@ -30,12 +30,12 @@ images:
     digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    # platform-web #1002 — AuthGate denied/error ekranina "Yeniden dene".
-    # Kaynak: d06283d3e3f8ed5a4b5e82e6e3c4e318e31f9622
-    # Etiket: sha-d06283d3e3f8ed5a4b5e82e6e3c4e318e31f9622 (bu hat TAM sha etiketi
-    # kullanir; frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
+    # platform-web #1005 — panel sessiz SSO ile acilir; /ethic tek sahipli.
+    # Kaynak: c6a4ea28c70d9814d6d6f74038d8e74e5798b92f
+    # Etiket: sha-c6a4ea28c70d9814d6d6f74038d8e74e5798b92f (bu hat TAM sha etiketi kullanir;
+    # frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
     # Digest etiketten cozuldu ve GHCR'da 200 ile dogrulandi.
-    digest: sha256:48a86f886f1d9ec1e89385c89cd5a706742b53d30890f72bd0fe30b3b06f9944
+    digest: sha256:567488a7b206bd89f2e92cd2172c6d952fe5328ad88fd3c2d81a0894963bf114
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
