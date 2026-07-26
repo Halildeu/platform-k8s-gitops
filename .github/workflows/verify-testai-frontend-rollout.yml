@@ -22,9 +22,15 @@ concurrency:
 
 jobs:
   verify:
-    name: Reconcile merged pin and verify runtime
+    name: Reconcile merged pin and verify cluster runtime
     runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
+    outputs:
+      should_verify: ${{ steps.pin.outputs.should_verify }}
+      reconcile_revision: ${{ steps.pin.outputs.reconcile_revision }}
+      source_sha: ${{ steps.pin.outputs.source_sha }}
+      short_sha: ${{ steps.pin.outputs.short_sha }}
+      digest: ${{ steps.pin.outputs.digest }}
 
     steps:
       - name: Checkout merged desired state
@@ -129,14 +135,15 @@ jobs:
           ALLOW_KUBECTL_SELECTED_RESOURCE_FALLBACK: "false"
         run: bash scripts/faz22/sync-platform-test-gitops.sh
 
-      - name: Verify exact pod digest, public entry, and build lineage
+      - name: Verify exact pod digest
         id: runtime
         if: always() && steps.pin.outputs.should_verify == 'true'
         run: |
           bash scripts/deploy/verify-testai-frontend-runtime.sh \
             --expected-digest "${{ steps.pin.outputs.digest }}" \
             --expected-sha "${{ steps.pin.outputs.source_sha }}" \
-            --expected-short-sha "${{ steps.pin.outputs.short_sha }}"
+            --expected-short-sha "${{ steps.pin.outputs.short_sha }}" \
+            --cluster-only
 
       - name: Upload ArgoCD reconciliation report
         if: always() && steps.pin.outputs.should_verify == 'true'
@@ -159,12 +166,12 @@ jobs:
           set -euo pipefail
 
           [[ "$RUNTIME_OUTCOME" == "success" ]] || {
-            echo "::error::exact frontend runtime verification did not pass (outcome=$RUNTIME_OUTCOME)"
+            echo "::error::exact frontend cluster runtime verification did not pass (outcome=$RUNTIME_OUTCOME)"
             exit 1
           }
 
           if [[ "$RECONCILE_OUTCOME" == "success" ]]; then
-            echo "PASS: ArgoCD reconciliation and exact frontend runtime verification succeeded"
+            echo "PASS: ArgoCD reconciliation and exact frontend cluster runtime verification succeeded"
             exit 0
           fi
 
@@ -197,7 +204,7 @@ jobs:
           }
 
           echo "::warning::ArgoCD application remains Degraded only on non-frontend resources: $degraded_resources"
-          echo "PASS: exact frontend digest and lineage are live at the requested synced revision"
+          echo "PASS: exact frontend digest is live at the requested synced revision"
 
       - name: Verification summary
         if: always()
@@ -216,3 +223,22 @@ jobs:
             echo "- mutation path: ArgoCD application reconciliation only"
             echo "- authenticated Meeting behavior: separate acceptance gate"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-public:
+    name: Verify public frontend entry and build lineage
+    needs: verify
+    if: needs.verify.outputs.should_verify == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout merged desired state
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Verify public entry and exact build lineage
+        run: |
+          bash scripts/deploy/verify-testai-frontend-runtime.sh \
+            --expected-digest "${{ needs.verify.outputs.digest }}" \
+            --expected-sha "${{ needs.verify.outputs.source_sha }}" \
+            --expected-short-sha "${{ needs.verify.outputs.short_sha }}" \
+            --public-only
