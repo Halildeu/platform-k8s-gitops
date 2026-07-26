@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@e1eca6d (ats#217 — form etiketi ad alanina dolmasin, parserVersion v8)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-e1eca6d
-#   digest  sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
+#   source  ats@7d89faf (ats#222 — aday kimlikli uclar hiz siniri kapsamina alindi)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-7d89faf
+#   digest  sha256:0579c457434a678717c139b6b93053c09b2b6d4994afc19886aa38e4f95e63cf
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -79,7 +79,24 @@
 # yapisal olarak olculdu: ad satiri %20 buyuk harf — kariyer.net'te ad da diger
 # basliklar gibi mixed-case. Yakalamak tipografi sinyali ister (font boyutu +
 # bold) ve ayri istir (ats#213). Simdilik alan BOS kalir; bos, yanlistan iyidir.
-# Onceki pin: sha-ef2b3cc / #215 A yapisal girdiler + V17 /
+# Bu pin iki merged isi canliya tasir:
+#   ats#220 (#215 C) — recruiter yanitinda experienceEntries/educationEntries +
+#     languages/certifications OKUNUR. Bu alanlar yoktu; frontend (platform-web
+#     #1019) canli backend'in donmedigi alanlari okuyunca IK paneli comuyordu,
+#     o yuzden frontend tarafi yokluga toleransli yazildi. Bu pin sonrasi
+#     alanlar gercekten geliyor ve IK her deneyim kaydini AYRI goruyor.
+#   ats#223 (#222) — aday kimlikli bes uc (durum/gorusme/teklif okuma,
+#     withdraw, teklif yaniti) hiz siniri kapsamina alindi; onceki
+#     shouldNotFilter "POST degilse atla" dedigi icin bu uclar HIC
+#     sayilmiyordu. Okuma 120/10dk, mutasyon 20/10dk ayri kovada; mevcut
+#     gonderim/CV uclari YAPILANDIRILMIS siniri korur (davranis degismedi).
+# Digest build log'undan DEGIL, registry manifest'inden alindi ve node'da
+# pull-proof edildi: crictl pull + inspecti repoDigests == bu digest.
+# (crictl pull ekrana sha256:e3655e03… yaziyor — o local image ID, cekilebilir
+# manifest digest'i DEGIL; gecmiste bu tuzak auth-service'i 106dk indirdi.)
+# Onceki pin: sha-e1eca6d / ats#217 form etiketi + parserVersion v8 /
+#   sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
+# Ondan onceki: sha-ef2b3cc / #215 A yapisal girdiler + V17 /
 #   sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
 # Ondan onceki: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
 #   sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
@@ -110,7 +127,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
+    digest: sha256:0579c457434a678717c139b6b93053c09b2b6d4994afc19886aa38e4f95e63cf
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
