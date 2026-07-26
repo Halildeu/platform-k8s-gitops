@@ -18,14 +18,15 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@f03391f9fdb382297dd103a8620c2a7f88469fda (ats#200 / PR #201)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-f03391f
-#   digest  sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
-#   run     https://github.com/Halildeu/ats/actions/runs/30073102559
-# ats#200: aday verisi politikası ortam-parametrik oldu. Bu pin, ATS_CANDIDATE_DATA_*
-# anahtarlarını OKUYAN ilk imajdır (önceki pinler bu env'leri yok sayar; guard
-# onlarda hâlâ hardcoded sentetik-yalnızdır). Önceki pin: sha-c7cf82c /
-#   sha256:f5e596662772e6fdce722fa2e6723e308c78c603d1908171a8c9835a3f103119
+#   source  ats@60b8fbda6 (ats#204 / PR #205)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-60b8fbd
+#   digest  sha256:433873c9e57511dd939f42346beddd43ae9212a94a8e2e4679f89564ff6f361f
+#   run     https://github.com/Halildeu/ats/actions/runs/30191993593
+# ats#204: PDF->CV parser'i dekore basliklari taniyor ve iki kolonlu CV'leri
+# ayiriyor (parserVersion pdfbox-3.0.5-rules-v2). Canli olcum: alan kapsami
+# 3/10 -> 8/10, deneyim metni artik skills alanina sizmiyor.
+# Onceki pin: sha-f03391f /
+#   sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
 # Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
 # migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
 # identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
@@ -53,7 +54,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:29180851bfd9852b366a5f6e61e7772dd595edb6e3cc83fbdfaf935cfa1b0b83
+    digest: sha256:433873c9e57511dd939f42346beddd43ae9212a94a8e2e4679f89564ff6f361f
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
