@@ -755,14 +755,28 @@ images:
     # gidiyordu; permission-service `/api/v1/**` yolunun tamamını kimlik doğrulattığı
     # için 401 dönüyor, hata iki katman yukarıda `/api/v1/users` üzerinde 500 olarak
     # yüzeye çıkıyordu — iki pod da Ready görünürken kullanıcı listeleme ve oluşturma
-    # hücre genelinde kullanılamazdı. Artık çağrı `X-Internal-Api-Key` başlığını
-    # taşıyor (yalnız yapılandırıldığında; boş başlık filtrenin reddetmek zorunda
-    # olduğu bir kimlik iddiasıdır). İki sözleşme testi başlığın varlığını ve
-    # yokluğunu kilitliyor.
+    # hücre genelinde kullanılamazdı. O düzeltme `X-Internal-Api-Key` gönderdi ve
+    # canlıda hiçbir şeyi değiştirmedi: o başlığı okuyan filtre `local/dev`
+    # profiline bağlı, yalnız `/api/v1/internal/**` ile eşleşiyor ve legacy bayrağı
+    # kapalıyken (bu hücrede kapalı) zinciri ilk satırda geçiyor.
+    #
+    # 2026-07-27 bump: sha-ab7cca1 — platform-backend#941. Çağrı artık çağıranın
+    # KENDİ bearer token'ını taşıyor; `/authz/me` iki metot yukarıda zaten böyle
+    # kimlikleniyordu. Çalışan hücreye karşı ölçüm:
+    #
+    #   kimliksiz                -> 401
+    #   X-Internal-Api-Key       -> 401
+    #   çağıranın bearer token'ı -> 200 {"authzVersion":234}
+    #
+    # Revizyon tek bir global sayaç, dolayısıyla isteğin zaten taşıdığı kimliği
+    # aktarmak hiçbir yüzeyi genişletmiyor. #940'ın testleri başlığın
+    # gönderildiğini doğruluyordu, çağrının yetkilendirildiğini değil — bu yüzden
+    # sunucunun hiç bakmadığı bir kimliğin üstünde yeşil kaldılar. Yerine yanlış
+    # kimlikte düşen iki test kondu.
     #
     # Digest hedef kümenin kendi kubelet'i tarafından yapılan GERÇEK pull ile geri
     # okundu (yukarıdaki 2026-07-24 kesintisinin doğrudan dersi).
-    digest: sha256:e2c6b68c07be1dbb80eb6dd5a01e0a68d81adf51389f2c5aa429ea161e892d8b
+    digest: sha256:98d2806afa6ded8847a92372348282ef06056b2db4aa6544ee7d40debbce8ddf
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
