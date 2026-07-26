@@ -28,9 +28,15 @@ images:
   # This digest was read back from an actual pull into the target cluster. A
   # build-log digest is not evidence that a tag is pullable, and pinning one has
   # already left a service silently un-rolled.
+  #
+  # 2026-07-27 bump: sha-e130caa — platform-backend#942 (ES-203). Personel artık
+  # bir davadan kayda geçerek çekilebiliyor: POST /api/v1/ethics/cases/{id}/recusal.
+  # Yaptırım zaten vardı (can() `recused` ilişkisini soruyordu); eksik olan beyandı
+  # — çekilme yalnız OpenFGA'ya elle tuple yazılarak kurulabiliyordu, denetim
+  # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:6203b977b4cbf24dc8f447895616d692667378476e9be60bb8c7bafb776d175b
+    digest: sha256:0fc9db81ea4a5b933620ed51b15c9487e1711b9b12a3fcfd976defd7a56ce69d
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
