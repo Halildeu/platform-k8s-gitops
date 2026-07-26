@@ -1,3 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clamav-config
+  labels:
+    app.kubernetes.io/name: clamav
+data:
+  # clamd is started directly with this file instead of through the image's
+  # entrypoint. The entrypoint prepares /run/clamav and /var/lock for a root
+  # user and dies on a non-root container — first at the chown, then, once the
+  # socket directory was mounted, at the lock directory. Every attempt to make
+  # those paths writable moved the failure rather than removing it.
+  #
+  # Declaring where clamd may write removes the whole class: the socket is TCP,
+  # the pid and scratch space live in /tmp, and the signature database stays on
+  # the read-only image layer where it was baked.
+  clamd.conf: |
+    TCPSocket 3310
+    TCPAddr 0.0.0.0
+    Foreground yes
+    PidFile /tmp/clamd.pid
+    TemporaryDirectory /tmp
+    DatabaseDirectory /var/lib/clamav
+    MaxThreads 4
+    # Above the custody contract's 26214400-byte ceiling, so the scanner never
+    # becomes the reason a compliant attachment is refused.
+    StreamMaxLength 32M
+    MaxFileSize 32M
+    MaxScanSize 128M
+    LogTime yes
+---
 # Malware gate for the evidence pipeline. Reachable only by the evidence
 # worker: it is not a platform-wide scanner, and nothing else in the namespace
 # is allowed to talk to it (see the overlay NetworkPolicy).
@@ -47,18 +78,24 @@ spec:
         # The image ships /var/lib/clamav owned by uid 100 (clamav).
         runAsUser: 100
         runAsGroup: 100
-        # Makes the mounted socket directory group-writable for uid 100 without
-        # requiring a chown the container is not allowed to perform.
+        # An emptyDir is root-owned 0755, so uid 100 could not write the
+        # scratch directory clamd needs. fsGroup makes it group-writable
+        # without a chown the container is not allowed to perform.
         fsGroup: 100
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: clamav
           image: docker.io/clamav/clamav:OVERLAY_MUST_OVERRIDE
           imagePullPolicy: IfNotPresent
+          # Bypasses the image entrypoint entirely — see clamav-config.
+          command: ["clamd", "--config-file=/etc/clamav/clamd.conf"]
           env:
-            # Definitions are the ones baked into the pinned image. Turning the
-            # updater off is what makes "no general internet egress" true rather
-            # than aspirational, and what makes the pinned rules version honest.
+            # Definitions are the ones baked into the pinned image. Nothing
+            # updates them: clamd is started directly, so the entrypoint that
+            # would launch freshclam never runs. That is what makes "no general
+            # internet egress" true rather than aspirational, and what keeps the
+            # pinned rules version honest. These flags are kept as a declaration
+            # of intent for anyone who restores the entrypoint.
             - {name: CLAMAV_NO_FRESHCLAMD, value: "true"}
             - {name: CLAMAV_NO_MILTERD, value: "true"}
           ports:
@@ -83,21 +120,16 @@ spec:
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
-            # clamd writes its socket and pid under /run and unpacks archives
-            # into /tmp; both are emptyDir, the image layers stay untouched.
-            readOnlyRootFilesystem: false
+            # Everything clamd writes now lives under /tmp, so the root
+            # filesystem can stay read-only.
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
-            # Mounted at the socket directory itself, not at /run: the image's
-            # entrypoint runs `install -d -o clamav /run/clamav`, which cannot
-            # chown a fresh volume as a non-root user and killed the first
-            # start. The container only came up on the retry, because the failed
-            # attempt had already created the directory.
-            - {name: run, mountPath: /run/clamav}
+            - {name: config, mountPath: /etc/clamav/clamd.conf, subPath: clamd.conf}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - name: run
-          emptyDir: {sizeLimit: 64Mi}
+        - name: config
+          configMap: {name: clamav-config}
         - name: tmp
           emptyDir: {sizeLimit: 512Mi}
       terminationGracePeriodSeconds: 30
