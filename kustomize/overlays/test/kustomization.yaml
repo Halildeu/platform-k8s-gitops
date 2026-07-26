@@ -5950,9 +5950,10 @@ images:
     # icin UI yolu %100 kirikti. Sutun genisletilmedi; sinir CommandIdempotencyKeys
     # ile koda tasindi - bugun kalicilasabilen her sekil bayt-bayt ayni kaliyor,
     # yalnizca hic kalicilasamamis sekil daraltiliyor. 148 test yesil.
-    # Immutable build evidence: Actions run 29895260136, endpoint-admin-service
-    # job 88843954553, tag sha-e98aaf5.
-    digest: sha256:6cc0909dcbd2d810dde0cc27904c122aac686e552e5a3a665fb51b7fc78b7997
+    # 2026-07-26 #2913 browser-only TPM certificate renewal: platform-backend
+    # d21f15d424f28dfda3fd9bf23620eed6d81cd2a7, Actions run 30210411525,
+    # endpoint-admin-service job 89815564727, tag sha-d21f15d.
+    digest: sha256:24f7fba20f1ad6586c30a6c56c6bb45f6210c9bff70bc975499373023a5cb688
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
