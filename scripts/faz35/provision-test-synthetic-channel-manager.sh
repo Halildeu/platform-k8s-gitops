@@ -240,15 +240,88 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Verify against the live projection, not against what we just sent.
+# 4. Object authorization. The entitlement above answers "may this account use
+#    the product"; it says nothing about WHICH CASES the account may see.
+#
+#    EthicsAuthorization.can() asks OpenFGA for product membership keyed by the
+#    Keycloak SUBJECT — not by the numeric id the entitlement is built on:
+#
+#      check(user:<kc-subject>, case_viewer, ethics_product:<orgId>)
+#
+#    and the model derives case_viewer as (viewer or triager or handler).
+#    Without a membership tuple listCases filters every case out one at a time,
+#    so the staff list answers HTTP 200 with `[]` — indistinguishable from "this
+#    org has no cases". Measured on the test cell before this step existed: 21
+#    cases in org …0003, list empty, no error in any log.
+#
+#    ethics-service uses its own store, NOT the shared platform store; the model
+#    with these types lives only there.
+# ---------------------------------------------------------------------------
+ETHICS_FGA_STORE="${ETHICS_FGA_STORE:-01KXYKEBVTSGEDYJ5GJ0TY67JD}"
+FGA_CURL_POD="${FGA_CURL_POD:-deploy/meeting-service}"
+[ "$ETHICS_FGA_STORE" = "01KXYKEBVTSGEDYJ5GJ0TY67JD" ] || {
+  echo "FATAL: this script is test-only; ethics store override refused" >&2; exit 1; }
+
+fga() { # method path [body]
+  local method=$1 path=$2 body=${3:-}
+  if [ -n "$body" ]; then
+    kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec "$FGA_CURL_POD" -- \
+      curl -sS --max-time 15 -X "$method" \
+      "http://openfga:8080/stores/$ETHICS_FGA_STORE$path" \
+      -H 'Content-Type: application/json' -d "$body"
+  else
+    kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" exec "$FGA_CURL_POD" -- \
+      curl -sS --max-time 15 -X "$method" "http://openfga:8080/stores/$ETHICS_FGA_STORE$path"
+  fi
+}
+
+# Mirrors the relation pair the existing …0003 entry already carries.
+for relation in triager handler; do
+  out=$(fga POST /write \
+    "{\"writes\":{\"tuple_keys\":[{\"user\":\"user:$user_id\",\"relation\":\"$relation\",\"object\":\"ethics_product:$SYNTHETIC_ORG_ID\"}]}}" || true)
+  case "$out" in
+    *write_failed_due_to_invalid_input*|*already\ exists*)
+      echo "  present: $relation on ethics_product:$SYNTHETIC_ORG_ID" ;;
+    "{}"|"")
+      echo "  written: $relation on ethics_product:$SYNTHETIC_ORG_ID" ;;
+    *)
+      echo "FATAL: unexpected OpenFGA write result" >&2
+      printf '%s\n' "$out" | head -c 300 >&2; echo >&2; exit 1 ;;
+  esac
+done
+
+# Prove the DERIVED relation, not the two just written: case_viewer is computed,
+# so writing triager/handler is not the same fact as holding case_viewer.
+viewer=$(fga POST /check \
+  "{\"tuple_key\":{\"user\":\"user:$user_id\",\"relation\":\"case_viewer\",\"object\":\"ethics_product:$SYNTHETIC_ORG_ID\"}}" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("allowed"))')
+echo "  case_viewer on own product -> $viewer"
+[ "$viewer" = "True" ] || { echo "FATAL: product membership is not authoritative" >&2; exit 1; }
+
+# The grant must not reach the live channel's org. …0001 carries real reports
+# from real people; a synthetic manager able to read them is a privacy incident,
+# not a test-data problem.
+other=$(fga POST /check \
+  "{\"tuple_key\":{\"user\":\"user:$user_id\",\"relation\":\"case_viewer\",\"object\":\"ethics_product:00000000-0000-0000-0000-000000000001\"}}" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("allowed"))')
+echo "  case_viewer on the LIVE org -> $other"
+[ "$other" = "False" ] || { echo "FATAL: the synthetic manager can reach the live channel" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# 5. Verify against the live projection, not against what we just sent.
 # ---------------------------------------------------------------------------
 for _ in $(seq 1 20); do
   projection=$(curl -sS -H "Authorization: Bearer $synthetic_token" "$BASE/api/v1/authz/me")
   if printf '%s' "$projection" | python3 -c '
 import sys, json
 p = json.load(sys.stdin)
+uid, sub = p.get("userId"), p.get("subscriberId")
+# Compare the way the server does — EthicsEntitlementVerifier asks
+# userId.equals(subscriberId.toString()). The projection carries userId as a
+# string and subscriberId as a number, so a raw `==` here is always False and
+# this gate could never pass no matter how correct the provisioning was.
 ok = (
-    p.get("userId") == p.get("subscriberId")
+    uid is not None and sub is not None and uid == str(sub)
     and p.get("superAdmin") is False
     and "ETIK_SPEAK_MANAGER" in (p.get("roles") or [])
     and (p.get("modules") or {}).get("ETHIC") == "MANAGE"
