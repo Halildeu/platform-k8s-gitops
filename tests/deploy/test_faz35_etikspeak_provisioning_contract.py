@@ -1391,6 +1391,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "--max-time 10",
             'if [ "$PREFLIGHT_STAGE" = foundation ]',
             "check_object_headroom secrets 1 1",
+            # The host edge sits in front of ingress-nginx, so its body limit is
+            # the operative one. Without a directive nginx applies a 1m default
+            # and rejects a compliant 25 MiB attachment before reading the body,
+            # while the ingress annotation looks correct.
+            "client_max_body_size 26m;",
             "check_object_headroom services 4 2",
             "check_object_headroom configmaps 3 2",
             "check_object_headroom secrets 3 2",
