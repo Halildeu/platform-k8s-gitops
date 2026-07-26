@@ -18,10 +18,10 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@60b8fbda6 (ats#204 / PR #205)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-60b8fbd
-#   digest  sha256:433873c9e57511dd939f42346beddd43ae9212a94a8e2e4679f89564ff6f361f
-#   run     https://github.com/Halildeu/ats/actions/runs/30191993593
+#   source  ats@a5922489d (ats#204 / PR #206)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-a592248
+#   digest  sha256:e943fe3736a464123954664c5656daffaef3edf47e19e03864d7563035ddd0b9
+#   run     https://github.com/Halildeu/ats/actions/runs/30192674769
 # ats#204: PDF->CV parser'i dekore basliklari taniyor ve iki kolonlu CV'leri
 # ayiriyor (parserVersion pdfbox-3.0.5-rules-v2). Canli olcum: alan kapsami
 # 3/10 -> 8/10, deneyim metni artik skills alanina sizmiyor.
@@ -54,7 +54,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:433873c9e57511dd939f42346beddd43ae9212a94a8e2e4679f89564ff6f361f
+    digest: sha256:e943fe3736a464123954664c5656daffaef3edf47e19e03864d7563035ddd0b9
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
