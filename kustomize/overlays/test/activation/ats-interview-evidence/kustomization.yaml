@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@21356f1 (ats#208 / PR #209)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-21356f1
-#   digest  sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
+#   source  ats@8d2be10 (ats#208 / PR #209 + PR #211 surum bump)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-8d2be10
+#   digest  sha256:4be622bee47bbced406c57c2f8364cdaaba08c2b90bc9e6d7d5ca72ff275e55d
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -30,9 +30,14 @@
 # Lokal olcum (gercek CV, ayni motor) v5 -> v6:
 #   education 61c -> 51c, languages 168c -> 45c, certifications 467c -> 158c,
 #   kapsam 9/10 korundu.
-# CANLI OLCUM HENUZ YAPILMADI: bu pin ArgoCD ile esitlendikten sonra ayni CV
-# ile dogrulanacaktir.
-# Onceki pin: sha-755c745 / parserVersion pdfbox-3.0.5-rules-v5 /
+# v6 DAVRANISI CANLI DOGRULANDI (2026-07-26, ayni CV): education 51c,
+# languages 45c, certifications 158c — lokal olcumle 10/10 uyum, kapsam 9/10.
+# Bu pin ayrica #211 duzeltmesini tasir: #209 davranisi degistirdi ama
+# parserVersion sabitini bump etmemisti; canli olcumde v6 davranisi "v5" diye
+# raporlaniyordu. Artik provenance pdfbox-3.0.5-rules-v6 der.
+# Onceki pin: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
+#   sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
+# Ondan onceki: sha-755c745 / v5 davranisi + v5 provenance (tutarli) /
 #   sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
 # Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
 # migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
@@ -61,7 +66,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
+    digest: sha256:4be622bee47bbced406c57c2f8364cdaaba08c2b90bc9e6d7d5ca72ff275e55d
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
