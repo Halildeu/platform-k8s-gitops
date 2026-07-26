@@ -187,6 +187,36 @@ services:
       test: enabled
       prod: deferred
 
+  - name: ethics-evidence-worker
+    repo: platform-backend
+    description: >-
+      Faz 35 ES-104 evidence custody pipeline: scans, seals and publishes
+      attachment derivatives. Same image as ethics-service, run with the
+      pipeline enabled and its own object-store identity, so processing is a
+      separate failure domain from upload admission.
+    jwt_validates: false   # serves no requests; no Service, no Ingress
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    environments:
+      test: enabled
+      prod: deferred
+
+  - name: clamav
+    repo: platform-k8s-gitops
+    description: >-
+      Malware gate for the evidence pipeline. Digest-pinned with definition
+      updates disabled, reachable only by ethics-evidence-worker.
+    jwt_validates: false
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: third-party
+    probe_contract: tcp-socket
+    environments:
+      test: enabled
+      prod: deferred
+
   - name: etik-speak-public
     repo: platform-web
     description: Faz 35 anonymous report and reporter mailbox test surface

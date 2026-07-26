@@ -175,10 +175,13 @@ if [ "$PREFLIGHT_STAGE" = foundation ]; then
   # foundation provisioning depend on workload quotas that activation owns.
   check_object_headroom secrets 1 1
 else
-  check_object_headroom services 3 2
-  check_object_headroom configmaps 2 2
-  check_object_headroom secrets 2 2
-  check_object_headroom pods 6 2
+  # ES-104G added the evidence worker and the scanner. Both use the Recreate
+  # strategy, so each contributes one pod to the rollout peak rather than two,
+  # and only the scanner adds a Service.
+  check_object_headroom services 4 2
+  check_object_headroom configmaps 3 2
+  check_object_headroom secrets 3 2
+  check_object_headroom pods 8 2
 fi
 [ "$quota_failures" -eq 0 ] || exit 1
 
@@ -273,16 +276,16 @@ external_secret_count=$(awk '
   /^kind: ExternalSecret$/ { count++ }
   END { print count + 0 }
 ' "$rendered")
-[ "$external_secret_count" -eq 3 ] || {
-  echo "FATAL: activation must render exactly three ExternalSecrets" >&2
+[ "$external_secret_count" -eq 4 ] || {
+  echo "FATAL: activation must render exactly four ExternalSecrets" >&2
   exit 1
 }
 [ "$(grep -c '^kind: SecretStore$' "$rendered")" -eq 1 ] || {
   echo "FATAL: activation must render exactly one namespaced SecretStore" >&2
   exit 1
 }
-[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 4 ] || {
-  echo "FATAL: all three ExternalSecrets must reference the namespaced SecretStore" >&2
+[ "$(grep -c 'kind: SecretStore' "$rendered")" -eq 5 ] || {
+  echo "FATAL: all four ExternalSecrets must reference the namespaced SecretStore" >&2
   exit 1
 }
 grep -Fq 'name: vault-platform-gitops' "$rendered" && {

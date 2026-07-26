@@ -15,6 +15,10 @@
 set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
+# shellcheck disable=SC2016 # Single quotes are the mechanism, not an oversight:
+# these strings are programs executed inside a container, and "$1"/$MINIO_ROOT_*
+# must expand there. Expanding them here would put arguments — and in one case a
+# root credential — into this host's process list.
 
 MINIO_CONTAINER="${MINIO_CONTAINER:-minio-minio-test-1}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
