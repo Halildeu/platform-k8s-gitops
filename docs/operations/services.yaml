@@ -26,7 +26,7 @@
 #     What kind of Kubernetes workload renders this service. Determines
 #     whether template-drift / probe-contract / RS-split checks apply.
 #
-#   runtime_class: spring-backend | nginx | openfga | job | lab-tool
+#   runtime_class: spring-backend | nginx | openfga | job | lab-tool | third-party
 #     Coarse classification driving contract selection + JVM warm-up grace.
 #
 #   probe_contract: spring-actuator | http-healthz | exempt
@@ -212,7 +212,7 @@ services:
     route_external: false
     workload_kind: Deployment
     runtime_class: third-party
-    probe_contract: tcp-socket
+    probe_contract: exempt
     environments:
       test: enabled
       prod: deferred
