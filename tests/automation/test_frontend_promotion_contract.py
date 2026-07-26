@@ -79,13 +79,15 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertIn("sourceRevision", self.verify)
         self.assertIn("frontend image/rollout contract", self.verify)
 
-    def test_cluster_and_public_verification_use_separate_trust_surfaces(self):
+    def test_cluster_and_public_verification_keep_explicit_trust_boundaries(self):
         self.assertIn("runs-on: [self-hosted, aiserver, testai-deploy]", self.verify)
-        self.assertIn("runs-on: ubuntu-24.04", self.verify)
+        self.assertNotIn("runs-on: ubuntu-24.04", self.verify)
         self.assertIn("--cluster-only", self.verify)
-        self.assertIn("--public-only", self.verify)
+        self.assertNotIn("--public-only", self.verify)
+        self.assertIn("--public-only", self.runtime_verifier)
         self.assertIn(
-            "if: needs.verify.outputs.should_verify == 'true'", self.verify
+            "public WG/corporate browser route: separate acceptance gate",
+            self.verify,
         )
         self.assertIn(
             "cluster-only and public-only are mutually exclusive",
