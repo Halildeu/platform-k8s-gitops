@@ -21,6 +21,15 @@ set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
 
+# The staff API validates `iss` against the PUBLIC issuer, so a token minted
+# through the loopback admin address is rejected with
+# `invalid_token ... The realm_access claim is not valid` only after a more
+# confusing `iss` mismatch — either way it never authenticates. Mint through
+# the public hostname and resolve it to the local edge, so the issuer recorded
+# in the token is the one the service expects.
+KC_PUBLIC_BASE="${KC_PUBLIC_BASE:-https://testai.acik.com}"
+KC_PUBLIC_HOST="${KC_PUBLIC_HOST:-testai.acik.com}"
+KC_EDGE_ADDR="${KC_EDGE_ADDR:-127.0.0.1}"
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_REALM="${KC_REALM:-platform-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
@@ -142,7 +151,21 @@ print(json.dumps({"type": "password", "value": sys.stdin.read(), "temporary": Fa
 role_repr=$(kc "$KC_BASE_URL/admin/realms/$KC_REALM/roles/ethics-manager")
 printf '[%s]' "$role_repr" | kc -o /dev/null -X POST -H 'Content-Type: application/json' \
   --data-binary @- "$KC_BASE_URL/admin/realms/$KC_REALM/users/$user_id/role-mappings/realm"
-echo "keycloak: org claim, credential and ethics-manager role asserted"
+
+# The write above discards its response, so a rejected representation used to
+# leave the user with only `default-roles-*` while this script still reported
+# the role as asserted. ethics-service then answers `The realm_access claim is
+# not valid` — a message that points at the token, not at the missing grant, and
+# costs an afternoon to trace back here. Read the membership back instead of
+# trusting the write.
+kc "$KC_BASE_URL/admin/realms/$KC_REALM/users/$user_id/role-mappings/realm" \
+  | python3 -c 'import sys, json
+roles = {r["name"] for r in json.load(sys.stdin)}
+sys.exit(0 if "ethics-manager" in roles else 1)' || {
+  echo "FATAL: ethics-manager realm role did not take; the user carries only its default roles" >&2
+  exit 1
+}
+echo "keycloak: org claim, credential and ethics-manager role asserted (membership read back)"
 
 # ---------------------------------------------------------------------------
 # 3. Authorization plane. permission-service is not routable from this host;
@@ -160,14 +183,21 @@ done
 BASE="http://127.0.0.1:$LOCAL_PORT"
 
 mint() { # username, password on stdin
-  local username=$1 password
+  # `frontend` has direct access grants disabled, so a password grant against
+  # it is refused before any scope is evaluated. `smoke-client` is the
+  # confidential client that carries this recipe; its secret lives in Vault and
+  # is read here rather than passed in, so it never reaches a process list.
+  local username=$1 password smoke_secret
   IFS= read -r password
-  curl -sS -X POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
-    -d grant_type=password -d client_id=frontend \
+  smoke_secret=$(vault_field kv/platform/keycloak/smoke-client client_secret)
+  curl -sS -k --resolve "$KC_PUBLIC_HOST:443:$KC_EDGE_ADDR" \
+    -X POST "$KC_PUBLIC_BASE/realms/$KC_REALM/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=smoke-client \
+    --data-urlencode "client_secret=$smoke_secret" \
     --data-urlencode "username=$username" --data-urlencode "password=$password" \
     --data-urlencode "scope=openid ethics-manager-audience ethics:case:manage" \
   | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))'
-  unset password
+  unset password smoke_secret
 }
 
 synthetic_token=$(sudo cat "$SYNTHETIC_PASSWORD_FILE" | mint "$SYNTHETIC_USERNAME")
