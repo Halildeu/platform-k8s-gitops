@@ -28,6 +28,9 @@ class FrontendPromotionContractTests(unittest.TestCase):
         cls.image_availability = (
             ROOT / "scripts/deploy/check-testai-frontend-image-availability.sh"
         ).read_text()
+        cls.runtime_verifier = (
+            ROOT / "scripts/deploy/verify-testai-frontend-runtime.sh"
+        ).read_text()
 
     def test_dispatch_path_has_no_direct_workload_mutation(self):
         forbidden = re.compile(r"kubectl\s+(set\s+image|patch|edit)")
@@ -75,6 +78,20 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertIn("--expected-sha", self.verify)
         self.assertIn("sourceRevision", self.verify)
         self.assertIn("frontend image/rollout contract", self.verify)
+
+    def test_cluster_and_public_verification_use_separate_trust_surfaces(self):
+        self.assertIn("runs-on: [self-hosted, aiserver, testai-deploy]", self.verify)
+        self.assertIn("runs-on: ubuntu-24.04", self.verify)
+        self.assertIn("--cluster-only", self.verify)
+        self.assertIn("--public-only", self.verify)
+        self.assertIn(
+            "if: needs.verify.outputs.should_verify == 'true'", self.verify
+        )
+        self.assertIn(
+            "cluster-only and public-only are mutually exclusive",
+            self.runtime_verifier,
+        )
+        self.assertIn("--connect-timeout 10 --max-time 30", self.runtime_verifier)
 
     def test_live_quota_preflight_runs_immediately_before_argocd(self):
         preflight = "bash scripts/deploy/preflight-testai-frontend-rollout.sh"
