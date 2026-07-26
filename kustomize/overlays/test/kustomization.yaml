@@ -6284,7 +6284,15 @@ images:
     # 2026-07-24 Faz 35 ES-208 update: platform-backend#926 main
     # 782cb42c seeds the fixed-copy, external-disabled ethics.case.activity
     # templates. CI image run 30061630961, signed GitHub provenance.
-    digest: sha256:b28e8614f5f9129300759b914af540bf5a9b02e8a15285cd43d75fcc1c0f7556
+    #
+    # 2026-07-26 update: bump to sha-14ec2d5 (platform-backend #937). Faz 35
+    # delivery was rejected at this service's submit gate with an opaque 400:
+    # the validation advice was narrowed to NotificationIntentController, so
+    # the internal service-to-service endpoint — the one Faz 35 uses — was the
+    # only intent endpoint that could not say which field it disliked. It now
+    # reports the failing field like every other one. Digest read back from a
+    # real pull into the target cluster.
+    digest: sha256:b5eccc18f387332ca8beb035cd8082128c5613ae04968786838f776e5b4c1b4d
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.18:

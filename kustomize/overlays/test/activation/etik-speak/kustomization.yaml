@@ -30,7 +30,7 @@ images:
   # already left a service silently un-rolled.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:faa6eaa79eac8e5a6270ac3df5026a6a03f4598af82037dbd101b82ef0522468
+    digest: sha256:f581cc9ce96066442c60b8a7b2b2e3f30ef122a83a3e8873953f16cbe13c89d7
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -65,7 +65,10 @@ patches:
         value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"
       - op: add
         path: /data/ETHICS_NOTIFICATION_CHANNEL
-        value: "inapp"
+        # The orchestrator's allow-set spells this `in-app`. `inapp` was
+        # rejected at the submit gate, so every Faz 35 signal dead-lettered
+        # while both services looked healthy (platform-backend #937).
+        value: "in-app"
       - op: add
         path: /data/ETHICS_NOTIFICATION_LOCALE
         value: "tr-TR"
