@@ -84,6 +84,12 @@ kubectl --context "$TEST_CONTEXT" -n "$TEST_NAMESPACE" create \
 kubectl --context "$TEST_CONTEXT" -n "$TEST_NAMESPACE" get \
   resourcequota "$QUOTA_NAME" -o json > "$live_quota_json"
 
+# gitops#2885: kota headroom'u yetmez — imaj gerçekten çekilebilir olmalı.
+# Aksi halde ArgoCD mutasyonu ImagePullBackOff üretir, eski pod cache'ten ayakta
+# kalır ve hata SESSİZ geçer (PR yeşil, merge OK, kullanıcı eski UI'ı görür).
+# Bu kontrol Argo mutasyonundan ÖNCE fail-closed durur.
+bash scripts/deploy/check-testai-frontend-image-availability.sh "$deployment_json"
+
 args=(
   --deployment-json "$deployment_json"
   --desired-quota-json "$desired_quota_json"
