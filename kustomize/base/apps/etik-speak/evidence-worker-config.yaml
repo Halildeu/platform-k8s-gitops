@@ -25,7 +25,12 @@ data:
   ETHICS_EVIDENCE_SCANNER_DIGEST: "sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
   ETHICS_EVIDENCE_SANITIZER_DIGEST: "sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
   ETHICS_EVIDENCE_PARSER_DIGEST: "sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
-  ETHICS_EVIDENCE_RULES_VERSION: "clamav-1.4.3-bundled"
+  # This is not a label we choose: the processor compares it byte-for-byte with
+  # clamd's own VERSION reply and refuses to scan on any difference. A friendly
+  # human string here fails every scan with EVIDENCE_SCANNER_RULES_MISMATCH.
+  # It is stable because definition updates are disabled — which is also what
+  # makes pinning it meaningful rather than a value that drifts nightly.
+  ETHICS_EVIDENCE_RULES_VERSION: "ClamAV 1.4.3/27927/Sun Mar  1 07:24:39 2026"
   ETHICS_EVIDENCE_TRANSFORM_PROFILE: "faz35-baseline-v1"
   ETHICS_EVIDENCE_POLL_DELAY: "5s"
   ETHICS_EVIDENCE_BATCH_SIZE: "10"

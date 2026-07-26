@@ -1961,6 +1961,25 @@ spec:
         self.assertIn("intentionally an isolated SPA", self.activation_runbook)
         self.assertIn("Neither source tests nor attestation replace Gate 4", self.activation_runbook)
 
+    def test_pinned_scanner_rules_version_is_a_real_clamd_reply(self):
+        """The processor compares this value byte-for-byte with clamd's own
+        VERSION reply and refuses to scan on any difference. A human-friendly
+        label here does not fail loudly at deploy time — every attachment simply
+        stops at SCAN_PENDING with EVIDENCE_SCANNER_RULES_MISMATCH, which reads
+        like a scanner outage rather than a config error."""
+        worker_config = (
+            ROOT / "kustomize/base/apps/etik-speak/evidence-worker-config.yaml"
+        ).read_text()
+        match = re.search(
+            r'(?m)^  ETHICS_EVIDENCE_RULES_VERSION: "([^"]+)"$', worker_config
+        )
+        self.assertIsNotNone(match)
+        self.assertRegex(
+            match.group(1),
+            r"^ClamAV \d+\.\d+\.\d+/\d+/.+$",
+            "pinned rules version must be a verbatim clamd VERSION reply",
+        )
+
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
             'requests.cpu: "700m"',

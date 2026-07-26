@@ -294,7 +294,13 @@ worker_policy_document() {
     },
     {
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectVersion"],
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObjectRetention",
+        "s3:GetObjectRetention"
+      ],
       "Resource": ["arn:aws:s3:::$SEALED_BUCKET/*"]
     },
     {
