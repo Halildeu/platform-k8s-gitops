@@ -137,7 +137,22 @@ images:
   # Live test smoke 2026-04-25 00:04 TR saati: D29 3-layer PASS (Up+Functional+Zanzibar-ready).
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
-    newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
+    # 2026-07-26 GECICI KAYNAK DEGISIMI — yerel registry (gitops#2876 acikken).
+    # Normalde GHCR canonical'dir. Ama #2876 (ghcr-pull kimligi `read:packages`
+    # yetkisiz) yuzunden YENI hicbir GHCR imaji cekilemiyor; cumle birlestirici
+    # (platform-backend#918, 2026-07-22) mevcut pin'den SONRA merge edildigi
+    # icin calisan imajda kodu YOK ve flag'i acmak hicbir sey yapmazdi.
+    #
+    # Cozum: imaj hostta main'den (ffaa235) derlendi ve k3d-test'in containerd
+    # mirror'ina bagli yerel registry'e push edildi — GHCR kimligi devrede degil.
+    # Assembler siniflarinin imajda oldugu KANITLANDI (BOOT-INF/classes altinda
+    # SentenceAssembler/SentenceBoundary/ChunkReorderBuffer/SequenceEpochs, 7
+    # eslesme) ve cluster'in cekebildigi git'e yazilmadan ONCE dogrulandi.
+    #
+    # GERI DONUS: #2876 kapaninca canonical GHCR digest'ine donulmeli (o zaman
+    # pull-edilebilirlik KANITLANARAK pin'lenir — bkz. #2883 dersi).
+    # LOCAL-REGISTRY-EXCEPTION: gitops#2876
+    newName: platform-test-registry:5000/platform-backend-audio-gateway-service
     # 2026-06-24 update: sha-23a7607 (platform-backend#745) adds
     # POST /api/v1/audio-gateway/consents as the server-time recorder consent
     # audit proof. The gateway derives tenant/user/subject/server time from JWT
@@ -266,7 +281,7 @@ images:
     # this pin changes nothing at runtime until a follow-up flips enable +
     # base-url. Image build run 29789029837, superset of sha-b3c93e2 (WS
     # handshake header forward). D30 immutable digest pin.
-    digest: sha256:db1bdb6fdee8c98ad951e59aadf433d61477346e1e3fd0b93df98e4c8561e953
+    digest: sha256:0bd85f41c5d72b8b202fc833ad3e489c992db9aa924f83fb44c7caef6f17c7ca
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -8440,7 +8455,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-11-184-ws-doublerelease-fix-v4"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-26-sentence-assembly-v1"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -8472,6 +8487,34 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED
         value: "true"
+      # --- Faz 24 cumle birlestirme (platform-backend#918) ---
+      #
+      # SORUN: kullanicinin bildirdigi "ayni cumleyi on satirda okuyorsun".
+      # live-stt AKUSTIK sinirda commit eder (sessizlik/sure), DILBILIMSEL
+      # sinirda degil — bir cumle bu yuzden N parcaya boluner.
+      #
+      # Assembler bu parcalari okunabilir satirlara birlestirir ve UTTERANCE
+      # olarak yayinlar; ham parcalar DRAFT olarak akmaya devam eder.
+      #
+      # SIRA ONEMLI: istemci UTTERANCE render'i ONCE inmeliydi
+      # (platform-desktop#89, merged) — aksi halde UTTERANCE default'a dusup
+      # 'draft' sayiliyor ve AYRI eventId tasidigi icin ayni metin hem parcali
+      # hem butun goruntuleniyordu (cift satir).
+      #
+      # ON KOSUL: aggregation.enabled=true olmali. Kod fail-closed:
+      # AudioGatewayProperties.validate() aksi halde BOOT ETTIRMEZ. Base'de
+      # AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_ENABLED=true (dogrulandi).
+      #
+      # ROLLBACK: bu uc satiri kaldir (assembly default false) + rev bump.
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SENTENCE_ASSEMBLY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SENTENCE_ASSEMBLY_MAX_SPEECH_MS
+        value: "12000"
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SENTENCE_ASSEMBLY_IDLE_MS
+        value: "2000"
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL
         value: "wss://live-stt.denetim:8243/ws/stream"

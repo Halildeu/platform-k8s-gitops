@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -78,6 +80,53 @@ class BackendTestaiDigestContractTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(set(REQUIRED), set(json.loads(result.stdout)))
+
+    def test_local_registry_requires_exception_marker(self):
+        """GHCR canonical'dir; yerel registry YALNIZ isaretlenmis blocker ile.
+
+        gitops#2876'da ghcr-pull kimligi read:packages'i kaybedince yeni hicbir
+        GHCR imaji cekilemedi ve tek ilerleme yolu imaji hostta derleyip yerel
+        registry'e push etmekti. Bu mesru bir kacis yolu, ama SESSIZ olmamali:
+        marker hangi issue'nun bunu zorladigini soyler ve blocker kapanip marker
+        kaldirilinca guard otomatik olarak yeniden sikilasir.
+
+        Isaretsiz kullanimin REDDEDILDIGINI kanitlar — aksi halde bu istisna
+        guard'i kalici olarak zayiflatirdi.
+        """
+        overlay = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "platform-test-registry:5000/platform-backend-audio-gateway-service",
+            overlay,
+            "bu test yerel-registry kullanimi varken anlamli",
+        )
+
+        stripped = "\n".join(
+            line for line in overlay.splitlines()
+            if "LOCAL-REGISTRY-EXCEPTION" not in line
+        )
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".yaml", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(stripped)
+            unmarked = handle.name
+        try:
+            result = subprocess.run(
+                ["python3", str(SCRIPT), "inspect", "--kustomization", unmarked],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            combined = result.stdout + result.stderr
+            self.assertIn(
+                "without a '# LOCAL-REGISTRY-EXCEPTION",
+                combined,
+                "isaretsiz yerel registry reddedilmeliydi",
+            )
+        finally:
+            os.unlink(unmarked)
 
 
 if __name__ == "__main__":
