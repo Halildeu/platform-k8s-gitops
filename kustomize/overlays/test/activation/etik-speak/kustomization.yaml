@@ -30,7 +30,7 @@ images:
   # already left a service silently un-rolled.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:f581cc9ce96066442c60b8a7b2b2e3f30ef122a83a3e8873953f16cbe13c89d7
+    digest: sha256:6203b977b4cbf24dc8f447895616d692667378476e9be60bb8c7bafb776d175b
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
