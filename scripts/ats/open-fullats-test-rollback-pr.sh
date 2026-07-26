@@ -116,7 +116,7 @@ git checkout -B "$branch" origin/main --quiet
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 
-ATS_CURRENT="sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc"
+ATS_CURRENT="sha256:4be622bee47bbced406c57c2f8364cdaaba08c2b90bc9e6d7d5ca72ff275e55d"
 PERMISSION_CURRENT="sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
 # Exact #2636 promotion tuple. This compensator is intentionally not a generic
 # rollback for later automatic frontend promotions.
