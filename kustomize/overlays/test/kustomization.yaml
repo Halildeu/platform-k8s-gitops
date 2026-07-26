@@ -5963,7 +5963,10 @@ images:
     # 2026-07-26 #2913 browser-only TPM certificate renewal: platform-backend
     # d21f15d424f28dfda3fd9bf23620eed6d81cd2a7, Actions run 30210411525,
     # endpoint-admin-service job 89815564727, tag sha-d21f15d.
-    digest: sha256:24f7fba20f1ad6586c30a6c56c6bb45f6210c9bff70bc975499373023a5cb688
+    # 2026-07-26 #2913 scoped Endpoint Admin tenant claim: platform-backend
+    # 2dc8452f131b6a37dcf454a353eab41f8c6e03c5, Actions run 30216061034,
+    # endpoint-admin-service job 89830348624, tag sha-2dc8452.
+    digest: sha256:51b3f64d235adf1de4265b8e896ff6800d3f89e939b445951b7a8e97610c46a3
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

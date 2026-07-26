@@ -71,6 +71,8 @@ images:
   # superset (device-key hardening retained: incarnation guard, evidence-window,
   # session_challenge_hash audit); verified via merge-base ancestry. Activation
   # remains owner-gated; live VIEW_ONLY evidence + KVKK signoff still separate.
+  # 2026-07-26 #2913 same-image co-bump: backend 2dc8452f, build run
+  # 30216061034, endpoint-admin job 89830348624. Activation remains owner-gated.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:24f7fba20f1ad6586c30a6c56c6bb45f6210c9bff70bc975499373023a5cb688
+    digest: sha256:51b3f64d235adf1de4265b8e896ff6800d3f89e939b445951b7a8e97610c46a3
