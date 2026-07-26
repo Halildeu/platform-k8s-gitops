@@ -1966,6 +1966,46 @@ spec:
         self.assertIn("intentionally an isolated SPA", self.activation_runbook)
         self.assertIn("Neither source tests nor attestation replace Gate 4", self.activation_runbook)
 
+    def test_worker_memory_budget_covers_a_contract_maximum_attachment(self):
+        """The pipeline holds a whole attachment in memory and then its
+        sanitized derivative alongside it. At a limit below that the worker is
+        OOM-killed mid-scan, the processing lease expires, another attempt
+        starts, and the attachment livelocks — while every pod stays Ready and
+        every dashboard stays green. Bind the memory budget to the declared
+        maximum so raising one without the other fails here instead of in
+        production."""
+        worker_config = (
+            ROOT / "kustomize/base/apps/etik-speak/evidence-worker-config.yaml"
+        ).read_text()
+        service_config = (
+            ROOT / "kustomize/base/apps/etik-speak/ethics-service-config.yaml"
+        ).read_text()
+        max_bytes_match = re.search(
+            r'(?m)^  ETHICS_EVIDENCE_MAX_BYTES: "(\d+)"$', service_config
+        )
+        self.assertIsNotNone(max_bytes_match)
+        max_bytes = int(max_bytes_match.group(1))
+
+        deployment = (
+            ROOT / "kustomize/base/apps/etik-speak/evidence-worker-deployment.yaml"
+        ).read_text()
+        limit_match = re.search(r"limits: \{cpu: [^,]+, memory: (\d+)Mi\}", deployment)
+        self.assertIsNotNone(limit_match)
+        limit_bytes = int(limit_match.group(1)) * 1024 * 1024
+
+        # Two copies of the payload plus a Spring baseline that measured ~300Mi.
+        required = 2 * max_bytes + 300 * 1024 * 1024
+        self.assertGreaterEqual(
+            limit_bytes,
+            required,
+            f"worker memory limit {limit_bytes} is below the "
+            f"{required} needed for a {max_bytes}-byte attachment",
+        )
+        # A heap budget must be stated: the JVM otherwise claims 25% of the
+        # limit, so raising the limit alone changes nothing.
+        self.assertIn("MaxRAMPercentage", deployment)
+        self.assertIn("JAVA_TOOL_OPTIONS", deployment)
+
     def test_pinned_scanner_rules_version_is_a_real_clamd_reply(self):
         """The processor compares this value byte-for-byte with clamd's own
         VERSION reply and refuses to scan on any difference. A human-friendly
@@ -1988,9 +2028,9 @@ spec:
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
             'requests.cpu: "700m"',
-            "requests.memory: 2560Mi",
-            'limits.cpu: "4000m"',
-            "limits.memory: 5Gi",
+            "requests.memory: 3Gi",
+            'limits.cpu: "4500m"',
+            "limits.memory: 6Gi",
         ):
             self.assertIn(expected, self.product_quota)
 

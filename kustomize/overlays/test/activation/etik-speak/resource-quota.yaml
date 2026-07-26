@@ -17,7 +17,7 @@ spec:
     # into RSS, and a ceiling that merely looks generous gets it OOM-killed
     # during startup — which presents as a crash-loop with no scan ever run.
     requests.cpu: "700m"
-    requests.memory: 2560Mi
-    limits.cpu: "4000m"
-    limits.memory: 5Gi
+    requests.memory: 3Gi
+    limits.cpu: "4500m"
+    limits.memory: 6Gi
     pods: "10"
