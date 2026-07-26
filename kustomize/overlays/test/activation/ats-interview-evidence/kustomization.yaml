@@ -18,22 +18,22 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@755c745b1 (ats#204 / PR #207)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-755c745
-#   digest  sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
-#   run     https://github.com/Halildeu/ats/actions/runs/30194039119
-# ats#204: PDF->CV parser'i ayni taban hizasindaki iki kolonu satir ICINDE
-# ayiriyor (parserVersion pdfbox-3.0.5-rules-v5). PDFBox boyle bir satiri TEK
-# satir olarak yayar ve oluk glifsizdir; onceki pin satiri baslangic x'ine gore
-# siniflandirdigi icin yan cubuk basliklari hic gorulmuyordu.
-# Lokal olcum (gercek CV, ayni motor): kapsam 7/10 -> 9/10; education ve
-# languages artik cikiyor, certifications 3561c -> 467c (deneyimi yutmuyor).
+#   source  ats@21356f1 (ats#208 / PR #209)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-21356f1
+#   digest  sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
+# ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
+# bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
+# yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
+# sekilli satirlarin IS UNVANI oldugunu gosterdi (HSE MANAGER, SITE CHIEF) ve
+# onlarda kapatmak deneyim bolumunu yok ederdi. Baslik iki satira sariyorsa
+# (CERTIFICATIONS & / TRAINING) devam satiri yutulur, bolum kapanmaz.
+# Lokal olcum (gercek CV, ayni motor) v5 -> v6:
+#   education 61c -> 51c, languages 168c -> 45c, certifications 467c -> 158c,
+#   kapsam 9/10 korundu.
 # CANLI OLCUM HENUZ YAPILMADI: bu pin ArgoCD ile esitlendikten sonra ayni CV
-# ile ucuncu olcum yapilacaktir. Onceki iki turda prototip canliyi yanlis
-# tahmin etti (8/10 iddia, 7/10 gerceklesti), bu yuzden lokal sonuc canli
-# kanit sayilmaz.
-# Onceki pin: sha-a592248 /
-#   sha256:e943fe3736a464123954664c5656daffaef3edf47e19e03864d7563035ddd0b9
+# ile dogrulanacaktir.
+# Onceki pin: sha-755c745 / parserVersion pdfbox-3.0.5-rules-v5 /
+#   sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
 # Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
 # migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
 # identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
@@ -61,7 +61,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
+    digest: sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
