@@ -23,7 +23,7 @@ jobs:
     # compensating rollback PR if runtime/browser acceptance fails.
     timeout-minutes: 90
     env:
-      EXPECTED_ATS_DIGEST: sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
+      EXPECTED_ATS_DIGEST: sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
       EXPECTED_PERMISSION_DIGEST: sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
       ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29788943515
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29806437506
