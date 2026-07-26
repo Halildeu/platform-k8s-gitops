@@ -14,17 +14,27 @@ resources:
   - resource-quota.yaml
   - priority-class.yaml
 images:
-  # Exact branch artifacts: backend merge 782cb42c / run 30061630961 (Faz 35
-  # ES-207 append-only audit delivery + ES-208 durable privacy-safe notification
-  # delivery + ES-306/M2 intake hardening, platform-backend PR #926), public-web
-  # source 4eaf02bf / run 29710051185, and dedicated manager-web source
-  # 2fae733d / run 29787052080. Their immutable identities are content-bound
-  # by signed provenance in the Faz 35 image-set ledger. Root activation is
-  # included only by the post-provisioning commit that pins the reviewed
-  # Vault role and OpenFGA store/model IDs.
+  # Exact branch artifacts: backend merge ffaa2352 / run 30192977173, which is
+  # the first main build carrying the fail-closed evidence custody pipeline and
+  # the lost-capability rotation fix (platform-backend #927 and #928 — the cell
+  # had been running the 2026-07-21 image, in which the attachment endpoints do
+  # not exist at all and every declaration answered 403). public-web source
+  # 4eaf02bf / run 29710051185; dedicated manager-web source 2fae733d / run
+  # 29787052080. Their immutable identities are content-bound by signed
+  # provenance in the Faz 35 image-set ledger. Root activation is included only
+  # by the post-provisioning commit that pins the reviewed Vault role and
+  # OpenFGA store/model IDs.
+  #
+  # This digest was read back from an actual pull into the target cluster. A
+  # build-log digest is not evidence that a tag is pullable, and pinning one has
+  # already left a service silently un-rolled.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:d88581e6e96453835e7e515ab0c66c53e2aeabfe10ece0fe40c6cda551b22875
+    digest: sha256:faa6eaa79eac8e5a6270ac3df5026a6a03f4598af82037dbd101b82ef0522468
+  # Pinned scanner. The same digest is handed to the pipeline as its declared
+  # scanner identity, so recorded provenance and running container cannot drift.
+  - name: docker.io/clamav/clamav
+    digest: sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
@@ -92,6 +102,22 @@ patches:
           secretRef:
             name: ethics-service-notification-secret
             optional: false
+  - target: {kind: Deployment, name: ethics-evidence-worker}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+  - target: {kind: Deployment, name: clamav}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
   - target: {kind: Deployment, name: etik-speak-public}
     patch: |-
       - op: replace

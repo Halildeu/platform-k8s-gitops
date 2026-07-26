@@ -15,8 +15,17 @@ metadata:
     # + backend ES-306 hardening ile enforce edilir. ES-106 header/cookie
     # minimization and per-client rate limit run at the host edge, before the
     # cluster boundary.
-    nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    # ES-104G: the custody contract caps a declaration at 26214400 bytes and the
+    # service enforces that ceiling itself. A 2m edge limit silently overrode it
+    # — anything larger died as a 413 at nginx, so the published 25 MiB policy
+    # was never the operative one. 26m leaves room for request framing above the
+    # exact byte cap the application rejects on its own.
+    nginx.ingress.kubernetes.io/proxy-body-size: "26m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    # A 25 MiB upload over a slow link must not be cut off mid-stream by a
+    # timeout sized for small JSON intake calls.
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
 spec:
   ingressClassName: nginx
   tls:

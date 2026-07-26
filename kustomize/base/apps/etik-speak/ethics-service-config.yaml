@@ -30,6 +30,27 @@ data:
   # the reviewed provisioner before root activation. These IDs are non-secret.
   ERP_OPENFGA_STORE_ID: "01KXYKEBVTSGEDYJ5GJ0TY67JD"
   ERP_OPENFGA_MODEL_ID: "01KXYKECVDKPK3B45A8RNXKS4X"
+  # --- ES-104G evidence custody, request-facing half -----------------------
+  # This process admits an upload and streams a finished derivative back to an
+  # authorized manager. It deliberately does NOT run the pipeline and does NOT
+  # scan: processing lives in ethics-evidence-worker with its own credentials,
+  # so a scanner outage or a worker compromise cannot take intake down with it.
+  ETHICS_EVIDENCE_ENABLED: "true"
+  ETHICS_EVIDENCE_PIPELINE_ENABLED: "false"
+  ETHICS_EVIDENCE_PROCESSOR_MODE: "disabled"
+  ETHICS_EVIDENCE_MAX_BYTES: "26214400"
+  ETHICS_EVIDENCE_UPLOAD_TTL: "10m"
+  ETHICS_EVIDENCE_SEALED_RETENTION: "30d"
+  # Host-bridged MinIO (kustomize/base/host-services/minio-svc.yaml). AES256 is
+  # pinned by the custody contract and the service refuses to start on anything
+  # else, so the store must have a KMS — see scripts/faz35/provision-test-evidence-custody.sh.
+  ETHICS_EVIDENCE_S3_ENDPOINT: "http://minio:9000"
+  ETHICS_EVIDENCE_S3_REGION: "us-east-1"
+  ETHICS_EVIDENCE_S3_PATH_STYLE: "true"
+  ETHICS_EVIDENCE_S3_SSE: "AES256"
+  ETHICS_EVIDENCE_QUARANTINE_BUCKET: "ethics-evidence-quarantine"
+  ETHICS_EVIDENCE_SEALED_BUCKET: "ethics-evidence-sealed"
+  ETHICS_EVIDENCE_DERIVATIVE_BUCKET: "ethics-evidence-derivative"
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
   SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
