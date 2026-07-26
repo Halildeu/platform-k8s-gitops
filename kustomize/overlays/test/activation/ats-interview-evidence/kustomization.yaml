@@ -18,9 +18,9 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@ef2b3cc (ats#216 — yapisal deneyim/egitim girdileri, genisletme adimi)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-ef2b3cc
-#   digest  sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
+#   source  ats@e1eca6d (ats#217 — form etiketi ad alanina dolmasin, parserVersion v8)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-e1eca6d
+#   digest  sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -52,16 +52,43 @@
 # API: experience/education artik `required` DEGIL (dogrulama turetilmis deger
 # uzerinde kosar). OpenAPI snapshot diff'i incelenerek yeniden pinlendi:
 # 2 yeni sema, 4 opsiyonel alan, silinen sema/yol YOK.
-# Onceki pin: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
+#
+# ats#217 (parserVersion v8) — SAHIP BILDIRIMI, canli form ekran goruntusuyle:
+# CV ice aktarma ZORUNLU ad alanini "Calismak Istedigi Iller :" ile doldurmustu;
+# bu bir kariyer.net FORM ETIKETI. Alan bos kalmadi, YANLIS doldu — daha kotusu,
+# cunku aday fark etmeyebilir. Kok neden: looksLikeHeading iki nokta ile biten
+# satiri KOSULSUZ baslik sayar (bolum tespiti icin dogru — form etiketi gercekten
+# bolum baslatir) ama bu %70 buyuk-harf olcutunu atlatir ve ad-soyad sezgisi
+# etiketi ilk aday yapar. Iki nokta tam olarak "bu bir etikettir" sinyalidir.
+# Uc dar duzeltme (hepsi DARALTMA; buyuk-harf kurali gevsetilmedi — gevsetme
+# daha once olculdu ve reddedildi, referans CV 9/10 -> 5/10 dusmustu):
+#   1) ad adayi iki nokta iceren satiri reddeder
+#   2) TEKIL "sertifika" sozluge eklendi — ek toleransi tek yone calisir (satir
+#      token'i etiketi uzatabilir, kisaltamaz); CV "SERTIFIKA BILGILERI" yaziyor,
+#      sozlukte yalniz cogul vardi, bolum acilmadi ve sertifikalar DILLER
+#      alanina yutuldu (645c)
+#   3) "bilgisayar bilgileri" SKILLS'e COK KELIMELI eklendi — tek basina
+#      "bilgisayar" ek toleransiyla "BILGISAYAR MUHENDISLIGI"ni de yakalar ve
+#      egitim bolumunu kapatirdi (test iki yonu de sabitler)
+# Olcum, 5 gercek CV, uretim motoruyla (PDFBox), v7 -> v8:
+#   kariyer.net CV 7/10 -> 8/10; FULL_NAME yanlis deger -> yok;
+#   LANGUAGES 645c -> 26c; SKILLS yok -> 49c; CERTIFICATIONS yok -> 527c
+#   Ingilizce referans CV 9/10 -> 9/10, HER DEGER BIREBIR AYNI
+#   diger 3 CV degismedi (2/10, 3/10, 3/10)
+# YAPMADIGI: yanlis adi keser, DOGRU adi bulmaz. O CV'nin baslik satirlari
+# yapisal olarak olculdu: ad satiri %20 buyuk harf — kariyer.net'te ad da diger
+# basliklar gibi mixed-case. Yakalamak tipografi sinyali ister (font boyutu +
+# bold) ve ayri istir (ats#213). Simdilik alan BOS kalir; bos, yanlistan iyidir.
+# Onceki pin: sha-ef2b3cc / #215 A yapisal girdiler + V17 /
+#   sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
+# Ondan onceki: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
 #   sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
-# Ondan onceki: sha-755c745 / v5 davranisi + v5 provenance (tutarli) /
-#   sha256:0d2d03691ac3e982b37d94a18595b670695b575c9edaae623c05e80214171513
 # Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
 # migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
 # identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
 # ilan, CV import, pipeline/evaluation ve mülakat akışlarını taşır; DSAR
 # remediation ayrı owner-gated iş olarak fail-closed kalır.
-#   build   https://github.com/Halildeu/ats/actions/runs/29788943515
+#   build   https://github.com/Halildeu/ats/actions/runs/30205479631
 # Canlı D29 + aday/İK yolculuğu bu GitOps değişikliği ArgoCD ile
 # eşitlendikten sonra faz25-fullats-live-browser-acceptance ile üretilecektir.
 #
@@ -83,7 +110,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
+    digest: sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
