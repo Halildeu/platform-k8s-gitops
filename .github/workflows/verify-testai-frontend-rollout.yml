@@ -25,12 +25,6 @@ jobs:
     name: Reconcile merged pin and verify cluster runtime
     runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
-    outputs:
-      should_verify: ${{ steps.pin.outputs.should_verify }}
-      reconcile_revision: ${{ steps.pin.outputs.reconcile_revision }}
-      source_sha: ${{ steps.pin.outputs.source_sha }}
-      short_sha: ${{ steps.pin.outputs.short_sha }}
-      digest: ${{ steps.pin.outputs.digest }}
 
     steps:
       - name: Checkout merged desired state
@@ -221,24 +215,6 @@ jobs:
             echo "- rollout policy: \`maxSurge=1 / maxUnavailable=0\`"
             echo "- quota gate: rendered frontend + desired/live ResourceQuota"
             echo "- mutation path: ArgoCD application reconciliation only"
+            echo "- public WG/corporate browser route: separate acceptance gate"
             echo "- authenticated Meeting behavior: separate acceptance gate"
           } >> "$GITHUB_STEP_SUMMARY"
-
-  verify-public:
-    name: Verify public frontend entry and build lineage
-    needs: verify
-    if: needs.verify.outputs.should_verify == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout merged desired state
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Verify public entry and exact build lineage
-        run: |
-          bash scripts/deploy/verify-testai-frontend-runtime.sh \
-            --expected-digest "${{ needs.verify.outputs.digest }}" \
-            --expected-sha "${{ needs.verify.outputs.source_sha }}" \
-            --expected-short-sha "${{ needs.verify.outputs.short_sha }}" \
-            --public-only
