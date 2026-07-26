@@ -749,7 +749,20 @@ images:
     # auth-service kesintisiyle (#2863) AYNI imza: build-log digest'i ≠ pull edilebilir digest.
     # #2582 sayacı hâlâ canlı DEĞİL; promote için digest'in pull-edilebilirliği önce
     # doğrulanmalı (node'a pull denemesi), sonra pin'lenmeli.
-    digest: sha256:64ea404e2eef5f83624abdff0aa97329289410ebf1a4623c070ac4af58de0660
+    #
+    # 2026-07-27 bump: sha-e2b4d12 — platform-backend#940. Yetki revizyonu çağrısı
+    # (`GET permission-service /api/v1/authz/version`) hiçbir kimlik taşımadan
+    # gidiyordu; permission-service `/api/v1/**` yolunun tamamını kimlik doğrulattığı
+    # için 401 dönüyor, hata iki katman yukarıda `/api/v1/users` üzerinde 500 olarak
+    # yüzeye çıkıyordu — iki pod da Ready görünürken kullanıcı listeleme ve oluşturma
+    # hücre genelinde kullanılamazdı. Artık çağrı `X-Internal-Api-Key` başlığını
+    # taşıyor (yalnız yapılandırıldığında; boş başlık filtrenin reddetmek zorunda
+    # olduğu bir kimlik iddiasıdır). İki sözleşme testi başlığın varlığını ve
+    # yokluğunu kilitliyor.
+    #
+    # Digest hedef kümenin kendi kubelet'i tarafından yapılan GERÇEK pull ile geri
+    # okundu (yukarıdaki 2026-07-24 kesintisinin doğrudan dersi).
+    digest: sha256:e2c6b68c07be1dbb80eb6dd5a01e0a68d81adf51389f2c5aa429ea161e892d8b
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
