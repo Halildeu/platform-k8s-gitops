@@ -30,7 +30,12 @@ images:
     digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    digest: sha256:931f3432810fc2c55ec89ec0617d084a46536daf77559c53c8d0203f885a1b28
+    # platform-web #1002 — AuthGate denied/error ekranina "Yeniden dene".
+    # Kaynak: d06283d3e3f8ed5a4b5e82e6e3c4e318e31f9622
+    # Etiket: sha-d06283d3e3f8ed5a4b5e82e6e3c4e318e31f9622 (bu hat TAM sha etiketi
+    # kullanir; frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
+    # Digest etiketten cozuldu ve GHCR'da 200 ile dogrulandi.
+    digest: sha256:48a86f886f1d9ec1e89385c89cd5a706742b53d30890f72bd0fe30b3b06f9944
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
