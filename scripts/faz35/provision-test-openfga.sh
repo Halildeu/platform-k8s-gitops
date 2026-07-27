@@ -3,16 +3,35 @@
 # compiled model and bind the synthetic staff subject. Store/model IDs are
 # non-secret outputs that must be pinned in GitOps by a new reviewed commit.
 #
-# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
-# `client_id=frontend` public + DAG=true KC client'ı A2c cutover'ında
-# `directAccessGrantsEnabled=false`'a çevrilecek. Bu script `frontend` client'ının
-# `ethics-manager-audience` + `ethics:case:manage` optional scope'larına bağımlı
-# (Vault kv/platform/keycloak/smoke-client A2a substrate mevcut, ama A2b.1
-# smoke-runtime-v1 scope set'ine ethics-* opt-in'i EKLİ DEĞİL). Faz35 team A2c
-# cutover ÖNCESİ ya (a) A2b.3 extension ile smoke-client optionalClientScopes'a
-# `ethics-manager-audience` + `ethics:case:manage` eklemeli ya da (b) bu script'i
-# smoke-client + custom scope opt-in ile revize etmeli. Aksi halde A2c cutover
-# ROPC token 400/invalid_scope veya audience mismatch üretir.
+# A2c MIGRATION (2026-07-27, Faz 22 Sec KC hardening #2476): this script now mints
+# via the dedicated confidential `smoke-client`, not the public browser client. Two
+# reasons, both measured on `platform-test`:
+#
+#   1. `frontend` is a SHARED browser client, so its token carries whatever every other
+#      feature has bolted on. The exact-set pin below had drifted and this script was
+#      FAILING before the migration: the live token had gained `ats.screening.read` +
+#      `ats.screening.write` (ATS work, unrelated to Etik Speak) and `requires-mfa`
+#      (privileged-role composite). Pinning a shared client lets an unrelated feature
+#      break ETHICS provisioning, and it did.
+#   2. A2c turns `frontend.directAccessGrantsEnabled` off, so ROPC through it stops
+#      working entirely.
+#
+# Measured claim delta, identical for all three ETHICS personas (org_id aside):
+#   azp   frontend -> smoke-client
+#   aud   9 -> 7   drops ats-api/audio-gateway-service/frontend/meeting-service/
+#                  remote-bridge-operator-api; gains endpoint-admin-service/
+#                  permission-service/variant-service via smoke-runtime-v1
+#   scope 21 -> 5  drops all 16 ats.* + notify-canary; `ethics:case:manage` PRESERVED
+#   roles 5 -> 2   drops default-roles-platform-test/offline_access/uma_authorization
+#   resource_access {account:[...]} -> {}
+#
+# The `ethics-manager` audience and the `ethics:case:manage` scope both survive, which
+# is what this script actually needs. The narrower token makes the least-privilege
+# proof stronger, not weaker.
+#
+# The client secret is supplied BY THE CALLER as a file. This script deliberately does
+# not read it from Vault: tests/deploy/test_faz35_etikspeak_provisioning_contract.py
+# forbids this script from touching the Vault root token, and that boundary is correct.
 set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
@@ -44,6 +63,10 @@ KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_REALM="${KC_REALM:-platform-test}"
 KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 STAFF_USERNAME="${STAFF_USERNAME:-ethics-manager-test}"
+SMOKE_CLIENT_SECRET_FILE_DEFAULT="/srv/platform/secrets/faz35-test/smoke-client.secret"
+[ -r "$SMOKE_CLIENT_SECRET_FILE_DEFAULT" ] \
+  || SMOKE_CLIENT_SECRET_FILE_DEFAULT="$HOME/bootstrap-drill/smoke-client.secret"
+SMOKE_CLIENT_SECRET_FILE="${SMOKE_CLIENT_SECRET_FILE:-$SMOKE_CLIENT_SECRET_FILE_DEFAULT}"
 STAFF_PASSWORD_FILE="${STAFF_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
 WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password}"
@@ -132,11 +155,13 @@ assert_subject_persona_binding() {
   local token_file="$SUBJECT_TMP_DIR/$label-token.json"
   local claims_file="$SUBJECT_TMP_DIR/$label-claims.json"
   validate_persona_password_file "$password_file" "$label"
+  validate_persona_password_file "$SMOKE_CLIENT_SECRET_FILE" "smoke-client secret"
   code=$(curl -sS --max-time 15 -o "$token_file" -w '%{http_code}' \
     -X POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=frontend' \
+    --data-urlencode 'client_id=smoke-client' \
+    --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file" \
     --data-urlencode 'scope=openid ethics-manager-audience ethics:case:manage' || printf '000')
@@ -173,32 +198,19 @@ print(json.dumps({
     --arg username "$username" --arg org "$expected_org" '
       .iss == $issuer and .sub == $subject and
       .preferred_username == $username and .org_id == $org and
-      .azp == "frontend" and
+      .azp == "smoke-client" and
       ((.aud | type) == "array") and
       ((.aud | sort) == ([
-        "account", "ats-api", "audio-gateway-service", "auth-service",
-        "ethics-manager", "frontend", "meeting-service",
-        "notification-orchestrator", "remote-bridge-operator-api"
+        "account", "auth-service", "endpoint-admin-service", "ethics-manager",
+        "notification-orchestrator", "permission-service", "variant-service"
       ] | sort)) and
       ((.scope | type) == "string") and
       ((.scope | split(" ") | sort) == ([
-        "ats.application.read", "ats.application.status.write",
-        "ats.citation.write", "ats.consent.write", "ats.dsar.write",
-        "ats.erasure.execute", "ats.export.read", "ats.export.repair",
-        "ats.export.write", "ats.recording.write", "ats.review.read",
-        "ats.review.write", "ats.transcript.read", "ats.transcription.write",
-        "email", "ethics:case:manage", "notify-canary", "openid", "profile"
+        "email", "ethics:case:manage", "openid", "profile", "smoke-runtime-v1"
       ] | sort)) and
       ((.roles | type) == "array") and
-      ((.roles | sort) == ([
-        "default-roles-platform-test", "ethics-manager",
-        "offline_access", "uma_authorization"
-      ] | sort)) and
-      ((.resource_roles | keys | sort) == ["account"]) and
-      ((.resource_roles.account.roles | type) == "array") and
-      ((.resource_roles.account.roles | sort) == ([
-        "manage-account", "manage-account-links", "view-profile"
-      ] | sort)) and
+      ((.roles | sort) == (["ethics-manager", "requires-mfa"] | sort)) and
+      ((.resource_roles | keys | sort) == []) and
       ((.groups | type) == "array" and (.groups | length) == 0) and
       (.has_authorization == false)
     ' "$claims_file" >/dev/null || {
