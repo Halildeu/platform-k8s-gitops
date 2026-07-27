@@ -4548,9 +4548,9 @@ images:
     # tuple below; narrow automation updates only those three lines.
     # 2026-07-27 Budget Control product workspace: platform-web PR #1032,
     # main image build run 30292707427 (testai job 90066056594).
-    # sourceRevision: 09dfa606268b7aebd318658d3c83177a3e4db419
-    newTag: sha-09dfa60
-    digest: sha256:8efd33406ae98196e92ef9cfcf7cf15d8e8475cdd2be62839253f44660fa4a52
+    # sourceRevision: 47e8c6592a8569a244923508df81602454371a81
+    newTag: sha-47e8c65
+    digest: sha256:9231038de5e49bf4f8a0cccd4ec84d91c3b97227129366e13806df283b316f01
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
