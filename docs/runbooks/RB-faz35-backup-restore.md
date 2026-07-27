@@ -10,7 +10,12 @@
 ## 1. Ön koşullar
 
 - Backup CronJob'ları aktif ve son 24 saatte başarılı: `kubectl -n platform-<env> get cronjob -l app.kubernetes.io/component=backup`
-- 3 secret seed edilmiş: `etik-speak-backup-pg`, `etik-speak-backup-openfga`, `etik-speak-backup-vault`
+- 4 secret seed edilmiş: `etik-speak-backup-pg`, `etik-speak-backup-openfga`,
+  `etik-speak-backup-vault` **ve `etik-speak-backup-archive-key`** (ES-209)
+- Yedek pod'ları için NetworkPolicy uygulanmış: `allow-egress-etik-speak-backup`.
+  Namespace'in `allow-egress-*` politikaları `part-of=platform` seçtiği için
+  `part-of=etik-speak` taşıyan yedek pod'ları onlara **dahil değildir** — bu politika
+  olmadan job DNS'i bile çözemez ve sessizce boş arşiv üretir.
 - PVC durumu Bound: `kubectl -n platform-<env> get pvc etik-speak-backup-archive`
 - Restore hedef DB rolü hazır (rehearsal için scratch DB ya da recovery için empty schema)
 
@@ -36,8 +41,12 @@ kubectl -n platform-test debug -it \
 kubectl create namespace faz35-rehearsal-$(date +%Y%m%d)
 # 3a. PG restore
 kubectl -n platform-test cp \
-  etik-speak-pg-dump-<latest>:/archive/pg/ethics-<ts>.sql.gz /tmp/pg.sql.gz
-gunzip -c /tmp/pg.sql.gz | \
+  etik-speak-pg-dump-<latest>:/archive/pg/ethics-<ts>.sql.gz.enc /tmp/pg.sql.gz.enc
+# ES-209: arşivler şifreli. Anahtar Vault'ta `kv/platform/etik-speak/backup`
+# alanı `archive_key`; asla dosyaya yazılmaz, komut satırına konmaz.
+ARCHIVE_KEY=$(vault kv get -field=archive_key kv/platform/etik-speak/backup) \
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:ARCHIVE_KEY \
+    -in /tmp/pg.sql.gz.enc | gunzip -c | \
   kubectl -n faz35-rehearsal-<date> exec -i deploy/postgres-rehearsal -- \
   psql -U rehearse -d ethics
 # 3b. OpenFGA restore
