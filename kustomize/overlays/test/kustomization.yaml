@@ -1259,8 +1259,14 @@ images:
     # 30304281321 (report-service job 90104571112). Adds company/project
     # scoped read-only actuals plus invoice, expense, bank/cari, order,
     # offer, contract, progress-payment and transfer/virman lineage.
-    newTag: sha-49c982c
-    digest: sha256:7d8ff160438d9fc5f0ca29fd65857482679a339d9c3952a68aa799a61b51ee3f
+    # 2026-07-28 Serban project picker scope fix: platform-backend PR #965,
+    # merge 84e9e26bcb139784c95b9f963e06d36ccbaaf1ad; image build run
+    # 30309456250 (report-service job 90121428455). Preserves the canonical
+    # OUR_COMPANY project relation and also includes projects referenced by
+    # company 35 yearly ACCOUNT_CARD_ROWS schemas, with exact 35/350 tenant
+    # isolation and a visible fallback for missing catalog rows.
+    newTag: sha-84e9e26
+    digest: sha256:1841aee97eda30b1fcf237259d91e6b8347f00a5037091c5455cb8ad1cb3c68e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
