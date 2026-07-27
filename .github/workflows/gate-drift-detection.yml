@@ -41,6 +41,13 @@ on:
       - "scripts/migration/etl_worker/etl_worker/transform.py"
       - "scripts/migration/etl_worker/tests/test_transform.py"
       - "scripts/migration/etl_worker/config/tables.yaml"
+      # Faz 22 security: the k3d bootstrap registry-binding invariant lives in
+      # tests/operations/ and is executed by the `pytest tests/` step below. A
+      # bootstrap-only PR must trigger this workflow, otherwise the guard exists
+      # but never runs on the exact PRs it is meant to block (the registry was
+      # published on 0.0.0.0 for months precisely because nothing checked it).
+      - "bootstrap/k3d-*.yaml"
+      - "tests/operations/**"
       # DD-4 env+Dockerfile+Python compat
       - "scripts/migration/etl_worker/etl_worker/config.py"
       - "scripts/migration/etl_worker/Dockerfile"

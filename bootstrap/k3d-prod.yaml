@@ -68,5 +68,9 @@ options:
 registries:
   create:
     name: platform-prod-registry
-    host: "0.0.0.0"
+    # 2026-07-27 — GÜVENLİK: 0.0.0.0 idi (bkz. k3d-test.yaml'daki uzun not).
+    # Kimliksiz registry LAN'ın tamamına açıktı; üstelik adı "prod" taşıyor.
+    # Ölçüm: katalog BOŞ ({"repositories":[]}) + k3d-prod'da tüketici YOK —
+    # yani yayın ölü yüzeydi (yukarıdaki "opsiyonel" notuyla tutarlı).
+    host: "127.0.0.1"
     hostPort: "5000"
