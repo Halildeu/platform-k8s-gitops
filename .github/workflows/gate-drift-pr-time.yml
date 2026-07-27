@@ -17,6 +17,7 @@ on:
       - 'tests/deploy/test_faz35_privacy_no_collect_contract.py'
       - 'tests/deploy/test_faz35_compartment_adr.py'
       - 'tests/deploy/test_faz35_evidence_custody_contract.py'
+      - 'tests/deploy/test_faz35_relation_registry_completeness.py'
       - 'docs/faz-35-evidence/**'
       - 'runtime-artifacts/faz35-etik-speak/**'
       - 'runtime-artifacts/openfga-model/**'
@@ -128,4 +129,5 @@ jobs:
             tests/deploy/test_faz35_first_customer_contract.py \
             tests/deploy/test_faz35_privacy_no_collect_contract.py \
             tests/deploy/test_faz35_compartment_adr.py \
-            tests/deploy/test_faz35_evidence_custody_contract.py
+            tests/deploy/test_faz35_evidence_custody_contract.py \
+            tests/deploy/test_faz35_relation_registry_completeness.py

@@ -1,0 +1,180 @@
+{
+  "schema_version": "faz35-relation-registry-v1",
+  "purpose": "Every relation in authorization-model-v1.fga, with what it is expected to allow and to deny. The completeness gate refuses a model relation that is absent here, so a new relation cannot land without someone stating what it must not reach.",
+  "model_source": "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
+  "principal_types": ["user", "team"],
+  "relations": [
+    {
+      "type": "team",
+      "relation": "member",
+      "kind": "direct",
+      "allows": "A named user is part of a team, so team-granted product roles reach them.",
+      "denies": "Nothing on its own. Membership is not access; it only carries whatever the product grants the team.",
+      "owner_repo": "platform-k8s-gitops"
+    },
+
+    {
+      "type": "ethics_product",
+      "relation": "viewer",
+      "kind": "direct",
+      "allows": "Read the cases of one org, once derived into case_viewer.",
+      "denies": "Any other org — the object is ethics_product:<orgId>, so a grant cannot span tenants. Also denies writing: viewer never derives case_handler.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "triager",
+      "kind": "direct",
+      "allows": "Route and assign cases in one org (case_triager), and read them (case_viewer).",
+      "denies": "Other orgs; and handling — triager does not derive case_handler.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "handler",
+      "kind": "direct",
+      "allows": "Reply on cases in one org (case_handler) and read them (case_viewer).",
+      "denies": "Other orgs; and triage — handler does not derive case_triager.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "technical_admin",
+      "kind": "direct",
+      "allows": "Operate the product without reading its content.",
+      "denies": "Every content relation. technical_admin IS content_denied, which subtracts from case_viewer, case_triager, case_handler and evidence_reveal_approved. An operator who can restart the service still cannot open a report.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_approver",
+      "kind": "direct",
+      "allows": "Approve a reveal of sealed evidence (evidence_reveal_approved).",
+      "denies": "Reading cases — evidence_approver alone derives no case_viewer. Approving is not the same authority as reading.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "ethics_product_admin",
+      "kind": "direct",
+      "allows": "Administer product membership for one org.",
+      "denies": "Case content. It derives none of the case_* relations — administering who may read is separate from reading.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "content_denied",
+      "kind": "derived",
+      "derivation": "technical_admin",
+      "allows": "Nothing. It exists only to be subtracted.",
+      "denies": "case_viewer, case_triager, case_handler and evidence_reveal_approved, regardless of any other grant the same principal holds.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_viewer",
+      "kind": "derived",
+      "derivation": "(viewer or triager or handler) but not content_denied",
+      "allows": "List and open the cases of one org. This is what EthicsAuthorization.can() asks for on every staff read.",
+      "denies": "A technical_admin, even one who also holds viewer. The subtraction wins.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_triager",
+      "kind": "derived",
+      "derivation": "triager but not content_denied",
+      "allows": "Assign a case.",
+      "denies": "Anyone holding only viewer or handler, and any technical_admin.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_handler",
+      "kind": "derived",
+      "derivation": "handler but not content_denied",
+      "allows": "Reply to the reporter and write internal notes.",
+      "denies": "Anyone holding only viewer or triager, and any technical_admin.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_reveal_approved",
+      "kind": "derived",
+      "derivation": "evidence_approver but not content_denied",
+      "allows": "Approve revealing sealed evidence.",
+      "denies": "Anyone who is not an evidence_approver, and any technical_admin.",
+      "owner_repo": "platform-backend"
+    },
+
+    {
+      "type": "ethics_case",
+      "relation": "product",
+      "kind": "direct",
+      "allows": "Binds one case to one product, which is how the per-org grants reach it.",
+      "denies": "Cross-tenant reach. A case bound to one product cannot be reached through another.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "conflicted",
+      "kind": "direct",
+      "allows": "Nothing. Like content_denied it exists only to subtract.",
+      "denies": "Every case_* relation on that one case, for that one principal, whatever the product grants. Recorded by an authorized party about someone else.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "recused",
+      "kind": "direct",
+      "allows": "Nothing. Subtractive, same as conflicted, but self-declared (ES-203, POST /cases/{id}/recusal).",
+      "denies": "Every case_* relation on that one case for the declaring principal. Once written the case leaves their view, so the same person cannot reach it again — a second declaration answers 404.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "denied",
+      "kind": "derived",
+      "derivation": "conflicted or recused",
+      "allows": "Nothing.",
+      "denies": "Whatever either input denies. One subtraction is enough; they are not required together.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_viewer",
+      "kind": "derived",
+      "derivation": "case_viewer from product but not denied",
+      "allows": "Open one specific case.",
+      "denies": "A conflicted or recused principal, even one whose product membership is intact. Refusal is a 404 rather than a 403, so it does not confirm the case exists.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_triager",
+      "kind": "derived",
+      "derivation": "case_triager from product but not denied",
+      "allows": "Assign one specific case.",
+      "denies": "A conflicted or recused principal — the exclusion the ES-203 acceptance names for triagers.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_handler",
+      "kind": "derived",
+      "derivation": "case_handler from product but not denied",
+      "allows": "Reply on one specific case.",
+      "denies": "A conflicted or recused principal — the exclusion for assignees.",
+      "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "evidence_reveal_approved",
+      "kind": "derived",
+      "derivation": "evidence_reveal_approved from product but not denied",
+      "allows": "Approve a reveal on one specific case.",
+      "denies": "A conflicted or recused approver — the exclusion for reveal approvers, so an interested party cannot approve unsealing evidence about themselves.",
+      "owner_repo": "platform-backend"
+    }
+  ]
+}
