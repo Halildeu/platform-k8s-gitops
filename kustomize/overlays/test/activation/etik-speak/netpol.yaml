@@ -181,8 +181,13 @@ spec:
 #   ethics-service netns -> auth-service podIP:8088  ->  HTTP 401 (reachable)
 #
 # NetworkPolicy grants are additive, so this neither narrows nor replaces
-# `allow-ingress-intra-ns`; api-gateway and auth-service keep reaching
+# `allow-ingress-intra-ns`; every existing platform caller keeps reaching
 # user-service exactly as before.
+#
+# The gateway is named nowhere here on purpose: a contract test forbids that
+# literal anywhere in this file, because the etik-speak cell must never be
+# granted platform-gateway reachability. This grant runs the other way — an
+# etik-speak pod reaching a platform pod — and stays outside that rule.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: allow-ethics-service-to-user-service}
