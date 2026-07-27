@@ -425,39 +425,43 @@ done
 kcadm get "users/<id>/role-mappings/realm/composite" -r platform-test
 ```
 
-### `ethics-manager` composite'ten ÇIKARILDI — Faz 35 zincirini kırıyordu
+### Composite teslim tamamen BIRAKILDI — marker adı geçen insanlara doğrudan atanır
 
-Marker'ı `ethics-manager`'a composite olarak eklemek o rolün `.composite`'ini `false`'tan
-`true`'ya çevirdi. Faz 35 tam tersini pinliyor ve **4 kontrol** birden düştü:
+İlk tasarım `requires-mfa`'yı 6 ayrıcalıklı role composite child olarak ekliyordu. İki ölçüm
+bunun yanlış olduğunu gösterdi.
 
-```
-provision-test-keycloak.sh:184  .composite == false
-provision-test-keycloak.sh:344  .composite == false
-provision-test-keycloak.sh:540  efektif realm rol allowlist (requires-mfa yok)
-provision-test-keycloak.sh:755  token rol allowlist (requires-mfa yok)
-provision-test-openfga.sh       exact-set token rol pini (requires-mfa yok)
-```
+**1) Otomasyon TOTP yapamaz.** Altı rolün 34 sahibinin dağılımı (2026-07-27 ölçümü):
 
-Canlı doğrulama: `roles/ethics-manager` → `composite=True`, tek child `requires-mfa`;
-satır-341 yüklemi DÜŞTÜ. Yani ETHICS provisioning zinciri tamamen kapalıydı ve arıza
-sebebinden **dört adım uzakta** (token pin uyuşmazlığı ve 401 olarak) yüzeye çıktı —
-merge'den bu yüzden sağ kurtuldu.
+| sınıf | sayı | örnekler |
+|---|---|---|
+| **İNSAN** | **4** | `admin@example.com`, `etik-staff@acik.com`, `halil.kocoglu@serban.com.tr`, `zeynep.akkilic@serban.com.tr` |
+| belirsiz otomasyon | 4 | `codex-faz226-approver/creator`, `endpoint-admin-lock-approver/proposer` |
+| sentetik persona | 26 | `ag028-*`, `ag029-*`, `ag042-*`, `c5persona-*`, `codex-*-smoke-*`, `rb-operator-*`, `ethics-manager-*-test`, `endpoint-admin-test-approver`, `test-recorder-182` |
 
-Sözleşme çatışmasının altındaki asıl gerekçe **granülarite**: `ethics-manager`'ı **3 insan
-+ 4 sentetik otomasyon personası** (`*.invalid`) taşıyor. Bir script TOTP kaydını
-tamamlayamaz; otomasyonla paylaşılan bir rol, etkileşimli ikinci faktörü asacak yer
-değildir. Karar: insan sahipler marker'ı **doğrudan atama** ile alır, personalar hiç almaz.
+34'ün **30'u otomasyon**. Bir script TOTP kaydını tamamlayamaz; akış bağlandığı an her
+ENDPOINT_ADMIN smoke personası, her AG-0xx acceptance personası ve her remote-bridge
+operator kimliği kırılırdı.
 
-`setup-privileged-mfa.sh` artık: `ethics-manager`'ı `PRIV_ROLES`'tan çıkarır, şekil-pinli
-bir role composite yazmayı **fail-closed** reddeder, mevcut yanlış composite'i `--apply`
-ile **kaldırır**, ve `DIRECT_MFA_USERS`'a doğrudan atar. Guard:
-`tests/operations/test_mfa_composite_target_shape_invariant.py` (composite hedeflerini
-scriptten, şekil pinlerini repodan keşfeder — yeni bir şekil sözleşmesi de kapsanır).
+**2) Composite ebeveyni değiştirir ve kendi erişimini saklar.** Marker'ı composite child
+yapmak `ethics-manager.composite`'ini `false`→`true` çevirdi ve Faz 35 zincirinde 4 kontrolü
+düşürdü. Ayrıca `roles/requires-mfa/users` yalnız **doğrudan** atamayı döndüğü için `0`
+okuyordu — oysa 34 kullanıcı efektif olarak taşıyordu. Etki alanı bariz sorguda görünmeyen
+bir güvenlik kontrolü kötü bir kontroldür.
 
-**Canlı reconcile HENÜZ KOŞULMADI** (harness rol mutasyonunu reddetti). Sıra:
-`setup-privileged-mfa.sh --apply` → composite kalkar + insanlar doğrudan alır → sonra
-`provision-test-openfga.sh` rol pini `["ethics-manager"]`'a inmeli (şu an canlıyla
-eşleştiği için `["ethics-manager", "requires-mfa"]`).
+**Yeni tasarım:** marker hiçbir role composite yazılmaz; `DIRECT_MFA_USERS`'taki adı geçen
+4 insana **doğrudan** atanır. Ebeveyn rolün şekli değişmez, bariz sorgu dürüst olur,
+otomasyon hiç etkilenmez. Maliyeti listenin açık olması — bu yüzden `--check` ayrıcalıklı
+rol taşıyıp listede olmayan insan-görünümlü kimlikleri **raporlar ama otomatik EKLEMEZ**;
+birinin insan olduğuna karar vermek scriptin işi değil. `AUTOMATION_MARKERS`'a uyan bir
+kimlik listeye konursa `--apply` hata verip durur.
+
+Guard: `tests/operations/test_privileged_mfa_delivery_invariant.py` — composite'e POST
+yazımını, listedeki otomasyon kimliğini ve (yeniden composite'e dönülürse) şekil-pinli rol
+çakışmasını reddeder. Eski `test_mfa_composite_target_shape_invariant.py` kaldırıldı:
+composite hedefi kalmadığı için boş yere geçiyordu.
+
+**OTP kayıt penceresi 34 hesaptan 4 kişiye indi** — kalan tek soru bu 4 kişinin ne zaman
+TOTP kaydedeceği.
 
 ### Yeniden bağlamanın ön koşulları
 
