@@ -776,7 +776,15 @@ images:
     #
     # Digest hedef kümenin kendi kubelet'i tarafından yapılan GERÇEK pull ile geri
     # okundu (yukarıdaki 2026-07-24 kesintisinin doğrudan dersi).
-    digest: sha256:98d2806afa6ded8847a92372348282ef06056b2db4aa6544ee7d40debbce8ddf
+    # 2026-07-26 promote: sha-ffaa235 — #2582 org'suz kimlik sayacını canlıya çıkarır.
+    # Pull-edilebilirlik pin'lemeden ONCE kanıtlandı: cluster'da ghcr-pull secret'iyla
+    # digest-probe pod'u kosuldu ve imageID dondu. Bu proje bugun bu adimin atlanmasindan
+    # iki kesinti yasadi (#2874/#2875 — build log'undaki digest pull edilemiyordu).
+    # Canli sonuc: rollout 1/1 Ready, 0 restart; sayac olculdu:
+    #   identity_principal_without_company_total 0.0   (484 metrik satiri icinde)
+    # Soy bagi: git merge-base --is-ancestor 068a45ce ffaa23520 -> true
+    # (068a45ce = sayaci ekleyen commit, ffaa23520 = imajin etiketlendigi merge)
+    digest: sha256:4cf841d76f2b41c226ef436194e7b1d14eacaa15388b9e446ef3737802a94aff
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
