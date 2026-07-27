@@ -70,5 +70,16 @@ options:
 registries:
   create:
     name: platform-test-registry
-    host: "0.0.0.0"
+    # 2026-07-27 — GÜVENLİK: 0.0.0.0 idi; kimlik doğrulaması OLMAYAN bir Docker
+    # Registry v2'yi kurum LAN'ının tamamına açıyordu (ölçüldü: /v2/ → 200,
+    # 401+WWW-Authenticate DEĞİL; /v2/_catalog okunabiliyordu). Registry v2
+    # varsayılanı auth'suz READ-WRITE olduğu için LAN'daki bir aktör cluster'ın
+    # çektiği etiketi üzerine yazabilirdi → tedarik zinciri riski.
+    #
+    # 127.0.0.1 fonksiyonel olarak yeterli: cluster node'ları registry'ye HOST
+    # yayını üzerinden DEĞİL, docker ağı içindeki hostname ile ulaşır
+    # (node registries.yaml: platform-test-registry:5001 → http://platform-test-registry:5000).
+    # Host'tan push (docker push localhost:5001/...) çalışmaya devam eder.
+    # Bu satır desired-state; cluster her recreate'te (#2306 Method A v2) buradan okunur.
+    host: "127.0.0.1"
     hostPort: "5001"         # prod (5000)'den farklı
