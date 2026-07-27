@@ -100,6 +100,15 @@ desired_shape_args() {
     "-s" "description=A2b.3 ATS smoke ROPC client (gitops #2746). fullScopeAllowed=false + explicit ats-api role scope-mappings; Opsiyon A (optional client-scope) resource_access URETMIYOR."
 }
 
+# ── DESIRED default client-scope'lar ────────────────────────────────────────
+# `ats-api-audience` ZORUNLU: icinde `ats-tenant-claim-mapper` var
+# (claim.name=tenant, user.attribute=ats_tenant). Bu scope olmadan token rolleri
+# dogru tasir ama `tenant` claim'i BOS gelir — ATS smoke'lari `tenant|rol-exact-set`
+# assert ettigi icin sessizce degil, GURULTULU sekilde duser. 2026-07-27'de once
+# eksik birakildi, canli token karsilastirmasi (frontend vs smoke-ats-v1) yakaladi.
+# `frontend`'de bu scope default; burada da default olmalı.
+DESIRED_DEFAULT_SCOPES="ats-api-audience"
+
 ats_client_uuid() {
   local id
   id=$(K get clients -r "$REALM" -q "clientId=$ATS_CLIENT" --fields id --format csv --noquotes 2>/dev/null | tr -d '\r' | head -1)
@@ -165,12 +174,22 @@ case "$MODE" in
     MISSING=$(comm -23 <(printf '%s\n' "${WANT_ROLES[@]}") <(printf '%s\n' "${HAVE[@]:-}") | grep -cv '^$' || true)
     echo "  eşlenmiş: ${#HAVE[@]}/${#WANT_ROLES[@]}  eksik: $MISSING"
     [ "$MISSING" -gt 0 ] && comm -23 <(printf '%s\n' "${WANT_ROLES[@]}") <(printf '%s\n' "${HAVE[@]:-}") | sed 's/^/    eksik: /'
+    echo "--- default client-scope ---"
+    SCOPE_MISSING=0
+    for want in $DESIRED_DEFAULT_SCOPES; do
+      if K get "clients/$CID/default-client-scopes" -r "$REALM" --fields name --format csv --noquotes 2>/dev/null \
+           | tr -d '\r' | grep -qx "$want"; then
+        echo "  $want: var"
+      else
+        echo "  $want: EKSIK (tenant claim'i bos gelir)"; SCOPE_MISSING=$((SCOPE_MISSING+1))
+      fi
+    done
     echo "  secret fingerprint (sha256[0:12]): $(secret_fp "$CID")"
     echo ""
-    if [ "${SHAPE_DRIFT:-1}" = "0" ] && [ "$MISSING" = "0" ]; then
+    if [ "${SHAPE_DRIFT:-1}" = "0" ] && [ "$MISSING" = "0" ] && [ "$SCOPE_MISSING" = "0" ]; then
       echo "=== CONVERGED ==="; exit 0
     else
-      echo "=== DRIFT: shape=$SHAPE_DRIFT rol-eksik=$MISSING ==="; exit 2
+      echo "=== DRIFT: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING ==="; exit 2
     fi
     ;;
 
@@ -205,6 +224,15 @@ case "$MODE" in
     printf '%s' "$PAYLOAD" | KI create "clients/$CID/scope-mappings/clients/$AID" -r "$REALM" -f - >/dev/null 2>&1 || true
     echo "  ✓ rol scope-mapping gönderildi"
 
+    # default client-scope'lar (tenant claim kaynagi)
+    for want in $DESIRED_DEFAULT_SCOPES; do
+      SID="$(K get client-scopes -r "$REALM" --fields id,name --format csv --noquotes 2>/dev/null \
+             | tr -d '\r' | awk -F, -v s="$want" '$2==s{print $1}' | head -1)"
+      [ -n "$SID" ] || { echo "ERROR: client-scope '$want' realm'de YOK (script scope YARATMAZ)" >&2; exit 1; }
+      K update "clients/$CID/default-client-scopes/$SID" -r "$REALM" >/dev/null 2>&1 || true
+      echo "  ✓ default scope: $want"
+    done
+
     # postcondition: read-back assert
     echo "--- postcondition (read-back) ---"
     report_shape "$CID" >/dev/null
@@ -212,8 +240,14 @@ case "$MODE" in
     MISSING=$(comm -23 <(printf '%s\n' "${WANT_ROLES[@]}") <(printf '%s\n' "${HAVE[@]:-}") | grep -cv '^$' || true)
     echo "  eşlenmiş: ${#HAVE[@]}/${#WANT_ROLES[@]}  eksik: $MISSING"
     echo "  secret fingerprint (sha256[0:12]): $(secret_fp "$CID")"
-    if [ "${SHAPE_DRIFT:-1}" != "0" ] || [ "$MISSING" != "0" ]; then
-      echo "POSTCONDITION FAIL: shape=$SHAPE_DRIFT rol-eksik=$MISSING" >&2; exit 3
+    SCOPE_MISSING=0
+    for want in $DESIRED_DEFAULT_SCOPES; do
+      K get "clients/$CID/default-client-scopes" -r "$REALM" --fields name --format csv --noquotes 2>/dev/null \
+        | tr -d '\r' | grep -qx "$want" || SCOPE_MISSING=$((SCOPE_MISSING+1))
+    done
+    echo "  default scope eksik: $SCOPE_MISSING"
+    if [ "${SHAPE_DRIFT:-1}" != "0" ] || [ "$MISSING" != "0" ] || [ "$SCOPE_MISSING" != "0" ]; then
+      echo "POSTCONDITION FAIL: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING" >&2; exit 3
     fi
     echo ""
     echo "=== APPLIED + POSTCONDITION OK ==="
