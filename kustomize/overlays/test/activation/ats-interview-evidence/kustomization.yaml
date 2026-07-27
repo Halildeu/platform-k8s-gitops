@@ -143,6 +143,10 @@ resources:
   - ingress-ats-ui.yaml
   - netpol.yaml
   - netpol-ui.yaml
+  # ats#235: Graph mail egress (config ile AYNI değişiklikte — ağ izni eksikse
+  # adapter ağ hatasını "yapılandırılmamış" diye raporlar ve arıza yanlış
+  # katmanda aranır).
+  - netpol-graph-mail-egress.yaml
   # ai-stub artık resource değildir: provider live-stt fail-closed; kullanılmayan
   # fallback pod'u test node kapasitesini tüketmez.
 
