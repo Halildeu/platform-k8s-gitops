@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VAULT_INIT_FILE_DEFAULT="/srv/platform/secrets/backup-auth/vault-init-test.json"
+# Host 53->15 tasinmasinda dosya yol DEGISTIRDI (silinmedi): eski konum
+# ~/bootstrap-drill, yenisi /srv/platform/secrets/backup-auth (ACL ile
+# script kullanicisina r--). Ikisini sirayla dene; ilk okunabilir kazanir.
+[ -r "$VAULT_INIT_FILE_DEFAULT" ] || VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
+
 # Faz 22.6.3 / platform-agent#208 AgentPC2 product update gate.
 #
 # This script runs only on the staging self-hosted runner. It exercises the
@@ -193,7 +200,7 @@ fetch_smoke_client_secret() {
   # Vault kv/platform/keycloak/smoke-client (A2a); scope-mapping/audience A2b.1 setup-smoke-token-contract.sh.
   [[ -s "$SMOKE_CLIENT_SECRET_FILE" ]] && return 0
   local vault_root_token
-  vault_root_token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE:-$HOME/bootstrap-drill/vault-init-test.json}")" \
+  vault_root_token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")" \
     || { echo "ERR smoke-client secret için vault root token okunamadı" >&2; exit 2; }
   docker exec -e VAULT_TOKEN="$vault_root_token" platform-vault-test \
     vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "$SMOKE_CLIENT_SECRET_FILE" \

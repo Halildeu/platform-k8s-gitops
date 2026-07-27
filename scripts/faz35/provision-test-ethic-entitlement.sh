@@ -30,7 +30,11 @@ KC_REALM="${KC_REALM:-platform-test}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+VAULT_INIT_FILE_DEFAULT="/srv/platform/secrets/backup-auth/vault-init-test.json"
+# Host 53->15 tasinmasinda dosya yol DEGISTIRDI (silinmedi): eski konum
+# ~/bootstrap-drill, yenisi /srv/platform/secrets/backup-auth (ACL ile
+# script kullanicisina r--). Ikisini sirayla dene; ilk okunabilir kazanir.
+[ -r "$VAULT_INIT_FILE_DEFAULT" ] || VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
 WRITER_VAULT_PATH="${WRITER_VAULT_PATH:-kv/platform/d35-3}"
 WRITER_USERNAME="${WRITER_USERNAME:-d35-admin-persona}"

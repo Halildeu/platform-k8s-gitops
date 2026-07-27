@@ -220,13 +220,17 @@ case "$MODE" in
     cat <<'VAULTNOTE'
 
 ── VAULT SEED (AYRI ADIM — sessizce atlanmıyor) ──────────────────────────────
-Bu script Vault'a YAZMAZ. Kardeş `setup-smoke-client.sh` bunu
-`$HOME/bootstrap-drill/vault-init-test.json`'dan root token okuyarak yapıyor, ama
-o dosya `.15` (aiserver) host'una TAŞINMADI — yalnız eski host `.53`'te duruyor
-(2026-07-27 ölçüldü; tüm fs tarandı). Yani o yol `.15`'te çalışmaz.
+Bu script Vault'a YAZMAZ; seed ayrı adım. Kardeş `setup-smoke-client.sh` bunu root
+token ile yapıyor ve o token `.15`'te MEVCUT — sadece yolu değişmiş:
 
-Secret'ı Vault'a koymak için (root token'a erişim çözüldükten sonra), secret'ı
-argv'ye/geçmişe DÜŞÜRMEDEN:
+  /srv/platform/secrets/backup-auth/vault-init-test.json   (ACL: script kullanıcısına r--)
+
+DÜZELTME: bu notun ilk hali "dosya .15'e taşınmadı" diyordu. YANLIŞTI — dosya taşındı,
+yalnız konumu değişti. İlk arama `~/bootstrap-drill` ve `find -maxdepth 4` ile yapılmıştı;
+gerçek yol 5. seviyede olduğu için kaçtı. Token doğrulandı: policies=[root], ttl=0,
+`kv/platform/keycloak/smoke-client` okunabiliyor.
+
+Secret'ı Vault'a koymak için, secret'ı argv'ye/geçmişe DÜŞÜRMEDEN:
 
   kv/platform/keycloak/smoke-ats  ←  CLIENT_SECRET
 
