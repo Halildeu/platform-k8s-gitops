@@ -18,10 +18,12 @@ KUBE_NS="${KUBE_NS:-platform-test}"
 
 PG_CONTAINER="${PG_CONTAINER:-platform-pg-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
+VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
 VAULT_PATH="${VAULT_PATH:-kv/platform/etik-speak}"
 PUBLIC_GATE_USERNAME="${PUBLIC_GATE_USERNAME:-etik-test}"
-PUBLIC_GATE_PASSWORD_FILE="${PUBLIC_GATE_PASSWORD_FILE:-/home/halil/bootstrap-drill/etik-speak-public-gate.password}"
+PUBLIC_GATE_PASSWORD_FILE_DEFAULT="$HOME/bootstrap-drill/etik-speak-public-gate.password"
+PUBLIC_GATE_PASSWORD_FILE="${PUBLIC_GATE_PASSWORD_FILE:-$PUBLIC_GATE_PASSWORD_FILE_DEFAULT}"
 
 [ "$PG_CONTAINER" = "platform-pg-test" ] || {
   echo "FATAL: this script is test-only; PG_CONTAINER=$PG_CONTAINER refused" >&2
@@ -31,7 +33,7 @@ PUBLIC_GATE_PASSWORD_FILE="${PUBLIC_GATE_PASSWORD_FILE:-/home/halil/bootstrap-dr
   echo "FATAL: this script is test-only; VAULT_CONTAINER=$VAULT_CONTAINER refused" >&2
   exit 1
 }
-[ "$VAULT_INIT_FILE" = "/home/halil/bootstrap-drill/vault-init-test.json" ] || {
+[ "$VAULT_INIT_FILE" = "$VAULT_INIT_FILE_DEFAULT" ] || {
   echo "FATAL: VAULT_INIT_FILE override refused" >&2
   exit 1
 }
@@ -40,7 +42,7 @@ PUBLIC_GATE_PASSWORD_FILE="${PUBLIC_GATE_PASSWORD_FILE:-/home/halil/bootstrap-dr
   exit 1
 }
 [ "$PUBLIC_GATE_USERNAME" = "etik-test" ] && \
-  [ "$PUBLIC_GATE_PASSWORD_FILE" = "/home/halil/bootstrap-drill/etik-speak-public-gate.password" ] || {
+  [ "$PUBLIC_GATE_PASSWORD_FILE" = "$PUBLIC_GATE_PASSWORD_FILE_DEFAULT" ] || {
   echo "FATAL: public test-gate target override refused" >&2
   exit 1
 }
