@@ -35,7 +35,12 @@ readonly KC_REALM="platform-test"
 readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly VAULT_CONTAINER="platform-vault-test"
-readonly VAULT_INIT_FILE="${VAULT_INIT_FILE:-$HOME/bootstrap-drill/vault-init-test.json}"
+VAULT_INIT_FILE_DEFAULT="/srv/platform/secrets/backup-auth/vault-init-test.json"
+# Host 53->15 tasinmasinda dosya yol DEGISTIRDI (silinmedi): eski konum
+# ~/bootstrap-drill, yenisi /srv/platform/secrets/backup-auth (ACL ile
+# script kullanicisina r--). Ikisini sirayla dene; ilk okunabilir kazanir.
+[ -r "$VAULT_INIT_FILE_DEFAULT" ] || VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+readonly VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
 readonly WRITER_VAULT_PATH="kv/platform/d35-3"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
 readonly WRITER_USERNAME="d35-admin-persona"
@@ -294,7 +299,7 @@ unset ROOT_TOKEN
 
 # A2b.2 (2026-07-21) — smoke-client secret fetch (Vault kv/platform/keycloak/smoke-client)
 SMOKE_CLIENT_SECRET_FILE="${TMP_DIR}/smoke-client-secret"
-SMOKE_VAULT_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE:-$HOME/bootstrap-drill/vault-init-test.json}" 2>/dev/null || true)"
+SMOKE_VAULT_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE" 2>/dev/null || true)"
 [[ -n "${SMOKE_VAULT_ROOT}" ]] || die "smoke-client-vault-root-token-missing"
 docker exec -e VAULT_TOKEN="${SMOKE_VAULT_ROOT}" platform-vault-test \
   vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "${SMOKE_CLIENT_SECRET_FILE}" \

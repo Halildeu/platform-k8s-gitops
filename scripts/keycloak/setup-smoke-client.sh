@@ -63,11 +63,15 @@ case "$REALM" in
   platform-test)
     KC_CONTAINER="platform-kc-test"; ENV="test"
     VAULT_CONTAINER="platform-vault-test"
-    VAULT_INIT_FILE="$HOME/bootstrap-drill/vault-init-test.json" ;;
+    VAULT_INIT_FILE="/srv/platform/secrets/backup-auth/vault-init-test.json"
+    # Host 53->15: dosya yol DEGISTIRDI (silinmedi). Yeni konum ACL ile script
+    # kullanicisina r--; eski konumu fallback olarak dene.
+    [ -r "$VAULT_INIT_FILE" ] || VAULT_INIT_FILE="$HOME/bootstrap-drill/vault-init-test.json" ;;
   serban|platform-prod)
     KC_CONTAINER="platform-kc-prod"; ENV="prod"; REALM="serban"
     VAULT_CONTAINER="platform-vault-prod"
-    VAULT_INIT_FILE="$HOME/bootstrap-drill/vault-init-prod.json"
+    VAULT_INIT_FILE="/srv/platform/secrets/backup-auth/vault-init-prod.json"
+    [ -r "$VAULT_INIT_FILE" ] || VAULT_INIT_FILE="$HOME/bootstrap-drill/vault-init-prod.json"
     if [ "${CONFIRM_PROD_SMOKE_CLIENT:-}" != "serban" ]; then
       echo "ERROR: prod realm için CONFIRM_PROD_SMOKE_CLIENT=serban gerekli (intent-gate;" >&2
       echo "       gerçek owner onayı dış workflow/board kaydında)" >&2

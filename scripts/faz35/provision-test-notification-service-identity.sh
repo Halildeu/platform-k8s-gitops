@@ -7,7 +7,11 @@ set +x
 
 MODE="${1:---check}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+VAULT_INIT_FILE_DEFAULT="/srv/platform/secrets/backup-auth/vault-init-test.json"
+# Host 53->15 tasinmasinda dosya yol DEGISTIRDI (silinmedi): eski konum
+# ~/bootstrap-drill, yenisi /srv/platform/secrets/backup-auth (ACL ile
+# script kullanicisina r--). Ikisini sirayla dene; ilk okunabilir kazanir.
+[ -r "$VAULT_INIT_FILE_DEFAULT" ] || VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
 AUTH_PATH="kv/platform/auth-service"
 AUTH_FIELD="service_client_ethics_service_secret"
