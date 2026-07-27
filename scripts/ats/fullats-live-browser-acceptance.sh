@@ -14,6 +14,36 @@
 # client kurmalı. Aksi halde A2c bu acceptance'ı break eder.
 set -euo pipefail
 
+# ── A2b.3 (gitops #2746): smoke ROPC client secret'i ────────────────────────
+# `frontend` public + DAG=true idi; A2c'de DAG=false olacak. Ayrica `frontend`
+# fullScopeAllowed=true oldugu icin kullanicinin TUM rollerini tasiyordu.
+# Hedef client fullScopeAllowed=false + dar scope ile ayni claim'leri uretir
+# (canli dogrulandi: tenant + rol exact-set birebir ayni, audience daraldi).
+SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-ats"
+SMOKE_SECRET_FILE="$(mktemp)"; chmod 600 "$SMOKE_SECRET_FILE"
+_SMOKE_INIT="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
+[ -r "$_SMOKE_INIT" ] || _SMOKE_INIT="$HOME/bootstrap-drill/vault-init-test.json"
+_SMOKE_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$_SMOKE_INIT" 2>/dev/null || true)"
+[ -n "$_SMOKE_ROOT" ] || { echo "FATAL: vault root token okunamadi ($_SMOKE_INIT)" >&2; exit 1; }
+# Faz 35 kanonik idiom: token STDIN ile container'a akitilir, iceride `IFS= read -r`
+# ile okunur. Token'i `docker exec` ortam-degiskeni bayragiyla gecirmek YASAK — degerle
+# gecirilirse argv'ye girer ve `ps`'te gorunur, yalniz isimle gecirilirse container
+# environment'ina girer (root /proc/<pid>/environ ile gorur, `docker inspect` gosterir).
+# Sozlesme iki bicimi de reddeder; guard dosyayi YORUMLAR DAHIL taradigi icin bu not
+# yasakli bayragi harfiyen yazmaz. Bkz.
+# tests/deploy/test_faz35_etikspeak_provisioning_contract.py
+printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault kv get -field=client_secret "$1"
+    ' sh "$SMOKE_VAULT_PATH" > "$SMOKE_SECRET_FILE" 2>/dev/null \
+  || { echo "FATAL: $SMOKE_VAULT_PATH okunamadi" >&2; exit 1; }
+_SMOKE_ROOT=""
+[ -s "$SMOKE_SECRET_FILE" ] || { echo "FATAL: smoke client secret bos" >&2; exit 1; }
+trap 'rm -f "$SMOKE_SECRET_FILE"' EXIT
+
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 REALM="${REALM:-platform-test}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
@@ -154,7 +184,8 @@ token_from_password() {
     -o "$response_file" -w '%{http_code}' \
     -X POST "$BASE_URL/realms/$REALM/protocol/openid-connect/token" \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=frontend' \
+    --data-urlencode 'client_id=smoke-ats-v1' \
+    --data-urlencode "client_secret@$SMOKE_SECRET_FILE" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file" || true)"
   if [[ "$code" != "200" ]] || ! jq -e '.access_token | type == "string" and length > 100' "$response_file" >/dev/null; then
