@@ -33,7 +33,7 @@
     "recent_release_series_regex": "^v0\\.3\\.",
     "recent_release_series_label": "v0.3",
     "recent_release_hygiene_threshold": 5,
-    "max_trusted_releases_per_day": 2,
+    "max_trusted_releases_per_day": 3,
     "require_main_ancestor": true,
     "require_tag_protection": true,
     "require_post_publish_verifier": true,
