@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
-REGISTRY = ROOT / "runtime-artifacts/faz35-etik-speak/relation-registry-v1.json"
+REGISTRY = ROOT / "docs/contracts/faz35-authorization-relation-registry.v1.json"
 
 TYPE_LINE = re.compile(r"^type\s+(\S+)\s*$")
 RELATION_LINE = re.compile(r"^\s+define\s+([A-Za-z_][A-Za-z0-9_]*)\s*:")

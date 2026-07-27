@@ -25,6 +25,7 @@ on:
       - 'docs/contracts/faz35-etik-speak-api-mfe-v1.md'
       - 'docs/contracts/faz35-market-entry-controls.v1.json'
       - 'docs/contracts/faz35-first-customer-journey.v1.json'
+      - 'docs/contracts/faz35-authorization-relation-registry.v1.json'
       - 'docs/contracts/faz35-privacy-no-collect.v1.json'
       - 'docs/contracts/faz35-evidence-custody.v1.json'
       - 'docs/faz-35-etik-speak-product-charter.md'
