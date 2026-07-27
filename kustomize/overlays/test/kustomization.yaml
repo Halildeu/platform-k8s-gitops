@@ -4537,9 +4537,9 @@ images:
     # sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4.
     # Current machine-readable authority is the sourceRevision/newTag/digest
     # tuple below; narrow automation updates only those three lines.
-    # sourceRevision: 8bed0100d408bd09e06b4b056bbe2b6ae3075ada
-    newTag: sha-8bed010
-    digest: sha256:d47edafa42c11cef640efd07ed0da8bf67843c3315228016cc17942e2fed9905
+    # sourceRevision: 639b698325023de7d9ff10640016147b50ed74ee
+    newTag: sha-639b698
+    digest: sha256:1b9d1a0ad4e84a5e4cc960806bad544735162982ed939be231bd48773b88a85b
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
