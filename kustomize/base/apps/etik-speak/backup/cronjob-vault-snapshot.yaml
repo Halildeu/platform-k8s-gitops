@@ -26,7 +26,10 @@ spec:
         spec:
           serviceAccountName: etik-speak-backup
           restartPolicy: OnFailure
-          containers:
+          # A raft snapshot is every secret this cell holds, in one file. Fetching and
+          # encrypting are separate processes so the Vault token and the archive key
+          # never sit in the same one.
+          initContainers:
             - name: vault-snapshot
               image: curlimages/curl:8.10.1
               imagePullPolicy: IfNotPresent
@@ -36,16 +39,13 @@ spec:
                 - name: VAULT_TOKEN
                   valueFrom:
                     secretKeyRef: {name: etik-speak-backup-vault, key: token}
-                - name: ARCHIVE_ROOT
-                  value: /archive
               command:
                 - /bin/sh
                 - -c
                 - |
                   set -eu
                   TS=$(date -u +%Y%m%dT%H%M%SZ)
-                  OUT="$ARCHIVE_ROOT/vault/vault-raft-${TS}.snap"
-                  mkdir -p "$ARCHIVE_ROOT/vault"
+                  OUT="/work/vault-raft-${TS}.snap"
                   # Vault raft snapshot is the canonical point-in-time backup.
                   # /v1/sys/storage/raft/snapshot streams a binary tar; store
                   # verbatim + verify size > 4KB (empty snapshot header ~= 3KB).
@@ -58,10 +58,68 @@ spec:
                     rm -f "$OUT"
                     exit 2
                   fi
-                  echo "wrote $OUT (${SIZE} bytes)"
-                  # Housekeeping: keep last 14 daily raft snapshots.
-                  find "$ARCHIVE_ROOT/vault" -type f -name '*.snap' -mtime +14 -delete || true
+                  echo "$TS" > /work/stamp
+                  echo "staged $OUT (${SIZE} bytes)"
               volumeMounts:
+                - name: work
+                  mountPath: /work
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits:   {cpu: 200m, memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65532
+                seccompProfile: {type: RuntimeDefault}
+          containers:
+            # Holds the archive key and nothing else.
+            - name: encrypt
+              image: postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: ARCHIVE_ROOT
+                  value: /archive
+                - name: ARCHIVE_KEY
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-archive-key, key: archive_key}
+              command:
+                # bash, not sh: dash has no `pipefail`, so a pg_dump or tar that
+                # fails mid-pipeline would leave openssl happily encrypting an empty
+                # stream and the job reporting success.
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  if [ -z "${ARCHIVE_KEY:-}" ]; then
+                    echo "FATAL: ARCHIVE_KEY empty - refusing to write an unencrypted archive" >&2
+                    exit 1
+                  fi
+                  TS=$(cat /work/stamp)
+                  OUT="$ARCHIVE_ROOT/vault/vault-raft-${TS}.snap.enc"
+                  mkdir -p "$ARCHIVE_ROOT/vault"
+                  openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:ARCHIVE_KEY \
+                    -in "/work/vault-raft-${TS}.snap" -out "$OUT"
+                  # A non-empty check is not enough: openssl writes a valid 48-byte
+                  # header for an empty input, which is what the first live run produced.
+                  SIZE=$(stat -c %s "$OUT")
+                  if [ "$SIZE" -lt 4096 ]; then
+                    echo "FATAL: snapshot archive is $SIZE bytes - below the 4096-byte floor" >&2
+                    rm -f "$OUT"; exit 1
+                  fi
+                  head -c 8 "$OUT" | grep -q "Salted__" \
+                    || { echo "FATAL: archive is not OpenSSL-encrypted" >&2; rm -f "$OUT"; exit 1; }
+                  echo "wrote $OUT"
+                  # Housekeeping: keep last 14 daily archives.
+                  find "$ARCHIVE_ROOT/vault" -type f -name '*.snap.enc' -mtime +14 -delete || true
+                  # A plaintext raft snapshot from an earlier revision is every secret in
+                  # the clear. Remove it whatever its age.
+                  find "$ARCHIVE_ROOT/vault" -type f -name '*.snap' -delete || true
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
                 - name: archive
                   mountPath: /archive
               resources:
@@ -75,6 +133,9 @@ spec:
                 runAsUser: 65532
                 seccompProfile: {type: RuntimeDefault}
           volumes:
+            # Memory-backed: the plaintext never touches a disk that outlives the pod.
+            - name: work
+              emptyDir: {medium: Memory, sizeLimit: 256Mi}
             - name: archive
               persistentVolumeClaim:
                 claimName: etik-speak-backup-archive
