@@ -1254,8 +1254,19 @@ images:
     # Runtime evidence expected (post-rollout): identical /reports/*/data
     # responses (no behavior change) + report-service pod ready + normalized
     # RemoteRequestNormalizer now receives the shared ObjectMapper bean.
-    newTag: sha-1e3e060
-    digest: sha256:9603f1225c3b7dd1b83f38faccc6de3fdffe26c2cd67e2b49abb8a54a6da325d
+    # 2026-07-27 project actual/source trace: platform-backend PR #963,
+    # merge 49c982c4f0ab8827eced3f132f25aa032430726e; image build run
+    # 30304281321 (report-service job 90104571112). Adds company/project
+    # scoped read-only actuals plus invoice, expense, bank/cari, order,
+    # offer, contract, progress-payment and transfer/virman lineage.
+    # 2026-07-28 Serban project picker scope fix: platform-backend PR #965,
+    # merge 84e9e26bcb139784c95b9f963e06d36ccbaaf1ad; image build run
+    # 30309456250 (report-service job 90121428455). Preserves the canonical
+    # OUR_COMPANY project relation and also includes projects referenced by
+    # company 35 yearly ACCOUNT_CARD_ROWS schemas, with exact 35/350 tenant
+    # isolation and a visible fallback for missing catalog rows.
+    newTag: sha-84e9e26
+    digest: sha256:1841aee97eda30b1fcf237259d91e6b8347f00a5037091c5455cb8ad1cb3c68e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -4548,9 +4559,12 @@ images:
     # tuple below; narrow automation updates only those three lines.
     # 2026-07-27 Budget Control product workspace: platform-web PR #1032,
     # main image build run 30292707427 (testai job 90066056594).
-    # sourceRevision: 09dfa606268b7aebd318658d3c83177a3e4db419
-    newTag: sha-09dfa60
-    digest: sha256:8efd33406ae98196e92ef9cfcf7cf15d8e8475cdd2be62839253f44660fa4a52
+    # 2026-07-27 source-document drill-down: platform-web PR #1034,
+    # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
+    # 30304651440 (testai job 90105784383).
+    # sourceRevision: 4938c79517bf6afae65b744dd27fa0fd24c6665d
+    newTag: sha-4938c79
+    digest: sha256:29880c766c45e2e1b48a8cf8a5626297a846c92f117db5ca5056d991359f7e63
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
