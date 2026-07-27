@@ -4591,9 +4591,9 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: 21fdedb57d637bcabf0aac553840f5a9877866f2
-    newTag: sha-21fdedb
-    digest: sha256:e77419100721dc79a49b61e1f98fdcfc2d0edef19b454e19eb0c98aca15e41d4
+    # sourceRevision: 9481fe1492eae911e760e5ea3477337732a53bed
+    newTag: sha-9481fe1
+    digest: sha256:c35a47c238311e6a97960d187f83231e50ad4fe900a3c24c37a7371d641d8ffc
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
