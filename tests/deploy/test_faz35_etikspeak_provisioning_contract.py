@@ -659,12 +659,19 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("assert_subject_persona_binding", self.openfga)
         self.assertIn("exact least-privilege Keycloak persona contract", self.openfga)
         self.assertIn('"password@$password_file"', self.openfga)
+        # A2c: ROPC runs through the dedicated confidential client now, and the secret
+        # arrives as a caller-supplied file so this script never reads the Vault root
+        # token -- see the assertNotIn("root_token") boundary above.
+        self.assertIn('"client_secret@$SMOKE_CLIENT_SECRET_FILE"', self.openfga)
+        self.assertNotIn(
+            "client_id=frontend", self.openfga.split("set -euo pipefail", 1)[1]
+        )
         for exact_claim in (
-            '.azp == "frontend"',
+            '.azp == "smoke-client"',
             '(.aud | sort)',
             '(.scope | split(" ") | sort)',
             '(.roles | sort)',
-            '(.resource_roles | keys | sort) == ["account"]',
+            '(.resource_roles | keys | sort) == []',
             '(.groups | type) == "array"',
             '(.has_authorization == false)',
         ):

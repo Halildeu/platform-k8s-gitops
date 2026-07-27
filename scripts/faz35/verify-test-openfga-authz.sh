@@ -35,6 +35,11 @@ for command_name in curl jq python3 kubectl mktemp stat; do
   }
 done
 
+SMOKE_CLIENT_SECRET_FILE_DEFAULT="/srv/platform/secrets/faz35-test/smoke-client.secret"
+[ -r "$SMOKE_CLIENT_SECRET_FILE_DEFAULT" ] \
+  || SMOKE_CLIENT_SECRET_FILE_DEFAULT="$HOME/bootstrap-drill/smoke-client.secret"
+SMOKE_CLIENT_SECRET_FILE="${SMOKE_CLIENT_SECRET_FILE:-$SMOKE_CLIENT_SECRET_FILE_DEFAULT}"
+
 TMP_DIR=$(mktemp -d /tmp/faz35-openfga-readonly.XXXXXX)
 trap 'find "$TMP_DIR" -type f -delete 2>/dev/null || true; find "$TMP_DIR" -depth -type d -empty -delete 2>/dev/null || true' EXIT
 
@@ -50,11 +55,19 @@ resolve_persona_subject() {
     echo "FATAL: $label password file must be invoking-user-owned mode 600" >&2
     exit 1
   }
+  [ -r "$SMOKE_CLIENT_SECRET_FILE" ] && [ -f "$SMOKE_CLIENT_SECRET_FILE" ] \
+    && [ ! -L "$SMOKE_CLIENT_SECRET_FILE" ] \
+    && [ "$(stat -c '%u' "$SMOKE_CLIENT_SECRET_FILE")" = "$(id -u)" ] \
+    && [ "$(stat -c '%a' "$SMOKE_CLIENT_SECRET_FILE")" = 600 ] || {
+    echo "FATAL: smoke-client secret file must be an invoking-user-owned mode-600 regular non-symlink" >&2
+    exit 1
+  }
   code=$(curl -sS --max-time 15 -o "$token_file" -w '%{http_code}' \
     -X POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=frontend' \
+    --data-urlencode 'client_id=smoke-client' \
+    --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file" \
     --data-urlencode 'scope=openid ethics-manager-audience ethics:case:manage' || printf '000')
@@ -87,7 +100,7 @@ print(json.dumps({
       .iss == $issuer and
       (.sub | type == "string" and test("^[0-9A-Fa-f-]{36}$")) and
       .preferred_username == $username and .org_id == $org and
-      .azp == "frontend" and
+      .azp == "smoke-client" and
       (.roles | type == "array" and index("ethics-manager") != null)
     ' "$claims_file" >/dev/null || {
     echo "FATAL: $label no longer matches the fixed TEST Keycloak persona" >&2
