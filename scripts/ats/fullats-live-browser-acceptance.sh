@@ -266,11 +266,20 @@ if ! vault_field_to_file kv/platform/d35-3 admin_persona_password "$ADMIN_PASSWO
 import json, pathlib, sys
 print(json.dumps({"type":"password","temporary":False,"value":pathlib.Path(sys.argv[1]).read_text()}))
 PY
-  persist_d35_password
+  # Verify BEFORE persisting. Writing Vault first and checking afterwards means a
+  # failed verification leaves Vault holding a password Keycloak never accepted, and
+  # every later reader of kv/platform/d35-3 then authenticates with a value that
+  # cannot work. Measured on 2026-07-27: kv/platform/d35-3 was at v13 while Keycloak
+  # still matched v11, so `provision-test-ethic-entitlement.sh` and
+  # `repair-d35-permission-writer-credential.sh` both got 401 from a live realm that
+  # was otherwise healthy. `kcadm update .../reset-password` can exit 0 without the
+  # intended password becoming usable, so its exit status is not sufficient proof.
   token_from_password "$ADMIN_USERNAME_FILE" "$ADMIN_PASSWORD_FILE" "$ADMIN_TOKEN_FILE" || {
-    echo "FATAL: sentetik d35 admin token alinamadi" >&2
+    echo "FATAL: sentetik d35 admin parolasi Keycloak tarafinda dogrulanamadi;" >&2
+    echo "       Vault'a YAZILMADI (kv/platform/d35-3 dokunulmadan kaldi)." >&2
     exit 1
   }
+  persist_d35_password
   echo "PASS sentetik d35 admin parolasi Vault ile guvenli uzlastirildi"
 fi
 header_from_token "$ADMIN_TOKEN_FILE" "$ADMIN_HEADER_FILE"
