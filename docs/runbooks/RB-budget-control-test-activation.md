@@ -18,6 +18,31 @@ MSSQL NetworkPolicy assigned to `report-service` and `schema-service`.
 Production is deferred. This runbook applies only to `k3d-test` /
 `platform-test`.
 
+## Machine-enforced source boundary
+
+The namespace baseline already supplies the policies; adding another
+service-local allow policy would not narrow them because Kubernetes
+NetworkPolicy rules are additive. The effective TEST boundary is:
+
+- `default-deny-egress` selects every pod;
+- `allow-egress-dns` selects `app.kubernetes.io/part-of=platform` and permits
+  only TCP/UDP `53` to kube-dns;
+- `allow-egress-host-bridge` selects the same label and permits the runtime
+  dependency ports, including PostgreSQL `5432`, but not MSSQL `1433` or SMB
+  `445`;
+- `allow-egress-workcube-mssql` permits `10.9.193.201:1433` only when
+  `app.kubernetes.io/name` is `report-service` or `schema-service`.
+
+`budget-service` carries `app.kubernetes.io/part-of=platform` so it can resolve
+DNS and reach PostgreSQL, but its name is deliberately absent from the
+Workcube policy. Its ConfigMap contains no MSSQL/SMB address and its
+ExternalSecret can materialize only the two PostgreSQL login fields.
+
+`tests/governance/test_budget_service_source_boundary.py` fails if any of
+these selectors, ports, source credentials, or TEST-only placement drift. The
+runtime negative probe in the acceptance steps remains mandatory because a
+rendered policy is not proof of CNI enforcement.
+
 ## Immutable artifacts
 
 | Workload | Source commit | Immutable image |
@@ -80,6 +105,11 @@ Required read-back:
 4. `ExternalSecret/budget-service-secrets` is `Ready=True` and owns the
    resulting Kubernetes Secret.
 
+The application source at
+`platform-backend@91520bca:budget-service/src/main/resources/application.yml`
+binds these exact environment names: `BUDGET_DB_URL`,
+`BUDGET_DB_USERNAME`, `BUDGET_DB_PASSWORD`, and `BUDGET_DB_SCHEMA`.
+
 ## GitOps rollout
 
 The shared TEST workload is changed only through
@@ -102,6 +132,23 @@ Verify:
    address on `1433` and the ERP SMB address on `445` fail, while PostgreSQL
    `5432` succeeds.
 
+Before rollout, read the live `platform-quota` again. The 2026-07-27
+preflight showed `limits.cpu=13350m/16`, `requests.memory=6960Mi/12Gi`,
+`pods=26/34`, `services=33/40`, `secrets=36/44`, and
+`configmaps=28/35`; this is enough for the declared `500m` CPU limit and
+`192Mi` memory request, but it is a point-in-time observation rather than a
+future reservation.
+
+The first slice exposes the standard Prometheus actuator endpoint but does not
+add a ServiceMonitor. Alerting and a product-specific operational dashboard
+are an explicit post-acceptance observability slice; health/readiness and the
+customer journey are not allowed to depend on that follow-up.
+
+The gateway image contains the budget route. Do not promote that gateway
+digest to PROD while the PROD budget upstream remains deferred. A future PROD
+promotion must add the upstream and route atomically or use a gateway artifact
+without the route.
+
 ## Rollback
 
 Rollback reverts only the TEST desired-state image/resource changes to the
@@ -115,6 +162,11 @@ repair.
 No additional UI is required for the first AI-assisted slice. The operator
 gives Codex a bounded batch instruction; Codex reads only authorized source
 records and submits proposal rows to `budget-service`.
+
+The current frontend artifact is the thin `mfe-reporting` workspace from
+`platform-web@09dfa606`; it does not make the browser the budget data
+authority. AI proposal review reuses this workspace or an operator/API flow;
+it does not authorize a new standalone frontend in this slice.
 
 The future contract is proposal-only:
 
