@@ -463,6 +463,42 @@ composite hedefi kalmadığı için boş yere geçiyordu.
 **OTP kayıt penceresi 34 hesaptan 4 kişiye indi** — kalan tek soru bu 4 kişinin ne zaman
 TOTP kaydedeceği.
 
+### Mutlu yol kanıtı (2026-07-27) — kayıt → oturum ÇALIŞIYOR
+
+Önceki kanıt yalnız *tetiklemeyi* gösteriyordu (rol yok → OTP yok, rol var → `CONFIGURE_TOTP`).
+Sizden 4 gerçek hesap için MFA'yı silahlandırmanızı istemek, **kayıt sonrası girişin
+çalıştığını** göstermeden yanlış olurdu. Tek kullanımlık persona ile ölçüldü
+(`browserFlow` test süresince bağlandı, `finally` ile `browser`'a geri alındı; persona silindi):
+
+```
+persona oluştu + requires-mfa doğrudan atandı            PASS
+akış test için bağlandı                                   PASS
+giriş formu servis edildi                                 PASS
+şifre kabul → TOTP kaydı talep edildi              http=200  PASS
+kayıt formunda gizli totpSecret var (len=20)              PASS
+TOTP kaydı kabul → authorization code verildi      http=302  PASS
+kod access token'a değiştirildi                    http=200  PASS
+ikinci giriş yeniden-kayıt DEĞİL, OTP kodu istiyor http=200  PASS
+yanlış OTP reddedildi                              http=200  PASS
+saklanan credential'lar: ['password', 'otp']
+DB'deki credential_data: {"subType":"totp","digits":6,"period":30,"algorithm":"HmacSHA1"}
+```
+
+**Yani asıl bilinmeyen kapandı:** `requires-mfa` taşıyan bir kullanıcı TOTP kaydını
+tamamlayabiliyor ve kullanılabilir bir oturum alıyor. Akışın *özel* kısmı (role bağlı
+CONDITIONAL subflow) uçtan uca çalışıyor.
+
+**KanıtlanMAYAN:** scriptli istemcimin, sonraki bir girişte **saklanan** credential'ın
+kabul ettiği bir kod üretmesi. Üç anahtar türetmesi denendi (form'daki ham secret, DB'deki
+değer, base32); kayıt aşamasında **aynı** hesaplama KC tarafından kabul edildiği hâlde
+giriş formunda reddedildi. Bu bir **harness sınırı** — admin API secret'ı gizliyor ve
+farkı izole edemedim; akışın meşru kullanıcıyı reddettiğinin kanıtı **değil**: ikinci giriş
+stok `kc-otp-login-form` + `auth-otp-form` ile karşılıyor ve saklanan credential standart
+TOTP/6/30/HmacSHA1. Ayrım önemli olduğu için olduğu gibi yazıldı.
+
+Pratik sonuç: 4 kişiden ilki kaydını yaptıktan sonra **gerçek bir tarayıcıyla tek bir giriş
+denemesi** bu boşluğu kapatır. Bağlamayı ondan sonra kalıcı yapmak en güvenli sıra.
+
 ### Yeniden bağlamanın ön koşulları
 
 1. Etkilenen 34 kullanıcının listesi owner ile netleşir (hangileri gerçek kişi, hangileri test personası)
