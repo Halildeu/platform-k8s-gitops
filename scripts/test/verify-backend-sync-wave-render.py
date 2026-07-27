@@ -21,7 +21,8 @@ EXPECTED = {
     "meeting-service": "19",
     "transcript-service": "20",
     "audit-event-consumer-service": "21",
-    "api-gateway": "22",
+    "budget-service": "22",
+    "api-gateway": "23",
 }
 
 
@@ -66,7 +67,10 @@ def main() -> int:
         print("FAIL: rendered backend sync-wave values are not unique", file=sys.stderr)
         return 1
 
-    print("PASS: rendered test overlay has 13 unique dependency-ordered backend sync waves")
+    print(
+        f"PASS: rendered test overlay has {len(EXPECTED)} "
+        "unique dependency-ordered backend sync waves"
+    )
     return 0
 
 

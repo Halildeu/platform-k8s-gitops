@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: budget-service-config
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+  labels:
+    app.kubernetes.io/name: budget-service
+data:
+  SERVER_PORT: "8101"
+
+  # Budget writes are isolated in PostgreSQL. No Workcube MSSQL/SMB endpoint
+  # or credential is present in this workload.
+  BUDGET_DB_URL: "jdbc:postgresql://postgres:5432/budget?currentSchema=budget_service"
+  BUDGET_DB_SCHEMA: "budget_service"
+  BUDGET_RLS_SESSION_ENABLED: "true"
+  BUDGET_DATABASE_ROLE_GUARD_ENABLED: "true"
+
+  SECURITY_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
+  SECURITY_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  BUDGET_JWT_AUDIENCE: "frontend"
+
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"

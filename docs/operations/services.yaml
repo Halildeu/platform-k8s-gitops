@@ -122,6 +122,21 @@ services:
       test: enabled
       prod: enabled
 
+  - name: budget-service
+    repo: platform-backend
+    description: >-
+      Independently deployable Budget and Cost Control product API. Owns
+      PostgreSQL budget, approval, allocation, forecast and audit data; it has
+      no Workcube MSSQL or SMB write credential.
+    jwt_validates: true
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    environments:
+      test: enabled
+      prod: deferred
+
   - name: schema-service
     repo: platform-backend
     description: MSSQL schema explorer + Workcube ETL coordinator

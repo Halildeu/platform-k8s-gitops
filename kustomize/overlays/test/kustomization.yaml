@@ -34,6 +34,7 @@ resources:
   - ../../base/apps/meeting-service    # Faz 24 Meeting Intelligence foundation (#410; test-only, prod D30 cutover'a defer)
   - ../../base/apps/transcript-service    # Faz 24 Meeting Intelligence foundation (#411; test-only, prod D30 cutover'a defer)
   - ../../base/apps/audit-event-consumer-service    # Faz 24 KVKK audit pipeline Redis consumer (#1249; test-only, prod D30 cutover'a defer)
+  - ../../base/apps/budget-service    # Budget Control product cell (#3007; TEST first, ERP source writes forbidden)
   - ../../base/apps/audit-retention-worker          # Faz 24 audit-archive 7yr WORM CronJob (#1250-D, ADR-0042; test-only, prod §5 gate)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
@@ -390,6 +391,12 @@ images:
     # 2026-06-17 D29 Up+Functional verified — health 200 + consumer-group joined).
     digest: sha256:555f663fd973b3813a6b0c9ffea6a7324ca748ad0fb63f20347db3fa2af111eb
 
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/budget-service
+    newName: ghcr.io/halildeu/platform-backend-budget-service
+    # platform-backend PR #960 merged as 91520bca. Main image build
+    # run 30291671229 published this signed, immutable manifest.
+    digest: sha256:ee667af00d7e326e0d0b771c09f4cc0efb8696ff27dbac8b367d06862b2d3dbe
+
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
     # Faz 24 KVKK audit-archive 7yr WORM worker (#1250-D, ADR-0042; C-slice
@@ -709,7 +716,9 @@ images:
     # maps /api/v1/admin/meetings/** to meeting-service; this image pin keeps
     # gateway source/runtime family aligned. platform-backend main merge
     # 389b3bc image build run 28625506330 produced this immutable digest.
-    digest: sha256:d1c7817c849b4b37030a8ffb9ec9c60bc220168558ebda5eb8661c6f527aa74e
+    # platform-backend PR #960 adds the /api/v1/budgets/** route. Main image
+    # build run 30291671229 published this signed, immutable manifest.
+    digest: sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
@@ -4537,9 +4546,11 @@ images:
     # sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4.
     # Current machine-readable authority is the sourceRevision/newTag/digest
     # tuple below; narrow automation updates only those three lines.
-    # sourceRevision: e58be21b8f38c04bd1a812cebeca29aa9d3fcd42
-    newTag: sha-e58be21
-    digest: sha256:d0fe1b4bc67c166beee2c80e09b78a5a2e1aaac6fd23a1d6fee222200baf576e
+    # 2026-07-27 Budget Control product workspace: platform-web PR #1032,
+    # main image build run 30292707427 (testai job 90066056594).
+    # sourceRevision: 09dfa606268b7aebd318658d3c83177a3e4db419
+    newTag: sha-09dfa60
+    digest: sha256:8efd33406ae98196e92ef9cfcf7cf15d8e8475cdd2be62839253f44660fa4a52
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -6709,6 +6720,16 @@ patches:
         path: /spec/replicas
         value: 1
 
+  # Budget Control is a separate product service. TEST opts into one replica;
+  # the base remains fail-closed at zero and PROD is unchanged.
+  - target:
+      kind: Deployment
+      name: budget-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
   # gitops#1647 — rollout trigger for the SPRING_DATASOURCE_URL currentSchema
   # change. The URL lives in audit-event-consumer-service-config consumed via
   # envFrom, which is read only at pod start; a ConfigMap-only edit does NOT
@@ -7132,6 +7153,19 @@ patches:
       - op: add
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_27_PREDICATES_0
         value: "Path=/api/v1/admin/transcripts/**"
+      # Budget Control is TEST-first and PROD-deferred. The base gateway
+      # ConfigMap owns indices 0..25 and this overlay already owns 26..27;
+      # keep the product route in the same TEST-only list so environment
+      # binding cannot shadow the route shipped in application-k8s.yml.
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_28_ID
+        value: "budget-service-route"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_28_URI
+        value: "http://budget-service:8101"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0
+        value: "Path=/api/v1/budgets/**"
 
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
@@ -7678,6 +7712,16 @@ patches:
           argocd.argoproj.io/sync-wave: "21"
   - target:
       kind: Deployment
+      name: budget-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: budget-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "22"
+  - target:
+      kind: Deployment
       name: api-gateway
     patch: |-
       apiVersion: apps/v1
@@ -7685,7 +7729,7 @@ patches:
       metadata:
         name: api-gateway
         annotations:
-          argocd.argoproj.io/sync-wave: "22"
+          argocd.argoproj.io/sync-wave: "23"
 
   # 2026-04-29 (Codex 019dd818 PARTIAL feedback): test cluster ResourceQuota
   # 8 CPU limit + 9 service × 750m = 6.75 CPU + frontend 200m + api-gateway
@@ -7873,6 +7917,16 @@ patches:
           rollingUpdate:
             maxSurge: 0
             maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: budget-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
   - target:
       kind: Deployment
       name: audit-archive-exporter

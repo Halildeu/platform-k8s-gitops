@@ -307,11 +307,12 @@ class BackendPromotionContractTests(unittest.TestCase):
             "meeting-service": "19",
             "transcript-service": "20",
             "audit-event-consumer-service": "21",
-            "api-gateway": "22",
+            "budget-service": "22",
+            "api-gateway": "23",
         }
         self.assertEqual(expected, dict(wave_patches))
         self.assertEqual(len(expected), len({wave for _, wave in wave_patches}))
-        self.assertEqual("22", dict(wave_patches)["api-gateway"])
+        self.assertEqual("23", dict(wave_patches)["api-gateway"])
 
     def test_ci_checks_the_rendered_wave_contract(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
