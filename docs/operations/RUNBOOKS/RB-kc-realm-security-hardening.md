@@ -323,6 +323,66 @@ A2b.1 karşılığı.)
 
 `auth-service` audience enforcement: TEST overlay `SECURITY_JWT_AUDIENCE`/"strict validator" yorumu ile kaynak `SecurityConfigKeycloak` davranışı örtüşmüyor (env açıkça tüketilmiyor olabilir). Ayrı backend/GitOps PR + kendi rollout acceptance'ı gerekir (impersonation gibi hassas consumer'ı etkiler).
 
+## A2c — `frontend` ROPC kapatıldı (LIVE 2026-07-27)
+
+Sıralama önemliydi: **önce tüketiciler taşındı, sonra flip**. Böylece flip tek satırlık bir
+değişikliğe indi ve geri alınabilir kaldı.
+
+Taşınan ROPC tüketicileri (6 script, 2 PR):
+
+```
+#2991  faz35/provision-test-openfga.sh                  -> smoke-client
+       faz35/verify-test-openfga-authz.sh               -> smoke-client
+#2994  faz35/provision-test-keycloak.sh                 -> smoke-client
+       faz35/provision-test-ethic-entitlement.sh        -> smoke-client
+       faz24/repair-d35-permission-writer-credential.sh -> smoke-client
+       ats/d29-smoke-receipt-chain.sh                   -> smoke-ats-v1
+```
+
+Envanteri **iki kez** eksik saydım. Ders: `client_id=frontend` literalini grep'lemek yetmez;
+client değişkende (`WRITER_CLIENT="frontend"`) veya argümanda (`tok frontend ...`) olabilir.
+Doğru tarama yetki akışından başlar:
+
+```bash
+grep -rl "grant_type=password" scripts/ | while read -r f; do
+  printf "%-58s %s%s\n" "$f" \
+    "$(grep -oE 'client_id=[A-Za-z0-9_${}.-]+' "$f" | sort -u | tr '\n' ' ')" \
+    "$(grep -oE '[A-Z_]*CLIENT[A-Z_]*="[a-z0-9-]+"' "$f" | sort -u | tr '\n' ' ')"
+done
+```
+
+### Flip kanıtı
+
+```
+ÖNCE   directAccessGrantsEnabled=True   frontend ROPC 200   smoke-client ROPC 200
+SONRA  directAccessGrantsEnabled=False  frontend ROPC 400 unauthorized_client
+                                        smoke-client ROPC 200
+       standardFlowEnabled=True (dokunulmadı)
+       GET /auth?client_id=frontend -> 200, giriş formu render edildi (8714 bayt)
+       GET https://testai.acik.com/ -> 200
+```
+
+Flip yalnız **direct access grant**'ı kapatır; tarayıcının kullandığı authorization-code
+akışı `standardFlowEnabled` altındadır ve dokunulmadı — yukarıdaki `/auth` kanıtı bunu
+gösteriyor. Bu yüzden değişiklik tasarım gereği UI-etkili değil; tam tarayıcı oturumu
+açmadım (test personası şifresini bir forma yazmak credential-handling sınırına girer).
+
+### Dayanıklılık
+
+`platform-test` realm'ini import eden hiçbir manifest `frontend` client'ını tanımlamıyor
+(`bootstrap/local-fixtures/keycloak/dev-local-realm.json` ayrı bir dev realm'i), yani flip'i
+sessizce geri alacak bir import yok. `run-platform-desktop-token-evidence-chain.sh` geçici
+olarak DAG açıyor ama hedefi `platform-desktop` ve `trap ... EXIT` ile eski değeri geri
+yazıyor — `frontend`'e dokunmuyor.
+
+### Rollback
+
+```bash
+ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh update \
+  clients/4dfdddf4-8464-44ad-bb3d-df9de8de62e1 -r platform-test \
+  -s directAccessGrantsEnabled=true'
+```
+
 ## B (privileged MFA) — durum, yanlış ölçüm ve yeniden bağlama koşulları
 
 **Akış hazır ve davranışı kanıtlı**, ama şu an **bağlı değil** (`browserFlow=browser`) ve
