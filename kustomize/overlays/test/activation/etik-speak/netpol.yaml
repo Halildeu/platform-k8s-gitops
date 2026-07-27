@@ -167,6 +167,36 @@ spec:
               app.kubernetes.io/part-of: etik-speak
       ports: [{port: http, protocol: TCP}]
 ---
+# ES-203/C — the destination half of the display-name call.
+#
+# `allow-ingress-intra-ns` lets pods labelled `part-of: platform` reach each
+# other, and user-service is one of them. etik-speak pods are NOT: they carry
+# `part-of: etik-speak`, so intra-ns does not cover them and
+# `default-deny-ingress` (podSelector {}) applies. That is why every
+# etik-speak -> platform hop in this file needs its own ingress grant; the
+# egress rule alone leaves the packet refused at the far end, which is exactly
+# how this was measured on the running cell:
+#
+#   ethics-service netns -> user-service podIP:8089  ->  connect refused
+#   ethics-service netns -> auth-service podIP:8088  ->  HTTP 401 (reachable)
+#
+# NetworkPolicy grants are additive, so this neither narrows nor replaces
+# `allow-ingress-intra-ns`; api-gateway and auth-service keep reaching
+# user-service exactly as before.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ethics-service-to-user-service}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: user-service}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-service
+              app.kubernetes.io/part-of: etik-speak
+      ports: [{port: http, protocol: TCP}]
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: allow-ethics-service-to-notification-orchestrator}
