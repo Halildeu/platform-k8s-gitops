@@ -21,7 +21,7 @@
 # Flags:
 #   --service <name>            Required. One of: auth-service, user-service,
 #                               variant-service, core-data-service,
-#                               report-service, schema-service,
+#                               report-service, budget-service, schema-service,
 #                               permission-service,
 #                               cross-ai-deployment-protection-test, openfga,
 #                               ghcr-token
@@ -114,7 +114,7 @@ fi
 # Service path resolution
 case "$SERVICE" in
   auth-service|user-service|variant-service|core-data-service|\
-  report-service|schema-service|permission-service|\
+  report-service|budget-service|schema-service|permission-service|\
   cross-ai-deployment-protection-test|openfga)
     KV_PATH="kv/data/platform/$SERVICE"
     ;;

@@ -44,6 +44,10 @@ path "kv/data/platform/report-service" {
   capabilities = ["create", "update", "read"]
 }
 
+path "kv/data/platform/budget-service" {
+  capabilities = ["create", "update", "read"]
+}
+
 path "kv/data/platform/schema-service" {
   capabilities = ["create", "update", "read"]
 }
