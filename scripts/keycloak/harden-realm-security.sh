@@ -27,14 +27,22 @@
 #        kaynak (`realms/$REALM`) + skaler varsayıyor, `--rollback` de realm
 #        snapshot doğruluyor. Repo yüzeyi ayrıca makine-zorunlu:
 #        tests/operations/test_keycloak_client_origin_invariant.py (PR #2982).
-#   B  — conditional-OTP privileged. Akış `browser-privileged-mfa` LIVE ve
-#        2026-07-27 KANITLANDI (throwaway client+user sondası, sonra realm
-#        seviyesinde): `requires-mfa` rolü YOKken yetki kodu alınır (OTP yok),
-#        rol VARken 302 -> login-actions/required-action?execution=CONFIGURE_TOTP.
-#        `browserFlow` artık DESIRED_JSON'da — bağlama makine-zorunlu.
-#        DORMANT: rolü henüz kimse taşımıyor; asıl arming adımı rol atamasıdır
-#        (ayrıcalıklı personaya atamak o kişiyi sonraki girişte OTP kaydına
-#        zorlar → owner-zamanlı, bu script kapsamı dışı).
+#   B  — conditional-OTP privileged. Akis `browser-privileged-mfa` VAR ve davranisi
+#        2026-07-27 kanitlandi (rol yokken OTP yok / rol varken CONFIGURE_TOTP).
+#        Realm'e BAGLANDI, sonra AYNI GUN GERI ALINDI ve `browserFlow` bu desired
+#        state'ten CIKARILDI. Sebep: baglamanin "kimseyi etkilemedigi" olcumu YANLISTI.
+#        `roles/requires-mfa/users` yalniz DOGRUDAN atamalari dondurur; rol asil olarak
+#        COMPOSITE uzerinden dagitiliyor ve ters yon hic sorulmamisti:
+#          requires-mfa'yi iceren roller: MEETING_ADMIN, ENDPOINT_ADMIN, TRANSCRIPT_ADMIN,
+#          ethics-manager, remote-bridge-approver, remote-bridge-operator
+#          efektif tasiyan: 34 TEKIL kullanici (admin hesabi + gercek kisiler dahil);
+#          orneklenenlerin neredeyse hicbirinde OTP kayitli DEGIL -> sonraki tarayici
+#          girisinde TOTP kurulumuna zorlanirlardi.
+#        Yani bu bir "dormant" degisiklik DEGILDI. Yeniden baglamak once (a) kimlerin
+#        etkilendigi listesinin owner'la netlesmesini, (b) OTP kayit penceresini,
+#        (c) tercihen `requires-mfa`nin composite'lerden cikarilip hedefli atanmasini
+#        gerektirir. Bagladiktan sonra `browserFlow`u desired state'e geri koymak sart
+#        (aksi halde canli/desired drift kalir) — ama once (a)-(c).
 # Bu sürüm: A1 + A2-obs + B(browserFlow bağlaması).
 #
 # ── Modes ──
@@ -102,8 +110,7 @@ DESIRED_JSON='{
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
   "eventsEnabled": true,
-  "eventsExpiration": 604800,
-  "browserFlow": "browser-privileged-mfa"
+  "eventsExpiration": 604800
 }'
 
 # Beklenen -s arg sayısı (alan × 2). count-assert için (Codex REVISE-3).
@@ -119,7 +126,7 @@ PYENGINE='
 import json, os, sys
 DESIRED = json.loads(os.environ["DESIRED_JSON"])
 BOOL_KEYS = {"bruteForceProtected", "permanentLockout", "eventsEnabled"}
-STR_KEYS  = {"bruteForceStrategy", "browserFlow"}
+STR_KEYS  = {"bruteForceStrategy"}
 INT_KEYS  = set(DESIRED) - BOOL_KEYS - STR_KEYS
 # KC 26.5.5 BruteForceStrategy enum (canli dogrulandi: MULTIPLE; LINEAR digeri).
 BF_STRATEGY_ENUM = {"MULTIPLE", "LINEAR"}

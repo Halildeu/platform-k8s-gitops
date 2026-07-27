@@ -27,7 +27,7 @@
 | **A2c** | `frontend.directAccessGrantsEnabled=false` | **BLOCKED on A2b.3** — Faz25 ATS scope opt-in + Faz35 ethics scope opt-in tamamlanmadan flip DAG=false ROPC break eder (fullats-application-smoke, provision-test-openfga/ethic-entitlement/keycloak, verify-test-openfga-authz). Ayrı cutover PR. Gözlem tarafı hazır: A2-obs login event logging LIVE olduğu için flip'in etkisi ölçülebilir. |
 | A2-obs | Login event logging (`eventsEnabled` + 7g retention) — `harden-realm-security.sh` desired-state | ✅ **LIVE** (2026-07-24) |
 | A3 | redirectUri + webOrigins narrowing | ⚠️ **CANLIDA UYGULANMIŞ, DESIRED-STATE'TE YOK** (2026-07-27 ölçümü: `frontend` redirectUris=1 `https://testai.acik.com/*`, webOrigins tek origin, wildcard yok — ama `harden-realm-security.sh` bu alanları YÖNETMİYOR). **Düzeltme:** `--apply` bu daraltmayı GERİ ALMAZ — script yalnız `realms/$REALM` seviyesindeki skaler alanları yönetir, `clients/*`'a hiç dokunmaz. Gerçek boşluk daha keskin: TEST realm'indeki `frontend` client'ını **oluşturan hiçbir repo kaynağı yok** (realm import yok, client-create scripti yok), yani daraltmanın desired-state'i hiç mevcut değil — client yeniden oluşturulursa yeniden üretilmez. 2026-07-27'de repo'nun fiilen kontrol ettiği yüzey makine-zorunlu hale getirildi: `tests/operations/test_keycloak_client_origin_invariant.py` (fixture'larda wildcard `webOrigins`/`redirectUris` yasak; `dev-local-realm.json`'daki iki `["*"]` → `["+"]` düzeltildi). Canlı TEST/PROD client'larını desired-state'e almak ayrı bir yüzey gerektirir: mevcut engine tek kaynak + skaler varsayıyor, client-seviyesi liste alanları ve ortam-parametrik hostname ister. |
-| B | Conditional-OTP privileged | ✅ **BAĞLI + KANITLI, DORMANT** (2026-07-27). `browserFlow=browser-privileged-mfa` canlıda ve **`DESIRED_JSON`'da** → makine-zorunlu; `--check` CONVERGED (13/13 MATCH). Kanıt (throwaway client+user sondası, sonra realm seviyesinde tekrar): `requires-mfa` rolü **YOK**ken yetki kodu alınır (OTP yok), rol **VAR**ken `302 → login-actions/required-action?execution=CONFIGURE_TOTP` + sayfa "Mobile Authenticator / One-time code / TOTP". Koşul `admin`/`manager`'a değil **`condUserRole=requires-mfa`**'ya bakar. **Dormant** çünkü rolü henüz kimse taşımıyor (0 taşıyıcı, 0 OTP kaydı) — bu yüzden bağlamak mevcut hiçbir girişi etkilemedi. **Asıl arming adımı rol atamasıdır** ve ayrıcalıklı bir personaya atamak o kişiyi sonraki girişte OTP kaydına zorlar → owner-zamanlı. |
+| B | Conditional-OTP privileged | ⚠️ **AKIŞ HAZIR + DAVRANIŞ KANITLI, AMA BAĞLANMADI — owner kararı bekliyor.** 2026-07-27: bağlandı, aynı gün geri alındı, `browserFlow` desired-state'ten çıkarıldı. Sebep: "kimseyi etkilemiyor" ölçümüm YANLIŞTI. `roles/requires-mfa/users` yalnız **doğrudan** atamayı döner; rol asıl olarak **composite** ile dağılıyor ve ters yönü hiç sormamıştım. `requires-mfa`'yı içeren roller: `MEETING_ADMIN`, `ENDPOINT_ADMIN`, `TRANSCRIPT_ADMIN`, `ethics-manager`, `remote-bridge-approver`, `remote-bridge-operator` → **34 tekil kullanıcı** (admin hesabı + gerçek kişiler dahil), örneklenenlerin neredeyse hiçbirinde OTP kayıtlı değil. Yani bağlamak 34 kişiyi sonraki girişte TOTP kurulumuna zorluyordu. |
 
 > **A2c karar kuralı (A2-obs ile ölçüme bağlandı, 2026-07-24).** A2c'nin önündeki
 > engel bir "ekip kararı" değil, **veri yokluğuydu**: realm event logging **kapalıydı**
@@ -323,47 +323,59 @@ A2b.1 karşılığı.)
 
 `auth-service` audience enforcement: TEST overlay `SECURITY_JWT_AUDIENCE`/"strict validator" yorumu ile kaynak `SecurityConfigKeycloak` davranışı örtüşmüyor (env açıkça tüketilmiyor olabilir). Ayrı backend/GitOps PR + kendi rollout acceptance'ı gerekir (impersonation gibi hassas consumer'ı etkiler).
 
-## B (privileged MFA) — durum ve arming
+## B (privileged MFA) — durum, yanlış ölçüm ve yeniden bağlama koşulları
 
-**Bağlama TAMAM (2026-07-27).** `browserFlow=browser-privileged-mfa` canlıda ve
-`harden-realm-security.sh` `DESIRED_JSON`'ında; `--check` 13/13 MATCH ile CONVERGED.
-Yeni `guard_browser_flow()` fail-closed: desired var olmayan bir akışı işaret ederse
-converge **yapılmaz** (aksi halde her giriş kırılırdı). Guard mutasyonla doğrulandı:
-sahte akış adıyla `--check` exit 1 + akışın eksik olduğunu söyleyen mesaj.
+**Akış hazır ve davranışı kanıtlı**, ama şu an **bağlı değil** (`browserFlow=browser`) ve
+`browserFlow` `harden-realm-security.sh` desired-state'inde **değil** — yani hiçbir
+converge çalışması onu yeniden kurmaz.
 
-Akış kanıtı — **varlık değil davranış** ölçüldü:
+Davranış kanıtı (2026-07-27, throwaway client+user sondası, sonra realm seviyesinde):
 
 ```
-requires-mfa YOK   → yetki kodu ALINDI, OTP istenmedi
-requires-mfa VAR   → 302 → login-actions/required-action?execution=CONFIGURE_TOTP
-                     sayfa: "Mobile Authenticator" / "One-time code" / "TOTP"
+requires-mfa YOK  → yetki kodu ALINDI, OTP istenmedi
+requires-mfa VAR  → 302 → login-actions/required-action?execution=CONFIGURE_TOTP
 ```
 
-İlk kez client-scoped `authenticationFlowBindingOverrides` ile (gerçek yollara
-dokunmadan), sonra realm seviyesinde tekrar. Sonda throwaway client + throwaway
-kullanıcı kullandı ve ikisini de sildi.
+### Neden geri alındı — ölçüm hatası
 
-### Şu an DORMANT — arming adımı owner'da
+Bağlamanın "kimseyi etkilemediğini" söylemiştim. **Yanlıştı.** `roles/requires-mfa/users`
+yalnız **doğrudan** atamaları döndürür ve `0` verdi; rol asıl olarak **composite** ile
+dağıtılıyor ve ben **ters yönü** (hangi roller `requires-mfa`'yı içeriyor) hiç sormamıştım.
 
-`requires-mfa` rolünü **hiç kimse taşımıyor** (0 taşıyıcı, composite değil; 20
-kullanıcının hiçbirinde OTP kaydı yok). Bu yüzden bağlama kimseyi etkilemedi.
-Mekanizmayı fiilen devreye alan şey rol atamasıdır:
+```
+requires-mfa'yı içeren roller : MEETING_ADMIN · ENDPOINT_ADMIN · TRANSCRIPT_ADMIN
+                                ethics-manager · remote-bridge-approver · remote-bridge-operator
+efektif taşıyan               : 34 TEKİL kullanıcı (admin hesabı + gerçek kişiler dahil)
+OTP kayıtlı                   : örneklenenlerde neredeyse yok
+```
+
+Yani bağlamak 34 kişiyi sonraki tarayıcı girişinde TOTP kurulumuna zorluyordu — dormant
+değil, canlı bir etki. Fark edildiği anda geri alındı.
+
+### Rol miras zincirini doğru sorgulama
 
 ```bash
-ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh \
-  add-roles -r platform-test --uusername <persona> --rolename requires-mfa'
+# YANLIŞ (yalnız doğrudan atama):
+kcadm get roles/requires-mfa/users -r platform-test
+# DOĞRU (ters yön — hangi composite içeriyor):
+for r in $(kcadm get roles -r platform-test --fields name --format csv --noquotes); do
+  kcadm get "roles/$r/composites" -r platform-test 2>/dev/null | grep -q '"requires-mfa"' && echo "$r içerir"
+done
+# ve kullanıcı bazında EFEKTİF rol:
+kcadm get "users/<id>/role-mappings/realm/composite" -r platform-test
 ```
 
-Owner-zamanlı: kendi admin hesabınıza atarsanız sonraki testai girişinizde TOTP
-kurmanız istenir. Geri alma `remove-roles` ile aynı hızda.
+### Yeniden bağlamanın ön koşulları
 
-### Bağlamayı geri almak
+1. Etkilenen 34 kullanıcının listesi owner ile netleşir (hangileri gerçek kişi, hangileri test personası)
+2. OTP kayıt penceresi planlanır (kim, ne zaman kaydeder)
+3. Tercihen `requires-mfa` composite'lerden çıkarılıp **hedefli** atanır — o zaman kapsam öngörülebilir olur
+4. Bağlandıktan sonra `browserFlow` desired-state'e geri konur, aksi halde canlı/desired drift kalır
+
+Bağlama ve geri alma komutları:
 
 ```bash
-ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh \
-  update realms/platform-test -s browserFlow=browser'
+ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh update realms/platform-test -s browserFlow=browser-privileged-mfa'
+ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh update realms/platform-test -s browserFlow=browser'
 ```
-
-`browserFlow` artık desired-state'te, yani `--apply` bunu **geri getirir**; kalıcı
-geri alma için `DESIRED_JSON`'dan da çıkarılmalı.
 
