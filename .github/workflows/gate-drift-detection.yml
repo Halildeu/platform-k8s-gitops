@@ -52,6 +52,10 @@ on:
       # tests/operations/; a fixture-only PR must trigger it, otherwise a
       # reintroduced webOrigins:["*"] lands unchecked.
       - "bootstrap/local-fixtures/**"
+      # A2b.3: smoke-ats-v1 least-privilege guard reads the setup script itself, so a
+      # script-only PR must trigger it (flipping fullScopeAllowed to true is a one-word
+      # edit that leaves a WORKING token — the regression is silent).
+      - "scripts/keycloak/**"
       # DD-4 env+Dockerfile+Python compat
       - "scripts/migration/etl_worker/etl_worker/config.py"
       - "scripts/migration/etl_worker/Dockerfile"
