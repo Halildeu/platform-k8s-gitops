@@ -22,9 +22,20 @@
 #        (Not: `frontend` public client + directAccessGrants=true, yani parola
 #        grant'i client kimlik dogrulamasi olmadan calisiyor — A2c'nin kapatmak
 #        istedigi risk tam olarak bu.)
-#   A3 — redirectUri + webOrigins narrowing                   [sonraki PR]
-#   B  — conditional-OTP privileged                           [ayrı flow PR]
-# Bu sürüm: A1.
+#   A3 — redirectUri + webOrigins narrowing. CANLIDA uygulanmış ama BU SCRIPT
+#        yönetemez: alanlar `clients/*` üzerinde ve liste tipinde; engine tek
+#        kaynak (`realms/$REALM`) + skaler varsayıyor, `--rollback` de realm
+#        snapshot doğruluyor. Repo yüzeyi ayrıca makine-zorunlu:
+#        tests/operations/test_keycloak_client_origin_invariant.py (PR #2982).
+#   B  — conditional-OTP privileged. Akış `browser-privileged-mfa` LIVE ve
+#        2026-07-27 KANITLANDI (throwaway client+user sondası, sonra realm
+#        seviyesinde): `requires-mfa` rolü YOKken yetki kodu alınır (OTP yok),
+#        rol VARken 302 -> login-actions/required-action?execution=CONFIGURE_TOTP.
+#        `browserFlow` artık DESIRED_JSON'da — bağlama makine-zorunlu.
+#        DORMANT: rolü henüz kimse taşımıyor; asıl arming adımı rol atamasıdır
+#        (ayrıcalıklı personaya atamak o kişiyi sonraki girişte OTP kaydına
+#        zorlar → owner-zamanlı, bu script kapsamı dışı).
+# Bu sürüm: A1 + A2-obs + B(browserFlow bağlaması).
 #
 # ── Modes ──
 #   --check                read-only drift raporu (MUTASYON YOK).
@@ -91,7 +102,8 @@ DESIRED_JSON='{
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
   "eventsEnabled": true,
-  "eventsExpiration": 604800
+  "eventsExpiration": 604800,
+  "browserFlow": "browser-privileged-mfa"
 }'
 
 # Beklenen -s arg sayısı (alan × 2). count-assert için (Codex REVISE-3).
@@ -107,7 +119,7 @@ PYENGINE='
 import json, os, sys
 DESIRED = json.loads(os.environ["DESIRED_JSON"])
 BOOL_KEYS = {"bruteForceProtected", "permanentLockout", "eventsEnabled"}
-STR_KEYS  = {"bruteForceStrategy"}
+STR_KEYS  = {"bruteForceStrategy", "browserFlow"}
 INT_KEYS  = set(DESIRED) - BOOL_KEYS - STR_KEYS
 # KC 26.5.5 BruteForceStrategy enum (canli dogrulandi: MULTIPLE; LINEAR digeri).
 BF_STRATEGY_ENUM = {"MULTIPLE", "LINEAR"}
@@ -238,6 +250,24 @@ except Exception: print("")' 2>/dev/null || echo "")
     || { echo "ERROR: realm guard fail (beklenen '$REALM', bulunan '$got') — script realm YARATMAZ" >&2; exit 1; }
 }
 
+# ─── fail-closed akış guard'ı (browserFlow desired'ı var olmayan bir akışı
+# işaret ederse converge TÜM girişleri kırar — mutasyon öncesi doğrula) ──────
+guard_browser_flow() {
+  local want got
+  want=$(DESIRED_JSON="$DESIRED_JSON" python3 -c \
+    'import json,os; print(json.loads(os.environ["DESIRED_JSON"]).get("browserFlow",""))')
+  [ -n "$want" ] || return 0   # browserFlow yönetilmiyorsa kontrol gereksiz
+  got=$($KC get authentication/flows -r "$REALM" 2>/dev/null \
+    | python3 -c 'import json,sys
+try: print("\n".join(f.get("alias","") for f in json.load(sys.stdin)))
+except Exception: pass' 2>/dev/null | grep -Fx "$want" || true)
+  [ "$got" = "$want" ] \
+    || { echo "ERROR: browserFlow guard fail — '$want' akışı realm '$REALM'de YOK." >&2
+         echo "       Bu akış olmadan converge her girişi kırar. Script akış YARATMAZ;" >&2
+         echo "       önce akışı kur (RB-kc-realm-security-hardening.md B bölümü)." >&2
+         exit 1; }
+}
+
 # ─── güvenli snapshot (umask 077 + install -m700 + mktemp unique + fail-clean) ─
 take_snapshot() {
   local label="${1:-snap}" ts snap
@@ -263,7 +293,7 @@ report_diff() {  # $1 = current json file; global DRIFT_COUNT set
 case "$MODE" in
   --check)
     echo "=== harden-realm-security --check (realm=$REALM, container=$KC_CONTAINER) ==="
-    login; guard_realm
+    login; guard_realm; guard_browser_flow
     CUR_TMP="$(mktemp)"; trap 'rm -f "$CUR_TMP"' EXIT
     $KC get "realms/$REALM" > "$CUR_TMP" 2>/dev/null || { echo "ERROR: realm get" >&2; exit 1; }
     report_diff "$CUR_TMP"
@@ -279,7 +309,7 @@ case "$MODE" in
     echo "=== harden-realm-security --apply (realm=$REALM, container=$KC_CONTAINER) ==="
     # 1) args'ı ÖNCE üret+validate (fail-closed) — login/mutasyon öncesi
     gen_args applyargs
-    login; guard_realm
+    login; guard_realm; guard_browser_flow
 
     # 2) pre-state snapshot (FULL realm rep — rollback kaynağı; güvenli oluşturma)
     SNAP="$(take_snapshot apply)" || { echo "ERROR: snapshot alınamadı" >&2; exit 1; }
