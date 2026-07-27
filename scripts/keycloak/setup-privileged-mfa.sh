@@ -97,7 +97,7 @@ PRIVILEGED_ROLES="ENDPOINT_ADMIN MEETING_ADMIN TRANSCRIPT_ADMIN ethics-manager r
 # escape MFA -- the list is authoritative but its drift is visible.
 DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-admin@example.com etik-staff@acik.com halil.kocoglu@serban.com.tr zeynep.akkilic@serban.com.tr}"
 # Identities that must NEVER receive the marker, whatever roles they hold. Automation.
-AUTOMATION_MARKERS="${AUTOMATION_MARKERS:-persona -test smoke canary ag0 c5persona rb- .invalid @test. @synthetic. localtest.me test.local}"
+AUTOMATION_MARKERS="${AUTOMATION_MARKERS:-persona -test smoke canary ag0 c5persona rb- codex -lock- recorder .invalid @test. @synthetic. localtest.me test.local}"
 MFA_ROLE="requires-mfa"
 NEW_FLOW="browser-privileged-mfa"
 SUB_ALIAS="privileged-force-otp"
@@ -192,6 +192,29 @@ report() {  # DRIFT counter
 $(q "$API/roles/$r/users" | jq -r '.[]?.username // empty')
 EOF
   done
+  # Suppression must be auditable too: a marker that accidentally matches a person would
+  # hide them from the warning above. Print what was treated as automation and why.
+  local suppressed=""
+  for r in $PRIVILEGED_ROLES; do
+    role_exists "$r" || continue
+    while IFS= read -r holder; do
+      [ -n "$holder" ] || continue
+      is_automation "$holder" || continue
+      case " $suppressed " in *" $holder "*) continue ;; esac
+      suppressed="$suppressed $holder"
+    done <<EOF
+$(q "$API/roles/$r/users" | jq -r '.[]?.username // empty')
+EOF
+  done
+  if [ -n "$suppressed" ]; then
+    local n; n=$(printf '%s\n' $suppressed | wc -l | tr -d ' ')
+    echo "  otomasyon sayılıp MFA dışı bırakılan: $n kimlik"
+    for h in $suppressed; do
+      for m in $AUTOMATION_MARKERS; do
+        case "$h" in *"$m"*) echo "    - $h  (marker: $m)"; break ;; esac
+      done
+    done
+  fi
   if [ -n "$uncovered" ]; then
     echo "  UYARI: ayrıcalıklı rol taşıyan ve otomasyon görünmeyen, DIRECT_MFA_USERS'ta OLMAYAN kimlikler:"
     for h in $uncovered; do echo "    - $h"; done
