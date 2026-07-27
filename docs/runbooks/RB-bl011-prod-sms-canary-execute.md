@@ -156,21 +156,33 @@ kubectl --context k3d-prod -n $NS exec $POD -- curl -sS http://localhost:8081/ac
 
 ### 4.1 JWT mint
 
+> **A2b.2 (2026-07-21) — prod smoke-client pivot**: Runbook A2c prod cutover (frontend.DAG=false)
+> sonrasına hazırlanır — public `frontend` client'ın password-grant'ı kapanır. Prereq: A2a-prod
+> Vault seed (`kv/platform/keycloak/smoke-client` — TEST paralelinde `serban` realm için) + A2b.1
+> prod token contract apply (scope-mapping + smoke-runtime-v1 + smoke-notify-v1 opt-in). Prod A2a/A2b.1
+> yürütülmeden bu JWT mint bloğu `unauthorized_client` verir. Prod A2a/A2b.1 execute'i owner-gated.
+> Tarihsel LIVE DELIVERED 2026-05-25 kanıtı `frontend` client + `openid notify-canary` scope kullandı;
+> yeni deneme A2c cutover'ından sonra bu runbook'la yapılır.
+
 ```bash
 ssh halil@staging-sw 'bash -s' <<'OUTER'
 ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
 PERSONA_PASS=$(docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
   vault kv get -mount=kv -field=password platform/keycloak/persona/notify-canary-org-prod-default)
+# Prereq: prod A2a → smoke-client seed edildi. Yoksa unauthorized_client döner.
+SMOKE_CLIENT_SECRET=$(docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv get -mount=kv -field=client_secret platform/keycloak/smoke-client)
 unset ROOT_TOKEN
 
 ACCESS_TOKEN=$(curl -sS -X POST \
   "https://ai.acik.com/realms/serban/protocol/openid-connect/token" \
-  -d "username=notify-canary-org-prod-default" \
+  --data-urlencode "username=notify-canary-org-prod-default" \
   --data-urlencode "password=$PERSONA_PASS" \
-  -d "grant_type=password" \
-  -d "client_id=frontend" \
-  -d "scope=openid notify-canary" | jq -r .access_token)
-unset PERSONA_PASS
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=smoke-client" \
+  --data-urlencode "client_secret=$SMOKE_CLIENT_SECRET" \
+  --data-urlencode "scope=openid smoke-notify-v1 notify-canary" | jq -r .access_token)
+unset PERSONA_PASS SMOKE_CLIENT_SECRET
 
 echo "JWT len=${#ACCESS_TOKEN}"
 

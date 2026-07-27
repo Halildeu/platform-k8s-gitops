@@ -48,9 +48,18 @@ UID_=$(curl -sS -H "Authorization: Bearer $ADMTOK" "$KC/admin/realms/$REALM/user
 PPASS=$(openssl rand -base64 24 | tr -d '\n')
 curl -sS -o /dev/null -X PUT -H "Authorization: Bearer $ADMTOK" -H "Content-Type: application/json" \
   "$KC/admin/realms/$REALM/users/$UID_/reset-password" -d "$(jq -n --arg v "$PPASS" '{type:"password",value:$v,temporary:false}')"
+# A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover).
+# Vault kv/platform/keycloak/smoke-client (A2a); persona=c5persona-admin-9001 smoke-runtime-v1 scope OK.
+VT=$(python3 -c "import json; print(json.load(open('/home/halil/bootstrap-drill/vault-init-test.json'))['root_token'])" 2>/dev/null || echo "")
+SMOKE_SEC=$(docker exec -e VAULT_TOKEN="$VT" platform-vault-test \
+  vault kv get -field=client_secret kv/platform/keycloak/smoke-client 2>/dev/null || echo "")
+[ -z "$SMOKE_SEC" ] && { say "FAIL smoke-client-secret (kv/platform/keycloak/smoke-client — A2a seed?)"; echo "$(date -u +%FT%TZ) FAIL smoke-client-secret" > "$STATUS"; exit 1; }
+VT=""
 PTOK=$(curl -sS -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
-  --data-urlencode grant_type=password --data-urlencode client_id=frontend \
+  --data-urlencode grant_type=password --data-urlencode client_id=smoke-client \
+  --data-urlencode "client_secret=$SMOKE_SEC" \
   --data-urlencode username=$PERSONA --data-urlencode "password=$PPASS" | jq -r '.access_token // empty')
+SMOKE_SEC=""
 [ -z "$PTOK" ] && { say "FAIL persona-token"; echo "$(date -u +%FT%TZ) FAIL persona-token" > "$STATUS"; exit 1; }
 ERESP=$(curl -sS -X POST -H "Authorization: Bearer $PTOK" -H "Content-Type: application/json" \
   "$GW/api/v1/endpoint-admin/endpoint-enrollments" -d '{"expiresInMinutes":10,"note":"device-key autorenew cron"}')
