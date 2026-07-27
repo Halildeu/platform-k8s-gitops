@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etik-speak-vault-snapshot
+  labels:
+    app.kubernetes.io/part-of: etik-speak
+    app.kubernetes.io/component: backup
+    faz35.backup.type: vault
+spec:
+  schedule: "20 3 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: etik-speak
+            app.kubernetes.io/component: backup
+            faz35.backup.type: vault
+        spec:
+          serviceAccountName: etik-speak-backup
+          restartPolicy: OnFailure
+          containers:
+            - name: vault-snapshot
+              image: curlimages/curl:8.10.1
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: VAULT_ADDR
+                  value: http://vault.vault.svc.cluster.local:8200
+                - name: VAULT_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-vault, key: token}
+                - name: ARCHIVE_ROOT
+                  value: /archive
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TS=$(date -u +%Y%m%dT%H%M%SZ)
+                  OUT="$ARCHIVE_ROOT/vault/vault-raft-${TS}.snap"
+                  mkdir -p "$ARCHIVE_ROOT/vault"
+                  # Vault raft snapshot is the canonical point-in-time backup.
+                  # /v1/sys/storage/raft/snapshot streams a binary tar; store
+                  # verbatim + verify size > 4KB (empty snapshot header ~= 3KB).
+                  curl -sf --output "$OUT" \
+                    --header "X-Vault-Token: $VAULT_TOKEN" \
+                    "$VAULT_ADDR/v1/sys/storage/raft/snapshot"
+                  SIZE=$(stat -c %s "$OUT" 2>/dev/null || stat -f %z "$OUT")
+                  if [ "$SIZE" -lt 4096 ]; then
+                    echo "vault snapshot suspiciously small (${SIZE} bytes) — likely auth-denied. Aborting."
+                    rm -f "$OUT"
+                    exit 2
+                  fi
+                  echo "wrote $OUT (${SIZE} bytes)"
+                  # Housekeeping: keep last 14 daily raft snapshots.
+                  find "$ARCHIVE_ROOT/vault" -type f -name '*.snap' -mtime +14 -delete || true
+              volumeMounts:
+                - name: archive
+                  mountPath: /archive
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits:   {cpu: 200m, memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65532
+                seccompProfile: {type: RuntimeDefault}
+          volumes:
+            - name: archive
+              persistentVolumeClaim:
+                claimName: etik-speak-backup-archive

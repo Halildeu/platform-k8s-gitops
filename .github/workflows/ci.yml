@@ -13,6 +13,14 @@ jobs:
   kustomize-build:
     name: Kustomize Build Sanity
     runs-on: ubuntu-latest
+    # endpoint-agent release-policy guard'lari platform-agent'in (public) release
+    # kaydini api.github.com'dan cekiyor. Token verilmediginde cagri ANONIM gider
+    # ve paylasimli runner IP'sinde 60 istek/saat kotasi tukendiginde GitHub 403
+    # doner; guard "release metadata fetch failed" diye oluyor. Bu, degisiklikle
+    # ilgisiz rastgele kirmizi uretir (gitops#2896: ayni digest bayat base'te
+    # gecti, guncel base'te iki kez dustu). Kimlikli cagri 5000/saat verir.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -88,6 +96,8 @@ jobs:
         run: python3 -m unittest tests.ats.test_screening_scope_delivery_contract -v
       - name: Faz 24 Meeting-AI private gateway static guard
         run: bash scripts/test/faz24-meeting-ai-private-gateway-static.sh
+      - name: Faz 24 edge nginx WebSocket reconciliation contract
+        run: bash scripts/test/faz24-edge-nginx-ws-contract-static.sh
       - name: Faz 24 GPU exact-SHA rollout static guard
         run: bash scripts/test/faz24-gpu-host-exact-sha-rollout-static.sh
       - name: testai frontend and Full ATS desired-state promotion contracts
@@ -118,6 +128,8 @@ jobs:
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge > /tmp/eab-bridge-activation.yaml
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key (#548 child — staged)
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key > /tmp/eab-bridge-device-key.yaml
+      - name: aiserver active / staging-sw standby regression guard
+        run: python3 scripts/test/aiserver-post-cutover-contract.py
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key-live (#548 live wrapper — staged)
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live > /tmp/eab-bridge-device-key-live.yaml
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge-viewer (#1580 viewer — staged)

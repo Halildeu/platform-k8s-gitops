@@ -29,9 +29,9 @@ spec:
               path: /actuator/health/liveness
               port: management
             initialDelaySeconds: 15
-            periodSeconds: 5
+            periodSeconds: 10
             timeoutSeconds: 3
-            failureThreshold: 40
+            failureThreshold: 60   # 600 sn bütçe; ölçülen device-key boot 179 sn (2026-07-23)
           env:
             - name: REMOTE_BRIDGE_ENABLED
               value: "true"

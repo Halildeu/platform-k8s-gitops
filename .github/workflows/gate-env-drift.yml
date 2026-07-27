@@ -1,12 +1,12 @@
 # ADR-0023 Guardrail PR-4 — Env Live-Runtime Drift Gate
 #
 # Codex plan-time AGREE: thread 019e44b9 iter-2 (env ArgoCD hub split,
-# 5-state machine, exit precedence, self-hosted staging-sw runner).
+# 5-state machine, exit precedence, self-hosted aiserver runner).
 #
 # Scope: runtime live drift only. PR-time render-only gating is owned by the
 # existing `gate-drift-pr-time.yml` workflow (Codex Sprint A P0 Item 4). This
 # workflow runs `check_env_drift.sh` for both test+prod against the live
-# clusters on staging-sw, so it must run on the self-hosted runner with
+# clusters on aiserver, so it must run on the self-hosted runner with
 # kubectl access — GitHub-hosted runners CANNOT reach k3d.
 #
 # Trigger model:
@@ -38,7 +38,7 @@ permissions:
 jobs:
   env-drift:
     name: env-drift (${{ matrix.env }})
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     strategy:
       matrix:
         env: [test, prod]

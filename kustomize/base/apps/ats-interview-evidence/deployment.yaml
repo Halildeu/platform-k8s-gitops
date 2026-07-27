@@ -21,7 +21,7 @@ spec:
       # tetiklemez. Değer, configmap.yaml exact byte SHA-256'sıdır; contract testi
       # iki dosyayı bağlar ve stale config ile Ready pod kabulünü engeller.
       annotations:
-        fullats.acik.com/configmap-sha256: "495313d9fac6f0da48190f7bc588a678b9f72f3349621744fce3fa0709585773"
+        fullats.acik.com/configmap-sha256: "753806fc9480906cde25efeb470fccf6742f5db7f02f6722408fdd8cab7ea764"
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -69,8 +69,9 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            periodSeconds: 5
-            failureThreshold: 36   # Flyway + cold-boot penceresi ~3 dk
+            periodSeconds: 10
+            failureThreshold: 60   # 600 sn bütçe; ölçülen boot 114 sn (2026-07-23)
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /healthz

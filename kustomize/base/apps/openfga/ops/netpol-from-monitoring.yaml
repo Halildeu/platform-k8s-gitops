@@ -1,0 +1,36 @@
+# Allow Prometheus to scrape OpenFGA's metrics listener.
+#
+# OpenFGA's namespace is default-deny for ingress, and the only policy that
+# selected the OpenFGA pods was `allow-ethics-service-to-openfga`. So even after
+# the metrics port was declared and exposed (see ../statefulset.yaml and
+# ../service.yaml), scrapes from the monitoring namespace timed out:
+#
+#   Get "http://<pod-ip>:2112/metrics": context deadline exceeded
+#
+# `context deadline exceeded` — not 404 — is the signature of a NetworkPolicy
+# drop rather than a wrong path/port.
+#
+# Scope is deliberately narrow: monitoring namespace only, metrics port only.
+# It grants no access to OpenFGA's API (8080), gRPC (8081) or playground (3000).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openfga-allow-monitoring-metrics
+  labels:
+    app.kubernetes.io/name: openfga
+    app.kubernetes.io/component: authz
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openfga
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 2112

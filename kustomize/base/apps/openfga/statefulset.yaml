@@ -53,6 +53,16 @@ spec:
             - name: playground
               containerPort: 3000
               protocol: TCP
+            # OpenFGA serves Prometheus metrics on 2112 by default (metrics are
+            # enabled out of the box). The port was never declared, so the
+            # Service had no way to expose it and the ServiceMonitor scraped
+            # `http` (8080) instead — where /metrics returns 404. That made
+            # `up{job="openfga"}` permanently 0 and EtikSpeakOpenFgaDown (SEV1)
+            # fire forever while OpenFGA was healthy. Verified live 2026-07-24:
+            # pod-IP:2112/metrics -> 200 with real Prometheus output.
+            - name: metrics
+              containerPort: 2112
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: openfga-config
@@ -68,8 +78,9 @@ spec:
           startupProbe:
             tcpSocket:
               port: 8080
-            failureThreshold: 30
-            periodSeconds: 1           # 30*1 = 30 sn başlangıç toleransı
+            failureThreshold: 60
+            periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /healthz

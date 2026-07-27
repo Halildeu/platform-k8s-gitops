@@ -15,7 +15,7 @@ jobs:
   apply:
     environment:
       name: faz22-view-only-pilot
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 25
     steps:
       - name: Checkout signed intent head

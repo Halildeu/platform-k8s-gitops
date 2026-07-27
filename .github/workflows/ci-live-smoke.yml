@@ -5,15 +5,15 @@ name: CI - Live Smoke (MFE Remote + Auth Chain) [NEEDS SELF-HOSTED OR SSH]
 #
 # ⚠️ NETWORK LIMITATION (2026-04-25 bulgusu):
 # GitHub-hosted runner (ubuntu-latest) testai.acik.com / ai.acik.com'a ERİŞEMEZ.
-# Bu domain'ler staging-sw intranet'inde resolve ediliyor (10.9.10.53 private).
+# Bu domain'ler aiserver intranet'inde resolve ediliyor (10.9.10.15 private).
 # Public internet → curl connect timeout (135s).
 #
 # Self-hosted runner + VPN/SSH tunnel yapılana kadar bu workflow GitHub-hosted runner'da çalışmaz.
-# Alternatif A (önerilen): staging-sw host cron (scheduled smoke, local execution)
-#   echo "*/15 * * * * bash /home/halil/platform-k8s-gitops/scripts/smoke/mfe-remote-smoke.sh both >> /var/log/mfe-smoke.log 2>&1" | crontab -
+# Alternatif A (önerilen): aiserver host cron (scheduled smoke, local execution)
+#   systemd-run --wait /srv/platform/gitops/platform-k8s-gitops/scripts/smoke/mfe-remote-smoke.sh both
 # Alternatif B: user terminal manuel
-#   ssh halil@10.9.10.53 "bash /home/halil/platform-k8s-gitops/scripts/smoke/mfe-remote-smoke.sh both"
-# Alternatif C: self-hosted runner staging-sw'de kur → runs-on: [self-hosted, staging-sw]
+#   ssh aiadmin@10.9.10.15 "bash /srv/platform/gitops/platform-k8s-gitops/scripts/smoke/mfe-remote-smoke.sh both"
+# Alternatif C: self-hosted runner aiserver'de kur → runs-on: [self-hosted, aiserver]
 #
 # Amaç:
 # - 7 MFE remoteEntry.js erişilebilirlik (Module Federation sanity)

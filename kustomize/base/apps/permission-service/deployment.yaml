@@ -65,8 +65,9 @@ spec:
             httpGet:
               path: /actuator/health/liveness
               port: management       # 8081 (auth'suz actuator)
-            failureThreshold: 30
-            periodSeconds: 5         # 30*5 = 150s startup toleransı
+            failureThreshold: 60
+            periodSeconds: 10        # 60*10 = 600 sn bütçe; ölçülen worst-case boot 243 sn (2026-07-23)
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness

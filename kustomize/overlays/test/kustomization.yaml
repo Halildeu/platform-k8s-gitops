@@ -66,9 +66,12 @@ resources:
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
   - netpol-audio-gateway-live-stt-mtls.yaml  # Faz 24 #182/#198: audio-gateway -> platform-ai live-stt app-mTLS 10.99.0.2:8243
+  - netpol-audio-gateway-egress-meeting-ai-tombstone.yaml  # Faz 24: revoke stale #2777 allow while Argo automated prune=false
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
+  - auth-service-transcript-service-externalsecret.yaml  # gitops#2568: transcript-service servis client secret (ayni izolasyon gerekcesi)
+  - auth-service-ethics-externalsecret.yaml  # Faz 35 #2856: isolated service identity; missing key cannot stall core auth secret rotation
   - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
   - netpol-meeting-ai-private-ingress.yaml  # ingress-nginx -> auth:8088 + meeting:8097 only
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
@@ -98,6 +101,12 @@ resources:
   - frontend-federation-smoke-rbac.yaml
   - frontend-federation-smoke-status.yaml
   - frontend-federation-smoke-netpol.yaml
+  # 2026-07-22 #2317 capacity guard, layer 2 (fail-closed). Caps platform-test
+  # at 46 pods — measured, not guessed: node allocatable 80, other namespaces
+  # 24, hard reserve 10. Layer 1 is the PrometheusRule in
+  # kustomize/base/monitoring/k3d-test-capacity-guard-rule.yaml. Full
+  # derivation in the manifest header.
+  - platform-test-pod-quota.yaml
 
 # Faz 25 #2615 test-only customer-path fix: the immutable frontend image ships
 # the correct `.mjs` MIME rule, but the GitOps-mounted nginx ConfigMap replaces
@@ -128,7 +137,22 @@ images:
   # Live test smoke 2026-04-25 00:04 TR saati: D29 3-layer PASS (Up+Functional+Zanzibar-ready).
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
-    newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
+    # 2026-07-26 GECICI KAYNAK DEGISIMI — yerel registry (gitops#2876 acikken).
+    # Normalde GHCR canonical'dir. Ama #2876 (ghcr-pull kimligi `read:packages`
+    # yetkisiz) yuzunden YENI hicbir GHCR imaji cekilemiyor; cumle birlestirici
+    # (platform-backend#918, 2026-07-22) mevcut pin'den SONRA merge edildigi
+    # icin calisan imajda kodu YOK ve flag'i acmak hicbir sey yapmazdi.
+    #
+    # Cozum: imaj hostta main'den (ffaa235) derlendi ve k3d-test'in containerd
+    # mirror'ina bagli yerel registry'e push edildi — GHCR kimligi devrede degil.
+    # Assembler siniflarinin imajda oldugu KANITLANDI (BOOT-INF/classes altinda
+    # SentenceAssembler/SentenceBoundary/ChunkReorderBuffer/SequenceEpochs, 7
+    # eslesme) ve cluster'in cekebildigi git'e yazilmadan ONCE dogrulandi.
+    #
+    # GERI DONUS: #2876 kapaninca canonical GHCR digest'ine donulmeli (o zaman
+    # pull-edilebilirlik KANITLANARAK pin'lenir — bkz. #2883 dersi).
+    # LOCAL-REGISTRY-EXCEPTION: gitops#2876
+    newName: platform-test-registry:5000/platform-backend-audio-gateway-service
     # 2026-06-24 update: sha-23a7607 (platform-backend#745) adds
     # POST /api/v1/audio-gateway/consents as the server-time recorder consent
     # audit proof. The gateway derives tenant/user/subject/server time from JWT
@@ -257,7 +281,7 @@ images:
     # this pin changes nothing at runtime until a follow-up flips enable +
     # base-url. Image build run 29789029837, superset of sha-b3c93e2 (WS
     # handshake header forward). D30 immutable digest pin.
-    digest: sha256:db1bdb6fdee8c98ad951e59aadf433d61477346e1e3fd0b93df98e4c8561e953
+    digest: sha256:0bd85f41c5d72b8b202fc833ad3e489c992db9aa924f83fb44c7caef6f17c7ca
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -340,8 +364,12 @@ images:
     # 2026-06-26 retention runtime sync: platform-backend#764 adds metadata-only
     # transcript/KVKK access-log cleanup and destruction-audit accounting. This
     # desired-state pin does not by itself prove live deletion or legal closure.
+    # 2026-07-23 #2568 regression repair: platform-backend#923 types the native
+    # retry CASE branches as TIMESTAMPTZ, preventing PostgreSQL 42804 from
+    # wedging canonical Direct-STT session-association retries. Image build
+    # run 30008690343 produced the immutable digest below.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:86e39d10ec45172f3daade6a6ed784ff359e6cc11ed2030e47a25ad0ebe9c12d
+    digest: sha256:a6a7dc01268055ca50ecf5296c955fe72d5ff18350e1fad883a90f131373d019
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -421,10 +449,39 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    # 2026-07-12 update: sha-20ee06d (platform-backend#816) enforces the
-    # client-bound meeting-ai service-token policy and blank-secret fail-closed
-    # behavior. Digest source: CI - Image Build + GHCR Push run 29177080417.
-    digest: sha256:58ec61b09ced0c160853ac41ebcd2e5070be6f191dae3fbd44526ab11e1bea87
+    # 2026-07-24 Faz 35 ES-208 update: platform-backend#926 main
+    # 782cb42c adds the dedicated ethics-service identity, restricted to
+    # audience=notification-orchestrator and permission=notify:intents:system.
+    # CI image run 30061630961, signed GitHub provenance subject below.
+    #
+    # 2026-07-25 GERI ALINDI — auth-service DOWN (endpoints bos, ImagePullBackOff).
+    # Yukaridaki sha-7de0635d CI build cikisindan pin'lendi ama kubelet onu
+    # CEKEMIYOR:
+    #   403 Forbidden — HEAD ghcr.io/v2/halildeu/platform-backend-auth-service/blobs/...
+    # Kok neden #2876: k3d-test'in `ghcr-pull` kimligi yeni paket surumlerine
+    # yetkisiz. Pod calisiyorken imaj node cache'inde tutuluyordu; pod
+    # sonlanip containerd o imaji GC edince bir daha cekilemedi ve servis
+    # olu kaldi (selfHeal her denemede yeniden ayni digest'i istedi).
+    #
+    # Asagidaki sha-58ec61b0 node cache'inde MEVCUT ve calisiyor (canli
+    # dogrulandi: 1/1 Ready, endpoints dolu). ES-208 ethics-service kimligi
+    # bu digest'te YOK — bilincli takas: calisan auth-service, calismayan
+    # yeni ozellikten iyidir. #2876 (PAT read:packages yenilemesi) kapaninca
+    # ES-208 digest'i pull-edilebilirligi KANITLANARAK yeniden pin'lenmeli.
+    #
+    # KURAL: bir digest'i pin'lemeden once node'a pull denemesi yap. Build
+    # log'unda `pushing manifest for ...@sha256:` gormek YETMEZ.
+    #
+    # 2026-07-26 update: bump to sha-ffaa235 (platform-backend #926, merged at
+    # 782cb42c). The `ethics-service` service-client registration — the
+    # notification identity Faz 35 ES-208 depends on — landed in that commit,
+    # and the pin here still pointed at the 2026-05-10 build. The secret was
+    # provisioned on both sides and matched by hash, but the running config had
+    # no `security.service-clients.clients.ethics-service` entry to read it
+    # into, so every delivery answered `invalid_client` and all 21 outbox
+    # signals dead-lettered after eight attempts. Digest read back from a real
+    # pull into the target cluster.
+    digest: sha256:7de0635d0e59e57cfc4caa6f44cdd30dfad0c6652092f9b715689c399094262b
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -686,7 +743,48 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
-    digest: sha256:64ea404e2eef5f83624abdff0aa97329289410ebf1a4623c070ac4af58de0660
+    # 2026-07-24 GERİ ALINDI: sha-068a45c digest'i cluster'dan ÇEKİLEMİYOR (ImagePullBackOff).
+    # Build log'unda `pushing manifest for …@sha256:c2f37d80…` görünüyor ve commit main'de,
+    # ama kubelet çekemedi → uygulanınca user-service DOWN oldu, geri alındı. Bu sabahki
+    # auth-service kesintisiyle (#2863) AYNI imza: build-log digest'i ≠ pull edilebilir digest.
+    # #2582 sayacı hâlâ canlı DEĞİL; promote için digest'in pull-edilebilirliği önce
+    # doğrulanmalı (node'a pull denemesi), sonra pin'lenmeli.
+    #
+    # 2026-07-27 bump: sha-e2b4d12 — platform-backend#940. Yetki revizyonu çağrısı
+    # (`GET permission-service /api/v1/authz/version`) hiçbir kimlik taşımadan
+    # gidiyordu; permission-service `/api/v1/**` yolunun tamamını kimlik doğrulattığı
+    # için 401 dönüyor, hata iki katman yukarıda `/api/v1/users` üzerinde 500 olarak
+    # yüzeye çıkıyordu — iki pod da Ready görünürken kullanıcı listeleme ve oluşturma
+    # hücre genelinde kullanılamazdı. O düzeltme `X-Internal-Api-Key` gönderdi ve
+    # canlıda hiçbir şeyi değiştirmedi: o başlığı okuyan filtre `local/dev`
+    # profiline bağlı, yalnız `/api/v1/internal/**` ile eşleşiyor ve legacy bayrağı
+    # kapalıyken (bu hücrede kapalı) zinciri ilk satırda geçiyor.
+    #
+    # 2026-07-27 bump: sha-ab7cca1 — platform-backend#941. Çağrı artık çağıranın
+    # KENDİ bearer token'ını taşıyor; `/authz/me` iki metot yukarıda zaten böyle
+    # kimlikleniyordu. Çalışan hücreye karşı ölçüm:
+    #
+    #   kimliksiz                -> 401
+    #   X-Internal-Api-Key       -> 401
+    #   çağıranın bearer token'ı -> 200 {"authzVersion":234}
+    #
+    # Revizyon tek bir global sayaç, dolayısıyla isteğin zaten taşıdığı kimliği
+    # aktarmak hiçbir yüzeyi genişletmiyor. #940'ın testleri başlığın
+    # gönderildiğini doğruluyordu, çağrının yetkilendirildiğini değil — bu yüzden
+    # sunucunun hiç bakmadığı bir kimliğin üstünde yeşil kaldılar. Yerine yanlış
+    # kimlikte düşen iki test kondu.
+    #
+    # Digest hedef kümenin kendi kubelet'i tarafından yapılan GERÇEK pull ile geri
+    # okundu (yukarıdaki 2026-07-24 kesintisinin doğrudan dersi).
+    # 2026-07-26 promote: sha-ffaa235 — #2582 org'suz kimlik sayacını canlıya çıkarır.
+    # Pull-edilebilirlik pin'lemeden ONCE kanıtlandı: cluster'da ghcr-pull secret'iyla
+    # digest-probe pod'u kosuldu ve imageID dondu. Bu proje bugun bu adimin atlanmasindan
+    # iki kesinti yasadi (#2874/#2875 — build log'undaki digest pull edilemiyordu).
+    # Canli sonuc: rollout 1/1 Ready, 0 restart; sayac olculdu:
+    #   identity_principal_without_company_total 0.0   (484 metrik satiri icinde)
+    # Soy bagi: git merge-base --is-ancestor 068a45ce ffaa23520 -> true
+    # (068a45ce = sayaci ekleyen commit, ffaa23520 = imajin etiketlendigi merge)
+    digest: sha256:4cf841d76f2b41c226ef436194e7b1d14eacaa15388b9e446ef3737802a94aff
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -1129,8 +1227,26 @@ images:
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
     # 2026-07-12 desired-state alignment: deploy-backend-testai.yml
     # --fail-on-change reported this digest behind backend image run 29202272289.
-    newTag: sha-b3c93e2
-    digest: sha256:2d7dbbb52628eb957cb8eb1f8a72e84760afda73a16cd5f37d53ce5c081b6160
+    #
+    # 2026-07-21 audit-scan hijyeni bump sha-1e3e060 (platform-backend PR #915
+    # MERGED): RemoteRequestNormalizer silent bug fix — @Component with two
+    # constructors + no @Autowired forced Spring to fall back to the no-arg
+    # ctor, silently instantiating a fresh ObjectMapper instead of the
+    # Spring-managed bean. No visible crashloop (report-service kept running),
+    # but the injected mapper wiring intent was lost — annotating the
+    # production ctor with @Autowired restores the shared bean. Cross-service
+    # audit-scan uncovered this pattern; PR #903/#904 already fixed the
+    # sibling meeting-service crashloop from the same anti-pattern.
+    #
+    # Build run 29855924135. Image push:
+    # ghcr.io/halildeu/platform-backend-report-service:sha-1e3e060@
+    # sha256:9603f1225c3b7dd1b83f38faccc6de3fdffe26c2cd67e2b49abb8a54a6da325d
+    #
+    # Runtime evidence expected (post-rollout): identical /reports/*/data
+    # responses (no behavior change) + report-service pod ready + normalized
+    # RemoteRequestNormalizer now receives the shared ObjectMapper bean.
+    newTag: sha-1e3e060
+    digest: sha256:9603f1225c3b7dd1b83f38faccc6de3fdffe26c2cd67e2b49abb8a54a6da325d
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -1541,7 +1657,39 @@ images:
     #          endpoint), not just AccessScopeController. Test-only rollout;
     #          prod defer D30 atomic cutover.
     #
-    digest: sha256:f93e800d35eeabdf5c0d03e33bc1ff088b19a838f5227e6f586772a8b9b76817
+    # 2026-07-21 update: sha-e9018ce — board #907 wire step (foundation #851, umbrella #2530).
+    # Source : platform-backend PR #909 squash e9018ce38a6c3ffeb2bd631866261cfe29256564
+    #          (CI 21/21 pass; permission-service +5 new AuthorizationControllerV1Test cases
+    #          for RESOLVED / PROFILE_MISSING / IDENTITY_MISMATCH / ACCOUNT_DISABLED /
+    #          USER_DELETED / DIRECTORY_UNAVAILABLE outcomes, +5 adapter tests).
+    # Tag    : ci-image-push.yml -> sha-e9018ce (build run 29806437506 success).
+    # Digest : sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
+    #          (extracted from build log: '#23 pushing manifest for
+    #          ghcr.io/halildeu/platform-backend-permission-service:sha-e9018ce@sha256:096ed22...').
+    # Ships  : /authz/me endpoint now flows through the canonical
+    #          common-auth/identity/AuthenticatedPrincipalResolver. Resolution.Outcome
+    #          decides responses: RESOLVED → normal path, PROFILE_MISSING/IDENTITY_MISMATCH/
+    #          UNAUTHENTICATED → 200 + empty snapshot (fail-closed; NO JWT-permissions rebuild
+    #          — the exact "claim-as-authority" defect umbrella #2530 removes),
+    #          ACCOUNT_DISABLED → 403, USER_DELETED → 404, DIRECTORY_UNAVAILABLE → 503
+    #          AUTHZ_DEGRADED. Transport wrap: adapter wraps AuthenticatedUserLookupService
+    #          (auth-free /api/users/by-email path) rather than calling the canonical
+    #          POST /authenticated-principal/resolve endpoint, because that sits behind
+    #          /internal/** requiring PERM_users:internal via ServiceTokenAuthenticationFilter
+    #          and permission-service does not yet mint service tokens. Follow-up #910
+    #          migrates the transport (subject-binding back-fill + activation gates).
+    # Runtime: today's runtime behaviour is UNCHANGED (adapter returns enabled=true/
+    #          deleted=false so ACCOUNT_DISABLED/USER_DELETED never fire from the wrapped
+    #          path). What lands is the resolver semantic + fail-closed contract; the new
+    #          HTTP status paths activate once the follow-up wires the canonical endpoint.
+    # Body    : /authz/me 200 body shape UNCHANGED (permissions[], allowedScopes[],
+    #          reports[], modules{}, roles[], actions{}, allowedModules[], subscriberId).
+    # NOTE   : outer getMe() try/catch now rethrows ResponseStatusException before the
+    #          generic RuntimeException path so 401/403/404/503 signals from the resolver
+    #          are preserved (previously all runtime exceptions collapsed to 503 — an
+    #          artefact of the Codex 019dddb7 iter-42 pattern).
+    #
+    digest: sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -4337,9 +4485,61 @@ images:
     # Faz 35 manager is a dedicated workload and deliberately leaves the
     # shared suite image unchanged. This preserves Full ATS/ETS rollback and
     # prevents an Etik Speak release from mutating another product cell.
-    # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
-    newTag: sha-eee1310
-    digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
+    #
+    # 2026-07-21 Faz 22 Sec slice-1a bump sha-a611aa0 (platform-web PR #978
+    # MERGED): SPA-nginx CSP Report-Only baseline (observe-only, no enforce).
+    # Adds `add_header Content-Security-Policy-Report-Only ... always;` on
+    # every HTML-returning nginx location (`= /`, `= /index.html`, catch-all
+    # `/`) plus a SEPARATE `location = /silent-check-sso.html` with
+    # `frame-ancestors 'self'` (main uses 'none', which would break the KC
+    # silent-check iframe on enforce). Silent-SSO iframe body externalized
+    # to `/silent-check-sso.js` (single line `parent.postMessage(...)`, no
+    # behavior change). Header-contract regression guard added under
+    # `scripts/security/check-nginx-csp.mjs`. Shell inline seed
+    # (`window.__env__` + AG-Grid early license + earlyErrors capture)
+    # intentionally NOT externalized in this slice — that requires a Vite
+    # `inject-runtime-env` plugin refactor (regex-replace → `emitFile`
+    # hashed external) tracked as Sec-1b follow-up. Report-Only mode means
+    # violation events are surfaced via browser-native
+    # `securitypolicyviolation` without blocking any request; enforce
+    # follow-up gated on 0-unexplained-violation on the golden paths.
+    #
+    #
+    # 2026-07-22 uç birim yönetimi düzeltmeleri sha-c8d9f2b (platform-web
+    # PR #979 + #981 + #983 + #984 MERGED).
+    #
+    # #983: çift onaylı komutlar (LOCK_USER_LOGIN / UNLOCK_USER_LOGIN /
+    # CHANGE_LOCAL_PASSWORD / ROTATE_CREDENTIAL) üründen başlatılabiliyor ama
+    # tamamlanamıyordu — backend BE-017'den beri maker-checker uyguluyor
+    # (POST /endpoint-commands/{id}/approval, onaylayan ≠ gönderen) ama MFE'de
+    # o ikinci kararı kaydedecek mutation, ekran veya menü girişi yoktu, komut
+    # sonsuza kadar PENDING kalıyordu. Yeni `approvals/commands` envanteri
+    # Güvenlik & Uyum altında; kendi komutunu onaylama istemcide engelli ama
+    # koruma yalnızca UX — backend 403'ü her zaman kendi cümlesiyle gösteriliyor.
+    # #984: #983'ün iki RTK hook'u export bloğuna eklenmemişti ve imaj build'i
+    # MISSING_EXPORT ile kırılmıştı; düzeltmeyle birlikte her endpoint için
+    # hook export'unu türetip doğrulayan kalıcı bir test eklendi (o test 5 adet
+    # daha önceden eksik export buldu).
+    #
+    # #979: ajan güncelleme modalı 31 onaylı sürümle
+    # 2656px'e çıkıp zorunlu Gerekçe alanını ve her iki düğmeyi 872px'lik
+    # ekranın dışına itiyordu — panel artık InstallPreflightModal ile aynı
+    # `max-h-[85vh] flex flex-col` kabuğunu kullanıyor, alt bar kaydırma
+    # kabının dışında, sürüm listesi kendi kutusunda kayıyor ve kapalı
+    # gönder düğmesi sebebini yazıyor. #981: kurulum/kaldırma denetim
+    # tablolarında ajanın `failedReasonCode` / `finalStatus` değeri
+    # gösteriliyor (LIVE'da FAILED_EGRESS / egress_not_ready yalnız ham
+    # hâliyle SON KOMUTLAR listesinde görünüyordu); bilinmeyen kod ham
+    # gösterilerek fail-open, `winget_exit_<n>` çıkış kodu gömülüyor.
+    #
+    # Historical build receipt for the sha-c8d9f2b promotion:
+    # run 29908857420, testai job 88886700036, immutable digest
+    # sha256:95fc87fa0a524e6a01f2c6bd10fd3d9183c7a977268f00771935b072328c23c4.
+    # Current machine-readable authority is the sourceRevision/newTag/digest
+    # tuple below; narrow automation updates only those three lines.
+    # sourceRevision: 8bed0100d408bd09e06b4b056bbe2b6ae3075ada
+    newTag: sha-8bed010
+    digest: sha256:d47edafa42c11cef640efd07ed0da8bf67843c3315228016cc17942e2fed9905
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -5787,7 +5987,21 @@ images:
     # board #2559 — sha-780a95c (platform-backend 780a95c29, PR #853): the resolver learns to
     # apply an explicit org -> tenant alias, which is what makes the ConfigMap key above mean
     # anything. Digest read from the registry manifest (linux/amd64), not from the tag.
-    digest: sha256:5659221d7b6c74438dd451f05fe2722620aa7c72903463a477e2ddb01fb0c176
+    # 2026-07-22 board platform-backend#921 -> sha-e98aaf5 (platform-backend PR
+    # #922): UPDATE_AGENT dispatch her cagrida HTTP 500 donuyordu. Idempotency
+    # anahtari "admin-update-agent:" + deviceId + ":" + releaseUuid + ":" +
+    # UUID = 129 karakter, sutun VARCHAR(128). Dispatch modali guvenlik geregi
+    # govdeyi tam olarak {releaseId, reason} gonderdigi (caller anahtari yok)
+    # icin UI yolu %100 kirikti. Sutun genisletilmedi; sinir CommandIdempotencyKeys
+    # ile koda tasindi - bugun kalicilasabilen her sekil bayt-bayt ayni kaliyor,
+    # yalnizca hic kalicilasamamis sekil daraltiliyor. 148 test yesil.
+    # 2026-07-26 #2913 browser-only TPM certificate renewal: platform-backend
+    # d21f15d424f28dfda3fd9bf23620eed6d81cd2a7, Actions run 30210411525,
+    # endpoint-admin-service job 89815564727, tag sha-d21f15d.
+    # 2026-07-26 #2913 scoped Endpoint Admin tenant claim: platform-backend
+    # 2dc8452f131b6a37dcf454a353eab41f8c6e03c5, Actions run 30216061034,
+    # endpoint-admin-service job 89830348624, tag sha-2dc8452.
+    digest: sha256:51b3f64d235adf1de4265b8e896ff6800d3f89e939b445951b7a8e97610c46a3
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -6105,15 +6319,26 @@ images:
     # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
     # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
     # pending — operator action runbook externalsecret-notify.yaml).
-    digest: sha256:66f79088c766545e7fbbfba7fd5a537fd8b89f2d6cf8714b4e78d0763c29489e
+    # 2026-07-24 Faz 35 ES-208 update: platform-backend#926 main
+    # 782cb42c seeds the fixed-copy, external-disabled ethics.case.activity
+    # templates. CI image run 30061630961, signed GitHub provenance.
+    #
+    # 2026-07-26 update: bump to sha-14ec2d5 (platform-backend #937). Faz 35
+    # delivery was rejected at this service's submit gate with an opaque 400:
+    # the validation advice was narrowed to NotificationIntentController, so
+    # the internal service-to-service endpoint — the one Faz 35 uses — was the
+    # only intent endpoint that could not say which field it disliked. It now
+    # reports the failing field like every other one. Digest read back from a
+    # real pull into the target cluster.
+    digest: sha256:b5eccc18f387332ca8beb035cd8082128c5613ae04968786838f776e5b4c1b4d
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.3.16:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.16.
-  # Source commit f5ade208bfba8e5d85662de541809735bacb565c. Trusted release run 29610394830
+  # platform-agent Release EXE trusted workflow for tag v0.3.19:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.19.
+  # Source commit 8d7ac87bbc395a965755b134ca7794a5a47cdfbe. Trusted release run 30251627867
   # built, internal-CA signed, machine-verified, published and then passed the
   # post-publish archive verifier. Durable release:
-  # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.16
+  # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.19
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
@@ -6124,33 +6349,34 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.3.15; durable archive remains
-  # the GitHub release assets. v0.3.16 keeps typed first-frame diagnostics and
-  # adds a fail-closed screen-frame budget below the broker ceiling while
-  # preserving DLP and active-indicator controls after adaptive downscale. The
+  # One-version-per-image: this image REPLACES v0.3.18; durable archive remains
+  # the GitHub release assets. v0.3.19 preserves the release-patched signer and
+  # binary URL defaults while keeping runtime unresolved-sentinel checks
+  # independent, so browser-generated existing-device updates can verify the
+  # trusted package and replace the installed service. The
   # signed MSI is a separate trusted MSI workflow artifact and is not treated as
   # a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
     # newTag is the operator-readable release identity; digest is the D30 pull
     # authority and remains immutable even if a registry tag were moved.
-    newTag: v0.3.16
-    # D30 immutable pin — Release EXE trusted run 29610394830 (tag v0.3.16,
+    newTag: v0.3.19
+    # D30 immutable pin — Release EXE trusted run 30251627867 (tag v0.3.19,
     # release_class=rollout-candidate, signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 1a8de112cda2db20bd641b32e7a7985dd78a859efd3d1c75312bcd8945e4d8d7,
+    # 4138ca800dbbedaf87a57a649387924a571248db46bc21833d62fa489fca64ce,
     # agent binary SHA256
-    # 145a0803a1ba735089e2695a26c61c0718cfb7d8b2ce6832608dd4d0b6af2dfe, and
+    # 77866f4da884b2a0913974f8290b15fcfdefe81fe908e3918d8d90b01310e6dc, and
     # install.ps1 SHA256
-    # ff54426d5d0b0e4d03d04b4380b9e0fc0c93a37136da9f46f05acdc1e09854ed,
+    # 6424af330edc68f3e0e234a91c6f77116e99c2c37307435cb1fceee092fb7e9b,
     # release-manifest.json SHA256
-    # f2f7fe84812dde092870129e43d7b2557ab9d90d50ed7aea4d76b6c3055ecb53, and
+    # 7dcdbf7275142f0a5d648e2215558f83ecaff5daa524d7019236d90dbb8af195, and
     # remote-bridge attestation evidence SHA256
-    # 2b85f8ce0b5ceee781dd6e567bf7d93bcaeab953604352abe95aa2417ca66b7c.
-    # Rollback anchor: v0.3.15, source 5e620e2ed38978ea16ba79be713b28a14ab1a1c8,
-    # artifact digest sha256:f9411a27eb11afa17447366037bf108ae3db1ff6de40917d2b0fe3c4b1ef3348,
-    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.15.
-    digest: sha256:b0b19d1e646afaf80473e9810cca1a674925785b9fe3fef07e996d910c4010cf
+    # 59ded05ce68df5956e01b14badd22c6b010618540739a887fae2f56419cdbc78.
+    # Rollback anchor: v0.3.18, source e0016841179caa5fbef26927de57d4435e47e482,
+    # artifact digest sha256:1860df3ec267caebcc82dd45344265925b6de0cd63712d5950dcd641cb650a03,
+    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.18.
+    digest: sha256:cabd2c4d79d9b27bd58581807e5745687a53d043b8b9a67e171ca335c729ff21
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
@@ -6309,7 +6535,28 @@ patches:
             secretKeyRef:
               name: auth-service-meeting-ai-secret
               key: SERVICE_CLIENT_MEETING_AI_SECRET
+      # gitops#2568 — transcript-service servis client'i. auth-service
+      # tarafinda blank secret = client DISABLED (fail-closed aktivasyon
+      # kapisi); bu env olmadan `transcript-service` client_credentials
+      # token'i alamaz ve resolver cagrisi 401 doner.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-transcript-service-secret
+              key: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
               optional: true  # core auth stays available; meeting-ai mint remains fail-closed
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_ETHICS_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-ethics-secret
+              key: SERVICE_CLIENT_ETHICS_SERVICE_SECRET
+              optional: true  # core auth stays available; ethics client remains fail-closed
   - target:
       kind: Deployment
       name: api-gateway
@@ -6377,7 +6624,9 @@ patches:
         template:
           metadata:
             annotations:
-              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-17-2568-v2"
+              # v3: resolver aktivasyonu (gitops#2568). ConfigMap/Secret degisimi
+              # envFrom ile otomatik pickup ETMEZ; bu damga rollout'u tetikler.
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-25-2568-v3-resolver"
           spec:
             containers:
               - name: transcript-service
@@ -6419,6 +6668,35 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_REDIS_HEALTH_ENABLED
         value: "true"
+      # gitops#2568 ikinci aktivasyon kapisi — RESOLVER.
+      #
+      # Stream tuketimini acmak TEK BASINA yetmiyor: kaynak kod bunu acikca
+      # belgeliyor ("enabling stream ingestion without a canonical resolver
+      # remains fail-closed and exhausts into the metadata-only DLQ").
+      # 2026-07-25 canli olcum: stream'de 1650 mesaj, consumer group lag=0,
+      # pending=0 — ama DLQ'da da 1650. Yani her mesaj okunup dead-letter'a
+      # atiliyordu, tek sebep `reason=RESOLVE`.
+      #
+      # Bu flag acilinca transcript-service, auth-service'ten `transcript-service`
+      # servis client'i ile client_credentials token alir ve meeting-service
+      # /api/v1/internal/meetings/{id}/sessions/resolve ucunu cagirir.
+      # Baglantili zorunluluklar (ucu birlikte olmali, aksi halde 401/DLQ):
+      #   1. auth-service SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET (ESO)
+      #   2. transcript-service TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET (ESO)
+      #   3. meeting-service CLIENT_ID CSV'sinde `transcript-service`
+      #
+      # ROLLBACK: bu uc satiri kaldir (resolver default `false`) + Deployment
+      # revizyonunu bump et. Zincir yine fail-closed DLQ'ya doner; veri kaybi
+      # olmaz, mesajlar metadata-only DLQ'da birikir.
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SESSION_RESOLVER_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_BASE_URL
+        value: "http://meeting-service:8097"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_TOKEN_URL
+        value: "http://auth-service:8088/oauth2/token"
 
   # Faz 24 KVKK audit pipeline (#1249): replica 1 default (HARD RULE —
   # Scale-to-Zero YASAK). Pure Redis consumer (no mTLS, no inbound API) → base
@@ -8235,7 +8513,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-11-184-ws-doublerelease-fix-v4"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-26-sentence-assembly-v1"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -8267,6 +8545,34 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED
         value: "true"
+      # --- Faz 24 cumle birlestirme (platform-backend#918) ---
+      #
+      # SORUN: kullanicinin bildirdigi "ayni cumleyi on satirda okuyorsun".
+      # live-stt AKUSTIK sinirda commit eder (sessizlik/sure), DILBILIMSEL
+      # sinirda degil — bir cumle bu yuzden N parcaya boluner.
+      #
+      # Assembler bu parcalari okunabilir satirlara birlestirir ve UTTERANCE
+      # olarak yayinlar; ham parcalar DRAFT olarak akmaya devam eder.
+      #
+      # SIRA ONEMLI: istemci UTTERANCE render'i ONCE inmeliydi
+      # (platform-desktop#89, merged) — aksi halde UTTERANCE default'a dusup
+      # 'draft' sayiliyor ve AYRI eventId tasidigi icin ayni metin hem parcali
+      # hem butun goruntuleniyordu (cift satir).
+      #
+      # ON KOSUL: aggregation.enabled=true olmali. Kod fail-closed:
+      # AudioGatewayProperties.validate() aksi halde BOOT ETTIRMEZ. Base'de
+      # AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_ENABLED=true (dogrulandi).
+      #
+      # ROLLBACK: bu uc satiri kaldir (assembly default false) + rev bump.
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SENTENCE_ASSEMBLY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SENTENCE_ASSEMBLY_MAX_SPEECH_MS
+        value: "12000"
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SENTENCE_ASSEMBLY_IDLE_MS
+        value: "2000"
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL
         value: "wss://live-stt.denetim:8243/ws/stream"

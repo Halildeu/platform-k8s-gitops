@@ -1,6 +1,6 @@
 self-hosted-runner:
   labels:
-    - staging-sw
+    - aiserver
     - testai-deploy
 
 config-variables: null

@@ -70,6 +70,10 @@ options:
 registries:
   create:
     name: platform-dev-registry
-    host: "0.0.0.0"
+    # 2026-07-27 — GÜVENLİK: 0.0.0.0 idi (bkz. k3d-test.yaml'daki uzun not).
+    # k3d-dev geliştirici makinesinde koşar; 0.0.0.0 kimliksiz registry'yi
+    # bulunulan her ağa (ofis, ev, kafe wifi) açar. Lokal geliştirme için
+    # 127.0.0.1 yeterli.
+    host: "127.0.0.1"
     # test (5001) ve prod (5000)'dan farklı
     hostPort: "5002"

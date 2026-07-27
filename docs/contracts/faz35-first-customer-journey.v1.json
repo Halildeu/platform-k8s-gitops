@@ -1,0 +1,174 @@
+{
+  "schema": "faz35-first-customer-journey/v1",
+  "product": "etik-speak",
+  "release": "ES-ALPHA",
+  "priorityQuestion": "Müşteri bu hafta üründe daha önce yapamadığı hangi gerçek işi uçtan uca yapabiliyor?",
+  "blocksFeatureWorkUntilAccepted": true,
+  "authoritativeTestEnvironment": "platform-test",
+  "evidenceLayers": [
+    "up",
+    "functional",
+    "authorized",
+    "privacy-safe",
+    "browser",
+    "recoverable"
+  ],
+  "stateSemantics": {
+    "source-ready": "Reviewed source and immutable artifact exist; no runtime claim.",
+    "deployed": "Expected immutable artifacts are live; no customer-journey claim.",
+    "accepted": "The exact target environment, persona, full journey and verifiable persisted result passed."
+  },
+  "personas": [
+    {
+      "id": "anonymous-reporter",
+      "authentication": "none",
+      "identityPersistence": "forbidden"
+    },
+    {
+      "id": "authorized-ethics-manager",
+      "authentication": "suite-sso",
+      "authorization": "org-and-product-scoped"
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "public-canonical",
+      "environment": "test",
+      "url": "https://etik.acik.com",
+      "artifactRole": "public-reporter"
+    },
+    {
+      "id": "public-alias",
+      "environment": "test",
+      "url": "https://speakup.acik.com",
+      "artifactRole": "public-reporter"
+    },
+    {
+      "id": "manager-test",
+      "environment": "test",
+      "url": "https://testai.acik.com/ethic",
+      "artifactRole": "staff-manager"
+    },
+    {
+      "id": "manager-production",
+      "environment": "production",
+      "url": "https://ai.acik.com/ethic",
+      "artifactRole": "staff-manager",
+      "acceptanceState": "human-gated"
+    }
+  ],
+  "journey": [
+    {
+      "order": 1,
+      "id": "discover-public-channel",
+      "persona": "anonymous-reporter",
+      "surfaces": ["public-canonical", "public-alias"],
+      "action": "Open the public reporting application without an account or suite session.",
+      "persistedResult": "none",
+      "nextConsumer": "anonymous-reporter",
+      "requiredEvidenceLayers": ["up", "browser", "privacy-safe"]
+    },
+    {
+      "order": 2,
+      "id": "submit-anonymous-report",
+      "persona": "anonymous-reporter",
+      "surfaces": ["public-canonical", "public-alias"],
+      "action": "Submit an anonymous report with a unique idempotency key.",
+      "persistedResult": "Own-database report and outbox commit exist before success is returned.",
+      "nextConsumer": "authorized-ethics-manager",
+      "requiredEvidenceLayers": ["functional", "privacy-safe", "browser"]
+    },
+    {
+      "order": 3,
+      "id": "receive-mailbox-credential",
+      "persona": "anonymous-reporter",
+      "surfaces": ["public-canonical", "public-alias"],
+      "action": "Receive a receipt identifier and retain the locally generated mailbox access secret.",
+      "persistedResult": "Only a verifier-side protected secret representation and verification metadata are durable.",
+      "nextConsumer": "anonymous-reporter",
+      "requiredEvidenceLayers": ["functional", "privacy-safe", "browser"]
+    },
+    {
+      "order": 4,
+      "id": "authorize-manager-case-access",
+      "persona": "authorized-ethics-manager",
+      "surfaces": ["manager-test"],
+      "action": "Sign in through suite SSO and open only the authorized organization and product case.",
+      "persistedResult": "Authorized case view with no existence signal for denied actors.",
+      "nextConsumer": "authorized-ethics-manager",
+      "requiredEvidenceLayers": ["authorized", "privacy-safe", "browser"]
+    },
+    {
+      "order": 5,
+      "id": "persist-manager-response",
+      "persona": "authorized-ethics-manager",
+      "surfaces": ["manager-test"],
+      "action": "Assign the case, move it to review and write a reporter-visible response plus a separate internal note.",
+      "persistedResult": "Versioned assignment, state, internal note and reporter-visible response are durable.",
+      "nextConsumer": "anonymous-reporter",
+      "requiredEvidenceLayers": ["functional", "authorized", "privacy-safe", "browser"]
+    },
+    {
+      "order": 6,
+      "id": "reporter-follow-up",
+      "persona": "anonymous-reporter",
+      "surfaces": ["public-canonical", "public-alias"],
+      "action": "Open the mailbox, read the staff response without seeing the internal note, and send a reply.",
+      "persistedResult": "Reporter reply is durably linked to the original case and mailbox session.",
+      "nextConsumer": "authorized-ethics-manager",
+      "requiredEvidenceLayers": ["functional", "privacy-safe", "browser"]
+    },
+    {
+      "order": 7,
+      "id": "manager-observes-reporter-reply",
+      "persona": "authorized-ethics-manager",
+      "surfaces": ["manager-test"],
+      "action": "Read the persisted reporter reply in a subsequent authorized manager view.",
+      "persistedResult": "The next authorized actor can use the reporter reply for continued case handling.",
+      "nextConsumer": "case-workflow",
+      "requiredEvidenceLayers": ["functional", "authorized", "browser"]
+    }
+  ],
+  "requiredNegativeControls": [
+    "cross-host-receipt-deny",
+    "wrong-organization-empty-list",
+    "openfga-denied-existence-hiding",
+    "idempotency-replay-and-conflict",
+    "stale-writer-deny",
+    "internal-note-hidden-from-reporter",
+    "logout-revokes-mailbox-session",
+    "suite-cookie-rejected-on-public-api",
+    "raw-secret-absent-from-url-console-log-trace"
+  ],
+  "recoverabilityContract": {
+    "required": true,
+    "acceptance": [
+      "Content-addressed backup evidence exists.",
+      "Scratch restore proves report, messages, audit and authorization bindings.",
+      "Rollback does not reactivate a stale writer or lose an accepted durable commit."
+    ],
+    "currentEvidenceOwner": "ES-009"
+  },
+  "testAcceptanceBoundary": {
+    "dataClass": "synthetic-only",
+    "requiredSurfaces": [
+      "public-canonical",
+      "public-alias",
+      "manager-test"
+    ],
+    "doesNotProve": [
+      "real-user acceptance",
+      "production readiness",
+      "legal or DPO approval",
+      "production secret-owner approval",
+      "recoverability until ES-009 evidence is accepted"
+    ]
+  },
+  "productionHumanGates": [
+    "Legal and DPO acceptance",
+    "production secret owner",
+    "named rollback owner",
+    "real-user pilot consent and acceptance",
+    "atomic production switch authorization"
+  ]
+}

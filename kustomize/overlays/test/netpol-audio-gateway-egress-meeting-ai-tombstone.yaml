@@ -1,0 +1,24 @@
+# GitOps tombstone for the #2777 audio-gateway -> meeting-ai allow policy.
+#
+# The platform-test Argo Application intentionally has automated prune disabled.
+# Removing the original manifest therefore left its live allow rule behind. Keep
+# the same object name under desired-state control with no egress rules so Argo
+# revokes that rule without an imperative cluster mutation. Other independently
+# managed audio-gateway NetworkPolicies continue to supply their own narrow
+# allows through Kubernetes NetworkPolicy's additive semantics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-audio-gateway-egress-meeting-ai
+  labels:
+    app.kubernetes.io/name: audio-gateway
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "24"
+    platform.acik.com/policy-state: tombstone
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audio-gateway
+  policyTypes:
+    - Egress
+  egress: []

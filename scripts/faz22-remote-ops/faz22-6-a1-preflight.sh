@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-SSH_TARGET="${SSH_TARGET:-staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetimpc@10.99.0.2}"
@@ -15,7 +15,7 @@ DENETIM_SSH_IDENTITY="${DENETIM_SSH_IDENTITY:-$HOME/.ssh/id_ed25519}"
 DENETIM_CHECK="${DENETIM_CHECK:-true}"
 DEVICE_KEY_OVERLAY="${DEVICE_KEY_OVERLAY:-kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key}"
 ENDPOINT_ADMIN_ESO_OVERLAY="${ENDPOINT_ADMIN_ESO_OVERLAY:-kustomize/overlays/test/eso/endpoint-admin}"
-VAULT_TLS_DIR="${VAULT_TLS_DIR:-/home/halil/platform-stateful/test/vault/tls}"
+VAULT_TLS_DIR="${VAULT_TLS_DIR:-/srv/platform/stateful/test/vault/tls}"
 
 if [ -z "${SSH_AUTH_SOCK:-}" ] && command -v launchctl >/dev/null 2>&1; then
   launchd_ssh_auth_sock="$(launchctl getenv SSH_AUTH_SOCK 2>/dev/null || true)"

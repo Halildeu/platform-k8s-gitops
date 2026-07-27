@@ -1,12 +1,13 @@
 # Host-level Redis Streams bridge — Faz 24 cross-server chunk transport
 # (D19 pattern: Service + Endpoints, postgres/keycloak/vault emsali)
 #
-# Gerçek Redis staging-sw'da host-compose ile çalışır
+# Gerçek Redis aktif platform hostunda host-compose ile çalışır
 # (host-compose/redis-streams/docker-compose.yml — ADR-0031 D2 "dış altyapı").
 # Test live değeri: 172.19.0.250:6379 (platform-test-net static IP; compose
 # ipv4_address pin'i — PG'deki dinamik-IP-drift riskine karşı sabitlendi).
-# Base placeholder host-LAN IP taşır; overlay Endpoints patch'i gerçek
-# bridge IP'yi yazar (postgres-svc.yaml ile aynı disiplin).
+# Base tek başına canlı bir hosta yönlenmez; RFC 5737 TEST-NET-1 adresi
+# fail-closed placeholder'dır. Overlay Endpoints patch'i gerçek bridge IP'yi
+# yazmak zorundadır.
 ---
 apiVersion: v1
 kind: Service
@@ -31,7 +32,7 @@ metadata:
     app.kubernetes.io/name: redis-streams
 subsets:
   - addresses:
-      - ip: 10.9.10.53               # placeholder; overlay override (test: 172.19.0.250)
+      - ip: 192.0.2.1                # fail-closed placeholder; overlay override zorunlu
     ports:
       - name: redis
         port: 6379

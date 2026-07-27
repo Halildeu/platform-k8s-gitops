@@ -2,7 +2,9 @@
 
 > **Owner:** ES-000 / [#2646](https://github.com/Halildeu/platform-k8s-gitops/issues/2646)
 >
-> **Status:** Draft-head product baseline implemented; exact-scope review, merge ve runtime kabulü bekleniyor
+> **Status:** Source merged; sentetik TEST kapalı döngüsü doğrulandı. Charter
+> owner kabulü, privacy/no-correlation gate'leri ve production insan kapıları
+> ayrı olarak bekliyor.
 >
 > **Date:** 2026-07-18
 > **Customer-first slice:** public bildirim → kalıcı kayıt → erişim bilgisi → yetkili çalışan yanıtı → bildirim sahibinin mailbox takibi
@@ -45,6 +47,13 @@ göndermesi, yetkili test kullanıcısının `testai.acik.com` üzerinden yanıt
 reporter'ın public mailbox'tan yanıtı görmesiyle kanıtlanır. Mock ekran, source
 merge, CI green veya pod `Ready` tek başına teslimat değildir.
 
+Bu zincirin normatif ve makine-okunur kabul sözleşmesi
+[Faz 35 first-customer journey v1](./contracts/faz35-first-customer-journey.v1.json)
+dosyasıdır. Sözleşme, her adımın kalıcı sonucunu ve o sonucu kullanan sonraki
+aktörü; `Up`, `Functional`, `Authorized`, `Privacy-safe`, `Browser` ve
+`Recoverable` kanıt katmanlarını; sentetik TEST ile gerçek kullanıcı/production
+insan kapısını ayrı tutar.
+
 ## 3. Pazar giriş sınıflandırması
 
 ### 3.1 CORE-MUST — satılabilir baseline
@@ -63,6 +72,13 @@ merge, CI green veya pod `Ready` tek başına teslimat değildir.
 | WCAG 2.2 AA kritik yol | ES-105/205/307 | Keyboard, screen reader, axe ve browser path geçer | axe/Playwright/manual evidence |
 | TR baseline, EN-ready localization | ES-105/307 | User-visible stringler sözlükten; receipt/mailbox TR tam | locale tests, screenshots |
 | Product-cell isolation ve rollback | ES-002/101/209 | DB/authz/storage/netpol/resource/rollback ayrı | rendered manifests, D29, rollback drill |
+
+Evidence attachment baseline'ı
+[`faz35-evidence-custody/v1`](./contracts/faz35-evidence-custody.v1.json) ve
+[ADR-0048](./adr/0048-faz35-evidence-dual-artifact-custody.md) ile
+makine-okunur olarak sabitlenir. ES-104/ES-206 runtime kabulü oluşana kadar
+ürün açıkça text-only çalışır; attachment hiçbir zaman narrative içine
+gizlice gömülmez veya taranmadan case rolüne gösterilmez.
 
 ### 3.2 CORE-CONFIG — müşteriye göre parametre
 
@@ -114,13 +130,23 @@ veya auth bootstrap hatası üretmemelidir.
 Bu matris hukuki görüş değildir; ürün/engineering acceptance baseline'ıdır.
 Ülke ve müşteri bazlı hukuk/DPO onayı ayrıca alınır.
 
+Makine-okunur kaynak
+[Faz 35 market-entry control register v1](./contracts/faz35-market-entry-controls.v1.json)
+dosyasıdır. Register her kontrolü sınıf, uygulanabilirlik, owner, otomatik
+kanıt, insan kabulü ve `doesNotProve` sınırıyla taşır. CI; zorunlu kaynak
+ailelerini, sınıflandırmayı, benzersiz kontrol kimliğini ve insan kapılarının
+otomasyonla kabul edilmiş gibi gösterilmemesini doğrular.
+
 | Referans | Ürüne çevrilen kontrol | Owner | Acceptance / kanıt |
 |---|---|---|---|
 | ISO 37002:2021 whistleblowing management | trust, impartiality, protection; intake-assessment-address-close döngüsü | Product + Legal | lifecycle/role matrisi, COI tests, case audit |
 | EU Directive 2019/1937 Art. 9 | güvenli kanal, gizlilik, yetkili erişim, 7 gün içinde alındı teyidi ve kural olarak 3 ay içinde geri bildirim | Legal + Product | anlık durable receipt; configurable acknowledgment/feedback clock ve overdue evidence |
+| ISO 37301:2021 compliance management | speak-up kültürü, bağımsız gözetim, uygunsuzlukların ele alınması ve sürekli iyileştirme | Compliance + Product | versioned policy, görev ayrılığı, escalation ve yönetim review kaydı |
 | GDPR Art. 5/25/32 ve KVKK ilkeleri | minimization, purpose limitation, privacy by design, security | DPO + Security | data map, retention/hold, encryption, redaction, DSAR gate |
 | ISO/IEC 27001:2022 ve 27002 | access control, logging, incident, supplier/crypto/backup controls | Security + Platform | authz deny tests, audit, restore/rollback evidence |
 | ISO/IEC 27701 | controller/processor privacy controls ve records | DPO + Security | processing inventory, role boundary, evidence register |
+| SOX §301/§806 — yalnız uygulanabilir müşteri paketi | accounting complaint kanalı, confidential/anonymous submission ve retaliation koruması | Legal + Audit Committee | jurisdiction decision, audit-committee routing ve misilleme kontrol kaydı |
+| U.S. DOJ Evaluation of Corporate Compliance Programs — yalnız uygulanabilir müşteri paketi | confidential reporting, investigation process, channel awareness ve retaliation ölçümü | Compliance + Legal | effectiveness review, investigation SLA ve kanal farkındalık kanıtı |
 | SOC 2 security/confidentiality/availability | logical access, change, monitoring, availability evidence | Platform + Audit | CI/GitOps provenance, D29, alert/restore drills |
 | OWASP ASVS 4.x / API Security Top 10 | authn/authz, input, rate limit, logging/secret handling | AppSec | SAST/DAST, BOLA/BFLA/enumeration/abuse tests |
 | WCAG 2.2 AA / EN 301 549 | accessible public and staff critical paths | Web + QA | axe, keyboard, screen-reader/manual evidence |
@@ -141,6 +167,9 @@ Normatif kaynaklar:
 - <https://eur-lex.europa.eu/eli/dir/2019/1937/oj>
 - <https://eur-lex.europa.eu/eli/reg/2016/679/oj>
 - <https://www.kvkk.gov.tr/Icerik/6649/Kisisel-Verilerin-Korunmasi-Kanunu>
+- <https://www.iso.org/standard/75080.html>
+- <https://www.govinfo.gov/content/pkg/COMPS-1883/pdf/COMPS-1883.pdf>
+- <https://www.justice.gov/criminal/criminal-fraud/page/file/937501/dl>
 - <https://owasp.org/www-project-application-security-verification-standard/>
 - <https://www.w3.org/TR/WCAG22/>
 - <https://pages.nist.gov/800-63-4/sp800-63b.html>

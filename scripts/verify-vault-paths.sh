@@ -13,17 +13,17 @@
 #     - Validates required remoteRef fields present + non-empty
 #     - Output: JSON report + exit 0/1/2
 #
-#   live — staging-sw cluster + Vault access via SSH:
+#   live — aiserver cluster + Vault access via SSH:
 #     - For each tracked ExternalSecret in --namespace:
 #       1. kubectl get externalsecret <name> → status.conditions.Ready
 #       2. kubectl get secret <target.name> → ownerRef + data.<key> length
-#       3. SSH staging-sw → vault kv get -field=<property> <path> | wc -c
+#       3. SSH aiserver → vault kv get -field=<property> <path> | wc -c
 #          (length-only check; value never round-trips through bash/stdout)
 #     - Output: JSON report + exit 0/1/2
 #
 # Layer split (companion artifacts):
 #   Layer 1 — this script `static` mode + .github/workflows/verify-vault-paths.yml
-#   Layer 2 — this script `live` mode (manual/scheduled on staging-sw)
+#   Layer 2 — this script `live` mode (manual/scheduled on aiserver)
 #   Layer 3 — kustomize/base/monitoring/prometheusrule-alertmanager-bridge-gh-auth.yaml
 #
 # Exit codes (precedence high → low):
@@ -53,10 +53,10 @@ NAMESPACE=""
 CONTEXT=""
 ESO_NAME=""
 MIN_TOKEN_LEN="40"
-VAULT_INIT_JSON="/home/halil/bootstrap-drill/vault-init-prod.json"
+VAULT_INIT_JSON="/srv/platform/secrets/backup-auth/vault-init-prod.json"
 VAULT_CONTAINER="platform-vault-prod"
 REPORT_PATH=""
-SSH_HOST="${VAULT_PATHS_SSH_HOST:-halil@staging-sw}"
+SSH_HOST="${VAULT_PATHS_SSH_HOST:-aiadmin@aiserver}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -315,7 +315,7 @@ mode_live() {
       # $VAULT_INIT_JSON/$VAULT_CONTAINER/$vault_prop/$vault_key expand locally.
       local remote_script
       remote_script="$(cat <<EOSSH
-VAULT_ROOT_TOKEN=\$(jq -r .root_token '${VAULT_INIT_JSON}' 2>/dev/null)
+VAULT_ROOT_TOKEN=\$(sudo -n jq -r .root_token '${VAULT_INIT_JSON}' 2>/dev/null)
 if [ -z "\$VAULT_ROOT_TOKEN" ]; then echo 'TOKEN_LOAD_FAIL'; exit 3; fi
 docker exec -e VAULT_TOKEN="\$VAULT_ROOT_TOKEN" '${VAULT_CONTAINER}' vault kv get -field='${vault_prop}' '${vault_key}' 2>/dev/null | wc -c | tr -d ' '
 unset VAULT_ROOT_TOKEN

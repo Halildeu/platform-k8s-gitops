@@ -6,7 +6,7 @@
 # Runbook: docs/runbooks/RB-graph-mail-agent-read.md
 #
 # Boundary:
-# - Vault credential read on staging-sw (D43 stdin-pipe pattern — credential never logged)
+# - Vault credential read on aiserver (D43 stdin-pipe pattern — credential never logged)
 # - Client-credentials token (~1h TTL Graph default); NO persistent token cache (default)
 # - Graph REST GET /users/ai@acik.com/messages (read-only; no write/delete/move)
 # - ApplicationAccessPolicy restricts app to ai@acik.com mailbox only (Exchange Online)
@@ -37,7 +37,7 @@ TOP=5
 INCLUDE_BODY=0
 SEARCH=""
 FILTER=""
-SSH_HOST="halil@staging-sw"
+SSH_HOST="aiadmin@aiserver"
 VAULT_PATH="kv/platform/graph"
 
 usage() {
@@ -50,7 +50,7 @@ Options:
   --include-body      Include bodyPreview (truncated 500 chars)
   --search QUERY      Graph $search filter (e.g., "alert", "subject:bounce")
   --filter EXPR       Graph $filter expression (OData)
-  --ssh-host HOST     SSH host for Vault access (default: halil@staging-sw)
+  --ssh-host HOST     SSH host for Vault access (default: aiadmin@aiserver)
   -h, --help          Show this help
 
 Output: JSON array of message metadata.
@@ -98,21 +98,20 @@ if [[ -n "$FILTER" ]]; then
     GRAPH_QUERY="${GRAPH_QUERY}&\$filter=${FILTER_ENC}"
 fi
 
-# Execute on staging-sw — Vault credential read + token + Graph call all in-band
+# Execute on aiserver — Vault credential read + token + Graph call all in-band
 # D43 pattern: credential never echoed; SSH session output only sanitized result
 #
 # Robust pattern: helper params (MAILBOX, GRAPH_QUERY, VAULT_PATH) are passed as
 # single-quoted env vars in the SSH command string (protects $top/$select/& chars),
 # and the remote body is a QUOTED heredoc (<<'EOSSH') so NO client-side expansion
-# occurs — every $VAR inside is evaluated on staging-sw only. This keeps Vault
+# occurs — every $VAR inside is evaluated on aiserver only. This keeps Vault
 # credentials (CLIENT_SECRET, VAULT_ROOT_TOKEN, ACCESS_TOKEN) from ever leaving
 # the server, and avoids the double-expansion that breaks OData $-prefixed params.
 ssh -o BatchMode=yes "$SSH_HOST" \
     "VAULT_PATH='${VAULT_PATH}' MAILBOX='${MAILBOX}' GRAPH_QUERY='${GRAPH_QUERY}' bash -s" <<'EOSSH'
 set -euo pipefail
 
-VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \
-                   jq -r .root_token /home/halil/bootstrap-drill/vault-init.json)
+VAULT_ROOT_TOKEN=$(sudo -n jq -r .root_token /srv/platform/secrets/backup-auth/vault-init-prod.json)
 
 # Read Graph credentials from Vault (no echo)
 GRAPH_DATA=$(docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \

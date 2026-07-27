@@ -9,11 +9,15 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: platform-pg-test
-    # ADR-0002 §5.1: test default scale-to-zero
     # profiles: [manual] → compose up SADECE `--profile manual` flag ile çalışır
-    # Host reboot'unda restart:no ile geri gelmez (normalde unless-stopped ama test için no)
+    # (kazara `compose up` guard'ı). Bu, reboot davranışından bağımsızdır.
     profiles: ["manual"]
-    restart: "no"
+    # restart: unless-stopped — host reboot'unda TEST PostgreSQL geri gelmeli.
+    # Eski `restart: "no"` gerekçesi "ADR-0002 §5.1 test default scale-to-zero"
+    # (D17) idi; o politika 2026-05-10'da DEPRECATED edildi: test veri düzlemi
+    # sessizce kapalı kalınca paralel geliştirme oturumları kırılıyor ve her
+    # seferinde elle kurtarma (scale up + ESO refresh + Vault unseal) gerekiyor.
+    restart: unless-stopped
     ports:
       # 2026-05-11 hardening (Codex 019e15dd follow-up to PR #517 KC
       # bind drop). Same pattern: the 10.9.10.53:5433 LAN bind comment

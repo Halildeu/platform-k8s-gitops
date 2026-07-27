@@ -1,6 +1,6 @@
 name: Faz 24 WG-B+ I6 MASQ Evidence Collect
 
-# Collects metadata-only I6 evidence on the self-hosted staging-sw runner, then
+# Collects metadata-only I6 evidence on the self-hosted aiserver runner, then
 # validates it with the I6 verifier. Fail-closed. This workflow deploys and then
 # deletes ONE ephemeral, policy-approved, digest-pinned probe pod + a run-scoped
 # egress NetworkPolicy (egress only to the WG peer). It does NOT change host
@@ -51,7 +51,7 @@ on:
         required: true
         default: "/usr/local/sbin/k3d-wg-masq-host-rule.sh"
       kube_context:
-        description: "Kubernetes context on staging-sw"
+        description: "Kubernetes context on aiserver"
         required: true
         default: "k3d-test"
       namespace:
@@ -89,7 +89,7 @@ concurrency:
 jobs:
   collect:
     name: collect and verify I6 MASQ evidence
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 10
 
     env:
@@ -99,7 +99,7 @@ jobs:
       PROBE_POD_NAME: wg-i6-probe-${{ github.run_id }}
       PROBE_POD_SELECTOR: wg-i6-probe=true,wg-i6-probe-run=${{ github.run_id }}
       # Pinned to the busybox 1.36 multi-arch INDEX (manifest-list) digest. LIVE-PROVEN
-      # on this staging-sw k3s/containerd runtime (workflow_dispatch 29201436668):
+      # on this aiserver k3s/containerd runtime (workflow_dispatch 29201436668):
       # when a pod requests busybox by ANY digest, .status.containerStatuses[].imageID is
       # reported as docker.io/library/busybox@sha256:<INDEX-digest> — NOT the platform
       # (amd64) manifest digest. So the "Verify probe pod runtime imageID" step + the

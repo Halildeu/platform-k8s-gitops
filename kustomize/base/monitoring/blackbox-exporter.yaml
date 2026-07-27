@@ -48,6 +48,19 @@ data:
           method: GET
           valid_status_codes: [200]
           preferred_ip_protocol: ip4
+      # tcp_connect — yalnız "TCP dinleyici ayakta mı" sorusunu sorar.
+      #
+      # Neden HTTP değil: GPU host'taki live-stt ucu (10.99.0.2:8243) mTLS
+      # zorunlu; istemci sertifikası olmadan HTTP probe DAİMA başarısız olur ve
+      # sağlıklı/ölü ayrımı yapamaz. İstemci sertifikasını monitoring'e mount
+      # etmek ise sertifikanın kapsamını gereksiz genişletir (o materyal
+      # audio-gateway'e özel). TCP-connect, 2026-07-24 arızasının tam sinyalidir:
+      # Caddy öldüğünde port kapanır, live-stt/meeting-ai ayakta kalsa bile.
+      tcp_connect:
+        prober: tcp
+        timeout: 5s
+        tcp:
+          preferred_ip_protocol: ip4
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -293,3 +306,45 @@ spec:
         component: testai-settings-notifications-probe
         edge: testai
         host: testai.acik.com
+---
+# Probe CR — Faz 24 GPU host (Denetim) iç uçları, WireGuard üzerinden.
+#
+# NEDEN VAR (2026-07-24 arızası): live-stt'nin mTLS ön kapısı olan Caddy,
+# Windows zamanlanmış görevinde `ExecutionTimeLimit` tanımsız olduğu için
+# varsayılan 3 günün sonunda Windows tarafından öldürüldü. Arkasındaki her şey
+# (live-stt :8200, meeting-ai :8300, Ollama) sapasağlam ayaktaydı, ama :8243
+# kapandığı için canlı transkripsiyon tamamen durdu. HİÇBİR ALARM ÜRETİLMEDİ;
+# arıza ancak kullanıcı "transkript gelmiyor" dediğinde fark edildi.
+#
+# Bu probe tam o boşluğu kapatır: trafik olmasa bile (gece, kayıt yokken)
+# dinleyicinin ölümünü görür. Tüketici-tarafı hata metrikleri bunu yakalayamaz,
+# çünkü istek yoksa hata da yoktur.
+#
+# tcp_connect kullanılır — 8243 mTLS zorunlu olduğu için HTTP probe istemci
+# sertifikası olmadan sağlıklı/ölü ayrımı yapamaz (bkz. ConfigMap yorumu).
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: faz24-gpu-host-endpoints
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+spec:
+  jobName: blackbox-gpu-host-tcp
+  module: tcp_connect
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:9115
+  interval: 60s
+  scrapeTimeout: 10s
+  targets:
+    staticConfig:
+      static:
+        # live-stt mTLS ön kapısı (Caddy) — direct-STT'nin tek giriş noktası
+        - 10.99.0.2:8243
+        # meeting-ai — canlı özet/karar/aksiyon üretimi
+        - 10.99.0.2:8300
+      labels:
+        component: faz24-gpu-host-probe
+        host: denetim-pc
+        transport: wireguard

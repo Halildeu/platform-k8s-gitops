@@ -19,7 +19,19 @@ import yaml
 
 
 VALID_WORKLOAD_KINDS = {"Deployment", "StatefulSet", "Job", "external"}
-VALID_RUNTIME_CLASSES = {"spring-backend", "nginx", "openfga", "job", "lab-tool"}
+# `third-party` is a vendor daemon we run but do not build: it exposes no HTTP
+# health surface of ours and brings its own readiness model. The probe-contract
+# table already names this case (see probe_contract_rules — `exempt` covers
+# "third-party with own readiness model"); the runtime vocabulary simply had no
+# word for it, which would force such a workload to be mislabelled a lab tool.
+VALID_RUNTIME_CLASSES = {
+    "spring-backend",
+    "nginx",
+    "openfga",
+    "job",
+    "lab-tool",
+    "third-party",
+}
 VALID_PROBE_CONTRACTS = {"spring-actuator", "http-healthz", "exempt"}
 VALID_ENV_STATES = {"enabled", "deferred", "disabled"}
 

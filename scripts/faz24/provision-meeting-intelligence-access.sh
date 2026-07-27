@@ -173,13 +173,13 @@ read_vault_path \
   "${VAULT_GRAPH_PATH}" \
   "${GRAPH_VAULT_JSON}" \
   "platform-vault-prod" \
-  "/home/halil/bootstrap-drill/vault-init-prod.json" \
+  "/srv/platform/secrets/backup-auth/vault-init-prod.json" \
   || die "graph-prod-vault-read-failed"
 read_vault_path \
   "${VAULT_PERSONA_PATH}" \
   "${PERSONA_VAULT_JSON}" \
   "platform-vault-test" \
-  "/home/halil/bootstrap-drill/vault-init-test.json" \
+  "/srv/platform/secrets/backup-auth/vault-init-test.json" \
   || die "persona-test-vault-read-failed"
 
 GRAPH_CLIENT_ID="$(jq -r '.data.data.graph_client_id // .data.data.client_id // empty' "${GRAPH_VAULT_JSON}")"

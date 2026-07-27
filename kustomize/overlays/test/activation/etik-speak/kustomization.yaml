@@ -5,6 +5,7 @@ resources:
   - ../../../../base/apps/etik-speak
   - secretstore.yaml
   - externalsecret.yaml
+  - externalsecret-notification.yaml
   - ingress-public-api.yaml
   - ingress-public-ui.yaml
   - ingress-staff-api.yaml
@@ -12,24 +13,102 @@ resources:
   - netpol.yaml
   - resource-quota.yaml
   - priority-class.yaml
-  - public-api-upstream-headers.yaml
 images:
-  # Exact branch artifacts: backend source 8302e3a1 / run 29710031015 and
-  # public-web source 4eaf02bf / run 29710051185, and dedicated manager-web
-  # source 308a2777 / run 29716679615. Their immutable identities
-  # are content-bound by signed provenance in the Faz 35 image-set ledger.
-  # Root activation is included only by the post-provisioning commit that pins
-  # the reviewed Vault role and OpenFGA store/model IDs.
+  # Exact branch artifacts: backend merge ffaa2352 / run 30192977173, which is
+  # the first main build carrying the fail-closed evidence custody pipeline and
+  # the lost-capability rotation fix (platform-backend #927 and #928 — the cell
+  # had been running the 2026-07-21 image, in which the attachment endpoints do
+  # not exist at all and every declaration answered 403). public-web source
+  # 4eaf02bf / run 29710051185; dedicated manager-web source 2fae733d / run
+  # 29787052080. Their immutable identities are content-bound by signed
+  # provenance in the Faz 35 image-set ledger. Root activation is included only
+  # by the post-provisioning commit that pins the reviewed Vault role and
+  # OpenFGA store/model IDs.
+  #
+  # This digest was read back from an actual pull into the target cluster. A
+  # build-log digest is not evidence that a tag is pullable, and pinning one has
+  # already left a service silently un-rolled.
+  #
+  # 2026-07-27 bump: sha-48182b4 — platform-backend#947 (ES-203 B+ dilim 1).
+  # Davada kisi artik etiketle degil principal olarak adlandiriliyor:
+  # POST /api/v1/ethics/cases/{id}/participants. Katilimci satiri hicbir yetki
+  # VERMEZ; erisim hala urun uyeliginden gelip conflicted/recused ile cikariliyor.
+  # Onceki: sha-191005e — platform-backend#943. #942'nin yazdigi
+  # `recusal.repeated` olayina hicbir istek ulasamiyordu (ilk beyan davayi
+  # gorusten cikardigi icin ikinci POST 404 aliyor); olu dal kaldirildi.
+  # Onceki: sha-e130caa — platform-backend#942 (ES-203). Personel artık
+  # bir davadan kayda geçerek çekilebiliyor: POST /api/v1/ethics/cases/{id}/recusal.
+  # Yaptırım zaten vardı (can() `recused` ilişkisini soruyordu); eksik olan beyandı
+  # — çekilme yalnız OpenFGA'ya elle tuple yazılarak kurulabiliyordu, denetim
+  # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:f06b45b2884684222f566a67c5400a7e2dba0a00a325921f14314dc9f192aca3
+    digest: sha256:065b200a19d71501845b7e063ba88ac422a1ed803dd0dc09a654a426db8986b1
+  # Pinned scanner. The same digest is handed to the pipeline as its declared
+  # scanner identity, so recorded provenance and running container cannot drift.
+  - name: docker.io/clamav/clamav
+    digest: sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
-    digest: sha256:b9a9e8b1bc0e60bd63f8f469f418f2d9b227dbdb86d199ee38502b47298c7b2f
+    # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
+    # birden fazla ek eklenebilir, yuklemeler sirali.
+    # Kaynak: 598f79538360bf001d35496893aeea5ee02e2b2e
+    # Etiket: sha-598f79538360bf001d35496893aeea5ee02e2b2e (bu hat TAM sha kullanir).
+    # Digest hedef kumeye gercek pull ile okundu, build log'undan kopyalanmadi.
+    digest: sha256:10675d11e6ece4c71e222dff0089075f316b77db2a429f2a16207661773ae445
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    digest: sha256:ab9b55a52f1cca362d6d69c548e1e9f038e69c07ded468adfee28c1a43c133da
+    # platform-web #1005 — panel sessiz SSO ile acilir; /ethic tek sahipli.
+    # Kaynak: c6a4ea28c70d9814d6d6f74038d8e74e5798b92f
+    # Etiket: sha-c6a4ea28c70d9814d6d6f74038d8e74e5798b92f (bu hat TAM sha etiketi kullanir;
+    # frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
+    # Digest etiketten cozuldu ve GHCR'da 200 ile dogrulandi.
+    digest: sha256:fdad0d784555659db870416b95895e2ccabc80645414bb449ef09e31e70596fc
 patches:
+  - target: {kind: ConfigMap, name: ethics-service-config}
+    patch: |-
+      - op: add
+        path: /data/ETHICS_AUDIT_DELIVERY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_DELIVERY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID
+        value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_CHANNEL
+        # The orchestrator's allow-set spells this `in-app`. `inapp` was
+        # rejected at the submit gate, so every Faz 35 signal dead-lettered
+        # while both services looked healthy (platform-backend #937).
+        value: "in-app"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_LOCALE
+        value: "tr-TR"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_MAX_ATTEMPTS
+        value: "8"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_RETRY_BASE_DELAY
+        value: "10s"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_RETRY_MAX_DELAY
+        value: "15m"
+      # Faz 35 — CANLI/TEST adres ayrımı (owner kararı 2026-07-23).
+      #   etik.acik.com     = CANLI  -> default org ...0001 (gerçek çalışan ihbarları)
+      #   speakup.acik.com  = TEST   -> org ...0003 (sentetik doğrulama)
+      # M2 multi-tenant resolver (platform-backend #925) host'tan org çözer;
+      # haritada olmayan host default org'a düşer. Bu ayrım sayesinde test
+      # ihbarları canlı kayıtlarla ASLA aynı org'a yazılmaz — silme gerekmez,
+      # kanunî delil zinciri temiz kalır.
+      - op: add
+        path: /data/SPRING_APPLICATION_JSON
+        # Köşeli parantez ZORUNLU: Spring, SPRING_APPLICATION_JSON'ı düz
+        # property'lere açarken noktalı key'i iç içe map sanır
+        # (speakup -> acik -> com) ve host eşleşmesi sessizce kaçar; ihbar
+        # default org'a düşer. `[...]` key'i tek parça olarak bağlar.
+        # 2026-07-24 canlı doğrulamada bu tuzağa düşüldü, kanıtla saptandı.
+        value: '{"ethics":{"tenancy":{"public-hosts":{"[speakup.acik.com]":"00000000-0000-0000-0000-000000000003"}}}}'
   - target: {kind: Deployment, name: ethics-service}
     patch: |-
       - op: replace
@@ -38,21 +117,28 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
-      # Faz 35 test-only transport gate bypass. ingress-nginx v1.9+
-      # `proxy-set-headers` ConfigMap yalnızca ilk (alfabetik) header'ı
-      # render ediyor — `X-Etik-Speak-Transport: https` atlanıyor + backend
-      # `SECURE_TRANSPORT_REQUIRED` reddediyor. Backend'in built-in
-      # `ETHICS_SECURE_TRANSPORT_REQUIRED` env toggle'ı yalnız TEST'te devre
-      # dışı bırakılıyor. ES-3 prod pilot öncesi kalıcı fix gerek: (a)
-      # ingress-nginx `configuration-snippet` + cluster `allow-snippet-
-      # annotations` + `annotations-risk-level: Critical` ya da (b) backend
-      # `PublicCredentialBoundaryFilter.hasAuthorization` empty-string bypass
-      # + `X-Forwarded-Proto: https` fallback kabul.
       - op: add
-        path: /spec/template/spec/containers/0/env
+        path: /spec/template/spec/containers/0/envFrom/-
         value:
-          - name: ETHICS_SECURE_TRANSPORT_REQUIRED
-            value: "false"
+          secretRef:
+            name: ethics-service-notification-secret
+            optional: false
+  - target: {kind: Deployment, name: ethics-evidence-worker}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+  - target: {kind: Deployment, name: clamav}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
   - target: {kind: Deployment, name: etik-speak-public}
     patch: |-
       - op: replace

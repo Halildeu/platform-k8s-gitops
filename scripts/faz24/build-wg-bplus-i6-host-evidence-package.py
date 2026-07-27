@@ -2,10 +2,10 @@
 """Build an operator package for Faz 24 WG-B+ I6 host evidence collection.
 
 The package is metadata-only orchestration material. It does not collect host
-evidence while building, does not connect to staging-sw, and does not carry raw
+evidence while building, does not connect to aiserver, and does not carry raw
 iptables/systemd/WireGuard output or secrets. The generated shell wrapper is
 intended to be run by an operator from a clean platform-k8s-gitops checkout on
-staging-sw.
+aiserver.
 
 Schema v2 (2026-07-12): the wrapper now drives the hardened v2 collector arg
 surface. The v1 ``--pod-cidr`` default was the I6 false-positive root cause, so
@@ -148,7 +148,7 @@ set -euo pipefail
 
 if [ ! -f scripts/faz24/collect-wg-bplus-i6-masq-evidence.py ] || \\
    [ ! -f scripts/faz24/verify-wg-bplus-i6-masq-evidence.py ]; then
-  echo "ERR run this script from the platform-k8s-gitops repository root on staging-sw" >&2
+  echo "ERR run this script from the platform-k8s-gitops repository root on aiserver" >&2
   exit 2
 fi
 
@@ -315,7 +315,7 @@ def build_package(args: argparse.Namespace) -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--target-host", default="staging-sw")
+    parser.add_argument("--target-host", default="aiserver")
     parser.add_argument("--cluster-cidr", required=True)
     parser.add_argument("--service-cidr", default="")
     parser.add_argument("--wg-interface", default="auto")

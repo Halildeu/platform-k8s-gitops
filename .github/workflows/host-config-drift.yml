@@ -1,0 +1,40 @@
+name: Host config drift check
+
+# Files under host-compose/ run on the host, outside Kubernetes, and have no
+# reconciler — they are deployed by hand (scp). A merged PR therefore does not
+# mean the live host is running that config.
+#
+# Faz 24 Bulgu 3-E: PR #2711 added the audio-gateway WebSocket Upgrade forward
+# to host-compose/web-nginx/default.conf and merged green, but the file was
+# never copied to the host. The live edge kept dropping the header for a day
+# while git and CI both reported the fix as landed. This job makes that gap
+# loud: it fails when canonical and live diverge.
+#
+# Read-only — it diffs, it never deploys.
+
+# Deliberately NOT wired to pull_request. This job asserts fleet state, not the
+# correctness of a diff, so a PR that touches nothing related would still fail
+# whenever the host is out of sync. Gating merges on that would create pressure
+# to force the check green — the opposite of what it is for. Nightly + manual
+# keeps it a truthful signal.
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly 03:00 UTC — after the 02:00 Faz 24 live e2e smoke.
+    - cron: '0 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  host-config-drift:
+    # aiserver is where the live host paths exist, so the diff is a local
+    # file comparison rather than a remote fetch.
+    runs-on: [self-hosted, aiserver]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diff canonical host config against what the host runs
+        run: bash scripts/host-config-drift-check.sh

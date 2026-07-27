@@ -75,6 +75,17 @@ spec:
             - secretRef:
                 name: audio-gateway-secrets   # ESO: SPRING_DATA_REDIS_PASSWORD
                 optional: false
+          env:
+            # HandshakeWebSocketService DEBUG renders the complete request
+            # header map, including Authorization. Keep framework socket
+            # diagnostics below DEBUG in every environment; operational
+            # evidence must use redacted/presence-only signals instead.
+            - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_REACTIVE_SOCKET
+              value: INFO
+            - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_REACTIVE_SOCKET_SERVER_SUPPORT
+              value: INFO
+            - name: LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_BOOT_AUTOCONFIGURE_CONDITION
+              value: INFO
           resources:
             requests:
               cpu: 100m
@@ -89,8 +100,9 @@ spec:
             httpGet:
               path: /actuator/health/liveness
               port: management
-            failureThreshold: 30
-            periodSeconds: 5        # 150 sn startup toleransı
+            failureThreshold: 60
+            periodSeconds: 10        # 60*10 = 600 sn bütçe; ölçülen worst-case boot 243 sn (2026-07-23)
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness

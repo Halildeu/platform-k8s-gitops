@@ -46,7 +46,7 @@ concurrency:
 jobs:
   target-preflight:
     name: Verify attended endpoint target before approval
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 5
     steps:
       - name: Validate bounded dispatch
@@ -77,14 +77,14 @@ jobs:
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
           DENETIM_SSH_TARGET: denetim-pc
-          DENETIM_SSH_CONFIG: /home/halil/.ssh/config
+          DENETIM_SSH_CONFIG: /home/aiadmin/.ssh/config
         run: bash scripts/faz22-remote-ops/verify-view-only-viewer-target.sh
 
   product-auth-preflight:
     name: Verify product PKCE login and viewer route before approval
     needs: target-preflight
     if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     steps:
@@ -145,7 +145,7 @@ jobs:
     name: Attended testai browser render and ACK evidence
     needs: [target-preflight, product-auth-preflight]
     if: ${{ !inputs.preflight_only }}
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 45
     environment:
       name: faz22-view-only-pilot
@@ -191,7 +191,7 @@ jobs:
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
           DENETIM_SSH_TARGET: denetim-pc
-          DENETIM_SSH_CONFIG: /home/halil/.ssh/config
+          DENETIM_SSH_CONFIG: /home/aiadmin/.ssh/config
         run: bash scripts/faz22-remote-ops/verify-view-only-viewer-target.sh
 
       - name: Re-verify VIEW_ONLY audit DB role after protected approval

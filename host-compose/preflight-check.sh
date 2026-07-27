@@ -11,7 +11,7 @@ if [[ "${ENV}" != "prod" && "${ENV}" != "test" ]]; then
   exit 1
 fi
 
-REMOTE="${REMOTE:-staging-sw}"
+REMOTE="${REMOTE:-aiadmin@aiserver}"
 PASS=0
 FAIL=0
 

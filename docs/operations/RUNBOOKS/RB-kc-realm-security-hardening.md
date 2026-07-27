@@ -23,10 +23,41 @@
 | **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
 | **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 + impersonation 201 pending** (persona seed — ayrı fixture paketi) |
 | **A2b.2** | 4 TEST runbook + core smoke script repoint (`client_id=frontend` → `smoke-client`) | ✅ bu sürüm (docs: RB-22-1-1-be-009-openfga-live + RB-faz-21-3-d35-3-keycloak-admin-jwt + RB-faz-23-1-pr5-deploy-verify + RB-zanzibar-canary + runbook-auth-impersonation-broker-secret + RB-bl011 (prod pattern note); scripts: faz22/smoke-endpoint-admin-domain-ops + faz22-remote-ops/devkey-cert-autorenew + faz22-remote-ops/agentpc2-update-agent-v0214 + faz24/provision-meeting-intelligence-access + faz35/reconcile-test-permission-writer-identity). Faz35 ethics scripts + ATS scripts A2c-blocker migration note aldı (A2b.3 dependency: smoke-client optional scope extension). |
-| A2b.3 | smoke-client optionalClientScopes'a ATS + ETHICS scope opt-in genişletme | A2c ÖNCESİ zorunlu — Faz25/Faz35 team ya scope opt-in ya dedicated smoke client kurar |
-| **A2c** | `frontend.directAccessGrantsEnabled=false` | **BLOCKED on A2b.3** — Faz25 ATS scope opt-in + Faz35 ethics scope opt-in tamamlanmadan flip DAG=false ROPC break eder (fullats-application-smoke, provision-test-openfga/ethic-entitlement/keycloak, verify-test-openfga-authz). Ayrı cutover PR. |
-| A3 | redirectUri + webOrigins narrowing | sonraki PR |
-| B | Conditional-OTP privileged (admin/manager) | ayrı flow PR |
+| A2b.3 | ATS + ETHICS token kontratı — **#2746, karar VERİLDİ: Opsiyon B (ayrı client)** | A2c ÖNCESİ zorunlu. 2026-07-27 ölçümü: `ats.*` client-scope'ları 0 protocol mapper + boş scope-mapping taşıyor, yani `scope` claim'ine sadece string ekler. ATS scriptlerinin tükettiği `resource_access[ats-api].roles` built-in `roles` mapper'ından gelir ve client scope'uyla filtrelenir: `frontend.fullScopeAllowed=true` (filtresiz) vs `smoke-client.fullScopeAllowed=false` + 0 `ats-api` rol eşlemesi → optional scope eklemek `resource_access` ÜRETMEZ. Dolayısıyla "optional scope opt-in" yolu yapısal olarak çalışmaz; dar rol eşlemeli ayrı `smoke-ats-v1` gerekir. |
+| **A2c** | `frontend.directAccessGrantsEnabled=false` | **BLOCKED on A2b.3** — Faz25 ATS scope opt-in + Faz35 ethics scope opt-in tamamlanmadan flip DAG=false ROPC break eder (fullats-application-smoke, provision-test-openfga/ethic-entitlement/keycloak, verify-test-openfga-authz). Ayrı cutover PR. Gözlem tarafı hazır: A2-obs login event logging LIVE olduğu için flip'in etkisi ölçülebilir. |
+| A2-obs | Login event logging (`eventsEnabled` + 7g retention) — `harden-realm-security.sh` desired-state | ✅ **LIVE** (2026-07-24) |
+| A3 | redirectUri + webOrigins narrowing | ⚠️ **CANLIDA UYGULANMIŞ, DESIRED-STATE'TE YOK** (2026-07-27 ölçümü: `frontend` redirectUris=1 `https://testai.acik.com/*`, webOrigins tek origin, wildcard yok — ama `harden-realm-security.sh` bu alanları YÖNETMİYOR). Drift: realm yeniden kurulursa ya da script `--apply` edilirse daraltma yeniden üretilmez. Kalıcı çözüm: alanları desired-state'e al. |
+| B | Conditional-OTP privileged (admin/manager) | ⛔ **KURULMUŞ AMA BAĞLANMAMIŞ → YÜRÜRLÜKTE DEĞİL** (2026-07-27 ölçümü: `browser-privileged-mfa` akışı var ve doğru kurulu — `privileged-force-otp` CONDITIONAL + `Condition - user role` REQUIRED + `OTP Form` REQUIRED. ANCAK realm `browserFlow=browser` yani varsayılan akış bağlı, ve HİÇBİR client'ta `authenticationFlowBindingOverrides` yok → akış hiçbir girişi etkilemiyor). Yürürlüğe almak owner-zamanlı: bağlama, ayrıcalıklı rollü kullanıcıları (owner'ın kendi admin hesabı dahil) sonraki girişte OTP kaydına zorlar. Tek komut + geri alma aşağıda. |
+
+> **A2c karar kuralı (A2-obs ile ölçüme bağlandı, 2026-07-24).** A2c'nin önündeki
+> engel bir "ekip kararı" değil, **veri yokluğuydu**: realm event logging **kapalıydı**
+> (`eventsEnabled: false`), dolayısıyla `frontend` üzerinden hâlâ ROPC kullanan bir
+> tüketici var mı **kimse bilmiyordu**. `harden-realm-security.sh` desired-state'ine
+> `eventsEnabled: true` + `eventsExpiration: 604800` (7 gün) eklendi ve uygulandı
+> (drift-korumalı; rollback snapshot'ı `--apply` çıktısında).
+>
+> Risk hatırlatması: `frontend` **public client** + `directAccessGrants=true` →
+> parola grant'ı **client kimlik doğrulaması olmadan** çalışıyor. A2c'nin kapattığı
+> risk tam olarak bu.
+>
+> **Karar sorgusu** (7 gün biriktikten sonra koşulur):
+>
+> ```bash
+> docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh get events \
+>   -r platform-test --limit 200 \
+>   | python3 -c "import json,sys; d=json.load(sys.stdin); \
+>       f=[e for e in d if e.get('clientId')=='frontend' \
+>          and (e.get('details') or {}).get('grant_type')=='password']; \
+>       print('frontend ROPC login:', len(f)); \
+>       [print(' ', e.get('userId'), e.get('ipAddress')) for e in f[:10]]"
+> ```
+>
+> - Sonuç **0** → A2c güvenle uygulanır (kimse ROPC kullanmıyor).
+> - Sonuç **>0** → çıktıdaki `userId`/`ipAddress` hangi tüketicinin `smoke-client`'a
+>   taşınması gerektiğini **doğrudan** söyler; A2b.2 repoint deseni uygulanır.
+>
+> Kaydın çalıştığı kanıtlandı: ROPC token mint sonrası
+> `type=LOGIN client=smoke-client grant_type=password` event'i kaydedildi.
 
 Realm-level slice'lar `harden-realm-security.sh` `DESIRED_JSON`'a eklenir; **client-level** işler ayrı
 resource-specific script'lerde (Codex: realm ve client farklı lifecycle/rollback semantiği).
@@ -291,3 +322,35 @@ A2b.1 karşılığı.)
 ### Ayrı truth-item (A2b.1'e karıştırılmadı — Codex)
 
 `auth-service` audience enforcement: TEST overlay `SECURITY_JWT_AUDIENCE`/"strict validator" yorumu ile kaynak `SecurityConfigKeycloak` davranışı örtüşmüyor (env açıkça tüketilmiyor olabilir). Ayrı backend/GitOps PR + kendi rollout acceptance'ı gerekir (impersonation gibi hassas consumer'ı etkiler).
+
+## B (privileged MFA) — yürürlüğe alma / geri alma
+
+2026-07-27 ölçümü: `browser-privileged-mfa` akışı **var ve doğru kurulu**, ama realm
+`browserFlow=browser` olduğu ve hiçbir client'ta flow override bulunmadığı için
+**hiçbir girişi etkilemiyor**. Akışın varlığı yürürlükte olduğu anlamına gelmez.
+
+Yürürlüğe almak (owner-zamanlı — ayrıcalıklı rollü kullanıcıları, owner'ın kendi
+admin hesabı dahil, sonraki girişte OTP kaydına zorlar):
+
+```bash
+ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh update realms/platform-test \
+  -s browserFlow=browser-privileged-mfa'
+```
+
+Geri alma (aynı anda, tek satır):
+
+```bash
+ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh update realms/platform-test \
+  -s browserFlow=browser'
+```
+
+Doğrulama — bağlamanın gerçekten değiştiğini gör (varlık değil, **bağlama** ölç):
+
+```bash
+ssh aiserver 'docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh get realms/platform-test' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)[\"browserFlow\"])"
+```
+
+Ardından tarayıcıdan ayrıcalıklı bir personayla giriş: OTP adımı geliyorsa yürürlükte.
+`kcadm` komutları öncesinde `kcadm.sh config credentials` gerekir (bkz. bu runbook'un
+üstündeki admin login bölümü).

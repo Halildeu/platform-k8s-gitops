@@ -32,6 +32,15 @@ spec:
     - from:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
       ports: [{port: 8099, protocol: TCP}]
+    # Faz 35 SRE — Prometheus scrape /actuator/prometheus (management:8081).
+    # Yalnız monitoring namespace'inden gelen scrape trafiği geçer; ingress-nginx
+    # veya diğer application pod'ları bu porta ulaşamaz. Prometheus-operator'ın
+    # canonical namespace label'ı kube-prometheus-stack helm chart default'u.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports: [{port: 8081, protocol: TCP}]
   egress:
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
@@ -48,6 +57,61 @@ spec:
       # keep using the stable Service port 8090. This remains correct across
       # kube-proxy DNAT ordering differences between NetworkPolicy engines.
       ports: [{port: http, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: auth-service}}}]
+      ports: [{port: http, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: notification-orchestrator}}}]
+      ports: [{port: http, protocol: TCP}]
+    # ES-104G: host-bridged MinIO. The request-facing pod reaches the object
+    # store to admit an upload and to stream a finished derivative; what it may
+    # do once connected is bounded by its MinIO policy, not by this rule.
+    - to: [{ipBlock: {cidr: 172.19.0.252/32}}]
+      ports: [{port: 9000, protocol: TCP}]
+---
+# ES-104G evidence worker. It answers no traffic: the only ingress is the
+# Prometheus scrape, so an attacker who reaches the namespace still has no
+# request surface here. Egress is the exact processing path and nothing else —
+# in particular there is no route to the public internet, which is what makes
+# the pinned scanner definitions meaningful.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: ethics-evidence-worker}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: ethics-evidence-worker}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports: [{port: 8081, protocol: TCP}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 172.19.0.6/32}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 172.19.0.252/32}}]
+      ports: [{port: 9000, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: clamav}}}]
+      ports: [{port: 3310, protocol: TCP}]
+---
+# The scanner is not a shared service. Only the evidence worker may hand it
+# bytes, and it initiates nothing itself.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: clamav}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: clamav}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-evidence-worker
+              app.kubernetes.io/part-of: etik-speak
+      ports: [{port: 3310, protocol: TCP}]
+  egress: []
 ---
 # The destination pods are selected by the namespace default-deny and their
 # broad intra-namespace allow accepts only part-of=platform sources. Etik Speak
@@ -80,4 +144,32 @@ spec:
               app.kubernetes.io/part-of: etik-speak
       # NetworkPolicy ingress is evaluated at the destination pod, not at the
       # Service's public port 8090; `http` resolves to containerPort 8084.
+      ports: [{port: http, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ethics-service-to-auth-service}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: auth-service}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-service
+              app.kubernetes.io/part-of: etik-speak
+      ports: [{port: http, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ethics-service-to-notification-orchestrator}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: notification-orchestrator}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-service
+              app.kubernetes.io/part-of: etik-speak
       ports: [{port: http, protocol: TCP}]

@@ -45,7 +45,7 @@ concurrency:
 jobs:
   collect:
     name: One isolated protected termination case
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 30
     environment:
       name: faz22-view-only-pilot

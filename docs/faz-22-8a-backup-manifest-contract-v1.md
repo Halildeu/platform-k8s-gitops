@@ -132,9 +132,40 @@ pre-managed sync root; personal Documents/Desktop/Pictures/Downloads **deny**.
 
 Manifest backend'e gelince, **aynı karar motorunun server-side mirror'ı**
 re-validate eder (agent'a güvenilmez): allowlist match + denylist negative +
-canonicalization sanity + aggregate tutarlılık. Mirror ayrıca `archive_container`
-deny kararını + `container_count`'u **yeniden hesaplar** (producer'a güvenmez).
-Mismatch → reject + audit.
+canonicalization sanity + aggregate tutarlılık. Mismatch → reject + audit.
+
+> **Düzeltme 2026-07-22 (#1536, Codex `019ec30d` 2× flag)**: bu paragraf
+> önceden mirror'ın `archive_container` deny kararını ve `container_count`'u
+> **"yeniden hesapladığını"** söylüyordu. Bu **overclaim**'di ve güvenlik
+> duruşunu olduğundan güçlü gösteriyordu.
+>
+> Backend'in **cihaz dosya sistemi yok** — `BackupDryRunManifestPayloadPolicy`
+> javadoc'u bunu açıkça yazıyor: *"the backend has no device filesystem, so the
+> mirror is a STRICT STRUCTURAL re-validation (not a re-walk)"*. Mirror
+> arşivin içine inmez, dizin ağacını yeniden yürümez, dolayısıyla
+> `container_count`'u kaynak veriden **türetemez**.
+>
+> Fiilen yapılan şey **cross-field tutarlılık zorlaması** (no-trust, ama
+> yapısal):
+>
+> - `container_count` ≤ `denied_count`
+> - `denied_classes` içinde `archive_container` varsa → `container_count` ≥ 1
+>   (yoksa reject: *"archive_container denied but container_count is zero"*)
+> - `container_count` > 0 ise → `denied_classes` içinde `archive_container`
+>   **zorunlu** (yoksa reject: *"container_count positive but archive_container
+>   missing from denied_classes"*)
+> - full-envelope path-free (KVKK m.4) + enum/şema uyumu
+>
+> **Neden bu ayrım önemli**: "yeniden hesaplar" okuyan biri, kötü niyetli bir
+> agent'ın gönderdiği `container_count`'un bağımsız olarak doğrulandığını sanır.
+> Gerçekte **kendi içinde tutarlı ama yanlış** bir manifest bu kapıdan geçer.
+> Mirror'ın koruduğu şey, üreticiye güvenmeden **iç tutarlılık ve şema
+> disiplini**; sayının maddi doğruluğu değil.
+>
+> Kod ve runbook **zaten doğruydu** — düzeltilen yalnız bu sözleşme cümlesi.
+> Gerçek recompute, arşiv içi recursive classification ile birlikte gelirse
+> anlamlı olur; o **ayrı ve ayrıca-gated** bir sonraki adım (bkz. §3
+> `archive_container` satırı).
 
 ## 6. D29 acceptance (22.8A.1)
 

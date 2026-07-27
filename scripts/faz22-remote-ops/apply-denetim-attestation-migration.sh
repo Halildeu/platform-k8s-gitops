@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Rollout/acceptance adapter for the bounded Denetim attestation/KID migration.
 # The permanent AnyDesk-like product runtime remains the provider-neutral
-# endpoint-agent <-> broker contract; it must not depend on this script,
-# staging-sw, or GitHub Actions. This adapter accepts the migration only after a
+# endpoint-agent <-> broker contract; it must not depend on this script, any
+# named SSH management host, or GitHub Actions. This adapter accepts the
+# migration only after a
 # transaction-bound attended product command produces a session-scoped broker
 # trust refresh. Any post-mutation failure triggers hash-verified rollback.
 
@@ -12,7 +13,7 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PATCH_SCRIPT="${PATCH_SCRIPT:-${SCRIPT_DIR}/denetim-device-key-view-only-env-patch.ps1}"
-EXPECTED_STAGING_HOST="${EXPECTED_STAGING_HOST:-stagingsw}"
+EXPECTED_STAGING_HOST="${EXPECTED_STAGING_HOST:-aiserver}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 NAMESPACE="${NAMESPACE:-platform-test}"
 BROKER_DEPLOYMENT="${BROKER_DEPLOYMENT:-endpoint-admin-remote-bridge-device-key}"

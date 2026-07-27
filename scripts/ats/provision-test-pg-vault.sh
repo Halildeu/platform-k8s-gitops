@@ -6,6 +6,7 @@
 #   provision-test-pg-vault.sh --roles-only
 set -euo pipefail
 
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 MODE=${1:-full}
 case "$MODE" in
   full|--roles-only) ;;
@@ -27,6 +28,33 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'ats_governance_writer guvensiz role attribute tasiyor';
   END IF;
+
+  -- Flyway V16 (ats#176) ats_migrator'i IF NOT EXISTS ile KULLANIR, olusturamaz:
+  -- runtime ats_app'a CREATEROLE verilmedigi icin V16 icindeki CREATE ROLE
+  -- "permission denied to create role" ile duser ve app hic boot etmez.
+  -- Bu yuzden rol, ats_governance_writer ile ayni admin duzleminde on-provision
+  -- edilir. ats_app'a uyelik, V16'nin "ALTER DEFAULT PRIVILEGES FOR ROLE
+  -- ats_migrator" satiri icin zorunludur (PostgreSQL uyelik sarti); ats_app
+  -- yine LOGIN-only kalir, CREATEROLE almaz.
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ats_migrator') THEN
+    CREATE ROLE ats_migrator
+      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+  ELSIF EXISTS (
+    SELECT FROM pg_roles
+    WHERE rolname = 'ats_migrator'
+      AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+  ) THEN
+    RAISE EXCEPTION 'ats_migrator guvensiz role attribute tasiyor';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT FROM pg_auth_members m
+    JOIN pg_roles r ON r.oid = m.roleid
+    JOIN pg_roles g ON g.oid = m.member
+    WHERE r.rolname = 'ats_migrator' AND g.rolname = 'ats_app'
+  ) THEN
+    GRANT ats_migrator TO ats_app;
+  END IF;
 END
 $$;
 SQL
@@ -37,6 +65,14 @@ ROLE_STATE=$(docker exec platform-pg-test psql -U postgres -At -F '|' -c \
   exit 1
 }
 echo "PG: ats_governance_writer NOLOGIN role OK"
+
+MIGRATOR_STATE=$(docker exec platform-pg-test psql -U postgres -At -F '|' -c \
+  "SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='ats_migrator'")
+[ "$MIGRATOR_STATE" = "f|f|f|f|f|f" ] || {
+  echo "FATAL: ats_migrator NOLOGIN/least-privilege assert basarisiz" >&2
+  exit 1
+}
+echo "PG: ats_migrator NOLOGIN role OK (Flyway V16 on-kosulu)"
 
 assert_ats_app_role() {
   local app_role_state
@@ -86,7 +122,7 @@ fi
 echo "PG: ats_app role + ats db OK"
 
 # --- Vault seed: kv/platform/ats (root token dosyadan; ekrana basılmaz) ---
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 docker exec -e VAULT_TOKEN="$ROOT" -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv put kv/platform/ats \
     ATS_DB_URL="jdbc:postgresql://postgres:5432/ats" \

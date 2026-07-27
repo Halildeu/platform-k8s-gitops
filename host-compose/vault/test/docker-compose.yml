@@ -8,9 +8,15 @@ services:
   vault:
     image: hashicorp/vault:1.17
     container_name: platform-vault-test
-    # ADR-0002 §5.1: test default scale-to-zero
+    # profiles: [manual] → yalnız `--profile manual` ile bilerek ayağa kaldırılır
+    # (kazara `compose up` guard'ı). Bu, reboot davranışından bağımsızdır.
     profiles: ["manual"]
-    restart: "no"
+    # restart: unless-stopped — host reboot'unda TEST Vault geri gelmeli.
+    # Eski `restart: "no"` gerekçesi "ADR-0002 §5.1 test default scale-to-zero"
+    # (D17) idi; o politika 2026-05-10'da DEPRECATED edildi: test veri düzlemi
+    # sessizce kapalı kalınca paralel geliştirme oturumları kırılıyor ve her
+    # seferinde elle kurtarma (scale up + ESO refresh + Vault unseal) gerekiyor.
+    restart: unless-stopped
     command: ["vault", "server", "-config=/vault/config/config.hcl"]
     environment:
       VAULT_ADDR: http://127.0.0.1:8200
