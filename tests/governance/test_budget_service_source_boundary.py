@@ -7,6 +7,7 @@ Workcube MSSQL egress rule.
 """
 
 from pathlib import Path
+import ipaddress
 import subprocess
 
 import yaml
@@ -72,6 +73,45 @@ def _render_test_overlay() -> list[dict]:
     return [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
 
 
+def _rule_reaches_external_endpoint(rule: dict, address: str, port: int) -> bool:
+    declared_ports = rule.get("ports")
+    if declared_ports:
+        numeric_ports = {
+            int(item["port"])
+            for item in declared_ports
+            if isinstance(item.get("port"), int)
+            or str(item.get("port", "")).isdigit()
+        }
+        if port not in numeric_ports:
+            return False
+
+    peers = rule.get("to")
+    if not peers:
+        return True
+
+    target = ipaddress.ip_address(address)
+    for peer in peers:
+        block = peer.get("ipBlock")
+        if not block or target not in ipaddress.ip_network(block["cidr"]):
+            continue
+        excluded = [
+            ipaddress.ip_network(cidr)
+            for cidr in block.get("except", [])
+        ]
+        if not any(target in network for network in excluded):
+            return True
+    return False
+
+
+def _policy_reaches_external_endpoint(
+    policy: dict, address: str, port: int
+) -> bool:
+    return any(
+        _rule_reaches_external_endpoint(rule, address, port)
+        for rule in policy["spec"].get("egress", [])
+    )
+
+
 def test_budget_service_uses_common_deny_and_postgres_allow_without_erp_ports():
     deployment = _documents(
         "kustomize/base/apps/budget-service/deployment.yaml"
@@ -118,20 +158,31 @@ def test_workcube_mssql_policy_does_not_select_budget_service():
     assert _ports(policy) == {1433}
 
 
-def test_no_effective_smb_policy_selects_budget_service():
+def test_no_effective_erp_policy_selects_budget_service():
     budget_labels = {
         "app.kubernetes.io/name": "budget-service",
         "app.kubernetes.io/component": "backend",
         "app.kubernetes.io/part-of": "platform",
     }
+    forbidden_endpoints = {
+        ("10.9.193.200", 445),
+        ("10.9.193.201", 1433),
+    }
     violations = []
     for document in _render_test_overlay():
-        if document.get("kind") != "NetworkPolicy" or 445 not in _ports(document):
+        if document.get("kind") != "NetworkPolicy":
             continue
-        if _selector_matches(document["spec"].get("podSelector", {}), budget_labels):
-            violations.append(document["metadata"]["name"])
+        if not _selector_matches(
+            document["spec"].get("podSelector", {}), budget_labels
+        ):
+            continue
+        for address, port in forbidden_endpoints:
+            if _policy_reaches_external_endpoint(document, address, port):
+                violations.append(
+                    f'{document["metadata"]["name"]}->{address}:{port}'
+                )
     assert violations == [], (
-        "SMB 445 egress policy selects budget-service: " + ", ".join(violations)
+        "ERP egress policy selects budget-service: " + ", ".join(violations)
     )
 
 
