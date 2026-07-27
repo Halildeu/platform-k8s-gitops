@@ -48,6 +48,10 @@ on:
       # published on 0.0.0.0 for months precisely because nothing checked it).
       - "bootstrap/k3d-*.yaml"
       - "tests/operations/**"
+      # Faz 22 Sec A3: Keycloak fixture CORS/redirect invariant lives in
+      # tests/operations/; a fixture-only PR must trigger it, otherwise a
+      # reintroduced webOrigins:["*"] lands unchecked.
+      - "bootstrap/local-fixtures/**"
       # DD-4 env+Dockerfile+Python compat
       - "scripts/migration/etl_worker/etl_worker/config.py"
       - "scripts/migration/etl_worker/Dockerfile"

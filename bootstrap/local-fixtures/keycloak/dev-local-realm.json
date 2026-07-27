@@ -91,7 +91,7 @@
         "http://localhost:32080/*",
         "http://localhost:32443/*"
       ],
-      "webOrigins": ["*"],
+      "webOrigins": ["+"],
       "attributes": {
         "access.token.lifespan": "300"
       },
@@ -123,7 +123,7 @@
       "redirectUris": [
         "http://app.localtest.me:8443/*"
       ],
-      "webOrigins": ["*"],
+      "webOrigins": ["+"],
       "_protocolMappers_comment": "Faz 23.6 PR-2: same subscriberId mapper on the public frontend client so browser tokens (auth code + PKCE) also carry the canonical claim. Without this the SPA would still get tokens missing the claim and the strict-cutover backend flip would 403 every browser session.",
       "protocolMappers": [
         {
