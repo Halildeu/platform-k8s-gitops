@@ -61,6 +61,13 @@ spec:
       ports: [{port: http, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: notification-orchestrator}}}]
       ports: [{port: http, protocol: TCP}]
+    # ES-203/C: display-name resolution. The assignment picker needs a name to
+    # show; the subject stays server-to-server and the name is pass-through —
+    # ethics-service stores it nowhere. What this rule opens is bounded by the
+    # token: the ethics identity may mint only `users:display-names:read`
+    # against user-service, so it can resolve a name and nothing else.
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: user-service}}}]
+      ports: [{port: http, protocol: TCP}]
     # ES-104G: host-bridged MinIO. The request-facing pod reaches the object
     # store to admit an upload and to stream a finished derivative; what it may
     # do once connected is bounded by its MinIO policy, not by this rule.
