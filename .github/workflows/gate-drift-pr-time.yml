@@ -17,6 +17,7 @@ on:
       - 'tests/deploy/test_faz35_privacy_no_collect_contract.py'
       - 'tests/deploy/test_faz35_compartment_adr.py'
       - 'tests/deploy/test_faz35_evidence_custody_contract.py'
+      - 'tests/deploy/test_faz35_relation_registry_completeness.py'
       - 'docs/faz-35-evidence/**'
       - 'runtime-artifacts/faz35-etik-speak/**'
       - 'runtime-artifacts/openfga-model/**'
@@ -24,6 +25,7 @@ on:
       - 'docs/contracts/faz35-etik-speak-api-mfe-v1.md'
       - 'docs/contracts/faz35-market-entry-controls.v1.json'
       - 'docs/contracts/faz35-first-customer-journey.v1.json'
+      - 'docs/contracts/faz35-authorization-relation-registry.v1.json'
       - 'docs/contracts/faz35-privacy-no-collect.v1.json'
       - 'docs/contracts/faz35-evidence-custody.v1.json'
       - 'docs/faz-35-etik-speak-product-charter.md'
@@ -128,4 +130,5 @@ jobs:
             tests/deploy/test_faz35_first_customer_contract.py \
             tests/deploy/test_faz35_privacy_no_collect_contract.py \
             tests/deploy/test_faz35_compartment_adr.py \
-            tests/deploy/test_faz35_evidence_custody_contract.py
+            tests/deploy/test_faz35_evidence_custody_contract.py \
+            tests/deploy/test_faz35_relation_registry_completeness.py
