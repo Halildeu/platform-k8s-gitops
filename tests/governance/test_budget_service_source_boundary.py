@@ -7,6 +7,7 @@ Workcube MSSQL egress rule.
 """
 
 from pathlib import Path
+import subprocess
 
 import yaml
 
@@ -30,11 +31,45 @@ def _named_policy(relative_path: str, name: str) -> dict:
 
 
 def _ports(policy: dict) -> set[int]:
-    return {
-        int(port["port"])
-        for rule in policy["spec"].get("egress", [])
-        for port in rule.get("ports", [])
-    }
+    ports = set()
+    for rule in policy["spec"].get("egress", []):
+        for item in rule.get("ports", []):
+            value = item["port"]
+            if isinstance(value, int) or str(value).isdigit():
+                ports.add(int(value))
+    return ports
+
+
+def _selector_matches(selector: dict, labels: dict[str, str]) -> bool:
+    if any(
+        labels.get(key) != value
+        for key, value in selector.get("matchLabels", {}).items()
+    ):
+        return False
+    for expression in selector.get("matchExpressions", []):
+        key = expression["key"]
+        operator = expression["operator"]
+        values = expression.get("values", [])
+        if operator == "In" and labels.get(key) not in values:
+            return False
+        if operator == "NotIn" and (key not in labels or labels[key] in values):
+            return False
+        if operator == "Exists" and key not in labels:
+            return False
+        if operator == "DoesNotExist" and key in labels:
+            return False
+    return True
+
+
+def _render_test_overlay() -> list[dict]:
+    rendered = subprocess.run(
+        ["kubectl", "kustomize", "kustomize/overlays/test"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
 
 
 def test_budget_service_uses_common_deny_and_postgres_allow_without_erp_ports():
@@ -71,12 +106,33 @@ def test_workcube_mssql_policy_does_not_select_budget_service():
         "kustomize/overlays/test/netpol-workcube-mssql.yaml",
         "allow-egress-workcube-mssql",
     )
-    expression = policy["spec"]["podSelector"]["matchExpressions"][0]
+    expression = next(
+        item
+        for item in policy["spec"]["podSelector"]["matchExpressions"]
+        if item["key"] == "app.kubernetes.io/name"
+    )
     assert expression["key"] == "app.kubernetes.io/name"
     assert expression["operator"] == "In"
     assert set(expression["values"]) == {"report-service", "schema-service"}
     assert "budget-service" not in expression["values"]
     assert _ports(policy) == {1433}
+
+
+def test_no_effective_smb_policy_selects_budget_service():
+    budget_labels = {
+        "app.kubernetes.io/name": "budget-service",
+        "app.kubernetes.io/component": "backend",
+        "app.kubernetes.io/part-of": "platform",
+    }
+    violations = []
+    for document in _render_test_overlay():
+        if document.get("kind") != "NetworkPolicy" or 445 not in _ports(document):
+            continue
+        if _selector_matches(document["spec"].get("podSelector", {}), budget_labels):
+            violations.append(document["metadata"]["name"])
+    assert violations == [], (
+        "SMB 445 egress policy selects budget-service: " + ", ".join(violations)
+    )
 
 
 def test_budget_runtime_receives_only_postgres_connection_material():
