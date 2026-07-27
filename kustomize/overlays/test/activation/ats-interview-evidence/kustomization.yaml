@@ -18,9 +18,25 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@fd56617 (ats#218 — tarih satirindan yalniz tarih araligi alinir, kalan subtitle)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-fd56617
-#   digest  sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
+#   source  ats@9445c60 (ats#236 / #235 dilim 1 — aday e-posta + tek kullanımlık kod girişi)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-9445c60
+#   digest  sha256:c3c4afdf84f36fd7bd29fc2b64fec03a0fced0151344d4b4f2b9446fc0cb839b
+#   build   https://github.com/Halildeu/ats/actions/runs/30308972064
+#
+# ats#235 dilim 1 bu pinle canlıya çıkar: V19 challenge/oturum tabloları + üç
+# aday giriş ucu + kod isteği/doğrulama hız kovaları. Aday erişimi bugüne kadar
+# başvuru-BAŞINA anahtardı; anahtar kaybolunca kurtarma yolu yoktu ve aynı
+# adayın başvuruları hiçbir yerde tek arada görünmüyordu (#226'nın kökü).
+#
+# Graph gönderici kimliği (ats.mail.graph.*) BU PİNDE YOK — bu bilinçli:
+# `kv/platform/graph` yalnız PROD Vault'ta duruyor (ölçüldü: test Vault'ta
+# `graph` yok) ve o Entra uygulama secret'ını test hücresine kopyalamak, test
+# tarafında bir sızıntının şirket adına mail gönderebilen bir kimliğe dönüşmesi
+# demektir. Ayrı test kimliği üretmek Entra Admin Center gerektirir (owner).
+# Bu yüzden uç fail-closed davranır: yapılandırma yokken 503 döner, arayüz de
+# "kullanılamıyor, takip anahtarınızla girin" der. Sessiz sahte "gönderdim" YOK.
+# Önceki pin: sha-fd56617 / ats#218 tarih satırı ayrıştırma /
+#   sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
 # ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
 # bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
 # yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
@@ -132,7 +148,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
+    digest: sha256:c3c4afdf84f36fd7bd29fc2b64fec03a0fced0151344d4b4f2b9446fc0cb839b
   # mfe-interview-evidence UI — mülakat inceleme ekranının yayın imajı.
   # Bu ekran ats#231'e kadar hiçbir ortamda açılamıyordu: bundle her push'ta
   # derlenip atılıyordu, hiçbir adım yayınlamıyordu. Zincir ats#232 ile kuruldu;
