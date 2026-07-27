@@ -35,10 +35,10 @@
 #
 # ── Desired-state (B) ──
 #   1. realm rolü `requires-mfa` (marker).
-#   2. Privileged roller (ENDPOINT_ADMIN MEETING_ADMIN TRANSCRIPT_ADMIN
-#      remote-bridge-approver remote-bridge-operator) → `requires-mfa` COMPOSITE child.
-#      `ethics-manager` HARIÇ (yukarıdaki nota bak) → insan sahipleri `DIRECT_MFA_USERS`
-#      ile DOĞRUDAN atama alır; sentetik personalar hiç almaz.
+#   2. `requires-mfa` COMPOSITE OLARAK HİÇBİR role eklenmez. Adı geçen insanlara
+#      (`DIRECT_MFA_USERS`) DOĞRUDAN atanır; otomasyon personaları hiç almaz.
+#      `--check` ayrıcalıklı rol taşıyıp listede olmayan insan-görünümlü kimlikleri
+#      raporlar, ama otomatik EKLEMEZ.
 #   3. `browser` flow → `browser-privileged-mfa` kopyası (default `browser` KORUNUR →
 #      anında rollback: browserFlow=browser).
 #   4. Kopyanın `forms` subflow'una `privileged-force-otp` (CONDITIONAL) subflow:
@@ -80,17 +80,24 @@ case "$REALM" in
   *) echo "ERROR: bilinmeyen realm '$REALM'" >&2; exit 1 ;;
 esac
 
-# `ethics-manager` DELIBERATELY not here -- see the header note. Compositing into it
-# made it composite=true, which broke four separate checks in the Faz 35 ETHICS chain,
-# and its holders include synthetic automation personas that cannot complete a TOTP flow.
-PRIV_ROLES="ENDPOINT_ADMIN MEETING_ADMIN TRANSCRIPT_ADMIN remote-bridge-approver remote-bridge-operator"
-# Roles whose SHAPE is pinned by another subsystem. Compositing into one of these changes
-# `.composite` from false to true and breaks that subsystem's contract, so it is refused
-# rather than warned about. Grep for `composite == false` to find new entries.
-SHAPE_PINNED_ROLES="ethics-manager"
-# Human holders of a shape-pinned privileged role get the marker DIRECTLY, so MFA intent
-# survives without mutating the role. Automation personas are deliberately excluded.
-DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-admin@example.com etik-staff@acik.com halil.kocoglu@serban.com.tr}"
+# ── Privileged roles: DISCOVERY ONLY, never composite parents ──
+# These are the roles that define privilege. The marker is NOT composited into them.
+# Measured 2026-07-27 on platform-test -- their 34 holders are:
+#     4 humans, 4 ambiguous automation identities, 26 synthetic personas.
+# 30 of 34 are automation. A script cannot complete a TOTP enrollment, so compositing the
+# marker into these roles would force TOTP on every ENDPOINT_ADMIN smoke persona, every
+# AG-0xx acceptance persona and every remote-bridge operator identity the moment the flow
+# is bound. Composite delivery also flipped `ethics-manager.composite` to true and broke
+# four checks in the Faz 35 chain, and it hid blast radius: `roles/requires-mfa/users`
+# returns only DIRECT assignments, so it read 0 while 34 users effectively held the role.
+PRIVILEGED_ROLES="ENDPOINT_ADMIN MEETING_ADMIN TRANSCRIPT_ADMIN ethics-manager remote-bridge-approver remote-bridge-operator"
+# The marker goes to named humans, explicitly. Not a heuristic: a rule that guesses who
+# needs a second factor is the wrong thing to put in a security script. `--check` reports
+# any privileged-role holder missing from this list, so a new human admin cannot silently
+# escape MFA -- the list is authoritative but its drift is visible.
+DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-admin@example.com etik-staff@acik.com halil.kocoglu@serban.com.tr zeynep.akkilic@serban.com.tr}"
+# Identities that must NEVER receive the marker, whatever roles they hold. Automation.
+AUTOMATION_MARKERS="${AUTOMATION_MARKERS:-persona -test smoke canary ag0 c5persona rb- .invalid @test. @synthetic. localtest.me test.local}"
 MFA_ROLE="requires-mfa"
 NEW_FLOW="browser-privileged-mfa"
 SUB_ALIAS="privileged-force-otp"
@@ -123,6 +130,19 @@ guard_realm() {
 }
 
 role_exists() { q "$API/roles/$1" | jq -e '.name?' >/dev/null 2>&1; }
+is_automation() {
+  local u="$1" m
+  for m in $AUTOMATION_MARKERS; do
+    case "$u" in *"$m"*) return 0 ;; esac
+  done
+  return 1
+}
+user_has_direct_mfa() {
+  local uid
+  uid=$(q "$API/users?username=$1&exact=true" | jq -r '.[0].id // empty')
+  [ -n "$uid" ] || return 1
+  q "$API/users/$uid/role-mappings/realm" | jq -e --arg m "$MFA_ROLE" '.[]?|select(.name==$m)' >/dev/null 2>&1
+}
 composite_has_mfa() { q "$API/roles/$1/composites" | jq -e --arg m "$MFA_ROLE" '.[]?|select(.name==$m)' >/dev/null 2>&1; }
 flow_exists() { q "$API/authentication/flows" | jq -e --arg f "$NEW_FLOW" '.[]?|select(.alias==$f)' >/dev/null 2>&1; }
 subflow_ready() {
@@ -136,9 +156,14 @@ subflow_ready() {
 report() {  # DRIFT counter
   local d=0
   role_exists "$MFA_ROLE" && echo "  role $MFA_ROLE: OK" || { echo "  role $MFA_ROLE: MISSING"; d=$((d+1)); }
-  for r in $PRIV_ROLES; do
+  for r in $PRIVILEGED_ROLES; do
     if role_exists "$r"; then
-      composite_has_mfa "$r" && echo "  composite $r→$MFA_ROLE: OK" || { echo "  composite $r→$MFA_ROLE: MISSING"; d=$((d+1)); }
+      # Inverted on purpose: the marker being present as a composite child IS the drift.
+      if composite_has_mfa "$r"; then
+        echo "  composite $r→$MFA_ROLE: PRESENT (drift — must be removed, see header)"; d=$((d+1))
+      else
+        echo "  composite $r→$MFA_ROLE: absent OK"
+      fi
     else echo "  role $r: absent (skip)"; fi
   done
   flow_exists && echo "  flow $NEW_FLOW: OK" || { echo "  flow $NEW_FLOW: MISSING"; d=$((d+1)); }
@@ -147,6 +172,31 @@ report() {  # DRIFT counter
   fi
   local bf; bf=$(q "$API" | jq -r '.browserFlow')
   echo "  realm browserFlow: $bf $([ "$bf" = "$NEW_FLOW" ] && echo '(ACTIVE)' || echo '(inert — --activate ile owner flip)')"
+  for u in $DIRECT_MFA_USERS; do
+    if user_has_direct_mfa "$u"; then echo "  direct $u→$MFA_ROLE: OK"
+    else echo "  direct $u→$MFA_ROLE: MISSING"; d=$((d+1)); fi
+  done
+  # Visibility, not enforcement: a human holding a privileged role but absent from
+  # DIRECT_MFA_USERS would silently escape MFA. Reported, not auto-added -- deciding that
+  # someone is a person is not a call this script should make on its own.
+  local uncovered; uncovered=""
+  for r in $PRIVILEGED_ROLES; do
+    role_exists "$r" || continue
+    while IFS= read -r holder; do
+      [ -n "$holder" ] || continue
+      is_automation "$holder" && continue
+      case " $DIRECT_MFA_USERS " in *" $holder "*) continue ;; esac
+      case " $uncovered " in *" $holder "*) continue ;; esac
+      uncovered="$uncovered $holder"
+    done <<EOF
+$(q "$API/roles/$r/users" | jq -r '.[]?.username // empty')
+EOF
+  done
+  if [ -n "$uncovered" ]; then
+    echo "  UYARI: ayrıcalıklı rol taşıyan ve otomasyon görünmeyen, DIRECT_MFA_USERS'ta OLMAYAN kimlikler:"
+    for h in $uncovered; do echo "    - $h"; done
+    echo "    (insan ise DIRECT_MFA_USERS'a ekle; otomasyon ise AUTOMATION_MARKERS'a bir işaret ekle)"
+  fi
   DRIFT="$d"
 }
 
@@ -154,31 +204,24 @@ apply_all() {
   # 1) requires-mfa rol
   role_exists "$MFA_ROLE" || q -X POST "$API/roles" -H "$CT" \
     -d "{\"name\":\"$MFA_ROLE\",\"description\":\"Marker: privileged roles composite this to force browser OTP (Faz 22 Sec B)\"}" >/dev/null
-  # 2) composite -- only into roles whose shape nobody else pins
+  # 2) composite: never written. Remove the marker wherever a previous run put it.
   local rid rn
   rid=$(q "$API/roles/$MFA_ROLE" | jq -r '.id'); rn=$(q "$API/roles/$MFA_ROLE" | jq -r '.name')
-  for r in $PRIV_ROLES; do
-    for pinned in $SHAPE_PINNED_ROLES; do
-      [ "$r" = "$pinned" ] && { echo "ERROR: $r sekil-pinli bir rol; composite YAZILMAZ" >&2; exit 1; }
-    done
-    role_exists "$r" || { echo "  uyarı: rol $r yok, composite atlandı"; continue; }
-    composite_has_mfa "$r" && continue
-    q -X POST "$API/roles/$r/composites" -H "$CT" -d "[{\"id\":\"$rid\",\"name\":\"$rn\"}]" >/dev/null
-  done
-  # 2b) reconcile: remove the marker from shape-pinned roles it should never have entered
-  for r in $SHAPE_PINNED_ROLES; do
+  for r in $PRIVILEGED_ROLES; do
     role_exists "$r" || continue
     composite_has_mfa "$r" || continue
     q -X DELETE "$API/roles/$r/composites" -H "$CT" -d "[{\"id\":\"$rid\",\"name\":\"$rn\"}]" >/dev/null
-    echo "  reconcile: $MFA_ROLE, $r composite'inden cikarildi (sekil sozlesmesi geri geldi)"
-    echo "  SONRAKI ADIM: provision-test-openfga.sh rol pini artik [\"ethics-manager\"] olmali"
+    echo "  reconcile: $MFA_ROLE, $r composite'inden cikarildi"
   done
-  # 2c) shape-pinned roles carry MFA intent through DIRECT user assignment instead
+  # 2b) direct assignment to named humans -- automation identities are refused outright,
+  # so a marker in DIRECT_MFA_USERS cannot accidentally arm a persona.
   for u in $DIRECT_MFA_USERS; do
-    q "$API/users?username=$u&exact=true" | jq -e '.[0].id' >/dev/null 2>&1 || {
-      echo "  uyarı: kullanıcı $u yok, doğrudan atama atlandı"; continue; }
-    local uid; uid=$(q "$API/users?username=$u&exact=true" | jq -r '.[0].id')
-    q "$API/users/$uid/role-mappings/realm" | jq -e --arg m "$MFA_ROLE" '.[]?|select(.name==$m)' >/dev/null 2>&1 && continue
+    if is_automation "$u"; then
+      echo "ERROR: $u otomasyon isareti tasiyor; DIRECT_MFA_USERS'a konulamaz" >&2; exit 1
+    fi
+    local uid; uid=$(q "$API/users?username=$u&exact=true" | jq -r '.[0].id // empty')
+    [ -n "$uid" ] || { echo "  uyarı: kullanıcı $u yok, atlandı"; continue; }
+    user_has_direct_mfa "$u" && continue
     q -X POST "$API/users/$uid/role-mappings/realm" -H "$CT" -d "[{\"id\":\"$rid\",\"name\":\"$rn\"}]" >/dev/null
     echo "  $MFA_ROLE -> $u (dogrudan)"
   done
