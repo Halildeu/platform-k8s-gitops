@@ -10,9 +10,11 @@
 #   1. `frontend` is a SHARED browser client, so its token carries whatever every other
 #      feature has bolted on. The exact-set pin below had drifted and this script was
 #      FAILING before the migration: the live token had gained `ats.screening.read` +
-#      `ats.screening.write` (ATS work, unrelated to Etik Speak) and `requires-mfa`
-#      (privileged-role composite). Pinning a shared client lets an unrelated feature
-#      break ETHICS provisioning, and it did.
+#      `ats.screening.write` (ATS work, unrelated to Etik Speak) and `requires-mfa`.
+#      The `requires-mfa` half was my own Faz 22 Sec B slice compositing the marker into
+#      `ethics-manager`; that is reverted (see RB-kc-realm-security-hardening.md), so the
+#      pin no longer carries it. Pinning a shared client lets an unrelated feature break
+#      ETHICS provisioning, and it did -- twice, from two different directions.
 #   2. A2c turns `frontend.directAccessGrantsEnabled` off, so ROPC through it stops
 #      working entirely.
 #
@@ -209,7 +211,7 @@ print(json.dumps({
         "email", "ethics:case:manage", "openid", "profile", "smoke-runtime-v1"
       ] | sort)) and
       ((.roles | type) == "array") and
-      ((.roles | sort) == (["ethics-manager", "requires-mfa"] | sort)) and
+      ((.roles | sort) == ["ethics-manager"]) and
       ((.resource_roles | keys | sort) == []) and
       ((.groups | type) == "array" and (.groups | length) == 0) and
       (.has_authorization == false)
