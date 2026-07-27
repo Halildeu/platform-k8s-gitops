@@ -365,6 +365,40 @@ done
 kcadm get "users/<id>/role-mappings/realm/composite" -r platform-test
 ```
 
+### `ethics-manager` composite'ten ÇIKARILDI — Faz 35 zincirini kırıyordu
+
+Marker'ı `ethics-manager`'a composite olarak eklemek o rolün `.composite`'ini `false`'tan
+`true`'ya çevirdi. Faz 35 tam tersini pinliyor ve **4 kontrol** birden düştü:
+
+```
+provision-test-keycloak.sh:184  .composite == false
+provision-test-keycloak.sh:344  .composite == false
+provision-test-keycloak.sh:540  efektif realm rol allowlist (requires-mfa yok)
+provision-test-keycloak.sh:755  token rol allowlist (requires-mfa yok)
+provision-test-openfga.sh       exact-set token rol pini (requires-mfa yok)
+```
+
+Canlı doğrulama: `roles/ethics-manager` → `composite=True`, tek child `requires-mfa`;
+satır-341 yüklemi DÜŞTÜ. Yani ETHICS provisioning zinciri tamamen kapalıydı ve arıza
+sebebinden **dört adım uzakta** (token pin uyuşmazlığı ve 401 olarak) yüzeye çıktı —
+merge'den bu yüzden sağ kurtuldu.
+
+Sözleşme çatışmasının altındaki asıl gerekçe **granülarite**: `ethics-manager`'ı **3 insan
++ 4 sentetik otomasyon personası** (`*.invalid`) taşıyor. Bir script TOTP kaydını
+tamamlayamaz; otomasyonla paylaşılan bir rol, etkileşimli ikinci faktörü asacak yer
+değildir. Karar: insan sahipler marker'ı **doğrudan atama** ile alır, personalar hiç almaz.
+
+`setup-privileged-mfa.sh` artık: `ethics-manager`'ı `PRIV_ROLES`'tan çıkarır, şekil-pinli
+bir role composite yazmayı **fail-closed** reddeder, mevcut yanlış composite'i `--apply`
+ile **kaldırır**, ve `DIRECT_MFA_USERS`'a doğrudan atar. Guard:
+`tests/operations/test_mfa_composite_target_shape_invariant.py` (composite hedeflerini
+scriptten, şekil pinlerini repodan keşfeder — yeni bir şekil sözleşmesi de kapsanır).
+
+**Canlı reconcile HENÜZ KOŞULMADI** (harness rol mutasyonunu reddetti). Sıra:
+`setup-privileged-mfa.sh --apply` → composite kalkar + insanlar doğrudan alır → sonra
+`provision-test-openfga.sh` rol pini `["ethics-manager"]`'a inmeli (şu an canlıyla
+eşleştiği için `["ethics-manager", "requires-mfa"]`).
+
 ### Yeniden bağlamanın ön koşulları
 
 1. Etkilenen 34 kullanıcının listesi owner ile netleşir (hangileri gerçek kişi, hangileri test personası)
