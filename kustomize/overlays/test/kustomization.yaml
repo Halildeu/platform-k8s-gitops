@@ -488,7 +488,17 @@ images:
     # into, so every delivery answered `invalid_client` and all 21 outbox
     # signals dead-lettered after eight attempts. Digest read back from a real
     # pull into the target cluster.
-    digest: sha256:7de0635d0e59e57cfc4caa6f44cdd30dfad0c6652092f9b715689c399094262b
+    #
+    # 2026-07-28 bump: sha-84f7c83 — platform-backend#964 (ES-203/C). The
+    # `ethics-service` client may now also mint for audience `user-service`,
+    # but ONLY with the new narrow permission `users:display-names:read`.
+    # Deliberately NOT `users:internal`: that permission reads credential
+    # material via `/api/users/internal/by-email`, and a leaked ethics
+    # credential must be able to resolve a display name and nothing else.
+    # The per-audience map refuses either permission against the other
+    # audience; three mint tests pin all three outcomes.
+    # Digest read back from a real pull into this cluster (digest-probe pod).
+    digest: sha256:3e6f9a6ab570c6c4df506586eae092db1da60fe403f10be51d5c64410999079f
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -793,7 +803,26 @@ images:
     #   identity_principal_without_company_total 0.0   (484 metrik satiri icinde)
     # Soy bagi: git merge-base --is-ancestor 068a45ce ffaa23520 -> true
     # (068a45ce = sayaci ekleyen commit, ffaa23520 = imajin etiketlendigi merge)
-    digest: sha256:4cf841d76f2b41c226ef436194e7b1d14eacaa15388b9e446ef3737802a94aff
+    #
+    # 2026-07-28 bump: sha-84f7c83 — platform-backend#964 (ES-203/C) adds
+    # `POST /api/users/internal/display-names` (batch subject -> name, narrow
+    # `users:display-names:read` permission, deleted rows answer exactly like
+    # unknown ones so the endpoint is not an existence oracle).
+    #
+    # This bump ALSO repairs a silent regression (gitops#3023). The pin above
+    # (`sha-ffaa235`, promoted 2026-07-27 10:51 by #2971) came from a source
+    # commit dated 2026-07-26 — a day OLDER than #940/#941, which had been
+    # promoted hours earlier. `git merge-base --is-ancestor ab7cca17 ffaa235`
+    # is false, and the file hashes confirm it:
+    #   ffaa235   AuthorizationContextService.java sha256 befa543c…  (no fix)
+    #   ab7cca17  …                                       fcf414f0…  (fix)
+    #   84f7c831  …                                       fcf414f0…  (same)
+    # So the authorization-revision call has been running unauthenticated
+    # again since that promotion. Nothing went red: the pod stayed Ready.
+    # A promotion step that reads the tag name but never asserts source
+    # ancestry cannot see this; the gate is tracked in gitops#3023.
+    # Digest read back from a real pull into this cluster (digest-probe pod).
+    digest: sha256:5544d438ca9ee62e10e0593ccd9565d56588ac2eca2096e4b22a627521d4ab67
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
