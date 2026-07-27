@@ -29,7 +29,11 @@ images:
   # build-log digest is not evidence that a tag is pullable, and pinning one has
   # already left a service silently un-rolled.
   #
-  # 2026-07-27 bump: sha-191005e — platform-backend#943. #942'nin yazdigi
+  # 2026-07-27 bump: sha-48182b4 — platform-backend#947 (ES-203 B+ dilim 1).
+  # Davada kisi artik etiketle degil principal olarak adlandiriliyor:
+  # POST /api/v1/ethics/cases/{id}/participants. Katilimci satiri hicbir yetki
+  # VERMEZ; erisim hala urun uyeliginden gelip conflicted/recused ile cikariliyor.
+  # Onceki: sha-191005e — platform-backend#943. #942'nin yazdigi
   # `recusal.repeated` olayina hicbir istek ulasamiyordu (ilk beyan davayi
   # gorusten cikardigi icin ikinci POST 404 aliyor); olu dal kaldirildi.
   # Onceki: sha-e130caa — platform-backend#942 (ES-203). Personel artık
@@ -39,7 +43,7 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:9cc850d3930c03bbc592e29a341c8bd97a208e36898d4f3a2ec372bab4057cf6
+    digest: sha256:d8a247a5db98bfffeb71c619fb2e6e41ddbbd74dc33f98a51645b00b51892bde
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
