@@ -7,7 +7,8 @@ set +x
 
 MODE="${1:---check}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
+VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
 AUTH_PATH="kv/platform/auth-service"
 AUTH_FIELD="service_client_ethics_service_secret"
 ETHICS_PATH="kv/platform/etik-speak"
@@ -29,7 +30,7 @@ fi
   echo "FATAL: VAULT_CONTAINER override refused" >&2
   exit 1
 }
-[ "$VAULT_INIT_FILE" = "/home/halil/bootstrap-drill/vault-init-test.json" ] || {
+[ "$VAULT_INIT_FILE" = "$VAULT_INIT_FILE_DEFAULT" ] || {
   echo "FATAL: VAULT_INIT_FILE override refused" >&2
   exit 1
 }

@@ -193,7 +193,7 @@ fetch_smoke_client_secret() {
   # Vault kv/platform/keycloak/smoke-client (A2a); scope-mapping/audience A2b.1 setup-smoke-token-contract.sh.
   [[ -s "$SMOKE_CLIENT_SECRET_FILE" ]] && return 0
   local vault_root_token
-  vault_root_token="$(python3 -c "import json; print(json.load(open('/home/halil/bootstrap-drill/vault-init-test.json'))['root_token'])")" \
+  vault_root_token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE:-$HOME/bootstrap-drill/vault-init-test.json}")" \
     || { echo "ERR smoke-client secret için vault root token okunamadı" >&2; exit 2; }
   docker exec -e VAULT_TOKEN="$vault_root_token" platform-vault-test \
     vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "$SMOKE_CLIENT_SECRET_FILE" \

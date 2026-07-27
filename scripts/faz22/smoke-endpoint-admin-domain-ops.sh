@@ -352,7 +352,7 @@ fetch_smoke_client_secret() {
   # A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover).
   # Vault kv/platform/keycloak/smoke-client (A2a); scope-mapping + audience×6 (A2b.1 setup-smoke-token-contract.sh).
   local vault_root_token
-  vault_root_token="$(python3 -c "import json; print(json.load(open('/home/halil/bootstrap-drill/vault-init-test.json'))['root_token'])")" \
+  vault_root_token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE:-$HOME/bootstrap-drill/vault-init-test.json}")" \
     || fail "smoke-client secret için vault root token okunamadı"
   docker exec -e VAULT_TOKEN="$vault_root_token" platform-vault-test \
     vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "$SMOKE_CLIENT_SECRET_FILE" \
