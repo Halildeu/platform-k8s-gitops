@@ -194,6 +194,24 @@ vault_root_token() {
   printf '%s' "${token}"
 }
 
+# A2c: the writer token is minted through the confidential `smoke-client`, so its secret
+# must exist before the first `request_writer_token`. #2994 added the `client_secret@FILE`
+# argument but never populated the file, so curl failed with "error encountered when
+# reading a file" and the run ended in `permission-writer-login-readback-failed` -- a
+# message that points at Keycloak when the real fault was a missing local file.
+fetch_writer_client_secret() {
+  local root_token="$1"
+  printf '%s\n' "${root_token}" | docker exec -i "${VAULT_CONTAINER}" sh -c '
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    vault kv get -field=client_secret kv/platform/keycloak/smoke-client
+  ' sh | tr -d '\r\n' > "${WRITER_CLIENT_SECRET_FILE}" 2>/dev/null
+  chmod 600 "${WRITER_CLIENT_SECRET_FILE}" 2>/dev/null || true
+  # Trailing whitespace is stripped above because curl sends an @FILE body verbatim; a
+  # newline would be submitted as part of the secret.
+  [[ -s "${WRITER_CLIENT_SECRET_FILE}" ]]
+}
+
 read_vault_path() {
   local root_token="$1"
   local output="$2"
@@ -329,6 +347,7 @@ ROOT_TOKEN="$(vault_root_token)" || die "vault-root-token-missing"
 VAULT_ORIGINAL_JSON="${TMP_DIR}/vault-original.json"
 VAULT_ORIGINAL_DATA="${TMP_DIR}/vault-original-data.json"
 read_vault_path "${ROOT_TOKEN}" "${VAULT_ORIGINAL_JSON}" || die "vault-persona-preflight-read-failed"
+fetch_writer_client_secret "${ROOT_TOKEN}" || die "smoke-client-secret-fetch-failed"
 VAULT_ORIGINAL_VERSION="$(jq -r '.data.metadata.version // empty' "${VAULT_ORIGINAL_JSON}")"
 [[ "${VAULT_ORIGINAL_VERSION}" =~ ^[0-9]+$ ]] || die "vault-persona-version-missing"
 jq -e '.data.data | type == "object"' "${VAULT_ORIGINAL_JSON}" >/dev/null \
