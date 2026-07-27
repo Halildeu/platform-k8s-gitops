@@ -26,7 +26,11 @@ spec:
         spec:
           serviceAccountName: etik-speak-backup
           restartPolicy: OnFailure
-          containers:
+          # Fetching and encrypting are separate processes on purpose. The token that
+          # can read every tuple and the key that decrypts the archive never coexist in
+          # one process - and an OpenFGA export IS correlation data: it records which
+          # staff subject is attached to which case.
+          initContainers:
             - name: openfga-export
               image: curlimages/curl:8.10.1
               imagePullPolicy: IfNotPresent
@@ -39,8 +43,10 @@ spec:
                 - name: FGA_TOKEN
                   valueFrom:
                     secretKeyRef: {name: etik-speak-backup-openfga, key: token}
+                # Staging only: the plaintext export lives in this pod's memory-backed
+                # scratch volume and never reaches the archive volume unencrypted.
                 - name: ARCHIVE_ROOT
-                  value: /archive
+                  value: /work
               command:
                 - /bin/sh
                 - -c
@@ -76,9 +82,69 @@ spec:
                     [ -z "$CONT" ] && break
                   done
                   ls -lh "$OUT_DIR"
-                  # Housekeeping: keep last 30 daily snapshots.
-                  find "$ARCHIVE_ROOT/openfga" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + || true
+                  echo "$TS" > "$ARCHIVE_ROOT/stamp"
               volumeMounts:
+                - name: work
+                  mountPath: /work
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits:   {cpu: 200m, memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65532
+                seccompProfile: {type: RuntimeDefault}
+          containers:
+            # Holds the archive key and nothing else.
+            - name: encrypt
+              image: postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: ARCHIVE_ROOT
+                  value: /archive
+                - name: ARCHIVE_KEY
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-archive-key, key: archive_key}
+              command:
+                # bash, not sh: dash has no `pipefail`, so a pg_dump or tar that
+                # fails mid-pipeline would leave openssl happily encrypting an empty
+                # stream and the job reporting success.
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  if [ -z "${ARCHIVE_KEY:-}" ]; then
+                    echo "FATAL: ARCHIVE_KEY empty - refusing to write an unencrypted archive" >&2
+                    exit 1
+                  fi
+                  TS=$(cat /work/stamp)
+                  OUT="$ARCHIVE_ROOT/openfga/${TS}.tar.gz.enc"
+                  mkdir -p "$ARCHIVE_ROOT/openfga"
+                  tar -C /work/openfga -cf - "$TS" \
+                    | gzip -c \
+                    | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:ARCHIVE_KEY \
+                    > "$OUT"
+                  # A non-empty check is not enough: openssl writes a valid 48-byte
+                  # header for an empty input, which is what the first live run produced.
+                  SIZE=$(stat -c %s "$OUT")
+                  if [ "$SIZE" -lt 512 ]; then
+                    echo "FATAL: export archive is $SIZE bytes - below the 512-byte floor" >&2
+                    rm -f "$OUT"; exit 1
+                  fi
+                  head -c 8 "$OUT" | grep -q "Salted__" \
+                    || { echo "FATAL: archive is not OpenSSL-encrypted" >&2; rm -f "$OUT"; exit 1; }
+                  echo "wrote $OUT"
+                  # Housekeeping: keep last 30 daily archives.
+                  find "$ARCHIVE_ROOT/openfga" -type f -name '*.tar.gz.enc' -mtime +30 -delete || true
+                  # Plaintext export directories from an earlier revision map staff
+                  # subjects onto cases. Remove them whatever their age.
+                  find "$ARCHIVE_ROOT/openfga" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + || true
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
                 - name: archive
                   mountPath: /archive
               resources:
@@ -92,6 +158,9 @@ spec:
                 runAsUser: 65532
                 seccompProfile: {type: RuntimeDefault}
           volumes:
+            # Memory-backed: the plaintext never touches a disk that outlives the pod.
+            - name: work
+              emptyDir: {medium: Memory, sizeLimit: 64Mi}
             - name: archive
               persistentVolumeClaim:
                 claimName: etik-speak-backup-archive

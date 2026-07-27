@@ -5,6 +5,7 @@ kind: Kustomization
 # an off-cluster S3 bucket via strategic-merge patch (documented in
 # kustomize/overlays/prod/activation/etik-speak/README.md ES-309 section).
 resources:
+  - networkpolicy-backup.yaml
   - pvc-archive.yaml
   - serviceaccount-backup.yaml
   - cronjob-pg-dump.yaml

@@ -30,7 +30,10 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: pg-dump
-              image: postgres:16-alpine
+              # Debian rather than alpine: the alpine variant ships no openssl binary,
+              # and this job may not write an unencrypted dump. Pinned by digest so the
+              # tool the encryption depends on cannot change under it.
+              image: postgres@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
               imagePullPolicy: IfNotPresent
               env:
                 - name: PGHOST
@@ -48,22 +51,58 @@ spec:
                     secretKeyRef: {name: etik-speak-backup-pg, key: password}
                 - name: ARCHIVE_ROOT
                   value: /archive
+                # A separate secret from the database credential, so whoever holds only
+                # the archive key cannot reach the database. It buys nothing in the other
+                # direction and is not claimed to: this container necessarily holds both,
+                # and PGPASSWORD already grants read of everything the archive contains.
+                # The split that does matter is in the other two jobs, where the fetching
+                # credential talks to a network service and lives in its own container.
+                - name: ARCHIVE_KEY
+                  valueFrom:
+                    secretKeyRef: {name: etik-speak-backup-archive-key, key: archive_key}
               command:
-                - /bin/sh
+                # bash, not sh: dash has no `pipefail`, so a pg_dump or tar that
+                # fails mid-pipeline would leave openssl happily encrypting an empty
+                # stream and the job reporting success.
+                - /bin/bash
                 - -c
                 - |
-                  set -eu
+                  set -euo pipefail
+                  # Fail closed. A whistleblowing database dump is every report narrative
+                  # in one file; if the key is missing this job must stop, not fall back
+                  # to writing plaintext onto a shared volume.
+                  if [ -z "${ARCHIVE_KEY:-}" ]; then
+                    echo "FATAL: ARCHIVE_KEY empty - refusing to write an unencrypted dump" >&2
+                    exit 1
+                  fi
                   TS=$(date -u +%Y%m%dT%H%M%SZ)
-                  OUT="$ARCHIVE_ROOT/pg/${PGDATABASE}-${TS}.sql.gz"
+                  OUT="$ARCHIVE_ROOT/pg/${PGDATABASE}-${TS}.sql.gz.enc"
                   mkdir -p "$ARCHIVE_ROOT/pg"
-                  # --data-only + schema captured separately keeps restores
-                  # incremental. Ownership stripped so restores land under
-                  # the target-side role, not the source.
-                  pg_dump --no-owner --no-privileges --format=plain "$PGDATABASE" | gzip -c > "$OUT"
+                  # Ownership stripped so restores land under the target-side role, not
+                  # the source. Compressed before encrypted - the reverse leaks nothing
+                  # but wastes the compression entirely.
+                  pg_dump --no-owner --no-privileges --format=plain "$PGDATABASE" \
+                    | gzip -c \
+                    | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:ARCHIVE_KEY \
+                    > "$OUT"
+                  # `set -eu` does not catch a failure inside the pipe, and a truncated
+                  # archive nobody notices until a restore is worse than no archive.
+                  # A non-empty check is not enough: openssl writes a valid 48-byte
+                  # header for an empty input, which is what the first live run produced.
+                  SIZE=$(stat -c %s "$OUT")
+                  if [ "$SIZE" -lt 1024 ]; then
+                    echo "FATAL: dump archive is $SIZE bytes - below the 1024-byte floor" >&2
+                    rm -f "$OUT"; exit 1
+                  fi
+                  head -c 8 "$OUT" | grep -q "Salted__" \
+                    || { echo "FATAL: archive is not OpenSSL-encrypted" >&2; rm -f "$OUT"; exit 1; }
                   echo "wrote $OUT"
                   ls -lh "$ARCHIVE_ROOT/pg" | tail -20
-                  # Housekeeping: keep last 30 daily dumps + purge older.
-                  find "$ARCHIVE_ROOT/pg" -type f -name '*.sql.gz' -mtime +30 -delete || true
+                  # Housekeeping: keep last 30 daily archives.
+                  find "$ARCHIVE_ROOT/pg" -type f -name '*.sql.gz.enc' -mtime +30 -delete || true
+                  # A plaintext dump left by an earlier revision is a liability, not
+                  # history. Remove it whatever its age.
+                  find "$ARCHIVE_ROOT/pg" -type f -name '*.sql.gz' -delete || true
               volumeMounts:
                 - name: archive
                   mountPath: /archive
