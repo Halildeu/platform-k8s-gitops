@@ -120,6 +120,20 @@ http_status() {
 }
 
 vault_root_token=$(jq -er '.root_token | select(type == "string" and length > 0)' "$VAULT_INIT_FILE")
+SMOKE_CLIENT_SECRET_FILE="$TMP_DIR/smoke-client.secret"
+# A2c: ROPC now needs the confidential client's secret. This script already holds the
+# Vault root token, so it fetches its own -- unlike provision-test-openfga.sh, whose
+# contract test forbids it from touching root.
+printf '%s\n' "$vault_root_token" | docker exec -i -e VAULT_ADDR=http://127.0.0.1:8200 \
+  "$VAULT_CONTAINER" sh -c '
+    set -eu; IFS= read -r VAULT_TOKEN; export VAULT_TOKEN
+    exec vault kv get -field=client_secret kv/platform/keycloak/smoke-client' \
+  > "$SMOKE_CLIENT_SECRET_FILE"
+chmod 600 "$SMOKE_CLIENT_SECRET_FILE"
+[ -s "$SMOKE_CLIENT_SECRET_FILE" ] || {
+  echo "FATAL: smoke-client secret Vault'tan alinamadi" >&2
+  exit 1
+}
 vault_status=0
 if printf '%s\n' "$vault_root_token" | docker exec -i \
     -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
@@ -162,7 +176,8 @@ mint_token() {
   code=$(http_status POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" "$output" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=frontend' \
+    --data-urlencode 'client_id=smoke-client' \
+    --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
     --data-urlencode "username@$username_file" \
     --data-urlencode "password@$password_file" \
     --data-urlencode 'scope=openid ethics-manager-audience ethics:case:manage')
@@ -188,7 +203,8 @@ writer_code=$(http_status POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-co
   "$TMP_DIR/writer-token.json" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'grant_type=password' \
-  --data-urlencode 'client_id=frontend' \
+  --data-urlencode 'client_id=smoke-client' \
+  --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
   --data-urlencode "username@$TMP_DIR/writer.username" \
   --data-urlencode "password@$TMP_DIR/writer.password")
 if [ "$writer_code" != 200 ] || ! jq -e '.access_token | type == "string" and length > 0' \

@@ -23,6 +23,10 @@ REALM="${REALM:-platform-test}"
 KC_TOKEN_BASE_URL="${KC_TOKEN_BASE_URL:-http://127.0.0.1:8082}"
 readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 PERSONA_USERNAME="${PERSONA_USERNAME:-ethics-manager-test}"
+SMOKE_CLIENT_SECRET_FILE_DEFAULT="/srv/platform/secrets/faz35-test/smoke-client.secret"
+[ -r "$SMOKE_CLIENT_SECRET_FILE_DEFAULT" ] \
+  || SMOKE_CLIENT_SECRET_FILE_DEFAULT="$HOME/bootstrap-drill/smoke-client.secret"
+SMOKE_CLIENT_SECRET_FILE="${SMOKE_CLIENT_SECRET_FILE:-$SMOKE_CLIENT_SECRET_FILE_DEFAULT}"
 PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
 WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/srv/platform/secrets/faz35-test/ethics-manager-wrong-org-test.password}"
@@ -133,11 +137,32 @@ kc config credentials --status >/dev/null 2>&1 || {
   exit 1
 }
 
+# A2c: mints through the dedicated confidential `smoke-client`; the public browser client
+# no longer grants ROPC. The body is still built and piped (never argv), but python now
+# url-encodes it: the old printf inserted values raw and only worked because persona
+# passwords happen to be hex -- a client secret containing + / or = would have corrupted
+# the form. The secret is caller-supplied as a file; this script has no Vault access.
 mint_synthetic_token() {
   local username=$1 password
   IFS= read -r password
-  printf 'grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid%%20ethics-manager-audience%%20ethics%%3Acase%%3Amanage' \
-    "$username" "$password" \
+  printf '%s\n' "$password" \
+    | MINT_USERNAME="$username" MINT_SECRET_FILE="$SMOKE_CLIENT_SECRET_FILE" python3 -c '
+import os, pathlib, sys, urllib.parse
+password = sys.stdin.readline().rstrip("\n")
+if not password:
+    raise SystemExit("synthetic persona password was not supplied on stdin")
+secret = pathlib.Path(os.environ["MINT_SECRET_FILE"]).read_text().strip()
+if not secret:
+    raise SystemExit("smoke-client secret file is empty")
+sys.stdout.write(urllib.parse.urlencode({
+    "grant_type": "password",
+    "client_id": "smoke-client",
+    "client_secret": secret,
+    "username": os.environ["MINT_USERNAME"],
+    "password": password,
+    "scope": "openid ethics-manager-audience ethics:case:manage",
+}))
+' \
     | curl -fsS --max-time 10 -X POST \
         -H 'Content-Type: application/x-www-form-urlencoded' \
         --data-binary @- \

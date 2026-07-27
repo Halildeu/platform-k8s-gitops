@@ -24,7 +24,10 @@ readonly WRITER_LEGACY_LOCAL_USER_ID="1204"
 readonly WRITER_PROFILE_EMAIL="d35-admin-persona@acik.com"
 readonly WRITER_PROFILE_FIRST_NAME="D35"
 readonly WRITER_PROFILE_LAST_NAME="Admin Persona"
-readonly WRITER_CLIENT="frontend"
+# A2c: the public browser client no longer grants ROPC; this repair path mints through
+# the dedicated confidential client and fetches its secret with the Vault root token it
+# already holds.
+readonly WRITER_CLIENT="smoke-client"
 readonly BASE_URL="https://testai.acik.com"
 readonly VAULT_PERSONA_PATH="kv/platform/d35-3"
 readonly VAULT_CONTAINER="platform-vault-test"
@@ -98,6 +101,7 @@ if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
 fi
 
 TMP_DIR="$(mktemp -d /tmp/faz24-writer-repair.XXXXXX)"
+WRITER_CLIENT_SECRET_FILE="${TMP_DIR}/writer-client.secret"
 mkdir -p "$(dirname "${OUT_PATH}")"
 
 write_result() {
@@ -257,6 +261,7 @@ request_writer_token() {
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
     --data-urlencode "client_id=${WRITER_CLIENT}" \
+    --data-urlencode "client_secret@${WRITER_CLIENT_SECRET_FILE}" \
     --data-urlencode "username@${WRITER_USERNAME_FILE}" \
     --data-urlencode "password@${password_file}")"
   [[ "${login_code}" == "200" ]] || return 1
