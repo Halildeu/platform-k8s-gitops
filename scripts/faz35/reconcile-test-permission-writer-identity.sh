@@ -3,6 +3,14 @@
 # identity and the single ACCESS=MANAGE capability needed to provision the
 # Etik Speak manager role. The historical user 1204 / d35-admin performance
 # persona is deliberately left untouched.
+#
+# A2b.2 (2026-07-21, Faz 22 Sec KC hardening #2476): `client_id=frontend`
+# (public + DAG=true) yerine confidential `smoke-client` ROPC pattern
+# (A2c cutover'da frontend.DAG=false olacak). Writer persona d35-admin-persona
+# smoke-client + smoke-runtime-v1 default scope (audience×6, userId claim) ile
+# aynı REST çağrılarını yapabilir (permission-service audience valid). Ethics
+# opt-in scope YOK — bu script scope=openid + default scope kullanıyor.
+# Vault: kv/platform/keycloak/smoke-client (A2a substrate).
 
 set -Eeuo pipefail
 set +x
@@ -284,11 +292,22 @@ jq -j '.data.data.admin_persona_password' "${TMP_DIR}/writer-vault.json" \
 chmod 600 "${TMP_DIR}/writer.username" "${TMP_DIR}/writer.password"
 unset ROOT_TOKEN
 
+# A2b.2 (2026-07-21) — smoke-client secret fetch (Vault kv/platform/keycloak/smoke-client)
+SMOKE_CLIENT_SECRET_FILE="${TMP_DIR}/smoke-client-secret"
+SMOKE_VAULT_ROOT="$(python3 -c "import json; print(json.load(open('/home/halil/bootstrap-drill/vault-init-test.json'))['root_token'])" 2>/dev/null || true)"
+[[ -n "${SMOKE_VAULT_ROOT}" ]] || die "smoke-client-vault-root-token-missing"
+docker exec -e VAULT_TOKEN="${SMOKE_VAULT_ROOT}" platform-vault-test \
+  vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "${SMOKE_CLIENT_SECRET_FILE}" \
+  || die "smoke-client-secret-fetch-failed"
+chmod 0600 "${SMOKE_CLIENT_SECRET_FILE}"
+SMOKE_VAULT_ROOT=""
+
 code="$(http_status POST "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/token" \
   "${TMP_DIR}/writer-credential-preflight-token.json" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'grant_type=password' \
-  --data-urlencode 'client_id=frontend' \
+  --data-urlencode 'client_id=smoke-client' \
+  --data-urlencode "client_secret@${SMOKE_CLIENT_SECRET_FILE}" \
   --data-urlencode 'scope=openid' \
   --data-urlencode "username@${TMP_DIR}/writer.username" \
   --data-urlencode "password@${TMP_DIR}/writer.password")"
@@ -408,11 +427,13 @@ BOOTSTRAP_TUPLE_READY=true
 # only the canonical role API after identity alignment.
 mint_writer_token() {
   local output="$1" token code
+  # A2b.2 — smoke-client + smoke-runtime-v1 default scope (audience×6 valid)
   code="$(http_status POST "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/token" \
     "${output}" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=frontend' \
+    --data-urlencode 'client_id=smoke-client' \
+    --data-urlencode "client_secret@${SMOKE_CLIENT_SECRET_FILE}" \
     --data-urlencode "username@${TMP_DIR}/writer.username" \
     --data-urlencode "password@${TMP_DIR}/writer.password")"
   [[ "${code}" == "200" ]] || return 1

@@ -5,6 +5,13 @@
 # shell module yetkisi DB/OpenFGA seed ile degil, kullanicinin kullandigi
 # activation + role/granule/member API'leriyle kurulur. Raw parola/JWT stdout,
 # argv, artifact veya GitHub step summary'ye yazilmaz.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` public + DAG=true — A2c cutover'da DAG=false. Bu accept
+# smoke recruiter persona token'ının `resource_access.ats-api.roles`'e bağımlı;
+# ats.* scope'lar smoke-client'ta yok. A2c ÖNCESİ Faz25 team ya (a) A2b.3 ile
+# smoke-client'a ats.* scope'ları eklemeli, ya (b) dedicated `ats-recruiter-smoke`
+# client kurmalı. Aksi halde A2c bu acceptance'ı break eder.
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-https://testai.acik.com}"

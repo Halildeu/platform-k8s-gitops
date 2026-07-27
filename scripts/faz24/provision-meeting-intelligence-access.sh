@@ -198,6 +198,20 @@ GRAPH_CLIENT_SECRET_FILE="${TMP_DIR}/graph-client-secret"
 PERSONA_USERNAME_FILE="${TMP_DIR}/persona-username"
 PERSONA_PASSWORD_FILE="${TMP_DIR}/persona-password"
 KC_ADMIN_PASSWORD_FILE="${TMP_DIR}/keycloak-admin-password"
+SMOKE_CLIENT_SECRET_FILE="${TMP_DIR}/smoke-client-secret"
+
+# A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover).
+# Vault kv/platform/keycloak/smoke-client (A2a); scope-mapping/audience A2b.1 setup-smoke-token-contract.sh.
+SMOKE_VAULT_ROOT="$(python3 -c "import json; print(json.load(open('/home/halil/bootstrap-drill/vault-init-test.json'))['root_token'])" 2>/dev/null || true)"
+if [[ -n "${SMOKE_VAULT_ROOT}" ]]; then
+  docker exec -e VAULT_TOKEN="${SMOKE_VAULT_ROOT}" platform-vault-test \
+    vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "${SMOKE_CLIENT_SECRET_FILE}" \
+    || die "smoke-client-secret-fetch-failed"
+  chmod 0600 "${SMOKE_CLIENT_SECRET_FILE}"
+  SMOKE_VAULT_ROOT=""
+else
+  die "smoke-client-vault-root-token-missing"
+fi
 printf '%s' "${GRAPH_CLIENT_SECRET}" > "${GRAPH_CLIENT_SECRET_FILE}"
 printf '%s' "${PERSONA_USERNAME}" > "${PERSONA_USERNAME_FILE}"
 printf '%s' "${PERSONA_PASSWORD}" > "${PERSONA_PASSWORD_FILE}"
@@ -313,7 +327,8 @@ code="$(http_status POST \
   "${PERSONA_TOKEN_JSON}" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'grant_type=password' \
-  --data-urlencode 'client_id=frontend' \
+  --data-urlencode 'client_id=smoke-client' \
+  --data-urlencode "client_secret@${SMOKE_CLIENT_SECRET_FILE}" \
   --data-urlencode "username@${PERSONA_USERNAME_FILE}" \
   --data-urlencode "password@${PERSONA_PASSWORD_FILE}")"
 [[ "${code}" == "200" ]] || die "permission-writer-login-failed"

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Faz 35 Etik Speak: platform-test audience/scope plus a dedicated synthetic
 # manager persona. The password is stored only in a chmod-600 host file.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` + `scope=... ethics-manager-audience ethics:case:manage`
+# — A2c cutover (frontend.DAG=false) sonrası ROPC 400/unauthorized_client.
+# Faz35 team A2c ÖNCESİ smoke-client'a ETHICS scope'larını A2b.3 ile eklemeli
+# (setup-smoke-token-contract.sh optional scope opt-in extension) veya bu
+# script'i smoke-client + custom scope opt-in ile revize etmeli.
 set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x

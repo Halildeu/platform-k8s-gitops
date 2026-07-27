@@ -2,6 +2,13 @@
 # Faz 35 Etik Speak: grant the three dedicated synthetic manager personas the
 # same narrow suite ETHIC module. Tenant and object authorization remain solely
 # differentiated by each persona's org claim and isolated OpenFGA tuples.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` public ROPC + DAG=true KC client'ı A2c cutover'ında
+# `directAccessGrantsEnabled=false`'a çevrilecek. Bu script `frontend`'in
+# `ethics-manager-audience` optional scope'una bağımlı (smoke-client'ta ETHICS
+# scope YOK). Faz35 team A2c ÖNCESİ smoke-client'ı A2b.3 ile genişletmeli veya
+# bu script'i revize etmeli — aksi halde A2c ROPC'yi keser.
 set -euo pipefail
 # A caller may invoke bash -x; stop tracing before credentials are read.
 set +x

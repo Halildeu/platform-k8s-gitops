@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 # Faz 25 #2526: sentetik aday -> takip -> recruiter inbox/status E2E.
 # Secret/JWT/candidate token stdout veya process argumanina basılmaz.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` public + DAG=true — A2c cutover'da DAG=false. Bu smoke
+# recruiter/operator persona token'ının `resource_access.ats-api.roles`'e
+# (13 ats.* scope: application.read/status.write/citation.write/consent.write/
+# dsar.write/erasure.execute/export.read/export.write/recording.write/review.read/
+# review.write/transcript.read/transcription.write) bağımlı. Bu scope'lar
+# frontend'de DEFAULT olarak atanmış, smoke-client'ta YOK. A2c ÖNCESİ Faz25 team
+# ya (a) smoke-client'a ats.* scope'larını A2b.3 ile eklemeli (defaultClientScopes'a
+# taşımalı ki tenant claim + resource_access garantili gelsin), ya (b) `ats-recruiter`
+# adında dedicated ATS smoke client kurmalı. Aksi halde A2c bu smoke'u breaks eder.
 set -euo pipefail
 
 EDGE="${ATS_EDGE:-https://testai.acik.com}"

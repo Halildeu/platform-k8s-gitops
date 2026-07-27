@@ -125,16 +125,21 @@ vault kv patch kv/platform/d35-3 granted_persona_uid="${GRANTED_UID}" granted_pe
 > Bu JWT D35-2-full Step 9.4'te `JWT_ADMIN` olarak kullanılır. **Token max 5dk yaşar** tipik test realm'de — D35-2-full'u baştan sona koşmak için zaman penceresi var.
 
 ```bash
-# Test cluster için public client token endpoint
+# A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend public + DAG=false, A2c cutover).
+# smoke-client kv/platform/keycloak/smoke-client (A2a) + smoke-runtime-v1 default scope (userId+aud×6);
+# smoke-notify-v1 opt-in scope org_id capability için (A2b.1 setup-smoke-token-contract.sh çıktısı).
 PERSONA_USERNAME=$(vault kv get -field=admin_persona_username kv/platform/d35-3)
-PERSONA_PASSWORD="<Step 2'de set edilen şifre>"   # Vault'a kaydedildiyse oradan oku
+PERSONA_PASSWORD=$(vault kv get -field=admin_persona_password kv/platform/d35-3)
+SMOKE_CLIENT_SECRET=$(vault kv get -field=client_secret kv/platform/keycloak/smoke-client)
 
 JWT_ADMIN=$(curl -sf -X POST \
   "${KC_BASE}/realms/${KC_REALM}/protocol/openid-connect/token" \
-  -d "client_id=frontend" \
-  -d "username=${PERSONA_USERNAME}" \
-  -d "password=${PERSONA_PASSWORD}" \
-  -d "grant_type=password" | jq -r .access_token)
+  --data-urlencode "client_id=smoke-client" \
+  --data-urlencode "client_secret=${SMOKE_CLIENT_SECRET}" \
+  --data-urlencode "username=${PERSONA_USERNAME}" \
+  --data-urlencode "password=${PERSONA_PASSWORD}" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "scope=openid" | jq -r .access_token)
 
 # Doğrula: token decode edip claim'leri kontrol et (header.payload.signature)
 echo "${JWT_ADMIN}" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
