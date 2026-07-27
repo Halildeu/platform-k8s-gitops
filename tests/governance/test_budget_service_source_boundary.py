@@ -165,8 +165,9 @@ def test_no_effective_erp_policy_selects_budget_service():
         "app.kubernetes.io/part-of": "platform",
     }
     forbidden_endpoints = {
-        ("10.9.193.200", 445),
-        ("10.9.193.201", 1433),
+        (address, port)
+        for address in ("10.9.193.200", "10.9.193.201")
+        for port in (445, 1433)
     }
     violations = []
     for document in _render_test_overlay():
