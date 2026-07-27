@@ -120,16 +120,35 @@ namespace: platform-test
 
 resources:
   - ../../../../base/apps/ats-interview-evidence
+  - ../../../../base/apps/ats-interview-evidence-ui
   - externalsecret.yaml
   - externalsecret-mtls.yaml
   - ingress-ats-api.yaml
+  - ingress-ats-ui.yaml
   - netpol.yaml
+  - netpol-ui.yaml
   # ai-stub artık resource değildir: provider live-stt fail-closed; kullanılmayan
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
     digest: sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
+  # mfe-interview-evidence UI — mülakat inceleme ekranının yayın imajı.
+  # Bu ekran ats#231'e kadar hiçbir ortamda açılamıyordu: bundle her push'ta
+  # derlenip atılıyordu, hiçbir adım yayınlamıyordu. Zincir ats#232 ile kuruldu;
+  # bu pin onu canlıya taşır.
+  #   source  ats@05666f5 (ats#234 — taban openssl CVE düzeltmesi)
+  #   tag     ghcr.io/halildeu/ats-interview-evidence-ui:sha-05666f5
+  #   digest  sha256:08eacb6e0e092912d63d4995d0b341a43a270eeae17b85cf84feb294b66a9fb6
+  #   build   https://github.com/Halildeu/ats/actions/runs/30309878938
+  # Digest build log'undan DEĞİL, GHCR paket sürüm manifest'inden alındı ve
+  # node'da pull-proof edildi: crictl pull + inspecti repoDigests == bu digest.
+  # (crictl pull ekrana sha256:2dbd1690… yazdı — o LOCAL IMAGE ID'dir,
+  #  çekilebilir manifest digest'i değil; aynı tuzak geçmişte auth-service'i
+  #  106 dakika indirtmişti.)
+  # Önceki pin YOK — bu imajın ilk yayını.
+  - name: ghcr.io/halildeu/ats-interview-evidence-ui
+    digest: sha256:08eacb6e0e092912d63d4995d0b341a43a270eeae17b85cf84feb294b66a9fb6
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
