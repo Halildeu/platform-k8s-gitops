@@ -98,11 +98,9 @@ jobs:
         run: bash scripts/test/faz24-meeting-ai-private-gateway-static.sh
       - name: Faz 24 durable finalization rollout static guard
         run: bash scripts/test/faz24-finalization-rollout-static.sh
-      - name: Faz 24 durable finalization GitHub evidence guard
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Faz 24 durable finalization source evidence guard
         run: >-
-          python3 scripts/test/verify-faz24-finalization-remote-evidence.py
+          python3 scripts/test/verify-faz24-finalization-source-evidence.py
           docs/faz-24-evidence/2026-07-18-finalization-source-ci.json
       - name: Faz 24 edge nginx WebSocket reconciliation contract
         run: bash scripts/test/faz24-edge-nginx-ws-contract-static.sh

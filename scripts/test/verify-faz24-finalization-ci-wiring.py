@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that Faz 24 remote evidence is an active, exact CI command."""
+"""Verify that Faz 24 durable local evidence is an active, exact CI command."""
 
 from __future__ import annotations
 
@@ -13,9 +13,10 @@ import yaml
 
 EXPECTED_COMMAND = [
     "python3",
-    "scripts/test/verify-faz24-finalization-remote-evidence.py",
+    "scripts/test/verify-faz24-finalization-source-evidence.py",
     "docs/faz-24-evidence/2026-07-18-finalization-source-ci.json",
 ]
+REMOTE_VERIFIER = "scripts/test/verify-faz24-finalization-remote-evidence.py"
 OPERATOR_ONLY_VERIFIER = "scripts/test/verify-faz24-finalization-build-provenance.py"
 
 
@@ -58,7 +59,11 @@ def main() -> None:
         run = step.get("run")
         if not isinstance(run, str):
             continue
-        if EXPECTED_COMMAND[1] not in run and OPERATOR_ONLY_VERIFIER not in run:
+        if (
+            EXPECTED_COMMAND[1] not in run
+            and REMOTE_VERIFIER not in run
+            and OPERATOR_ONLY_VERIFIER not in run
+        ):
             continue
         try:
             tokens = shlex.split(run)
@@ -66,15 +71,14 @@ def main() -> None:
             fail(f"cannot parse CI run command: {error}")
         if OPERATOR_ONLY_VERIFIER in tokens:
             fail("operator-only image provenance verifier became an active CI gate")
+        if REMOTE_VERIFIER in tokens:
+            fail("network/retention-bound remote evidence verifier became an active CI gate")
         if tokens == EXPECTED_COMMAND:
             matches.append(step)
 
     if len(matches) != 1:
-        fail(f"expected one active exact remote evidence command, got {len(matches)}")
-    token_binding = matches[0].get("env", {}).get("GITHUB_TOKEN")
-    if token_binding != "${{ github.token }}":
-        fail("remote evidence CI step must bind GITHUB_TOKEN to github.token")
-    print("PASS: Faz 24 remote evidence CI wiring")
+        fail(f"expected one active exact source evidence command, got {len(matches)}")
+    print("PASS: Faz 24 durable source evidence CI wiring")
 
 
 if __name__ == "__main__":

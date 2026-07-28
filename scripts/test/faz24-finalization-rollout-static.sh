@@ -101,13 +101,29 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      # python3 scripts/test/verify-faz24-finalization-remote-evidence.py docs/faz-24-evidence/2026-07-18-finalization-source-ci.json
-      - name: verify-faz24-finalization-remote-evidence.py
+      # python3 scripts/test/verify-faz24-finalization-source-evidence.py docs/faz-24-evidence/2026-07-18-finalization-source-ci.json
+      - name: verify-faz24-finalization-source-evidence.py
         run: printf '%s\n' 'not the verifier'
 YAML
 if python3 "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
     "${MUTATED_WORKFLOW}" >/dev/null 2>&1; then
   fail "CI wiring verifier accepted a comment/name-only false positive"
+fi
+
+cat >"${MUTATED_WORKFLOW}" <<'YAML'
+name: regression
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: forbidden network-bound remote evidence gate
+        run: >-
+          python3 scripts/test/verify-faz24-finalization-remote-evidence.py
+          docs/faz-24-evidence/2026-07-18-finalization-source-ci.json
+YAML
+if python3 "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
+    "${MUTATED_WORKFLOW}" >/dev/null 2>&1; then
+  fail "CI wiring verifier accepted the network/retention-bound remote gate"
 fi
 
 grep -Fq 'MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS: meeting-ai,transcript-service' \
