@@ -9,8 +9,10 @@ Activates the Denetim PC TPM device-key and attended VIEW_ONLY endpoint lane.
 This is a bounded post-bootstrap configuration step for the canonical Faz 22.6
 Denetim endpoint. It does not install a binary, enroll a certificate, or carry
 credentials. The script fails closed unless the expected signed agent binary,
-TPM device certificate, TPM readiness, outbound-443 configuration, permit
-trust anchor, and signed self-update policy are already present.
+TPM device certificate, TPM readiness, signed self-update policy, and pinned
+public permit trust anchor are available. Canonical bridge values absent from a
+normal browser-managed install are introduced only as transaction-managed
+values and are removed by rollback when they were absent before activation.
 
 The immutable release manifest and public signed provenance evidence are fetched
 over HTTPS, hash-pinned, bound to the installed binary, and checked against the
@@ -41,6 +43,7 @@ param(
   [string]$ExpectedAttestationPublicKeySha256 = "7149268fca56d9adb1097a8148b620d99949f5fa440f31406804112ace04d467",
   [string]$ExpectedDeviceCertIssuer = "CN=platform-test endpoint device CA",
   [string]$ExpectedPermitKeyId = "rb-test-denetim-device-key-20260627-01",
+  [string]$ExpectedPermitPublicKeyB64 = "",
   [string]$ExpectedPermitPublicKeyB64Sha256 = "0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110",
   [string]$ExpectedBrokerAddr = "remote-bridge-mtls.testai.acik.com:443",
   [string]$ExpectedTlsServerName = "remote-bridge-mtls.testai.acik.com",
@@ -690,6 +693,18 @@ function Assert-MapValue {
   }
 }
 
+function Assert-MapValueOrAbsent {
+  param($Map, [string]$Key, [string]$Expected)
+
+  if (-not $Map.Contains($Key)) {
+    return
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$Map[$Key]) -or
+      [string]$Map[$Key] -cne $Expected) {
+    throw "Existing service environment key $Key differs from the canonical transaction value"
+  }
+}
+
 function Read-PemLeafCertificate {
   param([string]$Path)
 
@@ -723,6 +738,11 @@ if (-not (Test-Path -LiteralPath $serviceKey)) {
 $transactionLockDirectory = Join-Path $TransactionLockRoot "faz22-view-only-migration.lock"
 $transactionLockOwnerFile = Join-Path $transactionLockDirectory "owner.txt"
 $managedEnvironmentKeys = @(
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_INSECURE_PLAINTEXT",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED",
@@ -964,6 +984,14 @@ foreach ($releasePolicyName in $requiredReleasePolicy.Keys) {
   }
 }
 Assert-ViewOnlyMaskRectBps -Value $ExpectedViewOnlyMaskRectBps
+if ([string]::IsNullOrWhiteSpace($ExpectedPermitPublicKeyB64) -or
+    $ExpectedPermitPublicKeyB64 -cnotmatch '^[A-Za-z0-9+/]+={0,2}$') {
+  throw "Canonical broker permit public key is required for Action=Apply"
+}
+$actualPermitPublicKeyB64Sha256 = Get-AsciiSha256 -Value $ExpectedPermitPublicKeyB64
+if ($actualPermitPublicKeyB64Sha256 -ne $ExpectedPermitPublicKeyB64Sha256.ToLowerInvariant()) {
+  throw "Injected broker permit public key differs from the pinned test trust anchor"
+}
 if (-not (Test-Path -LiteralPath $BinaryPath)) {
   throw "EndpointAgent binary is absent"
 }
@@ -1102,19 +1130,17 @@ if ($service.Status -ne "Running") {
 $current = Read-ServiceEnvironmentMap -Path $serviceKey
 $preMutationServiceEnvironmentSha256 = Get-ServiceEnvironmentMapSha256 -Map $current
 $managedPreMutationSha256 = Get-ServiceEnvironmentSubsetSha256 -Map $current -Keys $managedEnvironmentKeys
-Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED" -Expected "true"
-Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR" -Expected $ExpectedBrokerAddr
-Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME" -Expected $ExpectedTlsServerName
-Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED" -Expected "true"
-Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64"
-Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID"
+Assert-MapValueOrAbsent -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED" -Expected "true"
+Assert-MapValueOrAbsent -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR" -Expected $ExpectedBrokerAddr
+Assert-MapValueOrAbsent -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME" -Expected $ExpectedTlsServerName
+Assert-MapValueOrAbsent -Map $current -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED" -Expected "true"
+Assert-MapValueOrAbsent `
+  -Map $current `
+  -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64" `
+  -Expected $ExpectedPermitPublicKeyB64
 Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_SELF_UPDATE_ENABLED" -Expected "true"
 Assert-MapValue -Map $current -Key "ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS"
 
-$actualPermitPublicKeyB64Sha256 = Get-AsciiSha256 -Value ([string]$current["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64"])
-if ($actualPermitPublicKeyB64Sha256 -ne $ExpectedPermitPublicKeyB64Sha256.ToLowerInvariant()) {
-  throw "Remote bridge permit public key differs from the approved test trust anchor"
-}
 if ($current.Contains("ENDPOINT_AGENT_REMOTE_BRIDGE_MIGRATION_TRANSACTION_ID") -and
     [string]$current["ENDPOINT_AGENT_REMOTE_BRIDGE_MIGRATION_TRANSACTION_ID"] -eq $TransactionId) {
   throw "Transaction ID has already been applied to this endpoint"
@@ -1124,6 +1150,11 @@ $patched = [ordered]@{}
 foreach ($key in $current.Keys) {
   $patched[$key] = $current[$key]
 }
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED"] = "true"
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR"] = $ExpectedBrokerAddr
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME"] = $ExpectedTlsServerName
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED"] = "true"
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64"] = $ExpectedPermitPublicKeyB64
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_INSECURE_PLAINTEXT"] = "false"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "false"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED"] = "true"
@@ -1313,12 +1344,20 @@ try {
 
   $after = Read-ServiceEnvironmentMap -Path $serviceKey
   foreach ($required in @(
+    "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED",
+    "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED",
     "ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED",
     "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ENABLED",
     "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ATTENDED_CONSENT_ENABLED"
   )) {
     Assert-MapValue -Map $after -Key $required -Expected "true"
   }
+  Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR" -Expected $ExpectedBrokerAddr
+  Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME" -Expected $ExpectedTlsServerName
+  Assert-MapValue `
+    -Map $after `
+    -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64" `
+    -Expected $ExpectedPermitPublicKeyB64
   Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT" -Expected "false"
   Assert-MapValue -Map $after `
     -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS" `
