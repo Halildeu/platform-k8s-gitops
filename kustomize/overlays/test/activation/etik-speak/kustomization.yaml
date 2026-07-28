@@ -60,14 +60,14 @@ images:
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1063 — vakanin kendi gecmisi ekranda; okunamadiginda bos
     # liste degil, okunamadigi yazili.
-    # Kaynak: f2973351d2c7155d4fc5c10768f0d84fe1325c84
-    # Etiket: sha-f2973351d2c7155d4fc5c10768f0d84fe1325c84 (bu hat TAM sha etiketi kullanir;
+    # Kaynak: f5e32d6da97000e29717fa8ec42781ca6ac0e361
+    # Etiket: sha-f5e32d6da97000e29717fa8ec42781ca6ac0e361 (bu hat TAM sha etiketi kullanir;
     # frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
     # Digest build log'undan DEGIL, hedef node'a gercek pull ile okundu:
     #   docker pull ...:sha-f2973351... && docker inspect --format '{{.RepoDigests}}'
     # Build-log digest'i o etiketin cekilebilir oldugunun kaniti degildir ve
     # boyle bir pin daha once bir servisi sessizce roll etmeden birakti.
-    digest: sha256:ac34673b426768be1a9725d3db9ef9b978bc80ac13237c2f927b805ceeb26347
+    digest: sha256:b65e6fd0ff503f5c45dfd54455cf496da3a97d6c84e7887798ed3ab5c63aec3e
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
