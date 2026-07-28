@@ -390,8 +390,22 @@ require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_BUILDER"
 require_grep 'action=rollback' "$VIEWER_OWNER_POLICY"
 require_grep '"revokedAuthorizationSha256": []' "$VIEWER_REVOCATIONS"
 require_grep "pilot_ttl_minutes must be between 5 and 120" "$VIEWER_APPLY_WORKFLOW"
-require_grep "requested watchdog expiry exceeds the signed protected authorization" \
+require_grep 'now_epoch="$(date -u +%s)"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'requested_expires_epoch="$(( now_epoch + PILOT_TTL_MINUTES * 60 ))"' \
   "$VIEWER_APPLY_WORKFLOW"
+require_grep 'expires_epoch="$requested_expires_epoch"' "$VIEWER_APPLY_WORKFLOW"
+require_grep '[ "$AUTHORIZATION_EXPIRES_EPOCH" -gt "$now_epoch" ]' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'if [ "$expires_epoch" -gt "$AUTHORIZATION_EXPIRES_EPOCH" ]; then' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'expires_epoch="$AUTHORIZATION_EXPIRES_EPOCH"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'active_deadline="$(( expires_epoch - now_epoch + 600 ))"' \
+  "$VIEWER_APPLY_WORKFLOW"
+if grep -Fq 'expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"' \
+  "$VIEWER_APPLY_WORKFLOW"; then
+  echo "viewer watchdog must not start a new full TTL beyond authorization issuance" >&2
+  exit 1
+fi
 require_grep "BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "endpoint-admin-remote-bridge-device-key-live" "$VIEWER_APPLY_WORKFLOW"

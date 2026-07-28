@@ -313,16 +313,22 @@ jobs:
         run: |
           set -euo pipefail
           rm -f "$VIEWER_APPLY_ATTEMPT_MARKER"
-          expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"
           printf '%s' "$AUTHORIZATION_EXPIRES_EPOCH" | grep -Eq '^[1-9][0-9]{9,12}$' || {
             echo "::error::protected authorization expiry output is absent or invalid"
             exit 1
           }
-          [ "$expires_epoch" -le "$AUTHORIZATION_EXPIRES_EPOCH" ] || {
-            echo "::error::requested watchdog expiry exceeds the signed protected authorization"
+          now_epoch="$(date -u +%s)"
+          [ "$AUTHORIZATION_EXPIRES_EPOCH" -gt "$now_epoch" ] || {
+            echo "::error::protected authorization expired before watchdog installation"
             exit 1
           }
-          active_deadline="$(( PILOT_TTL_MINUTES * 60 + 600 ))"
+          requested_expires_epoch="$(( now_epoch + PILOT_TTL_MINUTES * 60 ))"
+          expires_epoch="$requested_expires_epoch"
+          if [ "$expires_epoch" -gt "$AUTHORIZATION_EXPIRES_EPOCH" ]; then
+            expires_epoch="$AUTHORIZATION_EXPIRES_EPOCH"
+            echo "::notice::watchdog expiry bounded by signed protected authorization"
+          fi
+          active_deadline="$(( expires_epoch - now_epoch + 600 ))"
           sed \
             -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
             -e "s/__ACTIVE_DEADLINE_SECONDS__/${active_deadline}/g" \
