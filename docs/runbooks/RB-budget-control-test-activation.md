@@ -47,13 +47,20 @@ rendered policy is not proof of CNI enforcement.
 
 | Workload | Source commit | Immutable image |
 |---|---|---|
-| `budget-service` | `platform-backend@1da6a7392ed3a5d18a207ed61dbe89c6628dcfb0` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:fd3a8d8e6e42764634af5609ae540be0db871c209b0ec03e7f849827beb256b6` |
+| `budget-service` | `platform-backend@a7f03762f22c214ff9ce3f7535c10e32520c7c0e` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:5b992fb8a30cb44085d4da3de5fc33222bbf8efd8e5f92870b3d40c2375cccdc` |
 | `report-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-report-service@sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b` |
 | `api-gateway` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-api-gateway@sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599` |
-| `frontend` | `platform-web@6c4c1af70f27dcf5264683bef11eaddfab5d55fd` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:f862d617ed95b2b27e7583dca0d55a61ab0bab954d9d07b977241a2940891898` |
+| `frontend` | `platform-web@cadc6ad00a9061bf93d716962b63be9abb6100e3` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:b1beb38912d595619b944fd08fccd6af05dcaf6a1342687b474d32dcee4e8fe4` |
 
 All four listed digests must be pulled successfully by the target TEST node before
 promotion. A successful CI push alone is insufficient.
+
+Latest accepted TEST rollout:
+
+- GitOps merge: `9a5387615068863fe07b13e98a348c6f73babe33`;
+- ArgoCD read-back: `Synced`, `Healthy`, operation `Succeeded`;
+- all four Deployments above: `1/1 Ready`;
+- each live pod `imageID`: exact corresponding digest from this table.
 
 ## TEST OAuth activation
 
@@ -174,6 +181,44 @@ Verify:
 12. After a browser reload, selecting the same company, project and date
     window and using `Gerçekleşeni göster` returns the same snapshot row count,
     total and last successful sync timestamp without a new sync request.
+
+## Accepted TEST evidence — company 35 / project 44200
+
+The 2026-07-28 attended browser acceptance used `admin@example.com` and the
+route-scoped planner contract. The token projection contained
+`budget:read`, `budget:write` and `budget-planner`; it did not contain
+`budget:approve` or `budget-approver`. No OpenFGA tuple was changed.
+
+Observed customer journey:
+
+1. Company and project selectors were alphabetic; `Serban Construction`
+   (company `35`) and `IDC1` (external project `44200`) were selected by their
+   visible names and code.
+2. The missing binding state returned the intended `404` UI rather than a
+   masked `403`. The planner created the binding and started the first sync.
+3. The read-only source run read `7,842` rows, updated `7,842` snapshot rows,
+   invalidated `0`, retained `7,839` active rows and returned reconciliation
+   `MATCHED`.
+4. The Budget AG Grid rendered source classifications including invoice, bank,
+   expense and unresolved/other records. The full accounting detail surface
+   returned all `7,842` rows.
+5. Double-clicking a row opened the source-chain drawer. It exposed the
+   accounting-row, journal-card and natural source-reference chain plus
+   optional order/invoice/transfer identifiers without inventing missing
+   relationships.
+6. After a full navigation reload, `Gerçekleşeni göster` issued only the
+   binding, summary and actuals read requests. It returned the same row count,
+   accounting total, last-sync timestamp and `MATCHED` result without invoking
+   a sync endpoint.
+
+Do not store raw document descriptions, counterparties, document numbers or
+other live accounting PII in acceptance evidence. Counts, status, artifact
+identity and relationship classifications are sufficient.
+
+This evidence accepts the actuals snapshot and source-trace slice. It does not
+accept cost-rule classification, AI coding, plan budget, maker-checker approval
+or production rollout. At this observation all `7,839` active rows remained in
+the review bucket with zero classified cost.
 
 Before rollout, read the live `platform-quota` again. The 2026-07-27
 preflight showed `limits.cpu=13350m/16`, `requests.memory=6960Mi/12Gi`,
