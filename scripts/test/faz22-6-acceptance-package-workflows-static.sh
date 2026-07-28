@@ -370,6 +370,16 @@ require_grep "verify-view-only-pilot-authorization-receipt.py" "$VIEWER_APPLY_WO
 require_grep "--triggering-actor" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
+require_grep "authorization_ttl_minutes=120" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'authorization_expires_epoch="$((issued_epoch + authorization_ttl_minutes * 60))"' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'date -u -d "@$authorization_expires_epoch" +%Y-%m-%dT%H:%M:%SZ' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep '--expires-at "$authorization_expires_at"' "$VIEWER_APPLY_WORKFLOW"
+if grep -Fq 'VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT' "$VIEWER_APPLY_WORKFLOW"; then
+  echo "viewer apply workflow must not consume a pre-approval absolute expiry secret" >&2
+  exit 1
+fi
 require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'rm -f "$out/owner-comment.json" "$out/advisory-comment.json"' \
   "$VIEWER_APPLY_WORKFLOW"
