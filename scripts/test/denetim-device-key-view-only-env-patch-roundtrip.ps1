@@ -24,6 +24,7 @@ foreach ($name in @(
     "Read-ServiceEnvironmentBackup",
     "Assert-MapsEqual",
     "Assert-ViewOnlyMaskRectBps",
+    "Assert-MapValueOrAbsent",
     "New-ManagedEnvironmentRestorationMap",
     "Register-RollbackCleanupTask"
   )) {
@@ -53,6 +54,65 @@ $restored = New-ManagedEnvironmentRestorationMap `
 if ($restored["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS"] -ne "5000,5000,5000,5000" -or
     $restored["UNRELATED_PRODUCT_SETTING"] -ne "concurrent-update") {
   throw "Managed VIEW_ONLY mask rollback did not restore the prior value while preserving unrelated updates"
+}
+
+$temporaryBridgeKeys = @(
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64"
+)
+$bridgePreMutation = [ordered]@{
+  ENDPOINT_AGENT_SELF_UPDATE_ENABLED = "true"
+  UNRELATED_PRODUCT_SETTING = "before"
+}
+$bridgeTransactionOwned = [ordered]@{
+  ENDPOINT_AGENT_SELF_UPDATE_ENABLED = "true"
+  ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED = "true"
+  ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR = "remote-bridge-mtls.testai.acik.com:443"
+  ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME = "remote-bridge-mtls.testai.acik.com"
+  ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED = "true"
+  ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64 = "public-key"
+  UNRELATED_PRODUCT_SETTING = "concurrent-update"
+}
+$bridgeRestored = New-ManagedEnvironmentRestorationMap `
+  -CurrentMap $bridgeTransactionOwned `
+  -BackupMap $bridgePreMutation `
+  -ManagedKeys $temporaryBridgeKeys
+foreach ($temporaryBridgeKey in $temporaryBridgeKeys) {
+  if ($bridgeRestored.Contains($temporaryBridgeKey)) {
+    throw "Rollback retained a transaction-created bridge key: $temporaryBridgeKey"
+  }
+}
+if ($bridgeRestored["UNRELATED_PRODUCT_SETTING"] -ne "concurrent-update") {
+  throw "Bridge rollback did not preserve an unrelated concurrent update"
+}
+
+$canonicalExisting = [ordered]@{
+  ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED = "true"
+}
+Assert-MapValueOrAbsent `
+  -Map $canonicalExisting `
+  -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED" `
+  -Expected "true"
+Assert-MapValueOrAbsent `
+  -Map ([ordered]@{}) `
+  -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED" `
+  -Expected "true"
+foreach ($invalidExisting in @("false", "")) {
+  $rejectedExisting = $false
+  try {
+    Assert-MapValueOrAbsent `
+      -Map ([ordered]@{ ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED = $invalidExisting }) `
+      -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED" `
+      -Expected "true"
+  } catch {
+    $rejectedExisting = $true
+  }
+  if (-not $rejectedExisting) {
+    throw "Non-canonical existing bridge value was accepted"
+  }
 }
 
 Assert-ViewOnlyMaskRectBps -Value "7500,7500,2500,2500"
