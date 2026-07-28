@@ -133,6 +133,14 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertNotRegex(self.image_availability, r"echo[^\n]*\$\{?token")
         self.assertIn('basic_auth=""', self.image_availability)
         self.assertIn('token=""', self.image_availability)
+        # Buildx can publish either a multi-platform OCI index (frontend) or
+        # a single-platform OCI image manifest (backend). Both are valid
+        # immutable artifacts and the registry probe must accept both.
+        self.assertIn(
+            "application/vnd.oci.image.index.v1+json,"
+            "application/vnd.oci.image.manifest.v1+json",
+            self.image_availability,
+        )
 
     def test_test_frontend_rollout_keeps_the_ready_pod(self):
         frontend_patch = re.search(

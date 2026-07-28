@@ -47,13 +47,45 @@ rendered policy is not proof of CNI enforcement.
 
 | Workload | Source commit | Immutable image |
 |---|---|---|
-| `budget-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:2362bd72e27dce7874d35363ea3b13ea4157906884bf03ec1767605dff4cdd55` |
+| `budget-service` | `platform-backend@9b0c33c2a52b8ccd6a56c8ec58ae59e2260e9b57` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:752354f373c5592808fd3bfdc894c0225263d4aaefc8a818233512983759150e` |
 | `report-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-report-service@sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b` |
 | `api-gateway` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-api-gateway@sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599` |
-| `frontend` | `platform-web@03fb152dc080e9b1c0c31cbe879edf00b40f52a1` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:e1d6379d3487ffefb701f4c2170344394fb50573610cd8d20eb81105410f7f3d` |
+| `frontend` | `platform-web@6c4c1af70f27dcf5264683bef11eaddfab5d55fd` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:f862d617ed95b2b27e7583dca0d55a61ab0bab954d9d07b977241a2940891898` |
 
 All four listed digests must be pulled successfully by the target TEST node before
 promotion. A successful CI push alone is insufficient.
+
+## TEST OAuth activation
+
+Project actuals is a two-key authorization path. A token scope alone is not
+authorization:
+
+- read endpoints require both `budget:read` and realm role
+  `budget-planner`;
+- binding creation and source refresh require both `budget:write` and
+  `budget-planner`;
+- `budget:approve` and `budget-approver` are not granted to the planner
+  persona.
+
+The `frontend` client keeps `budget:read` and `budget:write` as optional client
+scopes. The exact budget route requests them during a fresh Keycloak login;
+they are not default scopes for every frontend user.
+
+After the role-gated `budget-service` digest above is live, reconcile only the
+TEST persona with the reviewed helper:
+
+```bash
+scripts/budget/provision-test-keycloak.sh --check
+scripts/budget/provision-test-keycloak.sh --apply
+scripts/budget/provision-test-keycloak.sh --check
+```
+
+The expected read-back is `budget-planner`, `budget:read` and `budget:write`
+present; `budget:approve` absent; both budget scopes optional rather than
+default. If acceptance must be rolled back, run the helper with `--rollback`;
+it removes the persona role and optional client bindings but leaves inert
+realm objects for audit. Never apply this helper before the backend role gate
+is live.
 
 ## PostgreSQL and Vault provisioning
 
@@ -132,6 +164,16 @@ Verify:
 9. From a pod selected as `budget-service`, connections to the Workcube MSSQL
    address on `1433` and the ERP SMB address on `445` fail, while PostgreSQL
    `5432` succeeds.
+10. As `admin@example.com`, company `35` and Workcube project `44200` can be
+    selected by name/code. If no binding exists, the planner creates it and
+    runs the first read-only sync for the selected date window.
+11. The AG Grid shows the stored PostgreSQL snapshot with posting date,
+    account, amount, cost treatment, source document type/number, resolution
+    status, journal card/row and source action identifiers. Unresolved source
+    documents remain unresolved; the UI does not invent a document link.
+12. After a browser reload, selecting the same company, project and date
+    window and using `Gerçekleşeni göster` returns the same snapshot row count,
+    total and last successful sync timestamp without a new sync request.
 
 Before rollout, read the live `platform-quota` again. The 2026-07-27
 preflight showed `limits.cpu=13350m/16`, `requests.memory=6960Mi/12Gi`,
