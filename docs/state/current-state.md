@@ -1,5 +1,64 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Budget actuals TEST customer journey accepted (2026-07-28)
+
+Bu delta yalnız TEST ortamındaki proje bazlı gerçekleşen maliyet dilimini
+günceller. Production'a promotion yapılmadı. Workcube MSSQL/SMB canlı kaynakları
+salt okunur kalır; kalıcı yazma sınırı Budget PostgreSQL'dir.
+
+Exact artifact ve rollout kanıtı:
+
+- frontend route-scoped OAuth düzeltmesi
+  `platform-web@cadc6ad00a9061bf93d716962b63be9abb6100e3` kaynağından
+  `sha256:b1beb38912d595619b944fd08fccd6af05dcaf6a1342687b474d32dcee4e8fe4`
+  immutable image'ına üretildi. Budget ekranındaki fresh login yalnız
+  `budget:read` ve `budget:write` ister; `budget:approve` istenmez;
+- backend ERROR dispatcher düzeltmesi
+  `platform-backend@a7f03762f22c214ff9ce3f7535c10e32520c7c0e`
+  kaynağından
+  `sha256:5b992fb8a30cb44085d4da3de5fc33222bbf8efd8e5f92870b3d40c2375cccdc`
+  immutable image'ına üretildi. Yetkili `404`/`400` yanıtlarının Spring
+  `/error` dispatch'inde `403` olarak maskelenmesi giderildi; dışarıdan
+  `REQUEST /error` ve scope'suz Budget isteği yine `403` kalır;
+- GitOps merge'i `9a5387615068863fe07b13e98a348c6f73babe33` ArgoCD'de
+  `Synced / Healthy / Succeeded` olarak gözlendi. Canlı `budget-service`
+  Deployment `1/1 Ready` ve pod `imageID` değeri yukarıdaki Budget digest'iyle
+  birebir eşleşti. `report-service`, `api-gateway` ve `frontend` podları da
+  kendi runbook digest'leriyle `Ready=true` idi.
+
+Hedef persona ile canlı TEST kanıtı:
+
+- `admin@example.com` oturumunun güvenli projection'ında `budget:read`,
+  `budget:write` ve `budget-planner` vardı; `budget:approve` ve
+  `budget-approver` yoktu. OpenFGA tuple veya production yetkisi değiştirilmedi;
+- şirket adları alfabetik, şirket `35` altındaki proje adları alfabetik
+  gösterildi. `Serban Construction` ve Workcube proje `44200` (`IDC1`) ad/kod
+  ile seçilebildi;
+- ilk binding ve salt-okunur kaynak senkronu kullanıcı ekranından çalıştı:
+  `7.842` kaynak satırı okundu, `7.842` snapshot satırı güncellendi,
+  `0` satır iptal işaretlendi. Snapshot `7.839` aktif satır taşıdı ve kaynak
+  toplamı ile snapshot toplamı `MATCHED` oldu;
+- AG Grid hızlı görünümü en güncel `2.000` satırı; tam canlı muhasebe raporu
+  `7.842` satırı gösterdi. Görünür kontrat tarih, hesap, yön, muhasebe tutarı,
+  sınıflanmış maliyet, maliyet sınıfı, kaynak belge türü/no, eşleşme durumu,
+  fiş ve kaynak işlem kimliklerini korudu;
+- bir muhasebe satırından canlı detay raporuna geçilip kaynak çekmecesi açıldı.
+  Çekmece `muhasebe satırı → fiş → kaynak referansı` zincirini, çözüm durumunu,
+  kaynak türünü ve varsa sipariş/fatura/virman kimliklerini gösterdi; sistem
+  eksik ilişkiyi tahmin etmedi. Ham belge açıklaması, taraf bilgisi ve belge
+  numarası canonical kanıta alınmadı;
+- tarayıcı baştan yüklendikten sonra aynı şirket/proje/tarih penceresiyle
+  `Gerçekleşeni göster` yalnız binding, summary ve actuals `GET` çağrılarını
+  yaptı. Yeni sync çağrısı olmadan aynı `7.842` satır, aynı toplam, aynı son
+  başarılı senkron zamanı ve `MATCHED` sonucu geri geldi; böylece PostgreSQL
+  snapshot kalıcılığı kullanıcı yüzeyinde kanıtlandı.
+
+Bu acceptance, gerçekleşen maliyet görünümü ve kaynak izini doğrular. Aktif
+kural seti henüz maliyet sınıflaması üretmediği için `7.839` aktif satırın
+tamamı inceleme kuyruğundadır; AI maliyet kodu önerisi, insan onayı ve plan
+bütçe ayrı ürün dilimleridir. `#3007` ve parent `#3005` kullanıcı açıkça
+istemeden kapatılmaz.
+
 ## Live Delta — `.53` archive-standby runtime fence (2026-07-23)
 
 Eski `staging-sw` (`10.9.10.53`) hostu dosya ve SSH yönetim erişimi için açık
