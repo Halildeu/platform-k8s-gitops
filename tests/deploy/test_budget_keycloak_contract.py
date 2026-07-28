@@ -19,6 +19,14 @@ def test_budget_scopes_are_optional_never_default_or_mapper_backed():
     assert "optional-client-scopes" in SCRIPT
     assert "default-client-scopes" in SCRIPT
     assert "! scope_is_default" in SCRIPT
+    assert (
+        'kc update "clients/$FRONTEND_UUID/optional-client-scopes/$id"'
+        in SCRIPT
+    )
+    assert (
+        'kc create "clients/$FRONTEND_UUID/optional-client-scopes/$id"'
+        not in SCRIPT
+    )
     assert "jq -e 'length == 0'" in SCRIPT
     assert "fullScopeAllowed == true" in SCRIPT
     assert "backend's explicit two-key gate" in SCRIPT
