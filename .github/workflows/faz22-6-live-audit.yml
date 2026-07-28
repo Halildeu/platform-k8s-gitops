@@ -39,6 +39,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install isolated audit Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12.3"
+          check-latest: false
+
       - name: Assert audit runtime prerequisites
         run: |
           set -euo pipefail
@@ -57,7 +63,7 @@ jobs:
       - name: Prepare isolated Ed25519 audit runtime
         run: |
           set -euo pipefail
-          python3 -m venv "$RUNNER_TEMP/faz22-audit-venv"
+          python -m venv "$RUNNER_TEMP/faz22-audit-venv"
           "$RUNNER_TEMP/faz22-audit-venv/bin/python" -m pip install \
             --disable-pip-version-check --quiet cryptography==46.0.7
           echo "$RUNNER_TEMP/faz22-audit-venv/bin" >> "$GITHUB_PATH"
