@@ -6914,13 +6914,15 @@ patches:
   # enroll. This overlay flips it ON for the live-proof M1 and opts the single
   # platform-test tenant in. Prod inherits the base default (no TPM keys → disabled).
   #
-  # Trust anchor is PUBLIC — the Intel On-Die CA Root is a published trust root,
-  # so the PEM + its pinned SHA-256 belong in this ConfigMap (NO Vault, NO secret
-  # material). The bytes below are the unmodified
-  # https://tsci.intel.com/content/OnDieCA/certs/OnDie_CA_RootCA_Certificate.cer
-  # (DER→PEM); its SHA-256 over the DER is
-  # beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24, which the
-  # pinned ..._MANUFACTURER_ROOT_SHA256 below re-asserts. TpmEnrollmentConfig
+  # Trust anchors are PUBLIC manufacturer roots, so their PEM bytes + pinned
+  # SHA-256 values belong in this ConfigMap (NO Vault, NO secret material).
+  # The bundle includes the existing Intel/Infineon pilot roots plus the official
+  # Nuvoton TPM Root CA 2111 required by MKR-A1's NPCT75x EK certificate:
+  # https://www.nuvoton.com/security/NTC-TPM-EK-Cert/Nuvoton%20TPM%20Root%20CA%202111.cer
+  # Nuvoton DER SHA-256:
+  # cd8185ff8995ed09811970090a8c36fafab34ef87f47fa51fdb9ecf95c9c2e04.
+  # It is self-signed CA:TRUE/pathlen:0 with Certificate Sign usage; it is a
+  # trust anchor, not an intermediate. TpmEnrollmentConfig
   # fail-closes (EkChainException) at startup if the PEM bundle is empty or any
   # cert is not in the pinned SHA-256 set — so an enabled-but-unanchored deploy
   # crashes fast instead of enrolling against an empty trust set.
@@ -6946,7 +6948,7 @@ patches:
         value: "00000000-0000-0000-0000-000000000001"
       - op: add
         path: /data/ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_SHA256
-        value: "beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24,899e35474c9807eb4c7f2f7a12da0028fb250cd02154d0009fca7d9c66574f3b"
+        value: "beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24,899e35474c9807eb4c7f2f7a12da0028fb250cd02154d0009fca7d9c66574f3b,cd8185ff8995ed09811970090a8c36fafab34ef87f47fa51fdb9ecf95c9c2e04"
       - op: add
         path: /data/ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_PEMS
         value: |
@@ -6999,6 +7001,19 @@ patches:
           ro4KjZw4MAwGCCqGSM49BAMDBQADaAAwZQIxAP9B4lFF86uvpHmkcp61cWaU565a
           yE3p7ezu9haLE/lPLh5hFQfmTi1nm/sG3JEXMQIwNpKfHoDmUTrUyezhhfv3GG+1
           CqBXstmCYH40buj9jKW3pHWc71s9arEmPWli7I8U
+          -----END CERTIFICATE-----
+          -----BEGIN CERTIFICATE-----
+          MIICBzCCAa2gAwIBAgIJAOCIUWvKMfuGMAoGCCqGSM49BAMCMFUxUzAfBgNVBAMT
+          GE51dm90b24gVFBNIFJvb3QgQ0EgMjExMTAlBgNVBAoTHk51dm90b24gVGVjaG5v
+          bG9neSBDb3Jwb3JhdGlvbjAJBgNVBAYTAlRXMB4XDTE3MDkxMTA3MDk0OVoXDTM3
+          MDkwNzA3MDk0OVowVTFTMB8GA1UEAxMYTnV2b3RvbiBUUE0gUm9vdCBDQSAyMTEx
+          MCUGA1UEChMeTnV2b3RvbiBUZWNobm9sb2d5IENvcnBvcmF0aW9uMAkGA1UEBhMC
+          VFcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATanNywPkE/RICBZ4VjwCymLDts
+          B7Unv52Oj0HyEsAfc7+vjOl2DP8JbrcozY05s7GFfQqR3vhv4ZdkJMalgOr2o2Yw
+          ZDAOBgNVHQ8BAf8EBAMCAgQwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQU
+          I/TiKtO+N0pEl3KVSqKDrtdSVy4wHwYDVR0jBBgwFoAUI/TiKtO+N0pEl3KVSqKD
+          rtdSVy4wCgYIKoZIzj0EAwIDSAAwRQIgXgXs2eVt2U4sCoRf1GLoUTf2ZzYTSsyg
+          6I5w6hPTLigCIQDLLFlXK1xw1a1D1/idVhdd3a8gkE0FnTJO890WwiQbpg==
           -----END CERTIFICATE-----
       - op: add
         path: /data/ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_INTERMEDIATE_SHA256
