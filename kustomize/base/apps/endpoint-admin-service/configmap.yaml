@@ -60,6 +60,10 @@ data:
   # Overlays override this key with a JSON6902 replace, which fails loudly if this
   # line ever disappears — the base contract stays visible instead of silently absent.
   ENDPOINT_ADMIN_TENANT_ORG_ALIASES: ""
+  # Fail closed when canonical org, compatibility tenant, and company claims
+  # disagree. A measured TEST migration may override this while retaining a
+  # canonical org claim; production keeps strict consistency by default.
+  ENDPOINT_ADMIN_TENANT_ENFORCE_CLAIM_CONSISTENCY: "true"
 
   # Identity / OIDC — test=platform-test realm; prod overlay 'serban'
   KEYCLOAK_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
