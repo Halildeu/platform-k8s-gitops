@@ -6638,6 +6638,14 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
         value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+      # #3007: the long-lived gateway pod retained a stale path to the newly
+      # introduced budget-service endpoint. Roll it through desired state after
+      # the exact TCP/8101 NetworkPolicies are present; no imperative workload
+      # restart is used on the shared TEST cluster.
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          platform.acik.com/budget-route-recovery: "3007-20260728"
   - target:
       kind: Deployment
       name: endpoint-admin-service
