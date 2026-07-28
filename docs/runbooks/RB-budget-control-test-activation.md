@@ -47,11 +47,12 @@ rendered policy is not proof of CNI enforcement.
 
 | Workload | Source commit | Immutable image |
 |---|---|---|
-| `budget-service` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:ee667af00d7e326e0d0b771c09f4cc0efb8696ff27dbac8b367d06862b2d3dbe` |
+| `budget-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:2362bd72e27dce7874d35363ea3b13ea4157906884bf03ec1767605dff4cdd55` |
+| `report-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-report-service@sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b` |
 | `api-gateway` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-api-gateway@sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599` |
-| `frontend` | `platform-web@09dfa606268b7aebd318658d3c83177a3e4db419` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:8efd33406ae98196e92ef9cfcf7cf15d8e8475cdd2be62839253f44660fa4a52` |
+| `frontend` | `platform-web@03fb152dc080e9b1c0c31cbe879edf00b40f52a1` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:e1d6379d3487ffefb701f4c2170344394fb50573610cd8d20eb81105410f7f3d` |
 
-All three digests must be pulled successfully by the target TEST node before
+All four listed digests must be pulled successfully by the target TEST node before
 promotion. A successful CI push alone is insufficient.
 
 ## PostgreSQL and Vault provisioning
