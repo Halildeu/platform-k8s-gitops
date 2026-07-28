@@ -114,6 +114,16 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # TEST rollout preflight 2026-07-28: the image default -Xmx384m left no
+      # native JVM headroom inside the 384Mi container limit. New pods were
+      # repeatedly OOMKilled while the prior ready pod used 377Mi. Keep the
+      # existing namespace quota and container limit; bound only this TEST
+      # process heap so Argo health waves can progress without hiding pressure.
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: JAVA_TOOL_OPTIONS
+            value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test

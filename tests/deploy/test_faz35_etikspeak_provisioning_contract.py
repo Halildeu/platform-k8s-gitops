@@ -171,6 +171,17 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertLess(self.pg_vault.index("set +x"), self.pg_vault.index("root_token"))
         self.assertNotIn("root_token", self.openfga)
 
+    def test_test_ethics_service_keeps_native_memory_headroom(self):
+        self.assertIn(
+            "path: /spec/template/spec/containers/0/env",
+            self.activation_kustomization,
+        )
+        self.assertIn(
+            'value: "-Xmx256m -XX:+UseG1GC '
+            '-XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"',
+            self.activation_kustomization,
+        )
+
     def test_pg_rerun_reuses_vault_password_instead_of_rotating(self):
         read_index = self.pg_vault.index("vault_entry_json=$(")
         random_index = self.pg_vault.index("db_password=$(openssl rand -hex 24)")
