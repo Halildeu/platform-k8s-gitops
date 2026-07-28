@@ -138,9 +138,12 @@ product-channel VIEW_ONLY session by itself. The TTL starts when the watchdog is
 installed, so setup time reduces the usable pilot window rather than extending
 the security window. Allowed TTL is 5-120 minutes. The longer window exists only
 to collect the isolated negative and five termination cases under one
-content-addressed protected authorization. The requested watchdog expiry must
-not exceed the signed protected-authorization `expiresAt`; otherwise activation
-fails closed before exposing the viewer. The watchdog has narrow RBAC:
+content-addressed protected authorization. The watchdog uses the earlier of the
+requested pilot expiry and the signed protected-authorization `expiresAt`.
+Seconds spent transferring the post-approval receipt to the deployment job
+therefore shorten the usable pilot window instead of causing a new full TTL to
+extend past the signed authority. An absent, malformed or already-expired
+authorization still fails closed before exposing the viewer. The watchdog has narrow RBAC:
 it can disable only the viewer flag/route, delete only the three viewer-only
 network resources, and restart only the bridge/gateway Deployments. It cannot
 disable or mutate the 9444 broker Service. If the Actions runner dies, the
