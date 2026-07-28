@@ -418,7 +418,12 @@ images:
     # de9b082a6898d8d0097401dd36fc1ded72ade24a. The observer captures only
     # boolean authority/claim presence before downstream filter cleanup; the
     # signed main build is run 30359124898, budget-service job 90274239345.
-    digest: sha256:5ee5227f026b044c2d0a5c4479cc95eb8716c84488504397ad3de61c8567aac5
+    # 2026-07-28 controller error status preservation: platform-backend PR #989,
+    # merge a7f03762f22c214ff9ce3f7535c10e32520c7c0e. Only internal Servlet
+    # ERROR dispatch is permitted; direct /error and unscoped Budget requests
+    # remain fail-closed. Signed main build run 30396642292, budget-service
+    # job 90401103081.
+    digest: sha256:5b992fb8a30cb44085d4da3de5fc33222bbf8efd8e5f92870b3d40c2375cccdc
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
