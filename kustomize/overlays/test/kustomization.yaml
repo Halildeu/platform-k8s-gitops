@@ -395,7 +395,10 @@ images:
     newName: ghcr.io/halildeu/platform-backend-budget-service
     # platform-backend PR #960 merged as 91520bca. Main image build
     # run 30291671229 published this signed, immutable manifest.
-    digest: sha256:ee667af00d7e326e0d0b771c09f4cc0efb8696ff27dbac8b367d06862b2d3dbe
+    # 2026-07-28 project actual snapshot + stored binding lookup:
+    # platform-backend PR #969, merge 3de6e35998f0bfe46413886447c7284ae2c34093;
+    # signed image build run 30318172551 (budget-service job 90148222410).
+    digest: sha256:2362bd72e27dce7874d35363ea3b13ea4157906884bf03ec1767605dff4cdd55
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
@@ -1294,8 +1297,11 @@ images:
     # OUR_COMPANY project relation and also includes projects referenced by
     # company 35 yearly ACCOUNT_CARD_ROWS schemas, with exact 35/350 tenant
     # isolation and a visible fallback for missing catalog rows.
-    newTag: sha-84e9e26
-    digest: sha256:1841aee97eda30b1fcf237259d91e6b8347f00a5037091c5455cb8ad1cb3c68e
+    # 2026-07-28 project actual snapshot provider: platform-backend PR #969,
+    # merge 3de6e35998f0bfe46413886447c7284ae2c34093; signed image build
+    # run 30318172551 (report-service job 90148222404).
+    newTag: sha-3de6e35
+    digest: sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -4591,9 +4597,12 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: c5f9a568682dc20790ea1f7a1c0ef45587c0ebdf
-    newTag: sha-c5f9a56
-    digest: sha256:b08004bcc821a4bb4f1989b568ae054f23d6bc66a3f91aacf3d4db6f321a85a9
+    # sourceRevision: 03fb152dc080e9b1c0c31cbe879edf00b40f52a1
+    # 2026-07-28 project actuals workspace: platform-web PR #1050,
+    # merge 03fb152dc080e9b1c0c31cbe879edf00b40f52a1; signed testai
+    # image build run 30318186229 (job 90148263512).
+    newTag: sha-03fb152
+    digest: sha256:e1d6379d3487ffefb701f4c2170344394fb50573610cd8d20eb81105410f7f3d
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

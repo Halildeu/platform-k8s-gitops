@@ -16,6 +16,12 @@ data:
   BUDGET_RLS_SESSION_ENABLED: "true"
   BUDGET_DATABASE_ROLE_GUARD_ENABLED: "true"
 
+  # Internal read paths only. report-service owns the read-only Workcube
+  # adapter; permission-service remains the canonical authorization plane.
+  # No MSSQL/SMB endpoint or credential is exposed to budget-service.
+  BUDGET_ACTUAL_PROVIDER_BASE_URL: "http://report-service:8095"
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+
   SECURITY_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
   SECURITY_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
   BUDGET_JWT_AUDIENCE: "frontend"
