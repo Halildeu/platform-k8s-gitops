@@ -46,6 +46,7 @@ VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
+VIEWER_ARGO_APPLICATION="$ROOT/argocd/applications/platform-test.yaml"
 
 future_date_utc() {
   local days="$1"
@@ -118,7 +119,8 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_EXACT_ZIP" \
-  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH"; do
+  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" \
+  "$VIEWER_CONFIG_PATCH" "$VIEWER_ARGO_APPLICATION"; do
   require_file "$path"
 done
 
@@ -420,13 +422,24 @@ require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORK
 require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
 require_grep "GATEWAY_CONFIGMAP: api-gateway-config" "$VIEWER_APPLY_WORKFLOW"
-require_grep "GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_28_" "$VIEWER_APPLY_WORKFLOW"
+require_grep "GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_29_" "$VIEWER_APPLY_WORKFLOW"
+require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID=budget-service-route" "$VIEWER_APPLY_WORKFLOW"
+require_grep "viewer route 29 is not clean before apply" "$VIEWER_APPLY_WORKFLOW"
+for suffix in ID URI ORDER PREDICATES_0 PREDICATES_1 FILTERS_0; do
+  require_grep \
+    "/data/SPRING_CLOUD_GATEWAY_ROUTES_29_${suffix}" \
+    "$VIEWER_ARGO_APPLICATION"
+done
+if grep -Fq "/data/SPRING_CLOUD_GATEWAY_ROUTES_28_" "$VIEWER_ARGO_APPLICATION"; then
+  echo "GitOps-owned Budget Control route 28 must not be ignored by ArgoCD" >&2
+  exit 1
+fi
 require_grep 's/__GATEWAY_ROUTE_PREFIX__/${GATEWAY_ROUTE_PREFIX}/g' "$VIEWER_APPLY_WORKFLOW"
 require_grep "rollback-view-only-viewer-pilot-config.sh" "$VIEWER_APPLY_WORKFLOW"
 require_grep '"REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null' "$VIEWER_ROLLBACK_CONFIG"
-require_grep 'GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-28}"' "$VIEWER_ROLLBACK_CONFIG"
+require_grep 'GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-29}"' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'GATEWAY_ROUTE_PREFIX="SPRING_CLOUD_GATEWAY_ROUTES_${GATEWAY_ROUTE_INDEX}_"' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '($prefix + "ID"): null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'has("REMOTE_BRIDGE_VIEWER_ENABLED") | not' "$VIEWER_ROLLBACK_CONFIG"

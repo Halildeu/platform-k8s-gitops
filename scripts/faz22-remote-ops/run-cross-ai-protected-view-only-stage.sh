@@ -37,7 +37,7 @@ BRIDGE_DEPLOYMENT="endpoint-admin-remote-bridge-device-key"
 BRIDGE_CONFIGMAP="endpoint-admin-remote-bridge-config-device-key"
 GATEWAY_DEPLOYMENT="api-gateway"
 GATEWAY_CONFIGMAP="api-gateway-config"
-GATEWAY_ROUTE_INDEX="28"
+GATEWAY_ROUTE_INDEX="29"
 GATEWAY_ROUTE_PREFIX="SPRING_CLOUD_GATEWAY_ROUTES_${GATEWAY_ROUTE_INDEX}_"
 VIEWER_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer"
 BROKER_ONLY_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live"
@@ -352,6 +352,16 @@ run_apply() {
     echo "protected-view-only-stage: gateway route index $GATEWAY_ROUTE_INDEX is not clean" >&2
     return 1
   }
+  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get configmap "$GATEWAY_CONFIGMAP" -o json \
+    | jq -e '
+        .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID == "budget-service-route"
+        and .data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI == "http://budget-service:8101"
+        and .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0 == "Path=/api/v1/budgets/**"
+      ' >/dev/null || {
+        echo "protected-view-only-stage: GitOps-owned Budget Control route 28 is missing or changed" >&2
+        return 1
+      }
 
   # The watchdog receives exactly ten minutes beyond grant expiry to execute
   # the pre-signed compensating rollback. Use the same captured clock sample as
@@ -435,6 +445,10 @@ run_apply() {
     get configmap "$GATEWAY_CONFIGMAP" -o json \
     | jq -e --arg key "${GATEWAY_ROUTE_PREFIX}ID" \
       '.data[$key] == "remote-bridge-viewer-route"' >/dev/null
+  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get configmap "$GATEWAY_CONFIGMAP" -o json \
+    | jq -e '.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID == "budget-service-route"' \
+      >/dev/null
   verify_watchdog_active
   trap - ERR
 }
