@@ -403,7 +403,12 @@ images:
     # merge 9b0c33c2a52b8ccd6a56c8ec58ae59e2260e9b57. The actuals API now
     # requires both budget:read/write scope and realm role budget-planner;
     # signed main build run 30330366477, budget-service job 90184009707.
-    digest: sha256:752354f373c5592808fd3bfdc894c0225263d4aaefc8a818233512983759150e
+    # 2026-07-28 fail-closed authorization denial observability:
+    # platform-backend PR #986, merge
+    # 1e661a7aa4da930c4fad8615ef13f9e6b7bd63dc. The change logs only safe
+    # scope-decision metadata; signed main build run 30339869236,
+    # budget-service job 90212795962.
+    digest: sha256:4f233ab7e2bf5e5f8706ac6e9a0c909c1565db66d27864231542b5980d096169
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
