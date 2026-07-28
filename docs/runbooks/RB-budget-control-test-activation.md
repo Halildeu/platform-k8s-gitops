@@ -47,7 +47,7 @@ rendered policy is not proof of CNI enforcement.
 
 | Workload | Source commit | Immutable image |
 |---|---|---|
-| `budget-service` | `platform-backend@9b0c33c2a52b8ccd6a56c8ec58ae59e2260e9b57` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:752354f373c5592808fd3bfdc894c0225263d4aaefc8a818233512983759150e` |
+| `budget-service` | `platform-backend@1da6a7392ed3a5d18a207ed61dbe89c6628dcfb0` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:fd3a8d8e6e42764634af5609ae540be0db871c209b0ec03e7f849827beb256b6` |
 | `report-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-report-service@sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b` |
 | `api-gateway` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-api-gateway@sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599` |
 | `frontend` | `platform-web@6c4c1af70f27dcf5264683bef11eaddfab5d55fd` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:f862d617ed95b2b27e7583dca0d55a61ab0bab954d9d07b977241a2940891898` |

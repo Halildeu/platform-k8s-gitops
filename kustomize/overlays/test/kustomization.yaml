@@ -403,7 +403,17 @@ images:
     # merge 9b0c33c2a52b8ccd6a56c8ec58ae59e2260e9b57. The actuals API now
     # requires both budget:read/write scope and realm role budget-planner;
     # signed main build run 30330366477, budget-service job 90184009707.
-    digest: sha256:752354f373c5592808fd3bfdc894c0225263d4aaefc8a818233512983759150e
+    # 2026-07-28 fail-closed authorization denial observability:
+    # platform-backend PR #986, merge
+    # 1e661a7aa4da930c4fad8615ef13f9e6b7bd63dc. The change logs only safe
+    # scope-decision metadata; signed main build run 30339869236,
+    # budget-service job 90212795962.
+    # 2026-07-28 safe request-level forbidden diagnostics:
+    # platform-backend PR #987, merge
+    # 1da6a7392ed3a5d18a207ed61dbe89c6628dcfb0. The post-authorization
+    # observer emits only low-cardinality boolean claim/authority presence;
+    # signed main build run 30343681779, budget-service job 90224807075.
+    digest: sha256:fd3a8d8e6e42764634af5609ae540be0db871c209b0ec03e7f849827beb256b6
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
@@ -4602,15 +4612,15 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: efc6cf5729a6345e8c7d2244035d154987887796
+    # sourceRevision: a89443c5a9ad0ad4fa1e7af42611d1ddd56e55c3
     # 2026-07-28 project actuals workspace: platform-web PR #1050,
     # merge 03fb152dc080e9b1c0c31cbe879edf00b40f52a1; signed testai
     # image build run 30318186229 (job 90148263512).
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-efc6cf5
-    digest: sha256:5a22a68559abd7af41378a1c1cee58a17e6dad27006e2f9459da868d532d0fc2
+    newTag: sha-a89443c
+    digest: sha256:fa77f0b28c6cd4790e4da17ae6c3aac30ee00ffc062ebe9f50f50216415fa03f
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -6072,7 +6082,13 @@ images:
     # 2026-07-26 #2913 scoped Endpoint Admin tenant claim: platform-backend
     # 2dc8452f131b6a37dcf454a353eab41f8c6e03c5, Actions run 30216061034,
     # endpoint-admin-service job 89830348624, tag sha-2dc8452.
-    digest: sha256:51b3f64d235adf1de4265b8e896ff6800d3f89e939b445951b7a8e97610c46a3
+    # 2026-07-28 #2913 fresh service observations: platform-backend PR #985,
+    # main dad91e45189df76bdd1b5fe556154f156e0887e3. Identical service
+    # payloads remain source-result idempotent but now create a fresh
+    # observation for each distinct inventory command result. Image build run
+    # 30336183050, endpoint-admin-service job 90201462863; GitHub provenance
+    # and OCI manifest verified at the immutable digest below.
+    digest: sha256:abab574627dd0775918f0c3d1a25cf0d9e7089e2ac8dcb277b5c1abd420f5c4b
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -6404,12 +6420,12 @@ images:
     digest: sha256:b5eccc18f387332ca8beb035cd8082128c5613ae04968786838f776e5b4c1b4d
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.3.25:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.25.
-  # Source commit 80816b396cb1a43f45e4285f53537d4c887db0a9. Trusted release run 30329389237
+  # platform-agent Release EXE trusted workflow for tag v0.3.26:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.26.
+  # Source commit 06b793b1c736f87d0617097c4b4730746d342cbd. Trusted release run 30348445818
   # built, internal-CA signed, machine-verified, published and then passed the
   # post-publish archive verifier. Durable release:
-  # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.25
+  # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.26
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
@@ -6420,10 +6436,10 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.3.24; durable archives remain
-  # GitHub release assets. v0.3.25 makes Windows service reinstall idempotent when
-  # the exact EndpointAgent Event Log source already exists, and removes a newly
-  # created service if Event Log source setup still fails. v0.3.24 remains the
+  # One-version-per-image: this image REPLACES v0.3.25; durable archives remain
+  # GitHub release assets. v0.3.26 accepts WinGet source agreements in the
+  # LocalSystem read-only source preflight, so browser-managed package commands
+  # are no longer rejected before mutation with 0x8A150046. v0.3.25 remains the
   # immutable rollback anchor. The
   # signed MSI is a separate trusted MSI workflow artifact and is not treated as
   # a release-hosted public asset here.
@@ -6431,23 +6447,23 @@ images:
     newName: ghcr.io/halildeu/platform-agent-artifacts
     # newTag is the operator-readable release identity; digest is the D30 pull
     # authority and remains immutable even if a registry tag were moved.
-    newTag: v0.3.25
-    # D30 immutable pin — Release EXE trusted run 30329389237 (tag v0.3.25,
+    newTag: v0.3.26
+    # D30 immutable pin — Release EXE trusted run 30348445818 (tag v0.3.26,
     # release_class=rollout-candidate, signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 657fdffc85646ae8ec1690bd75883514c7fa715963fa94f23e0397548944e355,
+    # 7857ce352defa296853cfe361c72e5872b29497491f5028ae01200112d168ddf,
     # agent binary SHA256
-    # 9a13697321a8f45cc44288553f95a59d1487bc6ab262609cfcfe8c8742d0be7d, and
+    # bec65901a09f77c095a72cb408cb9120fa41291495f55ca1bbe2c5fc3772eb62, and
     # install.ps1 SHA256
-    # 53320d43b94235437022a2b4385997177f2e9854caaca082cbbc0f51c466db9d,
+    # 7f2f2a6e1f49f6b1ccbfc6b8d413c01243a42238455564bfbff808733b152a51,
     # release-manifest.json SHA256
-    # 9e489039fcdfef695ba77703e9cab2a92bb759afa66ea347fe407de12a7cfc78, and
+    # 3ac4fe3890c79c1fa35ffc033e270a85d3d36ed34f51fa9bc826e4d70850d70f, and
     # remote-bridge attestation evidence SHA256
-    # 426e89eb932c957ab01278b1255cae096b466328f32d48e40a57f5c5e8c2b37b.
-    # Rollback anchor: v0.3.24, source a4be42c872178396627e3d68aa18cf057e8fff5e,
-    # artifact digest sha256:6a6c33c7ad1365b3ab32c0bb775f5593926ab03677d219047b101ccb961a647b,
-    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.24.
-    digest: sha256:25d947e1a0ecde5f4e0d0d64d9320d174fc9678fcdf19409445912ec6221c3b0
+    # 65aeb50c242630e09391c9846a9c6defca540e946c95e0b5f0828cd62a1f0d0f.
+    # Rollback anchor: v0.3.25, source 80816b396cb1a43f45e4285f53537d4c887db0a9,
+    # artifact digest sha256:25d947e1a0ecde5f4e0d0d64d9320d174fc9678fcdf19409445912ec6221c3b0,
+    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.25.
+    digest: sha256:50292081d90cacf8cfef3a114730134f27e8de3c1c9d901a3b58c52526b496fe
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so

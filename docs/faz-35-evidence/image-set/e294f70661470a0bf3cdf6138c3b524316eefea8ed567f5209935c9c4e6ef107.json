@@ -7,9 +7,9 @@
             "workflow_run": 30326947155
         },
         "manager_web": {
-            "digest": "sha256:ac34673b426768be1a9725d3db9ef9b978bc80ac13237c2f927b805ceeb26347",
+            "digest": "sha256:b65e6fd0ff503f5c45dfd54455cf496da3a97d6c84e7887798ed3ab5c63aec3e",
             "repository": "ghcr.io/halildeu/platform-web-etik-speak-manager",
-            "source_head": "f2973351d2c7155d4fc5c10768f0d84fe1325c84",
+            "source_head": "f5e32d6da97000e29717fa8ec42781ca6ac0e361",
             "workflow_run": 30329212000
         },
         "public_web": {
@@ -22,7 +22,7 @@
     "schema_version": "faz35-test-image-set-v2",
     "source_heads": {
         "backend": "1ec64a37ada84f47bf7f6029708d7b16578bc5b1",
-        "web_manager": "f2973351d2c7155d4fc5c10768f0d84fe1325c84",
+        "web_manager": "f5e32d6da97000e29717fa8ec42781ca6ac0e361",
         "web_public": "598f79538360bf001d35496893aeea5ee02e2b2e"
     }
 }
