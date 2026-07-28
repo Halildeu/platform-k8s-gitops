@@ -9,10 +9,19 @@
 # oysa eksik olan ağ iznidir. O yüzden config ile AYNI değişiklikte açılıyor.
 #
 # notification-orchestrator `allow-notification-orchestrator-egress-mail-providers`
-# aynası, iki daraltmayla:
-#   - YALNIZ 443. Bu servis SMTP kullanmıyor (SMTP altyapısı yok), 587 açılmaz.
-#   - Üçlü etiket selector'ı: başka bir servis aynı `name` etiketini alsa da
-#     kazara mail egress'i kazanmaz.
+# aynası, bir daraltmayla: YALNIZ 443. Bu servis SMTP kullanmıyor (repoda SMTP
+# altyapısı ölçüldü: 0 sonuç), 587 açılmaz.
+#
+# SELECTOR — ÖLÇÜLDÜ, KOPYALANMADI: bu pod YALNIZ `app: ats-interview-evidence`
+# etiketini taşıyor (+ pod-template-hash). notify'ın üçlü `app.kubernetes.io/*`
+# şemasını buraya kopyalamak politikayı HİÇBİR pod'u seçmez hale getirir; ilk
+# denememde tam bu oldu ve egress sessizce kapalı kaldı. Aynı namespace'te iki
+# etiket şeması yaşıyor; doğrusu bu servisin kendi taban NetPol'ünün seçicisidir
+# (`netpol.yaml` → `app: ats-interview-evidence`).
+#
+# DNS bu politikada YOK: taban NetPol zaten cluster DNS'e izin veriyor ve
+# Kubernetes politikaları birleşimle çalışır. (Etiketi olmayan bir test pod'u
+# DNS alamadığı için 443 açık olsa da çözemez — teşhiste bu tuzağa düştüm.)
 #
 # CIDR stratejisi: Microsoft'un 365 IP aralıkları resmi feed'e göre değişken;
 # sabit liste sessizce eskir ve mail bir gün durur. Public egress'ten RFC1918
@@ -28,8 +37,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: ats-interview-evidence
-      app.kubernetes.io/component: backend
+      app: ats-interview-evidence
   policyTypes:
     - Egress
   egress:
