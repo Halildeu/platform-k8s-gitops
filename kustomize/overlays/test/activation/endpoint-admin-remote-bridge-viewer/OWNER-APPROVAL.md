@@ -20,7 +20,7 @@ bridge-side VIEW_ONLY operator-viewer HTTP exposure:
 | Ingress 8096 (bridge ← api-gateway) | `viewer-from-api-gateway-netpol.yaml` | additive NetworkPolicy, narrow `app.kubernetes.io/name: api-gateway` podSelector |
 | Egress 8096 (api-gateway → bridge) | `viewer-api-gateway-egress-netpol.yaml` | additive NetworkPolicy — REQUIRED companion (ns default-denies egress; intra-ns allow is `part-of=platform`→`platform` only, bridge is `part-of=remote-bridge-device-key`) |
 
-It does **not** include the api-gateway route (route 28 must merge into the single
+It does **not** include the api-gateway route (route 29 must merge into the single
 existing `api-gateway-config` ConfigMap; it stays a runtime `kubectl patch` per the
 runbook §3 step 4b to avoid clobbering the overlay's `KEYCLOAK_*` values). It does
 **not** change the 9444 NodePort Service, any prod overlay, or the Argo root.
@@ -59,7 +59,7 @@ never written to workflow output or artifacts.
 
 - **Kill viewer now:** set `REMOTE_BRIDGE_VIEWER_ENABLED=false` (keep
   `REMOTE_BRIDGE_ENABLED=true`) + `rollout restart deploy/endpoint-admin-remote-bridge-device-key`.
-- **Restore closed HTTP surface:** withdraw the api-gateway route 28 patch +
+- **Restore closed HTTP surface:** withdraw the api-gateway route 29 patch +
   `rollout restart deploy/api-gateway`. Then delete the **three viewer-only
   resources by name** (NEVER `kubectl delete -k` this overlay — it is a SUPERSET of
   the broker activation, so `delete -k` would tear down the broker too):

@@ -238,12 +238,12 @@ runbook and receives no consent-TTL mutation.
    ```bash
    kubectl --context k3d-test -n platform-test patch configmap api-gateway-config --type merge -p '{
      "data": {
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_ID": "remote-bridge-viewer-route",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET,POST",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_ID": "remote-bridge-viewer-route",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER": "-10",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1": "Method=GET,POST",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
      }
    }'
    kubectl --context k3d-test -n platform-test rollout restart deploy/api-gateway
@@ -252,13 +252,13 @@ runbook and receives no consent-TTL mutation.
    - Expected — **route bound proof** (not just pod Ready):
      ```bash
      kubectl --context k3d-test -n platform-test exec deploy/api-gateway -- \
-       printenv | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_28_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)='
-     # route 28 → remote-bridge-viewer-route / http://endpoint-admin-remote-bridge-viewer:8096 / -10
+       printenv | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_(28|29)_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)='
+     # route 28 remains budget-service-route; route 29 → remote-bridge-viewer-route / http://endpoint-admin-remote-bridge-viewer:8096 / -10
      # KEYCLOAK_* → the platform-test values (NOT "OVERLAY_MUST_OVERRIDE")
      ```
      and the public URL reaches the **bridge viewer** (a `401/404` from the
      SERVICE, NOT a catch-all rewrite to the primary `endpoint-admin-service`).
-   - Fail signal: env missing route 28 (ConfigMap not patched / pod not restarted);
+   - Fail signal: env missing route 29 (ConfigMap not patched / pod not restarted);
      `KEYCLOAK_*` shows `OVERLAY_MUST_OVERRIDE` (a base apply clobbered the overlay
      → revert to the overlay-rendered config); or the public URL 404s via the
      catch-all (route order regressed → confirm `order=-10` rendered).
@@ -470,9 +470,9 @@ revocation — mandatory, not optional):
     kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge-device-key
   ```
-- Re-render + prove the §1.1 default posture is restored: route 28 gone from the
+- Re-render + prove the §1.1 default posture is restored: route 29 gone from the
   api-gateway env, 8096 not published, no api-gateway→8096 allow, 9444 NodePort
-  intact; the public view URL no longer reaches the bridge; re-run the §4
+  intact, route 28 still serves Budget Control; the public view URL no longer reaches the bridge; re-run the §4
   negative-reachability checks (all 8096 origins denied). `REMOTE_BRIDGE_ENABLED`
   stays true throughout — the broker + agent stream never go down.
 - No data to purge: recording-OFF means nothing was persisted.

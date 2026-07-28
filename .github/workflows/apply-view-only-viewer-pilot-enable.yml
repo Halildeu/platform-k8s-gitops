@@ -38,7 +38,7 @@ env:
   BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key
   GATEWAY_DEPLOYMENT: api-gateway
   GATEWAY_CONFIGMAP: api-gateway-config
-  GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_28_
+  GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_29_
   VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
   BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   TEST_ROOT_OVERLAY: kustomize/overlays/test
@@ -376,18 +376,36 @@ jobs:
         run: |
           set -euo pipefail
 
+          gateway_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap "${GATEWAY_CONFIGMAP}" -o json)"
+          printf '%s\n' "${gateway_config}" | jq -e '
+            .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID == "budget-service-route"
+            and .data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI == "http://budget-service:8101"
+            and .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0 == "Path=/api/v1/budgets/**"
+          ' >/dev/null || {
+            echo "::error::GitOps-owned Budget Control route 28 is missing or changed"
+            exit 1
+          }
+          route_keys="$(printf '%s\n' "${gateway_config}" \
+            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_"))')"
+          if [ -n "${route_keys}" ]; then
+            echo "::error::viewer route 29 is not clean before apply"
+            printf '%s\n' "${route_keys}"
+            exit 1
+          fi
+
           # ${sid} is a Spring RewritePath variable, not a shell variable.
           # shellcheck disable=SC2016
           # MethodRoutePredicateFactory uses ShortcutType.GATHER_LIST; one comma-separated
           # predicate is OR semantics. Two Method predicates would be AND and never match.
           patch_payload='{
             "data": {
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_ID": "remote-bridge-viewer-route",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET,POST",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_ID": "remote-bridge-viewer-route",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER": "-10",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1": "Method=GET,POST",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
             }
           }'
 
@@ -440,14 +458,15 @@ jobs:
 
           gateway_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             exec "deploy/${GATEWAY_DEPLOYMENT}" -- printenv \
-            | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_28_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)=')"
+            | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_(28|29)_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)=')"
           printf '%s\n' "${gateway_env}"
-          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ID=remote-bridge-viewer-route'
-          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_URI=http://endpoint-admin-remote-bridge-viewer:8096'
-          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER=-10'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ID=budget-service-route'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_29_ID=remote-bridge-viewer-route'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_29_URI=http://endpoint-admin-remote-bridge-viewer:8096'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER=-10'
           route_method="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get configmap api-gateway-config \
-            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1}')"
+            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1}')"
           [ "${route_method}" = 'Method=GET,POST' ] || {
             echo "::error::viewer route must permit only GET stream + POST render acknowledgement"
             exit 1
@@ -464,7 +483,8 @@ jobs:
             echo "- bridge rollout: \`ok\`"
             echo "- api-gateway rollout: \`ok\`"
             echo "- viewer service: \`ClusterIP/no-nodePort\`"
-            echo "- gateway route 28: \`remote-bridge-viewer-route\`"
+            echo "- gateway route 28: \`budget-service-route (unchanged)\`"
+            echo "- gateway route 29: \`remote-bridge-viewer-route\`"
             echo "- keycloak overlay placeholders: \`absent\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -565,12 +585,19 @@ jobs:
 
           route_keys="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get configmap api-gateway-config -o json \
-            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))' || true)"
+            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_"))' || true)"
           if [ -n "${route_keys}" ]; then
-            echo "::error::api-gateway route 28 keys remain after rollback"
+            echo "::error::api-gateway route 29 keys remain after rollback"
             printf '%s\n' "${route_keys}"
             exit 1
           fi
+          budget_route_id="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap api-gateway-config \
+            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID}')"
+          [ "${budget_route_id}" = "budget-service-route" ] || {
+            echo "::error::GitOps-owned Budget Control route 28 changed during rollback"
+            exit 1
+          }
 
           bridge_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get deploy "${BRIDGE_DEPLOYMENT}" \
@@ -601,6 +628,7 @@ jobs:
             echo ""
             echo "- viewer service: \`absent\`"
             echo "- viewer NetworkPolicies: \`absent\`"
-            echo "- api-gateway route 28: \`absent\`"
+            echo "- api-gateway route 28: \`budget-service-route (unchanged)\`"
+            echo "- api-gateway route 29: \`absent\`"
             echo "- broker remains enabled: \`REMOTE_BRIDGE_ENABLED=true\`"
           } >> "$GITHUB_STEP_SUMMARY"

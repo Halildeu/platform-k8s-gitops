@@ -5,7 +5,7 @@ K8S_CONTEXT="${K8S_CONTEXT:-k3d-test}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-platform-test}"
 BRIDGE_CONFIGMAP="${BRIDGE_CONFIGMAP:-endpoint-admin-remote-bridge-config-device-key}"
 GATEWAY_CONFIGMAP="${GATEWAY_CONFIGMAP:-api-gateway-config}"
-GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-28}"
+GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-29}"
 [[ "$GATEWAY_ROUTE_INDEX" =~ ^[1-9][0-9]{0,2}$ ]] || {
   echo "viewer rollback config cleanup: invalid route index" >&2
   exit 2
