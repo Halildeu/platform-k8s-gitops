@@ -63,8 +63,31 @@ Meeting, Endpoint veya suite arızasından etkilenmemelidir.
   zincirini yeniden doğrular.
 - Bu source, scope'suz mevcut suite SSO tokenının manager audience/scope'una
   sessiz redirect döngüsüyle geri düşmesini engeller: bounded upgrade
-  `prompt=login` ile açık yeniden doğrulama ister. `2fae733d...` ile
-  platform-web current `main` arasında `apps/etik-speak-manager` farkı yoktur.
+  `prompt=login` ile açık yeniden doğrulama ister.
+- **Auth sözleşmesi inceleme kaydı.** Aşağıdaki satırlar tarihli kayıttır, süregelen
+  bir eşitlik iddiası değildir. Bu ayrım bilinçli: bu madde bir süre
+  "`2fae733d...` ile current `main` arasında `apps/etik-speak-manager` farkı
+  yoktur" diyordu ve o cümle, auth yolu değiştikten sonra (scope talebi ve
+  `prompt: 'login'`; 12 dosya, 480 satır) **yanlış olduğu hâlde** yerinde kaldı —
+  çünkü onu doğrulayan test, ADR metninin ilgili hash'i *içerdiğini* kontrol
+  ediyordu, hash'in temsil ettiği olguyu değil (#3078).
+
+  | İnceleme tarihi | İncelenen kaynak | Auth yüzeyi digest'i |
+  |---|---|---|
+  | 2026-07-18 | `2fae733d31f574908859307f8af0dbc375e053eb` | (çapa henüz yoktu) |
+  | 2026-07-28 | `apps/etik-speak-manager/src/{AuthGate.tsx,auth.ts}` | `1a3de9db7d91ec402f5b1ca1dde66069130c7eb4e0e5ad076f3f4af2d54141de` |
+
+  Süregelen koruma bu metinde değil, kaynağın bulunduğu repodadır:
+  `apps/etik-speak-manager/src/auth-contract-anchor.test.ts` auth yüzeyi
+  değiştiğinde fail-closed kırılır ve inceleme ister. Sözleşmenin **davranışı**
+  ise ayrıca ve asıl olarak `AuthGate.test.tsx` + `auth-lifecycle.test.ts`
+  tarafından korunur (PKCE, sessiz `check-sso`, tam scope/audience, sınırlı
+  `prompt=login`, claim kaybında fail-closed, geçersizleşmede unmount). Buradaki
+  digest bir garanti değil, o incelemenin yapıldığı ana ait bir kayıttır.
+
+  gitops CI'ının platform-web checkout'u yoktur; bu repodan o dizin hakkında
+  kurulan her süregelen iddia yapısı gereği yanlışlanamaz. Kontrolün kaynağın
+  yanında durmasının sebebi budur.
 - Public artifact staff MFE bundle'ını, Keycloak adapter'ını veya suite shared
   singleton'larını içermez.
 
