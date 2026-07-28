@@ -223,7 +223,10 @@ case "$MODE" in
         exit 1
       }
       if ! scope_is_optional "$id"; then
-        kc create "clients/$FRONTEND_UUID/optional-client-scopes/$id" -r "$REALM" >/dev/null
+        # Keycloak models this association as an idempotent PUT. `kcadm
+        # create` issues POST and the admin API rejects that method/path with
+        # 404 even when both UUIDs exist.
+        kc update "clients/$FRONTEND_UUID/optional-client-scopes/$id" -r "$REALM" >/dev/null
       fi
     done
     if ! role_is_assigned; then
