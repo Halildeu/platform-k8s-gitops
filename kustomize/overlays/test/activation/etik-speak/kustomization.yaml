@@ -63,7 +63,7 @@ images:
     # Etiket: sha-c6a4ea28c70d9814d6d6f74038d8e74e5798b92f (bu hat TAM sha etiketi kullanir;
     # frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
     # Digest etiketten cozuldu ve GHCR'da 200 ile dogrulandi.
-    digest: sha256:01cd63de624bae74331a396fbc2f5fea5a807057fc0bee0e6358f3bbc0f84350
+    digest: sha256:66ddd1ea5ecd11f74d5bccc17b3957aec8d9a857a018d3ab64395183e719bef3
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
