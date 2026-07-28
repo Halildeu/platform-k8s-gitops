@@ -6937,6 +6937,18 @@ patches:
   # `op: add` (not replace) is deliberate — these keys do not exist in the base
   # ConfigMap; this overlay introduces the TPM-attest contract for the test
   # cluster only.
+  #
+  # The service imports this ConfigMap through envFrom, so the live process sees
+  # manufacturer-root changes only after a pod-template revision. Keep this
+  # GitOps-owned marker adjacent to the trust contract and bump it whenever the
+  # pinned TPM manufacturer root bundle changes.
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1tpm-manufacturer-roots-rev
+        value: "2913-nuvoton-2111-1"
   - target:
       kind: ConfigMap
       name: endpoint-admin-service-config

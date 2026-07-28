@@ -19,6 +19,11 @@ ROOT_PINS_KEY = "ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_SHA256"
 ROOT_PEMS_KEY = "ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_PEMS"
 NUVOTON_ROOT_SHA256 = "cd8185ff8995ed09811970090a8c36fafab34ef87f47fa51fdb9ecf95c9c2e04"
 NUVOTON_ROOT_CN = "Nuvoton TPM Root CA 2111"
+TPM_ROOTS_ROLLOUT_ANNOTATION = (
+    "/spec/template/metadata/annotations/"
+    "endpoint-admin.acik.com~1tpm-manufacturer-roots-rev"
+)
+TPM_ROOTS_ROLLOUT_REVISION = "2913-nuvoton-2111-1"
 
 
 def _primary_values() -> dict[str, str]:
@@ -39,6 +44,22 @@ def _primary_values() -> dict[str, str]:
         if ROOT_PINS_KEY in values:
             return values
     raise AssertionError("endpoint-admin TPM manufacturer root patch not found")
+
+
+def _tpm_roots_rollout_revision() -> str:
+    document = yaml.safe_load(OVERLAY.read_text(encoding="utf-8"))
+    for patch in document["patches"]:
+        target = patch.get("target", {})
+        if (
+            target.get("kind") != "Deployment"
+            or target.get("name") != "endpoint-admin-service"
+        ):
+            continue
+        operations = yaml.safe_load(patch["patch"])
+        for operation in operations:
+            if operation.get("path") == TPM_ROOTS_ROLLOUT_ANNOTATION:
+                return operation["value"]
+    raise AssertionError("endpoint-admin TPM manufacturer root rollout marker not found")
 
 
 def _certificate_blocks(pem_bundle: str) -> list[str]:
@@ -120,3 +141,7 @@ def test_device_key_activation_uses_the_same_pinned_root_bundle():
 
     assert activation[ROOT_PINS_KEY] == primary[ROOT_PINS_KEY]
     assert activation[ROOT_PEMS_KEY] == primary[ROOT_PEMS_KEY]
+
+
+def test_tpm_manufacturer_root_change_rolls_endpoint_admin_pods():
+    assert _tpm_roots_rollout_revision() == TPM_ROOTS_ROLLOUT_REVISION
