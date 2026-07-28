@@ -64,6 +64,7 @@ DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed2
 DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
 DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
+EXPECTED_DENETIM_SSH_HOSTNAME="${EXPECTED_DENETIM_SSH_HOSTNAME:-10.9.161.202}"
 if [[ "$DENETIM_SSH_OPTS" == "__SSH_CONFIG__" ]]; then
   DENETIM_SSH_OPTS="-F ${DEFAULT_DENETIM_SSH_CONFIG}"
 fi
@@ -152,6 +153,7 @@ Important optional environment:
   DEVICE_HOSTNAME=...
   DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
   DENETIM_SSH_OPTS="-i ../.faz24-i3-ssh/faz24-i3-denetim_ed25519 -o IdentitiesOnly=yes"
+  EXPECTED_DENETIM_SSH_HOSTNAME=10.9.161.202 (required resolved host for denetim-pc alias mode)
   REQUIRE_ACTIVE_GUI=1
   AUTO_FINALIZE=1
   EVIDENCE_URL=https://...
@@ -362,7 +364,8 @@ validate_denetim_ssh_target_config() {
     resolved_user="$(awk 'tolower($1) == "user" { print $2; exit }' <<<"$ssh_config")"
     identity_file="$(awk 'tolower($1) == "identityfile" { print $2; exit }' <<<"$ssh_config")"
 
-    [[ "$resolved_host" == "10.99.0.2" ]] || fail_smoke "denetim-ssh-alias-missing-hostname"
+    [[ "$resolved_host" == "$EXPECTED_DENETIM_SSH_HOSTNAME" ]] \
+      || fail_smoke "denetim-ssh-alias-missing-hostname"
     [[ "$resolved_user" == "denetimpc" ]] || fail_smoke "denetim-ssh-alias-missing-user"
     [[ "$identity_file" == *"id_denetim"* ]] || fail_smoke "denetim-ssh-alias-missing-identity"
   fi
