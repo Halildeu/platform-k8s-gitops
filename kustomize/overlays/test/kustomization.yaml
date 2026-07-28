@@ -399,7 +399,11 @@ images:
     # 2026-07-28 project actual snapshot + stored binding lookup:
     # platform-backend PR #969, merge 3de6e35998f0bfe46413886447c7284ae2c34093;
     # signed image build run 30318172551 (budget-service job 90148222410).
-    digest: sha256:2362bd72e27dce7874d35363ea3b13ea4157906884bf03ec1767605dff4cdd55
+    # 2026-07-28 least-privilege OAuth gate: platform-backend PR #980,
+    # merge 9b0c33c2a52b8ccd6a56c8ec58ae59e2260e9b57. The actuals API now
+    # requires both budget:read/write scope and realm role budget-planner;
+    # signed main build run 30330366477, budget-service job 90184009707.
+    digest: sha256:752354f373c5592808fd3bfdc894c0225263d4aaefc8a818233512983759150e
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
@@ -4598,12 +4602,15 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: d580ca7efc6f278a54a36513b5ad9b719401e234
+    # sourceRevision: 0a7358da14ff31d36ce5222ec0224d9c344dcc9b
     # 2026-07-28 project actuals workspace: platform-web PR #1050,
     # merge 03fb152dc080e9b1c0c31cbe879edf00b40f52a1; signed testai
     # image build run 30318186229 (job 90148263512).
-    newTag: sha-d580ca7
-    digest: sha256:eab8e9bf1e4223bc94cd2e7f55c0fa36b7c802ca3268c5354677ae0837c3fe33
+    # Route-scoped OAuth renewal: platform-web PR #1067, merge
+    # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b; signed main testai image
+    # build run 30330418074 (job 90184167825).
+    newTag: sha-0a7358d
+    digest: sha256:5f988aa9dd0495eb0c29fcb7cbaf9559326128e5d4864c33f82c7e6610f6b36e
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
