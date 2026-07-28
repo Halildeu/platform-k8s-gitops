@@ -413,7 +413,12 @@ images:
     # 1da6a7392ed3a5d18a207ed61dbe89c6628dcfb0. The post-authorization
     # observer emits only low-cardinality boolean claim/authority presence;
     # signed main build run 30343681779, budget-service job 90224807075.
-    digest: sha256:fd3a8d8e6e42764634af5609ae540be0db871c209b0ec03e7f849827beb256b6
+    # 2026-07-28 authorization-chain diagnostics hardened across SecurityContext
+    # cleanup: platform-backend PR #988, merge
+    # de9b082a6898d8d0097401dd36fc1ded72ade24a. The observer captures only
+    # boolean authority/claim presence before downstream filter cleanup; the
+    # signed main build is run 30359124898, budget-service job 90274239345.
+    digest: sha256:5ee5227f026b044c2d0a5c4479cc95eb8716c84488504397ad3de61c8567aac5
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
