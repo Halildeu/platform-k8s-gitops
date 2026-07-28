@@ -9,6 +9,10 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: platform-pg-test
+    # Shared TEST runs many bounded application pools concurrently. The
+    # PostgreSQL default of 100 connections was exhausted by normal idle pool
+    # reservations, preventing browser-managed endpoint operations.
+    command: ["postgres", "-c", "max_connections=200"]
     # profiles: [manual] → compose up SADECE `--profile manual` flag ile çalışır
     # (kazara `compose up` guard'ı). Bu, reboot davranışından bağımsızdır.
     profiles: ["manual"]
