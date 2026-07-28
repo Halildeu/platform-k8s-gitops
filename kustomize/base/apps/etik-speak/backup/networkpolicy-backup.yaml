@@ -1,0 +1,61 @@
+# Faz 35 ES-209 — what a backup job is allowed to reach.
+#
+# The namespace's blanket egress policies (`allow-egress-dns`, `allow-egress-intra-ns`)
+# select on `app.kubernetes.io/part-of=platform`. Backup pods carry `part-of=etik-speak`,
+# so they matched neither and had no egress at all — including DNS. The first real run
+# of the pg-dump job failed with:
+#
+#   pg_dump: error: could not translate host name "postgres" to address:
+#            Temporary failure in name resolution
+#
+# and, before the pipeline was hardened, still wrote a 48-byte "archive" and reported
+# success. A nightly job that cannot reach the database it backs up is worse than no
+# job at all, because the gap is invisible until a restore.
+#
+# Egress is enumerated rather than inherited: a backup job may read the three stores it
+# archives and nothing else. It has no reason to reach the public internet, and giving
+# it `part-of=platform` to borrow the blanket rules would have granted exactly that.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-etik-speak-backup
+  labels:
+    app.kubernetes.io/part-of: etik-speak
+    app.kubernetes.io/component: backup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: etik-speak
+      app.kubernetes.io/component: backup
+  policyTypes: [Egress]
+  egress:
+    # DNS. Without this nothing else in this list can be named.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    # PostgreSQL, OpenFGA and Vault are not pods in this namespace. Their Services
+    # are bridges: `endpoints/postgres` resolves to 172.19.0.6, a host docker-bridge
+    # address. A podSelector therefore matches nothing and the connection times out —
+    # which is what the second live run did, after DNS had already been fixed.
+    #
+    # The cluster's own `allow-egress-host-bridge` states the same shape: everything
+    # except the four in-cluster CIDRs, on the data-store ports only. Mirrored rather
+    # than inherited because that policy selects `part-of=platform`, and a backup job
+    # should carry its own list of what it may reach.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+              - 10.44.0.0/16
+              - 10.45.0.0/16
+      ports:
+        - {protocol: TCP, port: 5432}   # PostgreSQL — pg-dump target
+        - {protocol: TCP, port: 8080}   # OpenFGA HTTP — tuple export target
+        - {protocol: TCP, port: 8200}   # Vault — raft snapshot target

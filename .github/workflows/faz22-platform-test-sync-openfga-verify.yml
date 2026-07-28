@@ -30,7 +30,7 @@ concurrency:
 jobs:
   sync-verify:
     name: platform-test sync + endpoint-admin OpenFGA verify
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
 
     steps:

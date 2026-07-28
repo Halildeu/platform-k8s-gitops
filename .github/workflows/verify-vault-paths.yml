@@ -6,7 +6,7 @@
 #   - ExternalSecret remoteRef inventory extraction
 #   - Required field presence (key + property + secretKey non-empty)
 #
-# Layer 2 (live preflight, self-hosted runner on staging-sw): runs via
+# Layer 2 (live preflight, self-hosted runner on aiserver): runs via
 # scripts/verify-vault-paths.sh live mode — manual/operator-triggered after
 # Vault seed or PAT rotation.
 #

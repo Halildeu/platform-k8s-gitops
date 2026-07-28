@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # 39d-4 D29 kanıt matrisi (Codex 019f4c6c/019f50b7 adlandırmasıyla).
-# staging-sw'de koşar; persona şifreleri Vault'tan (stdout'a düşmez);
+# aiserver'da koşar; persona şifreleri Vault'tan (stdout'a düşmez);
 # token'lar yalnız bu süreçte — basılan tek şey claim ÖZETİ (redacted).
 # shellcheck disable=SC2015 # ok()/bad() daima 0; bu dosyada koşullu sayaç deseni.
 set -uo pipefail
 EDGE="https://testai.acik.com"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 KCTOK="$EDGE/realms/platform-test/protocol/openid-connect/token"
 API="$EDGE/api/ats/v1/interviews/iv-smoke-1"
 T=$(mktemp -d); chmod 700 "$T"; umask 077
@@ -12,12 +13,12 @@ trap 'rm -rf "$T"; unset ROOT SMOKE READER REVIEWER OPERATOR ROLELESS RT' EXIT
 # Beklenen imaj digest'i — default aktivasyon kustomization pin'i ile senkron
 # tutulur (pin bump PR'ı bu default'u da günceller); ad-hoc koşum için env
 # override: ATS_EXPECTED_DIGEST=sha256:... ./d29-smoke.sh
-PIN="${ATS_EXPECTED_DIGEST:-sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11}"
+PIN="${ATS_EXPECTED_DIGEST:-sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7}"
 PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 SMOKE=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/ats-smoke)
@@ -122,6 +123,84 @@ if [ "$C" = "200" ] && [ -s "$T/last.json" ] && ! grep -q "test-stub" "$T/last.j
   ok "live-stt read-back dolu; test-stub izi yok"
 else
   bad "live-stt read-back/provenance dogrulamasi"
+fi
+
+# Faz 25 #2441: backend screening imaji + KC scope'lari birlikte pinlendikten sonra
+# explicit acilir. Default 0 mevcut smoke'u eski pin uzerinde bozmaz;
+# acceptance kosumu ATS_SCREENING_EXPECTED=1 ile fail-closed ek 8 kontrol yapar.
+if [ "${ATS_SCREENING_EXPECTED:-0}" = "1" ]; then
+  echo "== Faz 25: Screening pointer/replay + split authority =="
+  if [ -z "$TK" ]; then
+    bad "screening icin transcriptKey yok"
+  else
+    SCREEN_KEY="scrq_$(python3 -c 'import uuid; print(uuid.uuid4())')"
+    SCREEN_BODY="{\"sourceKind\":\"TRANSCRIPT_SEGMENT\",\"transcriptKey\":\"$TK\",\"segmentIndex\":0}"
+    SCREEN_CODE=$(curl -sS --max-time 30 -D "$T/d29-screen-create.headers" \
+      -o "$T/d29-screen-create.json" -w '%{http_code}' -X POST "$API/screenings" \
+      -H "Authorization: Bearer $REVIEWER" -H 'Content-Type: application/json' \
+      -H "X-ATS-Idempotency-Key: $SCREEN_KEY" -d "$SCREEN_BODY")
+    [ "$SCREEN_CODE" = "201" ] && ok "reviewer screening create -> 201" || bad "reviewer screening create -> $SCREEN_CODE"
+    if grep -qi '^cache-control: no-store' "$T/d29-screen-create.headers" \
+      && grep -qi '^x-ats-replay: false' "$T/d29-screen-create.headers"; then
+      ok "screening create no-store + X-ATS-Replay:false"
+    else
+      bad "screening create cache/replay header kontrati"
+    fi
+    if python3 - "$T/d29-screen-create.json" <<'PY'
+import json
+import sys
+
+TOP_KEYS = {
+    "findingSetRef", "runId", "policyRef", "coverage", "disposition",
+    "source", "findings", "evidenceId", "schemaVersion", "occurredAt",
+    "spanUnit",
+}
+SOURCE_KEYS = {"kind", "canonicalSourceRef", "segmentIndex"}
+FINDING_KEYS = {"category", "signal", "sourceKind", "span"}
+SPAN_KEYS = {"startInclusive", "endExclusive", "segmentIndex"}
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+assert isinstance(payload, dict) and set(payload) == TOP_KEYS
+assert isinstance(payload["source"], dict) and set(payload["source"]) == SOURCE_KEYS
+assert isinstance(payload["findings"], list)
+for finding in payload["findings"]:
+    assert isinstance(finding, dict) and set(finding) == FINDING_KEYS
+    assert isinstance(finding["span"], dict) and set(finding["span"]) == SPAN_KEYS
+PY
+    then
+      ok "screening response pointer-only (exact allowlist semasi; ham metin/skor/karar yok)"
+    else
+      bad "screening response pointer-only exact sema ihlali"
+    fi
+    FSR=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("findingSetRef", ""))' "$T/d29-screen-create.json" 2>/dev/null)
+    REPLAY_CODE=$(curl -sS --max-time 30 -D "$T/d29-screen-replay.headers" \
+      -o "$T/d29-screen-replay.json" -w '%{http_code}' -X POST "$API/screenings" \
+      -H "Authorization: Bearer $REVIEWER" -H 'Content-Type: application/json' \
+      -H "X-ATS-Idempotency-Key: $SCREEN_KEY" -d "$SCREEN_BODY")
+    if [ "$REPLAY_CODE" = "200" ] && grep -qi '^x-ats-replay: true' "$T/d29-screen-replay.headers"; then
+      ok "ayni screening request -> 200 verified replay"
+    else
+      bad "screening replay -> $REPLAY_CODE/header"
+    fi
+    if [ -n "$FSR" ] && cmp -s "$T/d29-screen-create.json" "$T/d29-screen-replay.json"; then
+      ok "screening replay govdesi birebir ayni"
+    else
+      bad "screening replay govde bagi"
+    fi
+    C=$(code GET "$API/screenings/$FSR" "$READER")
+    [ "$C" = "200" ] && ok "reader screening.read -> 200" || bad "reader screening.read -> $C"
+    READER_WRITE=$(curl -sS --max-time 20 -o "$T/d29-screen-reader-write.json" -w '%{http_code}' \
+      -X POST "$API/screenings" -H "Authorization: Bearer $READER" \
+      -H 'Content-Type: application/json' \
+      -H "X-ATS-Idempotency-Key: scrq_$(python3 -c 'import uuid; print(uuid.uuid4())')" \
+      -d "$SCREEN_BODY")
+    [ "$READER_WRITE" = "403" ] && ok "reader screening.write -> 403" || bad "reader screening.write -> $READER_WRITE"
+    C=$(code GET "$API/screenings/$FSR" "$ROLELESS")
+    [ "$C" = "403" ] && ok "roleless screening.read -> 403" || bad "roleless screening.read -> $C"
+  fi
+else
+  echo "NOT: screening smoke kapali (backend #168 + KC #2441 pin sonrasi ATS_SCREENING_EXPECTED=1)"
 fi
 
 echo "== Operator allow / reviewer deny (DSAR) =="

@@ -41,6 +41,21 @@ on:
       - "scripts/migration/etl_worker/etl_worker/transform.py"
       - "scripts/migration/etl_worker/tests/test_transform.py"
       - "scripts/migration/etl_worker/config/tables.yaml"
+      # Faz 22 security: the k3d bootstrap registry-binding invariant lives in
+      # tests/operations/ and is executed by the `pytest tests/` step below. A
+      # bootstrap-only PR must trigger this workflow, otherwise the guard exists
+      # but never runs on the exact PRs it is meant to block (the registry was
+      # published on 0.0.0.0 for months precisely because nothing checked it).
+      - "bootstrap/k3d-*.yaml"
+      - "tests/operations/**"
+      # Faz 22 Sec A3: Keycloak fixture CORS/redirect invariant lives in
+      # tests/operations/; a fixture-only PR must trigger it, otherwise a
+      # reintroduced webOrigins:["*"] lands unchecked.
+      - "bootstrap/local-fixtures/**"
+      # A2b.3: smoke-ats-v1 least-privilege guard reads the setup script itself, so a
+      # script-only PR must trigger it (flipping fullScopeAllowed to true is a one-word
+      # edit that leaves a WORKING token — the regression is silent).
+      - "scripts/keycloak/**"
       # DD-4 env+Dockerfile+Python compat
       - "scripts/migration/etl_worker/etl_worker/config.py"
       - "scripts/migration/etl_worker/Dockerfile"

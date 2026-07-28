@@ -1,0 +1,43 @@
+# UI pod'u için ağ sınırı.
+#
+# Giriş: yalnız ingress-nginx (kullanıcı trafiği).
+# Çıkış: DNS + app-boot servisi. UI'ın kendi nginx'i /api/v1/ isteklerini
+# ats-interview-evidence:8080'e proxy'ler, dolayısıyla bu iki çıkış YETER —
+# UI'ın DB'ye, Vault'a veya dış ağa erişimi YOKTUR ve olmamalıdır.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ats-interview-evidence-ui
+  namespace: platform-test
+spec:
+  podSelector:
+    matchLabels:
+      app: ats-interview-evidence-ui
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ats-interview-evidence
+      ports:
+        - port: 8080
+          protocol: TCP

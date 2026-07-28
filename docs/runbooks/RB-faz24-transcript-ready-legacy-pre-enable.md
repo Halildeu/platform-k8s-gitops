@@ -1,7 +1,7 @@
 # RB — Faz 24 Transcript-Ready Legacy Pre-Enable Gate
 
-> **Issue:** `platform-k8s-gitops#2610`  
-> **Ortam:** yalnız `k3d-test` + `platform-test` + `denetim-pc`  
+> **Issue:** `platform-k8s-gitops#2610`
+> **Ortam:** yalnız `k3d-test` + `platform-test` + `denetim-pc`
 > **Durum (2026-07-20):** `tracked-pending`; ready consumer default-off
 > **Mutation sınırı:** §4-§5 read-only'dir. §6 yalnız TEST Vault'ta owner-gated
 > dedicated Transit key/policy/token oluşturur. §8 imzalama yapar; Kubernetes,

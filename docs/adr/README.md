@@ -43,6 +43,9 @@ Reddedilen alternatifler + red nedenleri.
 | 0041 | [Faz 24 OpenFGA Tuple Governance (DD-EA-2 Extension to Meeting/Transcript)](./0041-faz24-openfga-tuple-governance.md) | **Accepted** (2026-06-17) |
 | 0042 | [Faz 24 Audit Archive 7-Year Retention Worker (WORM Cold-Storage Contract)](./0042-faz24-audit-archive-retention-worker.md) | **Accepted** (2026-06-17) |
 | 0045 | [Signed Cross-AI Evidence Custom Deployment Protection Rule](./0045-signed-cross-ai-custom-deployment-protection-rule.md) | **Proposed** (2026-07-16) |
+| 0046 | [Faz 35 Etik Speak Dual-Public-Host and Isolated Product-Cell Topology](./0046-faz35-etik-speak-product-cell-topology.md) | **Accepted for test implementation** (2026-07-18) |
+| 0047 | [Faz 35 Case, Reporter Identity and IdentityLinkVault Compartments](./0047-faz35-case-identity-link-compartments.md) | **Accepted for TEST implementation** (2026-07-24) |
+| 0048 | [Faz 35 Evidence Dual-Artifact Custody and Attachment Safety](./0048-faz35-evidence-dual-artifact-custody.md) | **Accepted for TEST implementation** (2026-07-24) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 

@@ -182,13 +182,19 @@ kubectl --context k3d-test -n platform-test rollout status deploy/auth-service -
 > there is no `status` field.
 
 ```bash
+# A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover).
+# Vault path: kv/platform/keycloak/smoke-client (A2a).
+SMOKE_CLIENT_SECRET=$(sudo docker exec -e VAULT_TOKEN=<root> platform-vault-test \
+  vault kv get -field=client_secret kv/platform/keycloak/smoke-client)
+
 # Get a SuperAdmin admin token (real test admin, not the broker)
 ADMIN_TOKEN=$(curl -sf -X POST \
   https://testai.acik.com/realms/platform-test/protocol/openid-connect/token \
-  -d 'grant_type=password' \
-  -d 'client_id=frontend' \
-  -d 'username=<superadmin-test-persona>' \
-  -d 'password=<persona-password>' \
+  --data-urlencode 'grant_type=password' \
+  --data-urlencode 'client_id=smoke-client' \
+  --data-urlencode "client_secret=${SMOKE_CLIENT_SECRET}" \
+  --data-urlencode 'username=<superadmin-test-persona>' \
+  --data-urlencode 'password=<persona-password>' \
   | jq -r '.access_token')
 
 # Call impersonation start (real PR-B contract)

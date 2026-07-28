@@ -9,9 +9,15 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.5.5
     container_name: platform-kc-test
-    # ADR-0002 §5.1: test default scale-to-zero (profiles: [manual] enforce)
+    # profiles: [manual] → yalnız `--profile manual` ile bilerek ayağa kaldırılır
+    # (kazara `compose up` guard'ı). Bu, reboot davranışından bağımsızdır.
     profiles: ["manual"]
-    restart: "no"
+    # restart: unless-stopped — host reboot'unda TEST Keycloak geri gelmeli.
+    # Eski `restart: "no"` gerekçesi "ADR-0002 §5.1 test default scale-to-zero"
+    # (D17) idi; o politika 2026-05-10'da DEPRECATED edildi: test veri düzlemi
+    # sessizce kapalı kalınca paralel geliştirme oturumları kırılıyor ve her
+    # seferinde elle kurtarma (scale up + ESO refresh + Vault unseal) gerekiyor.
+    restart: unless-stopped
     # Not: --optimized flag'i KALDIRILDI cunku KC_FEATURES degistiginde
     # augmentation cache mismatch fail-fast yapiyor. "start" auto-build yapar
     # her startup'ta (~10s startup penalty, test icin kabul).

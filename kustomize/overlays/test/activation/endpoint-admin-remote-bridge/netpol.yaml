@@ -43,12 +43,7 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
-        # (c) the mTLS L4 edge / staging host that passthrough-forwards agent
-        #     connections for the Denetim PC test gate. Broad rollout uses the
-        #     dedicated 443/SNI route above.
-        - ipBlock:
-            cidr: 10.9.10.53/32
-        # (d) the dedicated k3d node-netns TCP forwarder for the first
+        # (c) the dedicated k3d node-netns TCP forwarder for the first
         #     product-channel gate. Host port 9445 forwards into the
         #     k3d-test-server-0 network namespace, then to broker:9444. This is
         #     intentionally narrower than allowing the whole k3d/docker bridge

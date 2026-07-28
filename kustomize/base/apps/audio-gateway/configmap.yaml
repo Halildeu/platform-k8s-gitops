@@ -96,3 +96,18 @@ data:
   # wss olmak ZORUNDA (AudioGatewayProperties.Streaming.validate fail-closed).
   AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED: "false"
   AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL: ""
+  # Faz 24 İ4 (platform-backend#902): meeting-ai /analyze/live cadenced
+  # trigger. DEFAULT-OFF; test overlay enable + base-url set. Prod cutover
+  # timing owner-gated. When enabled, base-url validation fail-closed
+  # (AudioGatewayProperties.DirectStt.LiveAnalyze.validate).
+  # Payload = joined transcript window; meeting-ai redactor applies KVKK
+  # PII guard before the LLM (ADR-0043 D3), so this hop is content-safe.
+  AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED: "false"
+  AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL: ""
+  AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_SEGMENT_WINDOW: "5"
+  AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS: "5000"
+  # Faz 24 İ2-T live transcript SSE broadcast (platform-backend#914).
+  # Ephemeral pub/sub; SSE endpoint MeetingAccessValidator meeting:{id}#can_view
+  # ile guarded; multi-viewer web clients aynı desktop recorder'ın canlı
+  # transcript increment'lerine subscribe olur. Default-off — enable owner-touch.
+  AUDIO_GATEWAY_DIRECT_STT_LIVE_TRANSCRIPT_BROADCAST_ENABLED: "false"

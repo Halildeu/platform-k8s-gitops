@@ -16,7 +16,10 @@ BROKER_SECRET="endpoint-admin-remote-bridge-secrets-device-key"
 DATABASE="endpoint_admin"
 DB_SCHEMA="endpoint_admin_service"
 AUDIT_TABLE="endpoint_audit_events"
-COMPOSE_PROJECT="test"
+# Canonical host-compose project on the active AI server. Keeping this exact
+# prevents the reconciler from ever selecting the sibling platform-pg-prod
+# container, which uses the same Compose service label.
+COMPOSE_PROJECT="platform-pg-test"
 COMPOSE_SERVICE="postgres"
 APPLY_CONFIRM_LITERAL="RECONCILE_FAZ22_6_VIEWER_AUDIT_DB_ROLE"
 

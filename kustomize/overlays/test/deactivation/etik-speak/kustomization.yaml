@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Fail-closed rollback target for the TEST product cell while platform-test
+# ArgoCD intentionally runs with prune=false. Importing the activation keeps
+# every existing object under GitOps ownership; the patches remove all active
+# user routes and scale all three product workloads to zero without relying on
+# cluster-side deletion.
+resources:
+  - ../../activation/etik-speak
+
+patches:
+  - target:
+      kind: Deployment
+      name: ethics-service|etik-speak-public|etik-speak-manager
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - target:
+      kind: Ingress
+      name: etik-speak-public-api|etik-speak-public-ui
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: etik-speak-disabled.invalid
+      - op: replace
+        path: /spec/rules/1/host
+        value: speakup-disabled.invalid
+      - op: replace
+        path: /spec/tls/0/hosts
+        value:
+          - etik-speak-disabled.invalid
+          - speakup-disabled.invalid
+  - target:
+      kind: Ingress
+      name: etik-speak-staff-api|etik-speak-manager-ui
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: etik-speak-manager-disabled.invalid
+      - op: replace
+        path: /spec/tls/0/hosts
+        value:
+          - etik-speak-manager-disabled.invalid

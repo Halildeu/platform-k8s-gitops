@@ -1,0 +1,54 @@
+# ats#235 — ats-app-boot → Microsoft Graph mail egress (aday giriş kodu)
+#
+# Sorun: `netpol.yaml` egress'i DNS + host-bridge PG/KC + api-gateway + live-STT
+# ile sınırlı; internet çıkışı YOK. Graph çağrısı (login.microsoftonline.com
+# token + graph.microsoft.com sendMail) pod seviyesinde engellenirdi.
+#
+# Bu sessiz bir arıza olurdu: GraphOtpMailSender ağ hatasını NOT_CONFIGURED'a
+# çeviriyor, yani uç "yapılandırılmamış" der ve operatör yapılandırmayı arar —
+# oysa eksik olan ağ iznidir. O yüzden config ile AYNI değişiklikte açılıyor.
+#
+# notification-orchestrator `allow-notification-orchestrator-egress-mail-providers`
+# aynası, bir daraltmayla: YALNIZ 443. Bu servis SMTP kullanmıyor (repoda SMTP
+# altyapısı ölçüldü: 0 sonuç), 587 açılmaz.
+#
+# SELECTOR — ÖLÇÜLDÜ, KOPYALANMADI: bu pod YALNIZ `app: ats-interview-evidence`
+# etiketini taşıyor (+ pod-template-hash). notify'ın üçlü `app.kubernetes.io/*`
+# şemasını buraya kopyalamak politikayı HİÇBİR pod'u seçmez hale getirir; ilk
+# denememde tam bu oldu ve egress sessizce kapalı kaldı. Aynı namespace'te iki
+# etiket şeması yaşıyor; doğrusu bu servisin kendi taban NetPol'ünün seçicisidir
+# (`netpol.yaml` → `app: ats-interview-evidence`).
+#
+# DNS bu politikada YOK: taban NetPol zaten cluster DNS'e izin veriyor ve
+# Kubernetes politikaları birleşimle çalışır. (Etiketi olmayan bir test pod'u
+# DNS alamadığı için 443 açık olsa da çözemez — teşhiste bu tuzağa düştüm.)
+#
+# CIDR stratejisi: Microsoft'un 365 IP aralıkları resmi feed'e göre değişken;
+# sabit liste sessizce eskir ve mail bir gün durur. Public egress'ten RFC1918
+# hariç tutularak cluster-içi ve LAN yüzeyi kapalı bırakılır. Daha sıkı hedef
+# (Microsoft IP feed'ini parse eden otomatik CIDR listesi) ayrı iş.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ats-interview-evidence-egress-graph-mail
+  namespace: platform-test
+  annotations:
+    platform.acik.com/faz: "25.ats235"
+spec:
+  podSelector:
+    matchLabels:
+      app: ats-interview-evidence
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS: Graph sendMail + Entra client-credentials token ucu.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918 — cluster-internal + WG
+              - 172.16.0.0/12    # RFC1918 — docker/k3d bridge
+              - 192.168.0.0/16   # RFC1918 — LAN
+      ports:
+        - protocol: TCP
+          port: 443

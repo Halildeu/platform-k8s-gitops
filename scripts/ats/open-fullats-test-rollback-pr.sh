@@ -83,7 +83,7 @@ risk_trigger="$(sed -nE 's/^Risk trigger:[[:space:]]*(security-authz|production-
   echo "[fullats-rollback] dual consultation risk trigger is missing or invalid" >&2
   exit 1
 }
-for receipt_label in "Claude receipt" "Codex receipt"; do
+for receipt_label in "Claude receipt"; do
   receipt_line="$(grep -E "^${receipt_label}: " <<<"$promotion_body" || true)"
   [[ "$(grep -Ec "^${receipt_label}: " <<<"$promotion_body" || true)" == "1" && \
      "$receipt_line" == *"head=$promotion_head;"* && \
@@ -95,6 +95,10 @@ for receipt_label in "Claude receipt" "Codex receipt"; do
 done
 [[ "$(grep -Fc "MiniMax receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
   echo "[fullats-rollback] MiniMax receipt is forbidden by forward policy" >&2
+  exit 1
+}
+[[ "$(grep -Fc "Codex receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
+  echo "[fullats-rollback] Codex implementer cannot use Codex as dual secondary" >&2
   exit 1
 }
 git fetch origin main --quiet
@@ -112,8 +116,10 @@ git checkout -B "$branch" origin/main --quiet
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 
-ATS_CURRENT="sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
-PERMISSION_CURRENT="sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
+ATS_CURRENT="sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7"
+PERMISSION_CURRENT="sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
+# Exact #2636 promotion tuple. This compensator is intentionally not a generic
+# rollback for later automatic frontend promotions.
 FRONTEND_OLD="sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0"
 FRONTEND_NEW="sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 FRONTEND_OLD_SHA="9f82edb249bcc4de3d83ce59a3800d835e88f410"

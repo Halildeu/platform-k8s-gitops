@@ -15,7 +15,7 @@
 #
 # Codex S1 sertleştirmesi:
 #   - Tek amaçlı runner; sadece testai-deploy event'leri için.
-#   - Labels: self-hosted, staging-sw, testai-deploy.
+#   - Labels: self-hosted, aiserver, testai-deploy.
 #   - Trap unregister + ephemeral mode + retry on token failure.
 #   - PAT curl process argümanına konmaz; GitHub API kapalıyken fail-closed
 #     backoff yapar.
@@ -25,9 +25,9 @@ set -euo pipefail
 : "${RUNNER_REPO:?RUNNER_REPO required (e.g. Halildeu/platform-k8s-gitops)}"
 : "${RUNNER_PAT:?RUNNER_PAT required (fine-grained PAT, Administration: Write scope)}"
 
-RUNNER_NAME="${RUNNER_NAME:-staging-sw-testai-deploy}"
+RUNNER_NAME="${RUNNER_NAME:-aiserver-testai-deploy}"
 # Codex S1: tek amaçlı runner labels
-RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,staging-sw,testai-deploy}"
+RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,aiserver,testai-deploy}"
 RUNNER_GROUP="${RUNNER_GROUP:-Default}"
 RUNNER_WORKDIR="${RUNNER_WORKDIR:-_work}"
 RUNNER_GITHUB_API_CONNECT_TIMEOUT="${RUNNER_GITHUB_API_CONNECT_TIMEOUT:-5}"

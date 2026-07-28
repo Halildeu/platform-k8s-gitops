@@ -101,7 +101,7 @@ env:
 jobs:
   attended-smoke:
     name: VIEW_ONLY attended product-channel smoke
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 35
 
     steps:

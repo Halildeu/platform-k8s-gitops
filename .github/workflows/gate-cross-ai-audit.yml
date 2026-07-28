@@ -3,12 +3,18 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (durumsal az-kanal governance, #2621):
+# Required check (durumsal az-kanal governance, #2621 + kullanıcı 2026-07-20
+# esnetmesi #2708/#2709):
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
-# - single: exact direct Claude Opus 4.8 + exact scope + AGREE + provider-distinct
-# - dual: irreversible/high-risk/human-authority trigger + exact Claude + Codex;
-#   maximum two, MiniMax forbidden, parallel publication allowed
-# - Fetched owner evidence, model, freshness, digest and redaction remain strict
+# - single: exactly one provider receipt from any accepted provider
+#   (Claude/Codex/MiniMax/GLM) + exact scope + AGREE + provider-distinct from
+#   implementer. Model choice is flexible within each provider — no specific
+#   slug is a gate.
+# - dual: irreversible/high-risk/human-authority trigger + exactly two
+#   provider-distinct receipts from the four accepted providers; maximum two,
+#   parallel publication allowed.
+# - Fetched owner evidence, real modelUsage identity, freshness, digest and
+#   redaction remain strict.
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
 # prefix (auto-test-overlay/ · auto-test-frontend/ · auto-verified/) is audited in
@@ -35,36 +41,29 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #     normal explicit consultation-mode contract before merge.
 
 on:
-  # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
-  # trigger is removed now that `pull_request_target` is live on main. The
-  # bootstrap problem (PR head's workflow not matching the event) does not
-  # recur because main now lists `pull_request_target` — `pull_request_target`
-  # reads the workflow from base, so any future PR's audit fires from the
-  # trusted base copy without needing a `pull_request` parallel.
-  pull_request_target:
-    types:
-      - opened
-      - edited
-      - synchronize
-      - reopened
-      # #842 follow-up cleanup (Codex thread 019e5b85, 2026-05-24):
-      # `labeled` / `unlabeled` triggers REMOVED. The audit script is
-      # currently label-agnostic (pr-cross-ai-audit.mjs reads PR body fields
-      # only, not labels). Under label events the GitHub `sender` flips to
-      # whoever toggled the label — usually a human operator. For
-      # exempt automation PRs (auto-test-overlay/, auto-test-frontend/,
-      # auto-verified/)
-      # the audit script's `auditAutomation` mode requires BOTH the PR
-      # author AND the event sender to be in the prefix-specific bot
-      # allowlist (pr-cross-ai-audit.mjs `auditAutomation` actor check).
-      # A human labeling an automation PR therefore turns a previously-
-      # green `cross-ai-audit` check RED on the very same content — a
-      # false-negative governance failure, not a real audit failure.
-      # The inverse risk (human launders a prior malicious `synchronize`
-      # by toggling a label) is also blocked by removing these triggers.
-      # When the audit script gains genuine label-aware semantics, this
-      # block should be re-added with the matching script logic in the
-      # SAME PR (atomic wiring + behavior), not pre-wired ahead.
+  # Kullanıcı 2026-07-20 kararı — Cross-AI check advisory de dahil devre dışı;
+  # yalnız özel talep (manuel dispatch) ile çalışır. #2712 branch protection'dan
+  # required-check'i çıkarmıştı; bu PR bir adım öteye götürür: otomatik
+  # pull_request_target trigger'ları da kaldırılır ki check koşmasın (advisory
+  # bile). Script `scripts/ci/pr-cross-ai-audit.mjs` ve mode disiplini
+  # (none/single/dual + guard'lar) referans mimari olarak KORUNUYOR —
+  # manuel dispatch veya geri açma sonrası aynen çalışır.
+  #
+  # ~~pull_request_target:~~ (askıda — kullanıcı 2026-07-20; workflow_dispatch'e
+  #   ~~types: [opened, edited, synchronize, reopened]~~   düşürüldü)
+  #
+  # Manuel talep akışı:
+  #   gh workflow run gate-cross-ai-audit.yml --ref main -f pr_number=<N>
+  # (Ya da GitHub UI → Actions → gate-cross-ai-audit → Run workflow.)
+  #
+  # Geri açma: bu `on:` bloğunu #2712 öncesi haline döndür (git revert bu PR),
+  # #2712'nin required-check aksiyonunu tekrar uygula.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Manuel talep edilen PR numarası (opsiyonel; boşsa audit noop)"
+        required: false
+        type: string
 
 permissions:
   contents: read

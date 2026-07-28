@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 39d-8..11 canlı receipt/artifact/replay/repair smoke'u (RB-ats-39d ek-matrisi).
-# staging-sw'de koşar; d29-smoke.sh desenini izler: persona şifreleri Vault'tan
+# aiserver'da koşar; d29-smoke.sh desenini izler: persona şifreleri Vault'tan
 # (stdout'a DÜŞMEZ), token'lar yalnız bu süreçte. iv-smoke-2 kullanılır
 # (iv-smoke-1'in 39d-4 state'i kirletilmez). Ledger doğrulamaları platform-pg-test
 # üzerinden salt-okuma psql'dir (mutasyon YOK — WORM'a dokunulmaz).
@@ -8,6 +8,7 @@
 # yalnız onay-kapısı (rolsüz 403) doğrulanır — canlı R4 fixture'ı state bozar.
 set -uo pipefail
 EDGE="https://testai.acik.com"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 KCTOK="$EDGE/realms/platform-test/protocol/openid-connect/token"
 IV="iv-smoke-2"
 API="$EDGE/api/ats/v1/interviews/$IV"
@@ -15,11 +16,34 @@ PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
-SMOKE=$(docker exec -e VAULT_TOKEN="$ROOT" -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test vault kv get -format=json kv/platform/ats-smoke)
-pw(){ printf '%s' "$SMOKE" | python3 -c "import json,sys;print(json.load(sys.stdin)['data']['data']['$1'])"; }
+umask 077
+SECRET_FILE=$(mktemp); PW_FILE=$(mktemp); chmod 600 "$SECRET_FILE" "$PW_FILE"
+trap 'rm -f "$SECRET_FILE" "$PW_FILE"' EXIT
+
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
+# Root token arrives on stdin, not through an env-var flag: with a value it lands in argv
+# and is visible in `ps`; by name alone it lands in the container environment.
+vault_read(){ printf '%s\n' "$ROOT" | docker exec -i -e VAULT_ADDR=http://127.0.0.1:8200 \
+  platform-vault-test sh -c 'set -eu; IFS= read -r VAULT_TOKEN; export VAULT_TOKEN; exec vault "$@"' sh "$@"; }
+SMOKE=$(vault_read kv get -format=json kv/platform/ats-smoke)
+# Trailing newline would be submitted as part of the secret, so strip it: curl sends an
+# `@FILE` body verbatim, unlike the command substitution this code used to rely on.
+vault_read kv get -field=client_secret kv/platform/keycloak/smoke-ats \
+  | tr -d '\r\n' > "$SECRET_FILE"
+[ -s "$SECRET_FILE" ] || { echo "FATAL: smoke-ats-v1 client secret bos" >&2; exit 1; }
+unset ROOT
+pw(){ printf '%s' "$SMOKE" | python3 -c "import json,sys;sys.stdout.write(json.load(sys.stdin)['data']['data']['$1'])"; }
+# A2c: the public browser client no longer grants ROPC. Password and client secret both
+# travel as `@FILE` bodies so neither reaches argv -- the previous single `-d` string put
+# the persona password there on every call.
 tok(){
-  curl -sk --max-time 15 -d "grant_type=password&client_id=$1&username=$2&password=$(pw "$3")" "$KCTOK" \
+  pw "$3" > "$PW_FILE"
+  curl -sk --max-time 15 -X POST "$KCTOK" \
+    --data-urlencode 'grant_type=password' \
+    --data-urlencode "client_id=$1" \
+    --data-urlencode "client_secret@$SECRET_FILE" \
+    --data-urlencode "username=$2" \
+    --data-urlencode "password@$PW_FILE" \
     | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("access_token",""))
 except Exception: print("")'
@@ -38,8 +62,8 @@ hdr(){ # $1=method $2=url $3=token — header'ları /tmp/rc-hdr'a, status stdout
 }
 psq(){ docker exec platform-pg-test psql -U postgres -d ats -tAc "$1"; }
 
-OPERATOR=$(tok frontend ats-operator-persona OPERATOR_PW)
-READER=$(tok frontend ats-reader-persona READER_PW)
+OPERATOR=$(tok smoke-ats-v1 ats-operator-persona OPERATOR_PW)
+READER=$(tok smoke-ats-v1 ats-reader-persona READER_PW)
 [ -n "$OPERATOR" ] || { echo "FATAL: operator token alınamadı"; exit 1; }
 [ -n "$READER" ] || { echo "FATAL: reader token alınamadı"; exit 1; }
 

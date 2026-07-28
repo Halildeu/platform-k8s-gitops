@@ -1,27 +1,71 @@
 #!/usr/bin/env bash
-# Faz 21.3 D35-3 Prereq — module:ACCESS tuple seed (test cluster)
+# DEPRECATED — DD-EA-2 BOUNDARY VIOLATION. Fail-closed since board #2534.
 #
-# Idempotent: aynı tuple iki kez yazılınca OpenFGA 409 döner; script bu durumu
-# /check ile doğrulayıp PASS sayar. Production cluster için ayrı dosya/runbook
-# gerek; bu script sadece k3d-test'te koşar.
+# ## Why this is refused
 #
-# Codex `019dd409` PARTIAL/AGREE-with-revisions: agent çalıştırabilir
-# (test state mutation), ADMIN_UID env'den geçer, agent transcript'inde
-# UUID dışı credential olmaz.
+# This helper SSHes to the cluster host and POSTs OpenFGA
+# `/stores/<store>/write` directly (see the audit-only body below, ~line 94).
+# That writes an authorization tuple while bypassing every product-side
+# invariant that makes the grant trustworthy:
 #
-# Usage:
-#   ADMIN_UID="<uuid>" [GRANTED_UID="<uuid>"] [OPENFGA_URL="http://..."] \
-#     ./scripts/d35-3/openfga-access-tuple-seed.sh
+#   * scope_ref shape validation (a raw write cannot be rejected 400
+#     ScopeReferenceInvalid — #2555 Slice B never runs);
+#   * ADR-0008 canonical object-id encoding (a hand-written tuple can use any
+#     shape, including ones the reader silently drops — this is exactly the
+#     #2531 class of bug);
+#   * the data_access_scopes DB row, so revoke has nothing to recompute from
+#     and the grant becomes unrevokable through the product;
+#   * the outbox + audit row, so the grant has no provenance;
+#   * the authz version bump, so caches keep serving the pre-grant answer.
 #
-# Env contract:
-#   ADMIN_UID     — required; admin persona Keycloak UUID (can_manage + can_view)
-#   GRANTED_UID   — optional; granted persona UUID (can_view only)
-#   STORE_ID      — optional; default Vault kv/platform/openfga#store_id
-#   MODEL_ID      — optional; default Vault kv/platform/openfga#model_id
-#   OPENFGA_URL   — optional; default in-cluster (10.44.3.209:8080) — set
-#                   to http://127.0.0.1:18080 if running with port-forward
-#   SSH_TARGET    — optional; default "halil@staging-sw" (kubectl context lives there)
+# It also writes `user:<KC-UUID>` where parts of the plane key on the platform
+# numeric id — the #2530 subject drift.
+#
+# ## The evidence argument (#2534 decision)
+#
+# A 200 produced by writing OpenFGA directly is NOT evidence that the supported
+# product path works. It proves only that OpenFGA accepts writes. Acceptance
+# runs that used this script therefore attested to a path no customer can take.
+#
+# ## What to use instead
+#
+#   scripts/acceptance/grant-data-access-scope.sh --apply --user <kc-uuid> \
+#       --kind PROJECT --ref 1204
+#
+# which drives POST /api/v1/access/scope — the same call an admin makes — and
+# then POLLS /authz/me to prove the grant actually became reachable, rather
+# than asserting its own write.
+#
+# ## Status
+#
+# Retained (not deleted) so the runbooks and current-state notes citing this
+# path resolve to an explanation. The original body is kept verbatim for audit
+# and is unreachable.
 
+set -euo pipefail
+
+cat >&2 <<'DEPRECATION'
+[openfga-access-tuple-seed] REFUSING TO RUN — DD-EA-2 boundary violation.
+
+  This script POSTs OpenFGA /stores/<store>/write directly, bypassing
+  scope_ref validation, ADR-0008 canonical encoding, the data_access_scopes
+  row (so the grant cannot be revoked through the product), the audit/outbox
+  trail and the authz version bump.
+
+  A 200 obtained this way is NOT evidence the product path works.
+
+  Use instead:
+      scripts/acceptance/grant-data-access-scope.sh --apply \
+          --user <kc-uuid> --kind PROJECT --ref <id>
+
+  Details: board #2534, and the header of this file.
+DEPRECATION
+exit 2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUDIT-ONLY: original implementation, unreachable.
+# ─────────────────────────────────────────────────────────────────────────────
+if false; then
 set -euo pipefail
 
 err() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; }
@@ -30,7 +74,7 @@ info() { printf '\033[1;32m[info]\033[0m %s\n' "$*"; }
 
 : "${ADMIN_UID:?ADMIN_UID is required (admin persona Keycloak UUID)}"
 GRANTED_UID="${GRANTED_UID:-}"
-SSH_TARGET="${SSH_TARGET:-halil@staging-sw}"
+SSH_TARGET="${SSH_TARGET:-aiadmin@aiserver}"
 OPENFGA_URL="${OPENFGA_URL:-http://10.44.3.209:8080}"
 
 # UUID format guard (lightweight — RFC 4122 8-4-4-4-12 hex)
@@ -167,3 +211,5 @@ main() {
 }
 
 main "$@"
+
+fi

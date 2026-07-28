@@ -213,7 +213,8 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("metadata.st_uid != os.getuid()", script)
         self.assertIn("stat.S_IMODE(metadata.st_mode) != 0o600", script)
         self.assertIn("gateway route index $GATEWAY_ROUTE_INDEX is not clean", script)
-        self.assertIn('GATEWAY_ROUTE_INDEX="28"', script)
+        self.assertIn('GATEWAY_ROUTE_INDEX="29"', script)
+        self.assertIn("GitOps-owned Budget Control route 28", script)
         self.assertIn("GATEWAY_ROUTE_PREFIX", script)
         self.assertIn("rollback surface is already clean", script)
         self.assertIn(
@@ -239,7 +240,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DENETIM_SSH_OPTS="-F /home/halil/.ssh/config -o StrictHostKeyChecking=yes"',
+            'DENETIM_SSH_OPTS="-F /home/aiadmin/.ssh/config -o StrictHostKeyChecking=yes"',
             script,
         )
         self.assertGreaterEqual(script.count("StrictHostKeyChecking=yes"), 2)

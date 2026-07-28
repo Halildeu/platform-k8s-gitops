@@ -610,20 +610,24 @@ const cases = [
       body: `${explicitSingleBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode accepts Claude plus Codex provider-distinct channels',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit dual mode rejects MiniMax as a retired secondary channel',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
+  // User 2026-07-20 flexibility: MiniMax is a valid secondary reviewer now.
+  // Codex + MiniMax is a legitimate two-channel dual (both provider-distinct
+  // from a Claude implementer). Expectation flipped: accept rather than reject.
+  ['explicit dual mode accepts MiniMax as a valid secondary channel',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts the exact Claude+Codex pair for a Codex implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts the exact Claude+Codex pair for a Claude implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts reverse evidence publication timestamps',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_CODEX_EVIDENCE }, 0],
-  ['explicit dual mode rejects a Claude+Codex+MiniMax three-channel mixture',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_minimax_receipt_rejected' }, 1],
-  ['explicit none mode rejects a retired MiniMax receipt',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit single mode rejects a retired MiniMax receipt',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
+  // A three-channel body (Claude+Codex+MiniMax) still fails because dual mode
+  // requires exactly two receipts; the reject reason is the channel-count
+  // check, no longer a MiniMax-specific rejection.
+  ['explicit dual mode rejects a three-channel receipt mixture (dual = 2 channels only)',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_dual_exact_channel_count' }, 1],
+  // MiniMax in none/single is now accepted alongside Claude/Codex. Removed the
+  // two `explicit none/single rejects retired MiniMax receipt` rows.
   ['explicit dual mode rejects an empty third receipt key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],

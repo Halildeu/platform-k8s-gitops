@@ -119,13 +119,21 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://testai.acik.com/api/v1/endpoin
 ### Functional — Gerçek endpoint-admin API allow/deny
 
 ```bash
+# A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover);
+# Vault path: kv/platform/keycloak/smoke-client (A2a); scope-mapping/mapper: A2b.1 setup-smoke-token-contract.sh
+SMOKE_CLIENT_SECRET=$(ssh halil@staging-sw '
+  VT=$(python3 -c "import json; print(json.load(open(\"/home/halil/bootstrap-drill/vault-init-test.json\"))[\"root_token\"])")
+  docker exec -e VAULT_TOKEN=$VT platform-vault-test vault kv get -field=client_secret kv/platform/keycloak/smoke-client
+')
+
 # Admin token al (test admin persona, user:9001)
 ADMIN_TOKEN=$(curl -sk -X POST \
   "https://testai.acik.com/realms/platform-test/protocol/openid-connect/token" \
-  -d "grant_type=password" \
-  -d "client_id=frontend" \
-  -d "username=endpoint-admin-test@acik.com" \
-  -d "password=${ENDPOINT_ADMIN_TEST_PASSWORD}" | jq -r .access_token)
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=smoke-client" \
+  --data-urlencode "client_secret=${SMOKE_CLIENT_SECRET}" \
+  --data-urlencode "username=endpoint-admin-test@acik.com" \
+  --data-urlencode "password=${ENDPOINT_ADMIN_TEST_PASSWORD}" | jq -r .access_token)
 
 # Admin allow check (gerçek API üzerinden — raw OpenFGA değil)
 curl -sk -o /dev/null -w '%{http_code}\n' \
@@ -136,10 +144,11 @@ curl -sk -o /dev/null -w '%{http_code}\n' \
 # Viewer (user:9002) admin endpoint deny
 VIEWER_TOKEN=$(curl -sk -X POST \
   "https://testai.acik.com/realms/platform-test/protocol/openid-connect/token" \
-  -d "grant_type=password" \
-  -d "client_id=frontend" \
-  -d "username=endpoint-viewer-test@acik.com" \
-  -d "password=${ENDPOINT_VIEWER_TEST_PASSWORD}" | jq -r .access_token)
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=smoke-client" \
+  --data-urlencode "client_secret=${SMOKE_CLIENT_SECRET}" \
+  --data-urlencode "username=endpoint-viewer-test@acik.com" \
+  --data-urlencode "password=${ENDPOINT_VIEWER_TEST_PASSWORD}" | jq -r .access_token)
 
 curl -sk -o /dev/null -w '%{http_code}\n' \
   -H "Authorization: Bearer ${VIEWER_TOKEN}" \

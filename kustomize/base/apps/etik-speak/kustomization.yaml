@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ethics-service-account.yaml
+  - ethics-service-config.yaml
+  - ethics-service-deployment.yaml
+  - ethics-service.yaml
+  - evidence-worker-config.yaml
+  - evidence-worker-deployment.yaml
+  - clamav.yaml
+  - public-service-account.yaml
+  - public-deployment.yaml
+  - public-service.yaml
+  - manager-service-account.yaml
+  - manager-deployment.yaml
+  - manager-service.yaml
+  - monitoring
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: etik-speak
+    includeTemplates: true

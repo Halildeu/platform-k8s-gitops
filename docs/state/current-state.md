@@ -1,5 +1,193 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Budget actuals TEST customer journey accepted (2026-07-28)
+
+Bu delta yalnız TEST ortamındaki proje bazlı gerçekleşen maliyet dilimini
+günceller. Production'a promotion yapılmadı. Workcube MSSQL/SMB canlı kaynakları
+salt okunur kalır; kalıcı yazma sınırı Budget PostgreSQL'dir.
+
+Exact artifact ve rollout kanıtı:
+
+- frontend route-scoped OAuth düzeltmesi
+  `platform-web@cadc6ad00a9061bf93d716962b63be9abb6100e3` kaynağından
+  `sha256:b1beb38912d595619b944fd08fccd6af05dcaf6a1342687b474d32dcee4e8fe4`
+  immutable image'ına üretildi. Budget ekranındaki fresh login yalnız
+  `budget:read` ve `budget:write` ister; `budget:approve` istenmez;
+- backend ERROR dispatcher düzeltmesi
+  `platform-backend@a7f03762f22c214ff9ce3f7535c10e32520c7c0e`
+  kaynağından
+  `sha256:5b992fb8a30cb44085d4da3de5fc33222bbf8efd8e5f92870b3d40c2375cccdc`
+  immutable image'ına üretildi. Yetkili `404`/`400` yanıtlarının Spring
+  `/error` dispatch'inde `403` olarak maskelenmesi giderildi; dışarıdan
+  `REQUEST /error` ve scope'suz Budget isteği yine `403` kalır;
+- GitOps merge'i `9a5387615068863fe07b13e98a348c6f73babe33` ArgoCD'de
+  `Synced / Healthy / Succeeded` olarak gözlendi. Canlı `budget-service`
+  Deployment `1/1 Ready` ve pod `imageID` değeri yukarıdaki Budget digest'iyle
+  birebir eşleşti. `report-service`, `api-gateway` ve `frontend` podları da
+  kendi runbook digest'leriyle `Ready=true` idi.
+
+Hedef persona ile canlı TEST kanıtı:
+
+- `admin@example.com` oturumunun güvenli projection'ında `budget:read`,
+  `budget:write` ve `budget-planner` vardı; `budget:approve` ve
+  `budget-approver` yoktu. OpenFGA tuple veya production yetkisi değiştirilmedi;
+- şirket adları alfabetik, şirket `35` altındaki proje adları alfabetik
+  gösterildi. `Serban Construction` ve Workcube proje `44200` (`IDC1`) ad/kod
+  ile seçilebildi;
+- ilk binding ve salt-okunur kaynak senkronu kullanıcı ekranından çalıştı:
+  `7.842` kaynak satırı okundu, `7.842` snapshot satırı güncellendi,
+  `0` satır iptal işaretlendi. Snapshot `7.839` aktif satır taşıdı ve kaynak
+  toplamı ile snapshot toplamı `MATCHED` oldu;
+- AG Grid hızlı görünümü en güncel `2.000` satırı; tam canlı muhasebe raporu
+  `7.842` satırı gösterdi. Görünür kontrat tarih, hesap, yön, muhasebe tutarı,
+  sınıflanmış maliyet, maliyet sınıfı, kaynak belge türü/no, eşleşme durumu,
+  fiş ve kaynak işlem kimliklerini korudu;
+- bir muhasebe satırından canlı detay raporuna geçilip kaynak çekmecesi açıldı.
+  Çekmece `muhasebe satırı → fiş → kaynak referansı` zincirini, çözüm durumunu,
+  kaynak türünü ve varsa sipariş/fatura/virman kimliklerini gösterdi; sistem
+  eksik ilişkiyi tahmin etmedi. Ham belge açıklaması, taraf bilgisi ve belge
+  numarası canonical kanıta alınmadı;
+- tarayıcı baştan yüklendikten sonra aynı şirket/proje/tarih penceresiyle
+  `Gerçekleşeni göster` yalnız binding, summary ve actuals `GET` çağrılarını
+  yaptı. Yeni sync çağrısı olmadan aynı `7.842` satır, aynı toplam, aynı son
+  başarılı senkron zamanı ve `MATCHED` sonucu geri geldi; böylece PostgreSQL
+  snapshot kalıcılığı kullanıcı yüzeyinde kanıtlandı.
+
+Bu acceptance, gerçekleşen maliyet görünümü ve kaynak izini doğrular. Aktif
+kural seti henüz maliyet sınıflaması üretmediği için `7.839` aktif satırın
+tamamı inceleme kuyruğundadır; AI maliyet kodu önerisi, insan onayı ve plan
+bütçe ayrı ürün dilimleridir. `#3007` ve parent `#3005` kullanıcı açıkça
+istemeden kapatılmaz.
+
+## Live Delta — `.53` archive-standby runtime fence (2026-07-23)
+
+Eski `staging-sw` (`10.9.10.53`) hostu dosya ve SSH yönetim erişimi için açık
+kalır; AI platformu runtime, deploy veya aktif writer hedefi değildir. Bu delta,
+aşağıdaki `.53` shutdown hazırlığını daha dar bir archive-standby modeliyle
+supersede eder. Firewall, iç/public DNS, NAT ve MSSQL yüzeyleri değiştirilmedi.
+
+Değişiklik öncesi canlı kanıt:
+
+- `.53` üzerinde `29` korunmuş container kaydı vardı; çalışan container ve
+  `restart-policy != no` sayıları ayrı ayrı `0` idi;
+- `docker.socket`, `docker.service` ve `containerd.service` active/enabled idi;
+- `22`, `2222` ve `8443` dinleyicilerinin sahibi yalnız `sshd` idi;
+- bağımsız ikinci SSH oturumu açıldı; `.15` doğrudan SNI ile
+  `ai.acik.com` ve `testai.acik.com` için HTTP `200` verdi.
+
+Uygulanan geri alınabilir fence:
+
+- root-owned `/etc/aiserver-archive/ARCHIVE_STANDBY` sentinel'i ile
+  `docker`, `containerd`, iki legacy runner, cutover/bootstrap NAT,
+  WireGuard ve k3d MASQ birimlerine fail-closed systemd koşulu eklendi;
+- `docker.socket`, `docker.service` ve `containerd.service` stop/disable
+  edildikten sonra kalıcı `masked` duruma alındı; `wg-quick@wg0.service`
+  de `masked` kaldı;
+- legacy runner, `aiserver-cutover-forward`,
+  `aiserver-bootstrap-nat`, `k3d-wg-masq` servis/timer birimleri
+  inactive/disabled ve sentinel koşullu; static drift birimi de aynı koşulu
+  taşır;
+- SSH girişinde archive-standby uyarısı gösterilir. Geri dönüş ön kontrolü
+  `/usr/local/sbin/aiserver-archive-rollback-preflight` salt-okuma ve
+  fail-closed çalışır; `.15` fence kanıtı yokken `REFUSE` verir ve kendisi
+  sentinel kaldırmaz, unit unmask/start veya DNS/NAT değişikliği yapmaz.
+
+Reboot sonrası canlı kanıt:
+
+- `.53` 2026-07-23 `14:07 +03` boot sonrasında bağımsız SSH oturumuna geri
+  geldi;
+- Docker/containerd birimleri `inactive/masked`; legacy birimler
+  `inactive`, arşiv koşulları yüklü, Docker socket listener yok ve Docker API
+  unix-socket probe sonucu `000`;
+- exact process-name taramasında `dockerd`, `containerd`, `Runner.Listener`
+  veya `wg-quick` süreci yok; dış TCP dinleyicileri yine yalnız `sshd`
+  (`22`, `2222`, `8443`);
+- reboot öncesi ve sonrası `.15` doğrudan `ai`/`testai` SNI kontrolleri HTTP
+  `200` kaldı.
+
+Arşiv replikasyonu:
+
+- `.53` üzerinde `platform-backup-archive-pull.timer` etkin ve aktiftir;
+  servis yalnız `platform-backup-export@10.9.10.15` kaynağından `pg`, `vault`
+  ve `keycloak` yedek sınıflarını çeker;
+- kaynak SSH kimliği `rrsync -ro /srv/platform/backup` forced-command,
+  `restrict`, host-key pin ve yalnız okuma ACL ile sınırlandırılmıştır. Canlı
+  negatif kontrolde normal shell ve rsync yazma protokolü ayrı ayrı
+  reddedilmiştir;
+- hedef aktarım `--checksum --ignore-existing` ile mevcut arşiv nesnelerini
+  ezmez veya silmez. Her koşu tüm arşiv düzenli dosyaları için yol, boyut ve
+  SHA-256 içeren root-only ledger üretir;
+- ilk doğrulamada `.15` ve `.53` üzerinde `14/14` göreli yol+SHA-256 birebir
+  eşleşmiş, ledger `14` kayıt taşımış ve servis `Result=success` vermiştir.
+  Bu akış `.53` üzerinde Docker/containerd veya platform workload'ı açmaz.
+
+Rollback sınırı:
+
+- `.53` tekrar runtime/writer yapılmadan önce `.15` workload'ları durdurulur;
+  running platform container, non-`no` restart policy ve aktif platform unit
+  sayılarının `0` olduğunu gösteren en fazla 15 dakikalık root-owned evidence
+  üretilir;
+- rollback preflight `PASS` verdikten sonra attended operatör işlemiyle sentinel
+  kaldırılır, `systemctl daemon-reload` çalıştırılır ve yalnız gereken birimler
+  unmask/enable edilir. `.53` tek writer olarak doğrulanmadan DNS/NAT geri
+  çevrilmez;
+- DNS TTL/cache nedeniyle eski cevapların geçici görülebileceği ayrıca
+  kontrol edilir. `.15` ve `.53` hiçbir aşamada bağımsız aktif writer olarak
+  birlikte çalıştırılmaz.
+
+## Live Delta — `.15` aiserver direct runtime and deploy-control cutover (2026-07-23)
+
+Bu delta, AI platformunun node yönetim adresini `10.9.10.53` olarak gösteren
+eski operasyon kayıtlarını supersede eder. MSSQL ayrı sistemdir ve bu cutover
+kapsamında taşınmamıştır.
+
+Doğrudan canlı kanıt:
+
+- iç DNS `ai.acik.com`, `testai.acik.com` ve
+  `remote-bridge-mtls.testai.acik.com` için `10.9.10.15` döndürür; public
+  TCP 80/443 DNAT hedefi de `.15` olarak operatör tarafından değiştirilmiştir;
+- `.15` Ubuntu Server `24.04.4 LTS` üzerinde `k3d-test` ve `k3d-prod` ayrı
+  cluster'ları çalışır. TEST ve PROD D29 kontrolü ayrı ayrı `10/10 Up`,
+  `Functional`, doğru issuer ve Zanzibar allow/deny PASS üretmiştir;
+- GitOps test kontrol koşusu `29987958679`, eski runner durdurulmuşken
+  `aiserver-testai-deploy` üzerinde başarıyla çalışmış ve yerel `k3d-test`
+  erişimini kanıtlamıştır;
+- GitHub'da yalnız `.15` runner kayıtları çevrimiçidir:
+  `aiserver-testai-deploy`, `aiserver-signing` ve `aiserver-desktop-ci`.
+  Üç eski `.53` runner kaydı silinmiştir;
+- signing CA public fingerprint'leri kaynakla eşleşir; private key dosyaları
+  `.15` üzerinde yalnız `codesign` kullanıcısına `0400` erişimle tutulur.
+  Desktop CI container'ı ve host firewall servisi `.15` üzerinde aktiftir;
+- WireGuard server `.15` üzerinde UDP/443 ile aktiftir. Denetim PC peer
+  endpoint'i `10.9.10.15:443` olarak runtime ve SYSTEM scheduled-task
+  persistence restart testiyle doğrulanmıştır. `k3d-wg-masq.service` ve
+  `k3d-wg-masq.timer` enabled/active, host-rule check PASS'tir;
+- `.15` üzerinde ilk prod/test PostgreSQL dump, Vault Raft snapshot ve
+  Keycloak full realm export setleri oluşturulmuş; JSON/gzip yapısı
+  doğrulanmıştır. `platform-backup-{pg,vault,keycloak,freshness}.timer`
+  etkin, freshness metriği iki k3d node'una kopyalanmıştır. Yedek çıktıları
+  `.53` archive-standby'ya tek yönlü ve salt okunur taşıyan ayrı pull timer'ı
+  da hash eşleşmesiyle doğrulanmıştır;
+- `.53` üzerinde k3d/container workload'ları, WireGuard, deploy/signing/desktop
+  runner'ları, geçici cutover bridge ve artık çalışmayan legacy L4 uyumluluk
+  zinciri durdurulmuş; restart policy'leri kapatılmıştır. Eski kullanıcı cron'u
+  `/home/halil/cutover-backup/20260723/` altında geri dönüş kopyası alınarak
+  devre dışı bırakılmıştır.
+
+Production sınırı:
+
+- `.15` prod cluster'ında `prod-deploy-smoke` least-privilege RBAC matrisi
+  izin verilen 6 işlem ve reddedilen 4 işlemle doğrulanmıştır;
+- `PROD_DEPLOY_SMOKE_KUBECONFIG_B64` ve `ARGOCD_PROD_SYNC_TOKEN` production
+  environment secret'ları `.15` hedefi için rotate edilmiştir;
+- canlı ArgoCD `server.rootpath=/argocd` kullanır. Workflow ve runbook CLI
+  çağrıları `--grpc-web-root-path /argocd` taşımalıdır;
+- production deploy dispatch'i hâlâ GitHub Environment required-reviewer insan
+  kapısındadır. Bu cutover, onay taklidi veya production sync kanıtı değildir;
+- `.53` OS kapatma ancak son bağımlılık envanteri ile `.15` external/internal
+  smoke yeniden geçtikten sonra uygulanır. Kaynak diskleri rollback penceresi
+  boyunca silinmez.
+
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 
 This delta supersedes only the 2026-07-17 statements below that TEST Vault had

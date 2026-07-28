@@ -45,7 +45,7 @@ concurrency:
 jobs:
   collect:
     name: One isolated protected termination case
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 30
     environment:
       name: faz22-view-only-pilot
@@ -195,6 +195,7 @@ jobs:
           # device-key-attested channel. The smoke fail-closed validates this protected
           # runner alias as denetimpc@10.99.0.2 with an id_denetim identity.
           DENETIM_SSH_TARGET: denetim-pc
+          DEFAULT_DENETIM_SSH_CONFIG: /home/aiadmin/.ssh/config
           DENETIM_SSH_OPTS: __SSH_CONFIG__
           AUTO_FINALIZE: "0"
           CASE_NAME: ${{ inputs.case_name }}

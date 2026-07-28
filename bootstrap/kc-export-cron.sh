@@ -53,17 +53,23 @@ for env in prod test; do
   output="${dir}/${realm}-${TIMESTAMP}.json.gz"
   log "EXPORT ${env}:${realm} → ${output}"
 
-  # Admin creds (bootstrap-drill tarafından üretilir)
+  # Admin creds. A per-environment password-file override lets the production
+  # host reuse the root-only Docker secret without duplicating it in an env
+  # file. The legacy bootstrap-drill env remains supported.
+  password_file_var="KC_ADMIN_PASSWORD_FILE_${env^^}"
+  password_file="${!password_file_var:-}"
   admin_pw_file="${HOME}/bootstrap-drill/${env}-creds.env"
   ADMIN_PW=""
-  if [[ -f "${admin_pw_file}" ]]; then
+  if [[ -n "${password_file}" && -f "${password_file}" ]]; then
+    ADMIN_PW=$(<"${password_file}")
+  elif [[ -f "${admin_pw_file}" ]]; then
     # shellcheck disable=SC1090
     source "${admin_pw_file}"
     ADMIN_PW="${KC_ADMIN_PW_PROD:-${KC_ADMIN_PW_TEST:-}}"
   fi
 
   if [[ -z "${ADMIN_PW:-}" ]]; then
-    log "SKIP ${env}: no admin password in ${admin_pw_file}"
+    log "SKIP ${env}: no admin password source"
     continue
   fi
 
@@ -99,7 +105,9 @@ for env in prod test; do
     }
 
   # 4. Merge (.users = users_json) + gzip
-  if combined=$(jq --argjson u "${users_json:-[]}" '.users = $u' <<<"${realm_json}" 2>/dev/null); then
+  # Keep the users payload off argv: large realms can exceed Linux's
+  # per-argument size limit even when the total ARG_MAX budget is available.
+  if combined=$(jq --slurpfile u <(printf '%s' "${users_json:-[]}") '.users = $u[0]' <<<"${realm_json}" 2>/dev/null); then
     echo "${combined}" | gzip > "${output}"
     chmod 600 "${output}"
     size=$(du -h "${output}" | cut -f1)

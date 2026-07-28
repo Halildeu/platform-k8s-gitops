@@ -1,6 +1,6 @@
 # OpenFGA schema migration — StatefulSet ayağa kalkmadan önce DB schema'yı
-# hazırlar. İlk deploy'da elle tetiklenebilir; ideali Argo CD sync wave -1
-# veya init-container, ancak Dilim 3 kapsamında basit Job bırakıldı.
+# hazırlar. Environment-specific lifecycle annotations belong in overlays so
+# TEST auto-sync cannot silently change the human-gated PROD migration path.
 apiVersion: batch/v1
 kind: Job
 metadata:

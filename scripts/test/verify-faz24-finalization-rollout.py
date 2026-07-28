@@ -366,7 +366,7 @@ def main() -> None:
     )
     expected_meeting = {
         "MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED": "true",
-        "MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID": "meeting-ai",
+        "MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID": "meeting-ai,transcript-service",
         "MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS": "meeting-ai,transcript-service",
         "MEETING_REDIS_HOST": "redis-streams",
         "MEETING_REDIS_PORT": "6379",
@@ -403,13 +403,13 @@ def main() -> None:
         auth_deploy,
         "auth-service",
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:dfd6dc43085f7ee362de2f34b038129ebe931e5c7708082e70d6b10346a66abd",
+        "sha256:3e6f9a6ab570c6c4df506586eae092db1da60fe403f10be51d5c64410999079f",
     )
     container_image(
         meeting_deploy,
         "meeting-service",
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:03378764b00ba1a08fd73fd18ddb3ed3bd7c2ecfaeb8903a9050c0830d6fd4a2",
+        "sha256:8265d161a7076f128513a905842d2026c57e6e550f2465225c5043b977f267c5",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
@@ -423,13 +423,13 @@ def main() -> None:
         transcript_deploy,
         "transcript-service",
         "ghcr.io/halildeu/platform-backend-transcript-service@"
-        "sha256:1c36a94701d203b1191ff8f43179db0a5378175b2b205799c09e2ad04053d238",
+        "sha256:a6a7dc01268055ca50ecf5296c955fe72d5ff18350e1fad883a90f131373d019",
     )
     container_image(
         audio_deploy,
         "audio-gateway",
-        "ghcr.io/halildeu/platform-backend-audio-gateway-service@"
-        "sha256:9c859cbbc3114ab8df5a3bde3305f86fa4de2b76305566333c21edf7617a4fac",
+        "platform-test-registry:5000/platform-backend-audio-gateway-service@"
+        "sha256:0bd85f41c5d72b8b202fc833ad3e489c992db9aa924f83fb44c7caef6f17c7ca",
     )
     pod_annotation(
         meeting_deploy,
@@ -439,7 +439,7 @@ def main() -> None:
     pod_annotation(
         transcript_deploy,
         "transcript-service.acik.com/direct-stt-result-consumer-rev",
-        "2026-07-18-2610",
+        "2026-07-29-2610-v4-finalization",
     )
     reject_prod_leakage(prod_docs, prod_eso_docs)
 

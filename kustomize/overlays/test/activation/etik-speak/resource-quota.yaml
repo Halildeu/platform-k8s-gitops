@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: etik-speak-budget}
+spec:
+  scopeSelector:
+    matchExpressions:
+      - scopeName: PriorityClass
+        operator: In
+        values: [etik-speak-test]
+  hard:
+    # ES-104G added two workloads: the evidence worker and the malware scanner.
+    # Both use the Recreate strategy and therefore never surge, but the three
+    # request-facing Deployments still may, so the headroom that makes rollback
+    # possible is preserved rather than consumed by the new pods.
+    #
+    # clamd dominates the memory line: it loads the whole signature database
+    # into RSS, and a ceiling that merely looks generous gets it OOM-killed
+    # during startup — which presents as a crash-loop with no scan ever run.
+    requests.cpu: "700m"
+    requests.memory: 3Gi
+    limits.cpu: "4500m"
+    limits.memory: 6Gi
+    pods: "10"

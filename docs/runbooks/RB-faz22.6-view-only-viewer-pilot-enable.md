@@ -83,11 +83,12 @@ This is the owner decision. Do not flip the flag until every box holds:
 - [ ] A single **pilot device** identified + consenting (attended).
 - [ ] GitHub Environment `faz22-view-only-pilot` has a required reviewer,
       `prevent_self_review=true`,
-      and the three protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256`,
-      `VIEW_ONLY_PILOT_DEVICE_SHA256`, and
-      `VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT`. The first two are distinct
+      and the two protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256` and
+      `VIEW_ONLY_PILOT_DEVICE_SHA256`. They are distinct
       `sha256:<64hex>` opaque bindings; raw identity/device values do not enter
-      workflow inputs or logs.
+      workflow inputs or logs. The authorization expiry is not a static
+      Environment secret: the protected job derives it after reviewer approval,
+      with a fixed 120-minute upper bound.
 
 ## 3. Enable steps (TEST/pilot env; each: command → expected → fail signal)
 
@@ -122,8 +123,11 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
 The `apply` run waits for the protected Environment reviewer, verifies the
 content-addressed owner directive, provider-distinct advisory consensus, open
 #2374 escalation, bounded scope and current revocation ledger, then emits a v2
-protected-authorization receipt before the deployment job can start. The
-workflow then installs a cluster-side
+protected-authorization receipt before the deployment job can start. Its
+receipt validity window starts only after the Environment approval is recorded,
+so time spent waiting for a reviewer cannot consume the authorization lifetime.
+The signed receipt remains bounded to 120 minutes and is verified before the
+deployment job can use it. The workflow then installs a cluster-side
 absolute-expiry watchdog **before** exposure, applies the bridge-side viewer
 overlay, patches only route-28 keys
 into the live `api-gateway-config`, restarts the bridge and gateway, and verifies:
@@ -134,9 +138,12 @@ product-channel VIEW_ONLY session by itself. The TTL starts when the watchdog is
 installed, so setup time reduces the usable pilot window rather than extending
 the security window. Allowed TTL is 5-120 minutes. The longer window exists only
 to collect the isolated negative and five termination cases under one
-content-addressed protected authorization. The requested watchdog expiry must
-not exceed the signed protected-authorization `expiresAt`; otherwise activation
-fails closed before exposing the viewer. The watchdog has narrow RBAC:
+content-addressed protected authorization. The watchdog uses the earlier of the
+requested pilot expiry and the signed protected-authorization `expiresAt`.
+Seconds spent transferring the post-approval receipt to the deployment job
+therefore shorten the usable pilot window instead of causing a new full TTL to
+extend past the signed authority. An absent, malformed or already-expired
+authorization still fails closed before exposing the viewer. The watchdog has narrow RBAC:
 it can disable only the viewer flag/route, delete only the three viewer-only
 network resources, and restart only the bridge/gateway Deployments. It cannot
 disable or mutate the 9444 broker Service. If the Actions runner dies, the
@@ -231,12 +238,12 @@ runbook and receives no consent-TTL mutation.
    ```bash
    kubectl --context k3d-test -n platform-test patch configmap api-gateway-config --type merge -p '{
      "data": {
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_ID": "remote-bridge-viewer-route",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET,POST",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_ID": "remote-bridge-viewer-route",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER": "-10",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1": "Method=GET,POST",
+       "SPRING_CLOUD_GATEWAY_ROUTES_29_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
      }
    }'
    kubectl --context k3d-test -n platform-test rollout restart deploy/api-gateway
@@ -245,13 +252,13 @@ runbook and receives no consent-TTL mutation.
    - Expected — **route bound proof** (not just pod Ready):
      ```bash
      kubectl --context k3d-test -n platform-test exec deploy/api-gateway -- \
-       printenv | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_28_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)='
-     # route 28 → remote-bridge-viewer-route / http://endpoint-admin-remote-bridge-viewer:8096 / -10
+       printenv | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_(28|29)_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)='
+     # route 28 remains budget-service-route; route 29 → remote-bridge-viewer-route / http://endpoint-admin-remote-bridge-viewer:8096 / -10
      # KEYCLOAK_* → the platform-test values (NOT "OVERLAY_MUST_OVERRIDE")
      ```
      and the public URL reaches the **bridge viewer** (a `401/404` from the
      SERVICE, NOT a catch-all rewrite to the primary `endpoint-admin-service`).
-   - Fail signal: env missing route 28 (ConfigMap not patched / pod not restarted);
+   - Fail signal: env missing route 29 (ConfigMap not patched / pod not restarted);
      `KEYCLOAK_*` shows `OVERLAY_MUST_OVERRIDE` (a base apply clobbered the overlay
      → revert to the overlay-rendered config); or the public URL 404s via the
      catch-all (route order regressed → confirm `order=-10` rendered).
@@ -463,9 +470,9 @@ revocation — mandatory, not optional):
     kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge-device-key
   ```
-- Re-render + prove the §1.1 default posture is restored: route 28 gone from the
+- Re-render + prove the §1.1 default posture is restored: route 29 gone from the
   api-gateway env, 8096 not published, no api-gateway→8096 allow, 9444 NodePort
-  intact; the public view URL no longer reaches the bridge; re-run the §4
+  intact, route 28 still serves Budget Control; the public view URL no longer reaches the bridge; re-run the §4
   negative-reachability checks (all 8096 origins denied). `REMOTE_BRIDGE_ENABLED`
   stays true throughout — the broker + agent stream never go down.
 - No data to purge: recording-OFF means nothing was persisted.

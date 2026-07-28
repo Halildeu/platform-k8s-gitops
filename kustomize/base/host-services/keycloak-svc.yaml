@@ -22,7 +22,7 @@ metadata:
     app.kubernetes.io/name: keycloak
 subsets:
   - addresses:
-      - ip: 10.9.10.53              # overlays'de override
+      - ip: 192.0.2.1               # fail-closed placeholder; overlay override zorunlu
     ports:
       - name: http
         port: 8081                  # prod mevcut (overlays/test 8082'ye çevirir)

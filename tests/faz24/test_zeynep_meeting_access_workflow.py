@@ -224,14 +224,17 @@ def _run_ambiguous_reset_scenario(
     tmp_path: Path,
     scenario: str,
     *,
-    initial_email: str = "d35-admin@example.com",
+    initial_email: str = WRITER_PROFILE_EMAIL,
     initial_first_name: str = "D35",
     initial_last_name: str = "Persona",
     email_owner_scenario: str = "available",
     writer_user_id: str = WRITER_USER_ID,
+    writer_local_user_id: str = "12",
     vault_scenario: str = "ready",
     required_actions: tuple[str, ...] = (),
     profile_put_scenario: str = "success",
+    admin_password_via_stdin: bool = False,
+    pre_identity_credential_only: bool = False,
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -242,7 +245,7 @@ def _run_ambiguous_reset_scenario(
         bin_dir / "jq",
         f"""#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$*" == *'/home/halil/bootstrap-drill/vault-init-test.json'* ]]; then
+if [[ -n "${{VAULT_INIT_FILE:-}}" && "$*" == *"${{VAULT_INIT_FILE}}"* ]]; then
   printf '%s' 'mock-root-token'
   exit 0
 fi
@@ -260,6 +263,10 @@ printf '%s\\n' '{NEW_PASSWORD}'
         """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "inspect" ]]; then
+  if [[ "$*" == *'platform-kc-test'* ]]; then
+    printf '%s' '[{"HostIp":"127.0.0.1","HostPort":"8082"}]'
+    exit 0
+  fi
   if [[ "${MOCK_VAULT_SCENARIO}" == 'missing-container' ]]; then
     exit 1
   fi
@@ -318,6 +325,10 @@ while [[ $# -gt 0 ]]; do
     *) shift ;;
   esac
 done
+if [[ "${url}" == *'/.well-known/openid-configuration' ]]; then
+  printf '%s' '{"issuer":"https://testai.acik.com/realms/platform-test","token_endpoint":"https://testai.acik.com/realms/platform-test/protocol/openid-connect/token"}'
+  exit 0
+fi
 : > "${output}"
 if [[ "${url}" == *'/realms/master/'* ]]; then
   printf '%s' '{"access_token":"admin-token"}' > "${output}"
@@ -517,7 +528,14 @@ fi
     keycloak_user_id_state.write_text(writer_user_id, encoding="utf-8")
     attributes_state = tmp_path / "attributes-state.json"
     attributes_state.write_text(
-        json.dumps({"sentinel": ["keep"]}), encoding="utf-8"
+        json.dumps(
+            {
+                "sentinel": ["keep"],
+                "userId": [writer_local_user_id],
+                "subscriberId": [writer_local_user_id],
+            }
+        ),
+        encoding="utf-8",
     )
     required_actions_state = tmp_path / "required-actions-state.json"
     required_actions_state.write_text(
@@ -530,12 +548,15 @@ fi
     )
     event_log = tmp_path / "events.log"
     event_log.write_text("", encoding="utf-8")
+    vault_init_file = tmp_path / "vault-init-test.json"
+    vault_init_file.write_text(
+        json.dumps({"root_token": "mock-root-token"}), encoding="utf-8"
+    )
     result_path = tmp_path / "result.json"
     env = os.environ.copy()
     env.update(
         {
             "PATH": f"{bin_dir}:{env['PATH']}",
-            "KC_ADMIN_PASSWORD": "mock-admin-password",
             "MOCK_SCENARIO": scenario,
             "MOCK_NEW_PASSWORD": NEW_PASSWORD,
             "MOCK_VAULT_STATE": str(vault_state),
@@ -554,10 +575,22 @@ fi
             "MOCK_PROFILE_PUT_SCENARIO": profile_put_scenario,
             "MOCK_VAULT_SCENARIO": vault_scenario,
             "MOCK_EVENT_LOG": str(event_log),
+            "VAULT_INIT_FILE": str(vault_init_file),
         }
     )
+    command = ["bash", str(REPAIR_SCRIPT), "--out", str(result_path)]
+    stdin_value = None
+    if admin_password_via_stdin:
+        env.pop("KC_ADMIN_PASSWORD", None)
+        command.append("--keycloak-admin-password-stdin")
+        stdin_value = "mock-admin-password\n"
+    else:
+        env["KC_ADMIN_PASSWORD"] = "mock-admin-password"
+    if pre_identity_credential_only:
+        command.append("--pre-identity-credential-only")
     proc = subprocess.run(
-        ["bash", str(REPAIR_SCRIPT), "--out", str(result_path)],
+        command,
+        input=stdin_value,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -583,6 +616,42 @@ def test_repair_script_is_shell_syntax_valid():
     )
 
     assert proc.returncode == 0, proc.stderr
+
+
+def test_keycloak_admin_password_stdin_contract_reaches_ready_state(tmp_path):
+    proc, result, _, _, _ = _run_ambiguous_reset_scenario(
+        tmp_path,
+        "new-success",
+        writer_local_user_id="1204",
+        admin_password_via_stdin=True,
+        pre_identity_credential_only=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert result["status"] in {"credential-ready", "credential-repaired"}
+    assert result["permissionWriter"]["loginReady"] is True
+    assert result["permissionWriter"]["rolesReadReady"] is False
+    assert "mock-admin-password" not in proc.stdout
+    assert "mock-admin-password" not in proc.stderr
+
+
+def test_pre_identity_credential_mode_never_mutates_the_writer_profile(tmp_path):
+    proc, result, _, events, _ = _run_ambiguous_reset_scenario(
+        tmp_path,
+        "new-success",
+        writer_local_user_id="1204",
+        initial_email="drifted@example.invalid",
+        admin_password_via_stdin=True,
+        pre_identity_credential_only=True,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert result["status"] in {"credential-ready", "credential-repaired"}
+    assert result["permissionWriter"]["loginReady"] is True
+    assert result["permissionWriter"]["profileRepaired"] is False
+    assert "keycloak-profile-repair" not in events
+    assert (tmp_path / "keycloak-email-state").read_text(
+        encoding="utf-8"
+    ).strip() == "drifted@example.invalid"
 
 
 def test_repair_script_keeps_vault_and_keycloak_reconcilable():
@@ -889,7 +958,7 @@ def test_vault_preflight_blocks_before_profile_repair(tmp_path):
     assert events == []
 
 
-def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
+def test_writer_email_is_reconciled_to_the_canonical_local_identity(tmp_path):
     proc, result, vault_state, events, _ = _run_ambiguous_reset_scenario(
         tmp_path,
         "new-success",
@@ -901,13 +970,20 @@ def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
     assert result["permissionWriter"]["identityBinding"] == (
         "username+immutable-user-id"
     )
-    assert result["boundaries"]["permissionWriterEmailMutation"] is False
-    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is False
-    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is False
-    assert result["permissionWriter"]["profileRepaired"] is False
+    assert result["boundaries"]["permissionWriterEmailMutation"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is True
+    assert result["permissionWriter"]["profileRepaired"] is True
     assert result["permissionWriter"]["profileEmailCollisionFree"] is True
     assert vault_state["admin_persona_password"] == NEW_PASSWORD
-    assert events == ["vault-put", "keycloak-reset-ambiguous"]
+    assert events == [
+        "keycloak-profile-repair",
+        "vault-put",
+        "keycloak-reset-ambiguous",
+    ]
+    assert (tmp_path / "keycloak-email-state").read_text(
+        encoding="utf-8"
+    ).strip() == WRITER_PROFILE_EMAIL
 
 
 def test_writer_uid_mismatch_blocks_before_any_mutation(tmp_path):
@@ -922,6 +998,25 @@ def test_writer_uid_mismatch_blocks_before_any_mutation(tmp_path):
     assert proc.returncode == 1
     assert result["failureReason"] == "permission-writer-id-mismatch"
     assert result["permissionWriter"]["exactIdentityMatch"] is False
+    assert vault_state == original_vault
+    assert events == []
+
+
+def test_writer_local_user_id_mismatch_blocks_before_any_mutation(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="drifted@example.invalid",
+            writer_local_user_id="9999",
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-profile-precondition-local-user-mismatch"
+    )
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is False
     assert vault_state == original_vault
     assert events == []
 

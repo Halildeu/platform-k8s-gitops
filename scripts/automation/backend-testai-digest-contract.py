@@ -36,6 +36,22 @@ ENTRY_START_RE = re.compile(r"^[ \t]*-[ \t]+name:[ \t]*\S")
 NEWNAME_RE = re.compile(
     r"^[ \t]+newName:[ \t]*ghcr\.io/halildeu/platform-backend-(?P<service>[a-z0-9-]+)[ \t]*$"
 )
+# GHCR canonical'dir. Yerel registry YALNIZCA acikca isaretlenmis, izlenen bir
+# blocker varken kabul edilir — isaretsiz kullanim REDDEDILIR (fail-closed).
+#
+# Neden bu istisna var: gitops#2876'da k3d-test'in ghcr-pull kimligi
+# `read:packages` yetkisini kaybetti; YENI hicbir GHCR imaji cekilemiyor. Bu
+# durumda imaji hostta derleyip cluster'in containerd mirror'ina bagli yerel
+# registry'e push etmek tek ilerleme yolu. Ama bu, provenance zincirinden bir
+# SAPMA oldugu icin sessizce olmamali: marker hangi issue'nun bunu zorladigini
+# soyler ve blocker kapaninca marker kaldirilinca guard otomatik olarak yeniden
+# sikilasir.
+LOCAL_REGISTRY_NEWNAME_RE = re.compile(
+    r"^[ \t]+newName:[ \t]*platform-test-registry:5000/platform-backend-(?P<service>[a-z0-9-]+)[ \t]*$"
+)
+LOCAL_REGISTRY_EXCEPTION_RE = re.compile(
+    r"^[ \t]*#[ \t]*LOCAL-REGISTRY-EXCEPTION:[ \t]*(?P<issue>gitops#[0-9]+)\b"
+)
 ENTRY_DIGEST_RE = re.compile(r"^[ \t]+digest:[ \t]*(?P<digest>sha256:[a-f0-9]{64})[ \t]*$")
 
 
@@ -94,13 +110,37 @@ def inspect_overlay(path: Path) -> dict[str, str]:
 
     found: dict[str, str] = {}
     current_service: str | None = None
+    # Marker girdinin ICINDE, newName'den once gorulmelidir. Her yeni girdide
+    # sifirlanir ki bir girdinin istisnasi digerine sizmasin.
+    exception_issue: str | None = None
+    local_registry_service: str | None = None
     for line in path.read_text(encoding="utf-8").splitlines():
         if ENTRY_START_RE.match(line):
             current_service = None
+            exception_issue = None
+            local_registry_service = None
+            continue
+        match_exception = LOCAL_REGISTRY_EXCEPTION_RE.match(line)
+        if match_exception:
+            exception_issue = match_exception.group("issue")
             continue
         match_name = NEWNAME_RE.match(line)
         if match_name:
             current_service = match_name.group("service")
+            local_registry_service = None
+            continue
+        match_local = LOCAL_REGISTRY_NEWNAME_RE.match(line)
+        if match_local:
+            service = match_local.group("service")
+            if service in REQUIRED_SERVICES and exception_issue is None:
+                fail(
+                    f"{service} uses the local registry without a "
+                    "'# LOCAL-REGISTRY-EXCEPTION: gitops#<n>' marker in the same "
+                    "image entry; GHCR is canonical and any deviation must name "
+                    "the blocking issue"
+                )
+            current_service = service
+            local_registry_service = service
             continue
         if current_service is None:
             continue

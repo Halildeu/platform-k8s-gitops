@@ -13,7 +13,7 @@
 # This overlay stages ONLY the bridge-side viewer surface: the viewer flag + png
 # pin (configmap patch), containerPort 8096 (deployment patch), a dedicated
 # ClusterIP 8096 Service (NEVER NodePort), and an additive NetworkPolicy allowing
-# 8096 ingress from api-gateway pods only. The api-gateway route 28 stays a runtime
+# 8096 ingress from api-gateway pods only. The api-gateway route 29 stays a runtime
 # `kubectl patch configmap api-gateway-config` (see
 # docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md §3 step 4b) — it must
 # merge into the single existing api-gateway-config without clobbering the overlay's

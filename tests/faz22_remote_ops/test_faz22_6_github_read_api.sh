@@ -147,6 +147,14 @@ calls_after="$(wc -l <"$FAKE_CURL_ARGS_LOG" | tr -d ' ')"
 workflow="$ROOT/.github/workflows/faz22-6-live-audit.yml"
 grep -q '^      GITHUB_READ_API_BACKEND: curl$' "$workflow"
 grep -q "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10" "$workflow"
+grep -q "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1" "$workflow"
+grep -q 'python-version: "3.12.3"' "$workflow"
+grep -q 'check-latest: false' "$workflow"
+grep -q 'python -m venv "$RUNNER_TEMP/faz22-audit-venv"' "$workflow"
+if grep -q 'python3 -m venv "$RUNNER_TEMP/faz22-audit-venv"' "$workflow"; then
+  echo "Faz 22.6 live audit still relies on the self-hosted runner system Python venv" >&2
+  exit 1
+fi
 grep -q "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" "$workflow"
 grep -q "'\^F22_6_COMPLETION=pass\$'" "$workflow"
 if grep -Eq '^[[:space:]]*need gh$' \

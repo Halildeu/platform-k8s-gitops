@@ -19,7 +19,19 @@ import yaml
 
 
 VALID_WORKLOAD_KINDS = {"Deployment", "StatefulSet", "Job", "external"}
-VALID_RUNTIME_CLASSES = {"spring-backend", "nginx", "openfga", "job", "lab-tool"}
+# `third-party` is a vendor daemon we run but do not build: it exposes no HTTP
+# health surface of ours and brings its own readiness model. The probe-contract
+# table already names this case (see probe_contract_rules — `exempt` covers
+# "third-party with own readiness model"); the runtime vocabulary simply had no
+# word for it, which would force such a workload to be mislabelled a lab tool.
+VALID_RUNTIME_CLASSES = {
+    "spring-backend",
+    "nginx",
+    "openfga",
+    "job",
+    "lab-tool",
+    "third-party",
+}
 VALID_PROBE_CONTRACTS = {"spring-actuator", "http-healthz", "exempt"}
 VALID_ENV_STATES = {"enabled", "deferred", "disabled"}
 
@@ -33,6 +45,8 @@ class Service:
     jvm_warmup_extra: bool = False
     environments: dict[str, str] = field(default_factory=dict)
     third_party: bool = False
+    jwt_validates: bool = True
+    image_digest_required: dict[str, bool] = field(default_factory=dict)
 
     def is_enabled_in(self, env: str) -> bool:
         return self.environments.get(env) == "enabled"
@@ -42,6 +56,9 @@ class Service:
 
     def is_disabled_in(self, env: str) -> bool:
         return self.environments.get(env) == "disabled"
+
+    def requires_image_digest_in(self, env: str) -> bool:
+        return self.image_digest_required.get(env, True)
 
 
 @dataclass
@@ -123,6 +140,23 @@ def _parse_service(entry: dict) -> Service:
                 name, f"environments[{env}]={state!r} not in {sorted(VALID_ENV_STATES)}"
             )
 
+    image_digest_required = entry.get("image_digest_required", {})
+    if not isinstance(image_digest_required, dict):
+        raise CatalogValidationError(name, "image_digest_required must be an environment map")
+    for env, required in image_digest_required.items():
+        if env not in envs:
+            raise CatalogValidationError(
+                name, f"image_digest_required[{env}] has no matching environment declaration"
+            )
+        if not isinstance(required, bool):
+            raise CatalogValidationError(
+                name, f"image_digest_required[{env}] must be boolean"
+            )
+        if required is False and not bool(entry.get("third_party", False)):
+            raise CatalogValidationError(
+                name, "only an explicitly third-party service may carry a digest exception"
+            )
+
     return Service(
         name=name,
         workload_kind=workload_kind,
@@ -131,4 +165,6 @@ def _parse_service(entry: dict) -> Service:
         jvm_warmup_extra=bool(entry.get("jvm_warmup_extra", False)),
         environments=dict(envs),
         third_party=bool(entry.get("third_party", False)),
+        jwt_validates=bool(entry.get("jwt_validates", True)),
+        image_digest_required=dict(image_digest_required),
     )

@@ -43,7 +43,7 @@ concurrency:
 jobs:
   apply:
     environment: {ENVIRONMENT}
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     steps:
       - uses: actions/checkout@{'1' * 40}
       - name: Verify signed runner bootstrap
@@ -88,7 +88,7 @@ def policy_payload() -> dict[str, object]:
                 "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
                 "requiredRunsOnLabels": [
                     "self-hosted",
-                    "staging-sw",
+                    "aiserver",
                     "testai-deploy",
                 ],
                 "requireRunnerGroup": False,
@@ -96,7 +96,7 @@ def policy_payload() -> dict[str, object]:
             {
                 "stage": "browser-evidence",
                 "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
-                "requiredRunsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
+                "requiredRunsOnLabels": ["self-hosted", "aiserver", "testai-deploy"],
                 "requireRunnerGroup": False,
             },
             {
@@ -104,7 +104,7 @@ def policy_payload() -> dict[str, object]:
                 "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
                 "requiredRunsOnLabels": [
                     "self-hosted",
-                    "staging-sw",
+                    "aiserver",
                     "testai-deploy",
                 ],
                 "requireRunnerGroup": False,
@@ -184,7 +184,7 @@ class FakeGitHub:
                 "busy": False,
                 "labels": [
                     {"name": label, "type": "custom"}
-                    for label in ("self-hosted", "staging-sw", "testai-deploy")
+                    for label in ("self-hosted", "aiserver", "testai-deploy")
                 ],
             },
         )

@@ -210,7 +210,7 @@ def test_admin_password_line_breaks_are_normalized(tmp_path: Path):
 
 def test_workflow_keeps_test_and_secret_boundaries():
     workflow = (ROOT / ".github/workflows/faz22-6-viewer-frontend-audience.yml").read_text()
-    assert "runs-on: [self-hosted, staging-sw, testai-deploy]" in workflow
+    assert "runs-on: [self-hosted, aiserver, testai-deploy]" in workflow
     assert "platform-test-keycloak-configuration" in workflow
     assert "APPLY_VIEWER_FRONTEND_AUDIENCE" in workflow
     assert "verify-viewer-frontend-audience-evidence.sh" in workflow

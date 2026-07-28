@@ -20,6 +20,7 @@ cat >"$MOCK_BIN/docker" <<'MOCK'
 set -euo pipefail
 case "${1:-}" in
   ps)
+    printf '%s\n' "$@" >"${MOCK_DOCKER_ARGS_CAPTURE:?}"
     printf '%b' "${MOCK_CONTAINER_IDS-fake-postgres-container\\n}"
     ;;
   exec)
@@ -43,6 +44,7 @@ invalid_matrix='{"roleExists":true,"roleLogin":true,"roleNonPrivileged":true,"ro
 run_script() {
   PATH="$MOCK_BIN:$PATH" \
     MOCK_SQL_CAPTURE="$TMP_ROOT/sql.log" \
+    MOCK_DOCKER_ARGS_CAPTURE="$TMP_ROOT/docker-args.log" \
     MOCK_MATRIX="$MOCK_MATRIX" \
     MOCK_ROLE="${MOCK_ROLE:-viewer_broker_role}" \
     bash "$SCRIPT" "$@"
@@ -55,6 +57,12 @@ grep -Fq '"auditInsert":true' "$TMP_ROOT/check.out"
 grep -Fq '"schemaCreate":false' "$TMP_ROOT/check.out"
 grep -Fq '"roleNoMembership":true' "$TMP_ROOT/check.out"
 grep -Fq 'VIEWER_AUDIT_DB_ROLE status=pass action=check target=test-only' "$TMP_ROOT/check.out"
+grep -Fxq 'label=com.docker.compose.project=platform-pg-test' \
+  "$TMP_ROOT/docker-args.log"
+if grep -Fq 'platform-pg-prod' "$TMP_ROOT/docker-args.log"; then
+  echo "postgres discovery must not target the production Compose project" >&2
+  exit 1
+fi
 if grep -Fq 'viewer_broker_role' "$TMP_ROOT/check.out"; then
   echo "role name leaked to output" >&2
   exit 1

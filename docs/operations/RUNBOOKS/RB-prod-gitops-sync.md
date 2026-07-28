@@ -10,6 +10,11 @@
 > **Rollback**: bu runbook'un `full` + eski-revision modu rollback yapar
 > (§5 — dispatch mekaniği). Rollback **kararı** (tetik matrisi, önceki-iyi
 > revision bulma, follow-up) için `docs/RB-prod-deploy-rollback.md`.
+>
+> **2026-07-23 canlı hedef**: workflow runner'ı `.15`
+> `aiserver-testai-deploy`; ArgoCD `server.rootpath=/argocd` kullandığı için
+> bütün CLI çağrıları `--grpc-web-root-path /argocd` ile yapılır. Production
+> environment required-reviewer kapısı korunur.
 
 ## Bağlam — neden bu mekanizma
 
@@ -81,11 +86,11 @@ kubectl --context k3d-prod -n argocd \
   port-forward svc/argocd-server 18083:80 &
 PF_PID=$!
 
-argocd login 127.0.0.1:18083 --plaintext \
+argocd login 127.0.0.1:18083 --plaintext --grpc-web-root-path /argocd \
   --username admin --password "${ADMIN_PW}"
 
 # token üret — ÇIKTIYI GÜVENLE KOPYALA (bir kez gösterilir)
-argocd --plaintext --server 127.0.0.1:18083 \
+argocd --plaintext --grpc-web-root-path /argocd --server 127.0.0.1:18083 \
   account generate-token --account prod-gitops-sync
 
 kill "${PF_PID}" 2>/dev/null || true
@@ -259,15 +264,15 @@ gh workflow run deploy-prod-gitops.yml \
 ```bash
 # port-forward + admin login (§1.2 ile aynı)
 # mevcut token'ları listele
-argocd --plaintext --server 127.0.0.1:18083 \
+argocd --plaintext --grpc-web-root-path /argocd --server 127.0.0.1:18083 \
   account get prod-gitops-sync
 
 # yeni token üret → GitHub secret'ı güncelle (§1.3)
-argocd --plaintext --server 127.0.0.1:18083 \
+argocd --plaintext --grpc-web-root-path /argocd --server 127.0.0.1:18083 \
   account generate-token --account prod-gitops-sync
 
 # eski token'ı revoke et (id account get çıktısından)
-argocd --plaintext --server 127.0.0.1:18083 \
+argocd --plaintext --grpc-web-root-path /argocd --server 127.0.0.1:18083 \
   account delete-token --account prod-gitops-sync --id <ESKİ_TOKEN_ID>
 ```
 

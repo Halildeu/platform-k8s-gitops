@@ -33,6 +33,10 @@ path "kv/data/platform/report-service" {
   capabilities = ["read"]
 }
 
+path "kv/data/platform/budget-service" {
+  capabilities = ["read"]
+}
+
 path "kv/data/platform/schema-service" {
   capabilities = ["read"]
 }

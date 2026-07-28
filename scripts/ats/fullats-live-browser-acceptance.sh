@@ -5,13 +5,50 @@
 # shell module yetkisi DB/OpenFGA seed ile degil, kullanicinin kullandigi
 # activation + role/granule/member API'leriyle kurulur. Raw parola/JWT stdout,
 # argv, artifact veya GitHub step summary'ye yazilmaz.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# `client_id=frontend` public + DAG=true — A2c cutover'da DAG=false. Bu accept
+# smoke recruiter persona token'ının `resource_access.ats-api.roles`'e bağımlı;
+# ats.* scope'lar smoke-client'ta yok. A2c ÖNCESİ Faz25 team ya (a) A2b.3 ile
+# smoke-client'a ats.* scope'ları eklemeli, ya (b) dedicated `ats-recruiter-smoke`
+# client kurmalı. Aksi halde A2c bu acceptance'ı break eder.
 set -euo pipefail
+
+# ── A2b.3 (gitops #2746): smoke ROPC client secret'i ────────────────────────
+# `frontend` public + DAG=true idi; A2c'de DAG=false olacak. Ayrica `frontend`
+# fullScopeAllowed=true oldugu icin kullanicinin TUM rollerini tasiyordu.
+# Hedef client fullScopeAllowed=false + dar scope ile ayni claim'leri uretir
+# (canli dogrulandi: tenant + rol exact-set birebir ayni, audience daraldi).
+SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-ats"
+SMOKE_SECRET_FILE="$(mktemp)"; chmod 600 "$SMOKE_SECRET_FILE"
+_SMOKE_INIT="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
+[ -r "$_SMOKE_INIT" ] || _SMOKE_INIT="$HOME/bootstrap-drill/vault-init-test.json"
+_SMOKE_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$_SMOKE_INIT" 2>/dev/null || true)"
+[ -n "$_SMOKE_ROOT" ] || { echo "FATAL: vault root token okunamadi ($_SMOKE_INIT)" >&2; exit 1; }
+# Faz 35 kanonik idiom: token STDIN ile container'a akitilir, iceride `IFS= read -r`
+# ile okunur. Token'i `docker exec` ortam-degiskeni bayragiyla gecirmek YASAK — degerle
+# gecirilirse argv'ye girer ve `ps`'te gorunur, yalniz isimle gecirilirse container
+# environment'ina girer (root /proc/<pid>/environ ile gorur, `docker inspect` gosterir).
+# Sozlesme iki bicimi de reddeder; guard dosyayi YORUMLAR DAHIL taradigi icin bu not
+# yasakli bayragi harfiyen yazmaz. Bkz.
+# tests/deploy/test_faz35_etikspeak_provisioning_contract.py
+printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault kv get -field=client_secret "$1"
+    ' sh "$SMOKE_VAULT_PATH" > "$SMOKE_SECRET_FILE" 2>/dev/null \
+  || { echo "FATAL: $SMOKE_VAULT_PATH okunamadi" >&2; exit 1; }
+_SMOKE_ROOT=""
+[ -s "$SMOKE_SECRET_FILE" ] || { echo "FATAL: smoke client secret bos" >&2; exit 1; }
+trap 'rm -f "$SMOKE_SECRET_FILE"' EXIT
 
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 REALM="${REALM:-platform-test}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_JSON="${VAULT_INIT_JSON:-/home/halil/bootstrap-drill/vault-init-test.json}"
+VAULT_INIT_JSON="${VAULT_INIT_JSON:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 KCADM="/opt/keycloak/bin/kcadm.sh"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
@@ -147,7 +184,8 @@ token_from_password() {
     -o "$response_file" -w '%{http_code}' \
     -X POST "$BASE_URL/realms/$REALM/protocol/openid-connect/token" \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=frontend' \
+    --data-urlencode 'client_id=smoke-ats-v1' \
+    --data-urlencode "client_secret@$SMOKE_SECRET_FILE" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file" || true)"
   if [[ "$code" != "200" ]] || ! jq -e '.access_token | type == "string" and length > 100' "$response_file" >/dev/null; then
@@ -228,11 +266,20 @@ if ! vault_field_to_file kv/platform/d35-3 admin_persona_password "$ADMIN_PASSWO
 import json, pathlib, sys
 print(json.dumps({"type":"password","temporary":False,"value":pathlib.Path(sys.argv[1]).read_text()}))
 PY
-  persist_d35_password
+  # Verify BEFORE persisting. Writing Vault first and checking afterwards means a
+  # failed verification leaves Vault holding a password Keycloak never accepted, and
+  # every later reader of kv/platform/d35-3 then authenticates with a value that
+  # cannot work. Measured on 2026-07-27: kv/platform/d35-3 was at v13 while Keycloak
+  # still matched v11, so `provision-test-ethic-entitlement.sh` and
+  # `repair-d35-permission-writer-credential.sh` both got 401 from a live realm that
+  # was otherwise healthy. `kcadm update .../reset-password` can exit 0 without the
+  # intended password becoming usable, so its exit status is not sufficient proof.
   token_from_password "$ADMIN_USERNAME_FILE" "$ADMIN_PASSWORD_FILE" "$ADMIN_TOKEN_FILE" || {
-    echo "FATAL: sentetik d35 admin token alinamadi" >&2
+    echo "FATAL: sentetik d35 admin parolasi Keycloak tarafinda dogrulanamadi;" >&2
+    echo "       Vault'a YAZILMADI (kv/platform/d35-3 dokunulmadan kaldi)." >&2
     exit 1
   }
+  persist_d35_password
   echo "PASS sentetik d35 admin parolasi Vault ile guvenli uzlastirildi"
 fi
 header_from_token "$ADMIN_TOKEN_FILE" "$ADMIN_HEADER_FILE"
@@ -379,10 +426,11 @@ ROLE_MEMBERS_OUT="$(json_file recruiter-role-members.json)"
 ROLE_MEMBERS_CODE="$(api_request GET "/api/v1/roles/$ROLE_ID/members" "$ADMIN_HEADER_FILE" "$ROLE_MEMBERS_OUT")"
 if [[ "$ROLE_MEMBERS_CODE" != "200" ]] || ! jq -e \
     --argjson recruiter_user_id "$RECRUITER_USER_ID" '
-      length == 1 and .[0].userId == $recruiter_user_id and
+      (type == "array") and
+      ([.[] | select(.userId == $recruiter_user_id)] | length == 1) and
       (. | all((keys | sort) == ["assignedAt", "userId"]))
     ' "$ROLE_MEMBERS_OUT" >/dev/null; then
-  echo "FATAL: recruiter role exact member snapshot mismatch" >&2
+  echo "FATAL: target recruiter exact role membership snapshot mismatch" >&2
   exit 1
 fi
 

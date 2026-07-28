@@ -351,17 +351,59 @@ else:
       pr_num=$(echo "$pr_url" | grep -oE '[0-9]+$')
       echo "  [OPEN] $pr_url"
 
-      # Update ledger entry with candidate_pr ref
-      python3 <<PYEOF
-import json
+      # ── Ledger candidate_pr — DURABLE write (#2499 Sorun 1) ────────────────
+      # Previously this wrote the ledger file and then fell through to
+      # `git checkout main`, so the edit was an uncommitted working-tree change
+      # that the checkout discarded — and in Actions the checkout is ephemeral
+      # anyway. The ledger state machine was local fiction: the field was
+      # written on every run and never survived one.
+      #
+      # Fix: commit the ledger update ONTO THE CANDIDATE BRANCH, as a second
+      # commit on top of the overlay change, and push it. Consequences, all
+      # intended:
+      #   * The candidate_pr record lands atomically WITH the promotion when the
+      #     PR merges — the merged history answers "which PR promoted this sha".
+      #   * If an operator closes the candidate as rejected, the ledger is never
+      #     updated, which is correct: no promotion happened.
+      #   * No write access to protected `main` is required.
+      #
+      # A plain fast-forward push suffices (we only add a commit to a branch we
+      # just pushed), so no second lease negotiation is needed here.
+      #
+      # NOTE on `candidate_pr_status`: recorded as 'open' rather than 'draft'.
+      # This value is only ever observed in the MERGED tree, at which point
+      # "draft" would be a false statement about a merged PR. The scanner's
+      # duplicate suppression does not read this field — it queries PR
+      # lifecycle via `gh pr list --state all` (see the case block above), which
+      # is authoritative and stateless. This record is audit, not control flow.
+      if python3 - "$ledger_file" "$pr_num" <<'PYEOF'
+import json, sys, datetime
 from pathlib import Path
-ledger = Path("$ledger_file")
+
+ledger = Path(sys.argv[1])
+pr_num = int(sys.argv[2])
 data = json.loads(ledger.read_text())
-data['promotion']['prod']['candidate_pr'] = $pr_num
-data['promotion']['prod']['candidate_pr_status'] = 'draft'
-data['audit']['last_updated_at'] = '$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+data.setdefault('promotion', {}).setdefault('prod', {})
+data['promotion']['prod']['candidate_pr'] = pr_num
+data['promotion']['prod']['candidate_pr_status'] = 'open'
+data.setdefault('audit', {})['last_updated_at'] = (
+    datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
 ledger.write_text(json.dumps(data, indent=2) + "\n")
 PYEOF
+      then
+        rel_ledger="${ledger_file#"$REPO_ROOT"/}"
+        git add "$rel_ledger"
+        if git commit -q -m "auto(promote): record candidate PR #${pr_num} for ${repo}/${service} sha-${short_sha}" \
+           && git push origin "HEAD:refs/heads/${branch}" --quiet; then
+          echo "  [LEDGER] candidate_pr=#${pr_num} committed to $branch (lands on merge)"
+        else
+          # Non-fatal: the promotion PR itself is open and reviewable. Only the
+          # audit breadcrumb is missing, and it is reported rather than hidden.
+          echo "  [WARN] ledger candidate_pr commit/push failed — PR #${pr_num} is open but the ledger record did not attach"
+        fi
+      else
+        echo "  [WARN] ledger candidate_pr update failed to serialise — PR #${pr_num} is open without a ledger record"
+      fi
 
       opened=$((opened + 1))
     else

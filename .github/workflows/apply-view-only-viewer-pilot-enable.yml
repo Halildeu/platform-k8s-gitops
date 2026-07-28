@@ -38,7 +38,7 @@ env:
   BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key
   GATEWAY_DEPLOYMENT: api-gateway
   GATEWAY_CONFIGMAP: api-gateway-config
-  GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_28_
+  GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_29_
   VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
   BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   TEST_ROOT_OVERLAY: kustomize/overlays/test
@@ -67,7 +67,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PILOT_OPERATOR_SHA256: ${{ secrets.VIEW_ONLY_PILOT_OPERATOR_SHA256 }}
           PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
-          PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
         run: |
           set -euo pipefail
           policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
@@ -85,15 +84,6 @@ jobs:
             echo "::error::operator and device authorization hashes must be distinct"
             exit 1
           }
-          printf '%s' "${PILOT_AUTHORIZATION_EXPIRES_AT:-}" \
-            | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || {
-              echo "::error::protected authorization expiry must be RFC3339 UTC"
-              exit 1
-            }
-          [ "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" -gt "$(date -u +%s)" ] || {
-            echo "::error::protected pilot authorization is expired"
-            exit 1
-          }
 
           out="$RUNNER_TEMP/faz22-view-only-pilot-authorization"
           mkdir -p "$out"
@@ -103,7 +93,13 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/issues/comments/$advisory_comment_id" > "$out/advisory-comment.json"
           gh api "repos/$GITHUB_REPOSITORY/issues/2374" > "$out/legal-issue.json"
           gh api "repos/$GITHUB_REPOSITORY/environments/faz22-view-only-pilot" > "$out/environment.json"
+          authorization_ttl_minutes=120
           issued_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          issued_epoch="$(date -u -d "$issued_at" +%s)"
+          authorization_expires_epoch="$((issued_epoch + authorization_ttl_minutes * 60))"
+          authorization_expires_at="$(
+            date -u -d "@$authorization_expires_epoch" +%Y-%m-%dT%H:%M:%SZ
+          )"
           python3 scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py \
             --policy "$policy" \
             --owner-comment "$out/owner-comment.json" \
@@ -114,7 +110,7 @@ jobs:
             --operator-sha256 "$PILOT_OPERATOR_SHA256" \
             --device-sha256 "$PILOT_DEVICE_SHA256" \
             --issued-at "$issued_at" \
-            --expires-at "$PILOT_AUTHORIZATION_EXPIRES_AT" \
+            --expires-at "$authorization_expires_at" \
             --run-id "$GITHUB_RUN_ID" \
             --head-sha "$GITHUB_SHA" \
             --triggering-actor "$GITHUB_ACTOR" \
@@ -128,7 +124,7 @@ jobs:
           authorization_sha256="sha256:$(sha256sum "$out/protected-authorization.json" | awk '{print $1}')"
           printf 'authorization_sha256=%s\n' "$authorization_sha256" >> "$GITHUB_OUTPUT"
           printf 'authorization_expires_epoch=%s\n' \
-            "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" >> "$GITHUB_OUTPUT"
+            "$authorization_expires_epoch" >> "$GITHUB_OUTPUT"
           (cd "$out" && sha256sum protected-authorization.json > SHA256SUMS)
           (cd "$out" && sha256sum -c SHA256SUMS)
           rm -f "$out/owner-comment.json" "$out/advisory-comment.json" \
@@ -146,7 +142,7 @@ jobs:
     name: "Apply or rollback owner-gated #2373 VIEW_ONLY viewer product pilot surface"
     needs: [authorize-live-apply]
     if: always() && (inputs.action != 'apply' || needs.authorize-live-apply.result == 'success')
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 20
 
     steps:
@@ -317,16 +313,22 @@ jobs:
         run: |
           set -euo pipefail
           rm -f "$VIEWER_APPLY_ATTEMPT_MARKER"
-          expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"
           printf '%s' "$AUTHORIZATION_EXPIRES_EPOCH" | grep -Eq '^[1-9][0-9]{9,12}$' || {
             echo "::error::protected authorization expiry output is absent or invalid"
             exit 1
           }
-          [ "$expires_epoch" -le "$AUTHORIZATION_EXPIRES_EPOCH" ] || {
-            echo "::error::requested watchdog expiry exceeds the signed protected authorization"
+          now_epoch="$(date -u +%s)"
+          [ "$AUTHORIZATION_EXPIRES_EPOCH" -gt "$now_epoch" ] || {
+            echo "::error::protected authorization expired before watchdog installation"
             exit 1
           }
-          active_deadline="$(( PILOT_TTL_MINUTES * 60 + 600 ))"
+          requested_expires_epoch="$(( now_epoch + PILOT_TTL_MINUTES * 60 ))"
+          expires_epoch="$requested_expires_epoch"
+          if [ "$expires_epoch" -gt "$AUTHORIZATION_EXPIRES_EPOCH" ]; then
+            expires_epoch="$AUTHORIZATION_EXPIRES_EPOCH"
+            echo "::notice::watchdog expiry bounded by signed protected authorization"
+          fi
+          active_deadline="$(( expires_epoch - now_epoch + 600 ))"
           sed \
             -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
             -e "s/__ACTIVE_DEADLINE_SECONDS__/${active_deadline}/g" \
@@ -374,18 +376,36 @@ jobs:
         run: |
           set -euo pipefail
 
+          gateway_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap "${GATEWAY_CONFIGMAP}" -o json)"
+          printf '%s\n' "${gateway_config}" | jq -e '
+            .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID == "budget-service-route"
+            and .data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI == "http://budget-service:8101"
+            and .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0 == "Path=/api/v1/budgets/**"
+          ' >/dev/null || {
+            echo "::error::GitOps-owned Budget Control route 28 is missing or changed"
+            exit 1
+          }
+          route_keys="$(printf '%s\n' "${gateway_config}" \
+            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_"))')"
+          if [ -n "${route_keys}" ]; then
+            echo "::error::viewer route 29 is not clean before apply"
+            printf '%s\n' "${route_keys}"
+            exit 1
+          fi
+
           # ${sid} is a Spring RewritePath variable, not a shell variable.
           # shellcheck disable=SC2016
           # MethodRoutePredicateFactory uses ShortcutType.GATHER_LIST; one comma-separated
           # predicate is OR semantics. Two Method predicates would be AND and never match.
           patch_payload='{
             "data": {
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_ID": "remote-bridge-viewer-route",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET,POST",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_ID": "remote-bridge-viewer-route",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER": "-10",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1": "Method=GET,POST",
+              "SPRING_CLOUD_GATEWAY_ROUTES_29_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
             }
           }'
 
@@ -438,14 +458,15 @@ jobs:
 
           gateway_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             exec "deploy/${GATEWAY_DEPLOYMENT}" -- printenv \
-            | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_28_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)=')"
+            | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_(28|29)_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)=')"
           printf '%s\n' "${gateway_env}"
-          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ID=remote-bridge-viewer-route'
-          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_URI=http://endpoint-admin-remote-bridge-viewer:8096'
-          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER=-10'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ID=budget-service-route'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_29_ID=remote-bridge-viewer-route'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_29_URI=http://endpoint-admin-remote-bridge-viewer:8096'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER=-10'
           route_method="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get configmap api-gateway-config \
-            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1}')"
+            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1}')"
           [ "${route_method}" = 'Method=GET,POST' ] || {
             echo "::error::viewer route must permit only GET stream + POST render acknowledgement"
             exit 1
@@ -462,7 +483,8 @@ jobs:
             echo "- bridge rollout: \`ok\`"
             echo "- api-gateway rollout: \`ok\`"
             echo "- viewer service: \`ClusterIP/no-nodePort\`"
-            echo "- gateway route 28: \`remote-bridge-viewer-route\`"
+            echo "- gateway route 28: \`budget-service-route (unchanged)\`"
+            echo "- gateway route 29: \`remote-bridge-viewer-route\`"
             echo "- keycloak overlay placeholders: \`absent\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -563,12 +585,19 @@ jobs:
 
           route_keys="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get configmap api-gateway-config -o json \
-            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))' || true)"
+            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_"))' || true)"
           if [ -n "${route_keys}" ]; then
-            echo "::error::api-gateway route 28 keys remain after rollback"
+            echo "::error::api-gateway route 29 keys remain after rollback"
             printf '%s\n' "${route_keys}"
             exit 1
           fi
+          budget_route_id="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap api-gateway-config \
+            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID}')"
+          [ "${budget_route_id}" = "budget-service-route" ] || {
+            echo "::error::GitOps-owned Budget Control route 28 changed during rollback"
+            exit 1
+          }
 
           bridge_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get deploy "${BRIDGE_DEPLOYMENT}" \
@@ -599,6 +628,7 @@ jobs:
             echo ""
             echo "- viewer service: \`absent\`"
             echo "- viewer NetworkPolicies: \`absent\`"
-            echo "- api-gateway route 28: \`absent\`"
+            echo "- api-gateway route 28: \`budget-service-route (unchanged)\`"
+            echo "- api-gateway route 29: \`absent\`"
             echo "- broker remains enabled: \`REMOTE_BRIDGE_ENABLED=true\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,35 @@
+# Faz 35 Etik Speak — ethics-service Prometheus scrape.
+# Spring Boot Actuator /actuator/prometheus endpoint'i management port 8081'de
+# expose ediyor (ethics-service-config.yaml MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_
+# INCLUDE=health,info,prometheus + MANAGEMENT_SERVER_PORT=8081).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ethics-service
+  labels:
+    app.kubernetes.io/name: ethics-service
+    app.kubernetes.io/part-of: etik-speak
+    # Prometheus operator selector (repo canonical release label).
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ethics-service
+  # Namespace overlay-scoped.
+  namespaceSelector:
+    matchNames:
+      - platform-test
+      - platform-prod
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      # Sensitive header redaction — public reporter isteklerinin metric label'ında
+      # `uri` normalize (path variable stripping) + Authorization header'ı asla
+      # metric'e sızmaz (Spring Actuator default).
+      metricRelabelings:
+        # Drop high-cardinality request attributes to keep prometheus TSDB stable.
+        - sourceLabels: [__name__, uri]
+          regex: 'http_server_requests_seconds_.*;/api/v1/public/ethics/mailbox/[0-9a-f-]+/.*'
+          action: drop

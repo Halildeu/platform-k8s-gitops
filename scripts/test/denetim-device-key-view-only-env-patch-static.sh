@@ -80,6 +80,7 @@ fi
   require 'constrainedPtyPilotAutoConsentEnabled = $false' "activation evidence must record pilot auto-consent as disabled"
   require 'ENDPOINT_AGENT_REMOTE_BRIDGE_INSECURE_PLAINTEXT' "activation patch must explicitly disable plaintext"
   require 'ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64' "activation patch must require the permit trust anchor"
+  require 'ExpectedPermitPublicKeyB64' "activation patch must accept the protected orchestrator public trust material"
   require 'ExpectedPermitPublicKeyB64Sha256' "activation patch must pin the permit trust anchor digest"
   require 'ExpectedPermitKeyId' "activation patch must pin the permit key ID"
   require '$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID"] = $ExpectedPermitKeyId' "activation patch must migrate the service to the device-key broker KID"
@@ -635,6 +636,14 @@ grep -Fq 'release_policy_patch_arguments' "$orchestrator" || {
   echo "migration orchestrator must inject a transaction-scoped release-policy snapshot" >&2
   exit 1
 }
+grep -Fq 'derive_permit_public_key_b64' "$orchestrator" || {
+  echo "migration orchestrator must derive the broker permit public key without publishing private material" >&2
+  exit 1
+}
+grep -Fq -- '-ExpectedPermitPublicKeyB64' "$orchestrator" || {
+  echo "migration orchestrator must inject the public permit trust anchor into the endpoint transaction" >&2
+  exit 1
+}
 grep -Fq 'validate_mask_rect_bps' "$orchestrator" || {
   echo "migration orchestrator must validate the transaction-bound DLP mask policy" >&2
   exit 1
@@ -834,7 +843,7 @@ trap 'rm -rf "$orchestrator_harness"' EXIT
 mkdir -p "$orchestrator_harness/bin"
 cat >"$orchestrator_harness/bin/hostname" <<'SH'
 #!/usr/bin/env bash
-printf 'stagingsw\n'
+printf 'aiserver\n'
 SH
 cat >"$orchestrator_harness/bin/kubectl" <<'SH'
 #!/usr/bin/env bash
@@ -865,6 +874,7 @@ if [[ "$body" == *"-Action Apply"* ]]; then
   [[ "$body" == *"denetim-device-key-view-only-env-patch-${tx}.ps1"* ]] || exit 1
   [[ "$body" == *"transaction patch script SHA256 mismatch"* ]] || exit 1
   [[ "$body" == *"-ExpectedViewOnlyMaskRectBps '7500,7500,2500,2500'"* ]] || exit 1
+  [[ "$body" == *"-ExpectedPermitPublicKeyB64 'ZmFrZQ=='"* ]] || exit 1
   if [[ "${FAKE_APPLY_RESPONSE_LOST:-0}" == "1" ]]; then
     exit 1
   fi
@@ -925,6 +935,7 @@ grep -Fq 'DLP_MASK_RECT_BPS must be canonical' "$orchestrator_harness/missing-ma
 }
 
 export DLP_MASK_RECT_BPS=7500,7500,2500,2500
+export REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64=ZmFrZQ==
 
 set +e
 PATH="$orchestrator_harness/bin:$PATH" \

@@ -1,30 +1,58 @@
 #!/usr/bin/env bash
 # Faz 25 #2526: sentetik aday -> takip -> recruiter inbox/status E2E.
 # Secret/JWT/candidate token stdout veya process argumanina basılmaz.
+#
+# A2 MIGRATION NOTE (2026-07-21, Faz 22 Sec KC hardening #2476 A2b.2):
+# A2b.3 SONRASI: `client_id=smoke-ats-v1` (confidential ROPC, fullScopeAllowed=false).
+# Eski hal `client_id=frontend` public + DAG=true idi; A2c cutover'inda DAG=false. Bu smoke
+# recruiter/operator persona token'ının `resource_access.ats-api.roles`'e
+# (13 ats.* scope: application.read/status.write/citation.write/consent.write/
+# dsar.write/erasure.execute/export.read/export.write/recording.write/review.read/
+# review.write/transcript.read/transcription.write) bağımlı. Bu scope'lar
+# frontend'de DEFAULT olarak atanmış, smoke-client'ta YOK. A2c ÖNCESİ Faz25 team
+# ya (a) smoke-client'a ats.* scope'larını A2b.3 ile eklemeli (defaultClientScopes'a
+# taşımalı ki tenant claim + resource_access garantili gelsin), ya (b) `ats-recruiter`
+# adında dedicated ATS smoke client kurmalı. Aksi halde A2c bu smoke'u breaks eder.
 set -euo pipefail
 
 EDGE="${ATS_EDGE:-https://testai.acik.com}"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 API="$EDGE/api/ats/v1"
 TENANT="00000000-0000-0000-0000-000000000001"
 OTHER_TENANT="t-platform-test"
 T=$(mktemp -d); chmod 700 "$T"; umask 077
-trap 'rm -rf "$T"; unset RT OT CA ROOT S RPW OPW' EXIT
+trap 'rm -rf "$T"; unset RT OT CA ROOT S RPW OPW SCS' EXIT
 N=0; ok(){ echo "PASS: $1"; N=$((N+1)); }; die(){ echo "FAIL: $1" >&2; exit 1; }
 
-ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_token"])' "${VAULT_INIT_FILE}")
 S=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/ats-smoke)
+# A2b.3 (gitops #2746): confidential `smoke-ats-v1` ROPC. `frontend` A2c'de DAG=false
+# olacak; ayrica `frontend` fullScopeAllowed=true oldugu icin kullanicinin TUM rollerini
+# tasiyordu. `smoke-ats-v1` fullScopeAllowed=false + yalniz ats-api rol scope-mapping'i
+# ile ayni resource_access'i uretir (olculdu: 16/16) ve audience'i yalniz ats-api'dir.
+# Faz 35 kanonik idiom (token STDIN'den; argv'ye ve environment'a girmez)
+SCS=$(printf '%s\n' "$ROOT" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    exec vault kv get -field=client_secret "$1"
+  ' sh kv/platform/keycloak/smoke-ats)
 unset ROOT
+[ -n "$SCS" ] || die "smoke-ats client_secret Vault'tan alinamadi (kv/platform/keycloak/smoke-ats)"
 RPW=$(printf '%s' "$S" | jq -er '.data.data.RECRUITER_PW')
 OPW=$(printf '%s' "$S" | jq -er '.data.data.OPERATOR_PW')
-printf '%s\n' 'data-urlencode = "grant_type=password"' 'data-urlencode = "client_id=frontend"' \
+printf '%s\n' 'data-urlencode = "grant_type=password"' 'data-urlencode = "client_id=smoke-ats-v1"' \
+  "data-urlencode = \"client_secret=$SCS\"" \
   'data-urlencode = "username=ats-recruiter-persona"' \
   "data-urlencode = \"password=$RPW\"" > "$T/recruiter-token.curl"
-printf '%s\n' 'data-urlencode = "grant_type=password"' 'data-urlencode = "client_id=frontend"' \
+printf '%s\n' 'data-urlencode = "grant_type=password"' 'data-urlencode = "client_id=smoke-ats-v1"' \
+  "data-urlencode = \"client_secret=$SCS\"" \
   'data-urlencode = "username=ats-operator-persona"' \
   "data-urlencode = \"password=$OPW\"" > "$T/operator-token.curl"
-unset RPW OPW S
+unset RPW OPW S SCS
 RT=$(curl -fsS --max-time 20 --config "$T/recruiter-token.curl" \
   "$EDGE/realms/platform-test/protocol/openid-connect/token" | jq -er '.access_token')
 OT=$(curl -fsS --max-time 20 --config "$T/operator-token.curl" \

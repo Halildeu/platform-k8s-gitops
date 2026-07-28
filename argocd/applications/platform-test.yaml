@@ -42,6 +42,19 @@ spec:
       # leaves `/data` to the runtime writer.
       - RespectIgnoreDifferences=true
   ignoreDifferences:
+    # Faz 22.6 bounded VIEW_ONLY pilot route 29 is runtime-owned only while
+    # the signed TTL watchdog is active. Route 28 remains GitOps-owned by
+    # Budget Control. Exact-key ignores prevent Argo self-heal from removing
+    # the temporary route without weakening ownership of the ConfigMap.
+    - kind: ConfigMap
+      name: api-gateway-config
+      jsonPointers:
+        - /data/SPRING_CLOUD_GATEWAY_ROUTES_29_ID
+        - /data/SPRING_CLOUD_GATEWAY_ROUTES_29_URI
+        - /data/SPRING_CLOUD_GATEWAY_ROUTES_29_ORDER
+        - /data/SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_0
+        - /data/SPRING_CLOUD_GATEWAY_ROUTES_29_PREDICATES_1
+        - /data/SPRING_CLOUD_GATEWAY_ROUTES_29_FILTERS_0
     # Status ConfigMap `/data` is runtime-managed by the smoke CronJob
     # writer (Codex `019e2580` Sprint 1 E + `019e25a7` iter-1 P1).
     # Argo must NOT revert the dynamic last-fire/result/failures fields.

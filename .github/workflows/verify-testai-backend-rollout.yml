@@ -30,7 +30,7 @@ jobs:
   verify:
     name: Observe ArgoCD auto-sync and verify runtime
     environment: testai-product-acceptance
-    runs-on: [self-hosted, staging-sw, testai-deploy]
+    runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 60
 
     steps:

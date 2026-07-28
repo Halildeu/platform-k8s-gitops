@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clamav-config
+  labels:
+    app.kubernetes.io/name: clamav
+data:
+  # clamd is started directly with this file instead of through the image's
+  # entrypoint. The entrypoint prepares /run/clamav and /var/lock for a root
+  # user and dies on a non-root container — first at the chown, then, once the
+  # socket directory was mounted, at the lock directory. Every attempt to make
+  # those paths writable moved the failure rather than removing it.
+  #
+  # Declaring where clamd may write removes the whole class: the socket is TCP,
+  # the pid and scratch space live in /tmp, and the signature database stays on
+  # the read-only image layer where it was baked.
+  clamd.conf: |
+    TCPSocket 3310
+    TCPAddr 0.0.0.0
+    Foreground yes
+    PidFile /tmp/clamd.pid
+    TemporaryDirectory /tmp
+    DatabaseDirectory /var/lib/clamav
+    MaxThreads 4
+    # Above the custody contract's 26214400-byte ceiling, so the scanner never
+    # becomes the reason a compliant attachment is refused.
+    StreamMaxLength 32M
+    MaxFileSize 32M
+    MaxScanSize 128M
+    LogTime yes
+---
+# Malware gate for the evidence pipeline. Reachable only by the evidence
+# worker: it is not a platform-wide scanner, and nothing else in the namespace
+# is allowed to talk to it (see the overlay NetworkPolicy).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clamav
+  labels:
+    app.kubernetes.io/name: clamav
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clamav
+  labels:
+    app.kubernetes.io/name: clamav
+spec:
+  selector: {app.kubernetes.io/name: clamav}
+  ports:
+    - {name: clamd, port: 3310, targetPort: 3310, protocol: TCP}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+  labels:
+    app.kubernetes.io/name: clamav
+    app.kubernetes.io/component: scanner
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app.kubernetes.io/name: clamav}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clamav
+        app.kubernetes.io/component: scanner
+        app.kubernetes.io/part-of: etik-speak
+    spec:
+      serviceAccountName: clamav
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image ships /var/lib/clamav owned by uid 100 (clamav).
+        runAsUser: 100
+        runAsGroup: 100
+        # An emptyDir is root-owned 0755, so uid 100 could not write the
+        # scratch directory clamd needs. fsGroup makes it group-writable
+        # without a chown the container is not allowed to perform.
+        fsGroup: 100
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: clamav
+          image: docker.io/clamav/clamav:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          # Bypasses the image entrypoint entirely — see clamav-config.
+          command: ["clamd", "--config-file=/etc/clamav/clamd.conf"]
+          env:
+            # Definitions are the ones baked into the pinned image. Nothing
+            # updates them: clamd is started directly, so the entrypoint that
+            # would launch freshclam never runs. That is what makes "no general
+            # internet egress" true rather than aspirational, and what keeps the
+            # pinned rules version honest. These flags are kept as a declaration
+            # of intent for anyone who restores the entrypoint.
+            - {name: CLAMAV_NO_FRESHCLAMD, value: "true"}
+            - {name: CLAMAV_NO_MILTERD, value: "true"}
+          ports:
+            - {name: clamd, containerPort: 3310, protocol: TCP}
+          resources:
+            # clamd loads the whole signature database into memory; below ~1Gi
+            # it is OOM-killed during startup rather than at scan time, which
+            # reads as a crash-loop with no scan ever attempted.
+            requests: {cpu: 100m, memory: 1200Mi}
+            limits: {cpu: 1000m, memory: 2Gi}
+          startupProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Everything clamd writes now lives under /tmp, so the root
+            # filesystem can stay read-only.
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/clamav/clamd.conf, subPath: clamd.conf}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: clamav-config}
+        - name: tmp
+          emptyDir: {sizeLimit: 512Mi}
+      terminationGracePeriodSeconds: 30

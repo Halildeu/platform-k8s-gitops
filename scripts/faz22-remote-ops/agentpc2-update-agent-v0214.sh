@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VAULT_INIT_FILE_DEFAULT="/srv/platform/secrets/backup-auth/vault-init-test.json"
+# Host 53->15 tasinmasinda dosya yol DEGISTIRDI (silinmedi): eski konum
+# ~/bootstrap-drill, yenisi /srv/platform/secrets/backup-auth (ACL ile
+# script kullanicisina r--). Ikisini sirayla dene; ilk okunabilir kazanir.
+[ -r "$VAULT_INIT_FILE_DEFAULT" ] || VAULT_INIT_FILE_DEFAULT="$HOME/bootstrap-drill/vault-init-test.json"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
+
 # Faz 22.6.3 / platform-agent#208 AgentPC2 product update gate.
 #
 # This script runs only on the staging self-hosted runner. It exercises the
@@ -41,6 +48,7 @@ CREATOR_PASS_FILE="${TMP_DIR}/creator-password.txt"
 APPROVER_PASS_FILE="${TMP_DIR}/approver-password.txt"
 CREATOR_TOKEN_FILE="${TMP_DIR}/creator.jwt"
 APPROVER_TOKEN_FILE="${TMP_DIR}/approver.jwt"
+SMOKE_CLIENT_SECRET_FILE="${TMP_DIR}/smoke-client-secret.txt"
 
 CREATOR_ID=""
 APPROVER_ID=""
@@ -187,6 +195,21 @@ open(out_path, "w", encoding="utf-8").write(json.dumps(out, sort_keys=True, inde
 PY
 }
 
+fetch_smoke_client_secret() {
+  # A2b.2 (2026-07-21): confidential smoke-client ROPC (client_id=frontend + DAG=false, A2c cutover).
+  # Vault kv/platform/keycloak/smoke-client (A2a); scope-mapping/audience A2b.1 setup-smoke-token-contract.sh.
+  [[ -s "$SMOKE_CLIENT_SECRET_FILE" ]] && return 0
+  local vault_root_token
+  vault_root_token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")" \
+    || { echo "ERR smoke-client secret için vault root token okunamadı" >&2; exit 2; }
+  docker exec -e VAULT_TOKEN="$vault_root_token" platform-vault-test \
+    vault kv get -field=client_secret kv/platform/keycloak/smoke-client > "$SMOKE_CLIENT_SECRET_FILE" \
+    || { echo "ERR smoke-client secret Vault'tan alınamadı (kv/platform/keycloak/smoke-client — A2a seed?)" >&2; exit 2; }
+  chmod 0600 "$SMOKE_CLIENT_SECRET_FILE"
+  vault_root_token=""
+  [[ -s "$SMOKE_CLIENT_SECRET_FILE" ]] || { echo "ERR smoke-client secret dosyası boş" >&2; exit 2; }
+}
+
 mint_persona_token() {
   local username="$1" persona_id="$2" password_file="$3" token_file="$4" claims_file="$5"
   local response token
@@ -194,11 +217,13 @@ mint_persona_token() {
   openssl rand -base64 32 | tr -d '\n' > "$password_file"
   chmod 0600 "$password_file"
   set_persona_password "$persona_id" "$password_file"
+  fetch_smoke_client_secret
 
   response="$(curl -sS -X POST \
     "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
     --data-urlencode "grant_type=password" \
-    --data-urlencode "client_id=frontend" \
+    --data-urlencode "client_id=smoke-client" \
+    --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file")"
   token="$(printf '%s' "$response" | token_field)"

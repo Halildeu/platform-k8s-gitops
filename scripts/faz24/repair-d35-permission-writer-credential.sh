@@ -2,24 +2,40 @@
 # Repair the stale test-only D35 permission-writer credential without exposing it.
 
 set -Eeuo pipefail
+set +x
 umask 077
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
+source "${SCRIPT_DIR}/../faz35/lib-test-keycloak-binding.sh"
+
 OUT_PATH="${OUT_PATH:-/tmp/faz24-permission-writer-repair.json}"
+readonly KC_CONTAINER="platform-kc-test"
 readonly KC_BASE_URL="http://127.0.0.1:8082"
 readonly KC_REALM="platform-test"
+readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
+readonly WRITER_LOCAL_USER_ID="12"
+readonly WRITER_LEGACY_LOCAL_USER_ID="1204"
+# Faz 35 gives this synthetic permission writer its own active local profile;
+# it must never borrow the historical user 1204 / performance persona email.
 readonly WRITER_PROFILE_EMAIL="d35-admin-persona@acik.com"
 readonly WRITER_PROFILE_FIRST_NAME="D35"
 readonly WRITER_PROFILE_LAST_NAME="Admin Persona"
-readonly WRITER_CLIENT="frontend"
+# A2c: the public browser client no longer grants ROPC; this repair path mints through
+# the dedicated confidential client and fetches its secret with the Vault root token it
+# already holds.
+readonly WRITER_CLIENT="smoke-client"
 readonly BASE_URL="https://testai.acik.com"
 readonly VAULT_PERSONA_PATH="kv/platform/d35-3"
 readonly VAULT_CONTAINER="platform-vault-test"
-readonly VAULT_INIT_FILE="/home/halil/bootstrap-drill/vault-init-test.json"
+readonly VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 
 STATUS="running"
+KC_ADMIN_PASSWORD_STDIN=false
+PRE_IDENTITY_CREDENTIAL_ONLY=false
 FAILURE_REASON=""
 EXACT_WRITER_MATCH=false
 KEYCLOAK_RESET=false
@@ -40,6 +56,7 @@ WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=false
 usage() {
   cat <<'EOF'
 Usage: repair-d35-permission-writer-credential.sh [--out PATH]
+       [--keycloak-admin-password-stdin] [--pre-identity-credential-only]
 
 Repairs missing platform-test D35 permission-writer service-profile fields,
 rotates its password, patches the matching Vault record, and verifies login plus
@@ -51,6 +68,8 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT_PATH="$2"; shift 2 ;;
+    --keycloak-admin-password-stdin) KC_ADMIN_PASSWORD_STDIN=true; shift ;;
+    --pre-identity-credential-only) PRE_IDENTITY_CREDENTIAL_ONLY=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -63,7 +82,26 @@ for command_name in cmp curl jq docker openssl tr; do
   }
 done
 
+faz35_assert_test_keycloak_binding \
+  "${KC_CONTAINER}" "${KC_BASE_URL}" "${KC_REALM}" "${KC_EXPECTED_ISSUER}" || {
+  echo "ERROR: TEST Keycloak container/loopback/issuer binding is invalid" >&2
+  exit 2
+}
+
+if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
+  [[ -z "${KC_ADMIN_PASSWORD:-}" ]] || {
+    echo "ERROR: Keycloak admin password sources are ambiguous" >&2
+    exit 2
+  }
+  KC_ADMIN_PASSWORD=""
+  IFS= read -r KC_ADMIN_PASSWORD || [[ -n "${KC_ADMIN_PASSWORD}" ]] || {
+    echo "ERROR: Keycloak admin password stdin is empty" >&2
+    exit 2
+  }
+fi
+
 TMP_DIR="$(mktemp -d /tmp/faz24-writer-repair.XXXXXX)"
+WRITER_CLIENT_SECRET_FILE="${TMP_DIR}/writer-client.secret"
 mkdir -p "$(dirname "${OUT_PATH}")"
 
 write_result() {
@@ -156,6 +194,24 @@ vault_root_token() {
   printf '%s' "${token}"
 }
 
+# A2c: the writer token is minted through the confidential `smoke-client`, so its secret
+# must exist before the first `request_writer_token`. #2994 added the `client_secret@FILE`
+# argument but never populated the file, so curl failed with "error encountered when
+# reading a file" and the run ended in `permission-writer-login-readback-failed` -- a
+# message that points at Keycloak when the real fault was a missing local file.
+fetch_writer_client_secret() {
+  local root_token="$1"
+  printf '%s\n' "${root_token}" | docker exec -i "${VAULT_CONTAINER}" sh -c '
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    vault kv get -field=client_secret kv/platform/keycloak/smoke-client
+  ' sh | tr -d '\r\n' > "${WRITER_CLIENT_SECRET_FILE}" 2>/dev/null
+  chmod 600 "${WRITER_CLIENT_SECRET_FILE}" 2>/dev/null || true
+  # Trailing whitespace is stripped above because curl sends an @FILE body verbatim; a
+  # newline would be submitted as part of the secret.
+  [[ -s "${WRITER_CLIENT_SECRET_FILE}" ]]
+}
+
 read_vault_path() {
   local root_token="$1"
   local output="$2"
@@ -223,6 +279,7 @@ request_writer_token() {
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
     --data-urlencode "client_id=${WRITER_CLIENT}" \
+    --data-urlencode "client_secret@${WRITER_CLIENT_SECRET_FILE}" \
     --data-urlencode "username@${WRITER_USERNAME_FILE}" \
     --data-urlencode "password@${password_file}")"
   [[ "${login_code}" == "200" ]] || return 1
@@ -290,6 +347,7 @@ ROOT_TOKEN="$(vault_root_token)" || die "vault-root-token-missing"
 VAULT_ORIGINAL_JSON="${TMP_DIR}/vault-original.json"
 VAULT_ORIGINAL_DATA="${TMP_DIR}/vault-original-data.json"
 read_vault_path "${ROOT_TOKEN}" "${VAULT_ORIGINAL_JSON}" || die "vault-persona-preflight-read-failed"
+fetch_writer_client_secret "${ROOT_TOKEN}" || die "smoke-client-secret-fetch-failed"
 VAULT_ORIGINAL_VERSION="$(jq -r '.data.metadata.version // empty' "${VAULT_ORIGINAL_JSON}")"
 [[ "${VAULT_ORIGINAL_VERSION}" =~ ^[0-9]+$ ]] || die "vault-persona-version-missing"
 jq -e '.data.data | type == "object"' "${VAULT_ORIGINAL_JSON}" >/dev/null \
@@ -302,12 +360,24 @@ code="$(http_status GET \
   "${KC_WRITER_FRESH_JSON}" \
   --config "${KC_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "permission-writer-profile-precondition-read-failed"
-jq -e --arg writerId "${WRITER_USER_ID}" --arg writerUsername "${WRITER_USERNAME}" '
+jq -e \
+  --arg writerId "${WRITER_USER_ID}" \
+  --arg writerUsername "${WRITER_USERNAME}" \
+  --arg localUserId "${WRITER_LOCAL_USER_ID}" \
+  --arg legacyUserId "${WRITER_LEGACY_LOCAL_USER_ID}" \
+  --argjson allowLegacy "${PRE_IDENTITY_CREDENTIAL_ONLY}" '
   .id == $writerId and
   .username == $writerUsername and
-  .enabled == true
+  .enabled == true and
+  (
+    (.attributes.userId == [$localUserId] and
+     .attributes.subscriberId == [$localUserId]) or
+    ($allowLegacy and
+     .attributes.userId == [$legacyUserId] and
+     .attributes.subscriberId == [$legacyUserId])
+  )
 ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
-  || die "permission-writer-profile-precondition-identity-mismatch"
+  || die "permission-writer-profile-precondition-local-user-mismatch"
 
 WRITER_FRESH_REQUIRED_ACTIONS="$(jq -c '.requiredActions // []' "${KC_WRITER_FRESH_JSON}")"
 [[ "${WRITER_FRESH_REQUIRED_ACTIONS}" == '[]' ]] \
@@ -326,10 +396,11 @@ WRITER_LAST_NAME_BEFORE="$(jq -r '.lastName // empty' "${KC_WRITER_FRESH_JSON}")
 NEED_WRITER_EMAIL=false
 NEED_WRITER_FIRST_NAME=false
 NEED_WRITER_LAST_NAME=false
-[[ -n "${WRITER_EMAIL_BEFORE}" ]] || NEED_WRITER_EMAIL=true
+[[ "${WRITER_EMAIL_BEFORE}" == "${WRITER_PROFILE_EMAIL}" ]] || NEED_WRITER_EMAIL=true
 [[ -n "${WRITER_FIRST_NAME_BEFORE}" ]] || NEED_WRITER_FIRST_NAME=true
 [[ -n "${WRITER_LAST_NAME_BEFORE}" ]] || NEED_WRITER_LAST_NAME=true
 
+if [[ "${PRE_IDENTITY_CREDENTIAL_ONLY}" != "true" ]]; then
 if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
   WRITER_PROFILE_EMAIL_FILE="${TMP_DIR}/writer-profile-email"
   printf '%s' "${WRITER_PROFILE_EMAIL}" > "${WRITER_PROFILE_EMAIL_FILE}"
@@ -446,6 +517,7 @@ jq -e --arg writerId "${WRITER_USER_ID}" '
   || die "permission-writer-profile-email-ownership-unverified"
 WRITER_PROFILE_EMAIL_COLLISION_FREE=true
 WRITER_PROFILE_READY=true
+fi
 
 EXISTING_WRITER_USERNAME="$(jq -r '.admin_persona_username // empty' "${VAULT_ORIGINAL_DATA}")"
 EXISTING_PASSWORD_FILE="${TMP_DIR}/existing-writer-password"
@@ -456,6 +528,11 @@ if [[ "${EXISTING_WRITER_USERNAME}" == "${WRITER_USERNAME}" && -s "${EXISTING_PA
   if request_writer_token "${EXISTING_PASSWORD_FILE}" "${EXISTING_TOKEN_JSON}"; then
     VAULT_SYNCED=true
     WRITER_LOGIN_READY=true
+    if [[ "${PRE_IDENTITY_CREDENTIAL_ONLY}" == "true" ]]; then
+      STATUS="credential-ready"
+      write_result
+      exit 0
+    fi
     EXISTING_AUTH_CONFIG="${TMP_DIR}/existing-writer-auth.curl"
     EXISTING_ROLES_JSON="${TMP_DIR}/existing-roles.json"
     verify_roles_read "${WRITER_TOKEN}" "${EXISTING_AUTH_CONFIG}" "${EXISTING_ROLES_JSON}" \
@@ -530,6 +607,12 @@ WRITER_TOKEN_JSON="${TMP_DIR}/writer-token.json"
 request_writer_token "${NEW_PASSWORD_FILE}" "${WRITER_TOKEN_JSON}" \
   || die "permission-writer-login-readback-failed"
 WRITER_LOGIN_READY=true
+
+if [[ "${PRE_IDENTITY_CREDENTIAL_ONLY}" == "true" ]]; then
+  STATUS="credential-repaired"
+  write_result
+  exit 0
+fi
 
 WRITER_AUTH_CONFIG="${TMP_DIR}/writer-auth.curl"
 ROLES_JSON="${TMP_DIR}/roles.json"

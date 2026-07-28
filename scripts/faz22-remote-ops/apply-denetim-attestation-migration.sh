@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Rollout/acceptance adapter for the bounded Denetim attestation/KID migration.
 # The permanent AnyDesk-like product runtime remains the provider-neutral
-# endpoint-agent <-> broker contract; it must not depend on this script,
-# staging-sw, or GitHub Actions. This adapter accepts the migration only after a
+# endpoint-agent <-> broker contract; it must not depend on this script, any
+# named SSH management host, or GitHub Actions. This adapter accepts the
+# migration only after a
 # transaction-bound attended product command produces a session-scoped broker
 # trust refresh. Any post-mutation failure triggers hash-verified rollback.
 
@@ -12,12 +13,14 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PATCH_SCRIPT="${PATCH_SCRIPT:-${SCRIPT_DIR}/denetim-device-key-view-only-env-patch.ps1}"
-EXPECTED_STAGING_HOST="${EXPECTED_STAGING_HOST:-stagingsw}"
+EXPECTED_STAGING_HOST="${EXPECTED_STAGING_HOST:-aiserver}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 NAMESPACE="${NAMESPACE:-platform-test}"
 BROKER_DEPLOYMENT="${BROKER_DEPLOYMENT:-endpoint-admin-remote-bridge-device-key}"
+PERMIT_SIGNER_SECRET="${PERMIT_SIGNER_SECRET:-endpoint-admin-remote-bridge-signer-device-key}"
+PERMIT_SIGNER_SECRET_KEY="${PERMIT_SIGNER_SECRET_KEY:-permit-signing.key}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetim-pc}"
-DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
+DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}"
 REMOTE_PATCH_SCRIPT=""
 PATCH_SCRIPT_SHA256=""
 
@@ -51,6 +54,27 @@ sha256_file() {
   else
     shasum -a 256 "$path" | awk '{print $1}'
   fi
+}
+
+derive_permit_public_key_b64() {
+  local public_key_b64
+  if [[ -n "${REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64:-}" ]]; then
+    public_key_b64="$(printf '%s' "$REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64" | tr -d '\r\n')"
+  else
+    public_key_b64="$(
+      kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" \
+        get secret "$PERMIT_SIGNER_SECRET" \
+        -o "go-template={{index .data \"${PERMIT_SIGNER_SECRET_KEY}\"}}" \
+        | base64 -d \
+        | openssl pkey -pubout -outform DER 2>/dev/null \
+        | base64 | tr -d '\r\n'
+    )"
+  fi
+  [[ "$public_key_b64" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || {
+    echo "denetim-attestation-migration: broker permit public key derivation failed" >&2
+    return 2
+  }
+  printf '%s' "$public_key_b64"
 }
 
 encode_powershell() {
@@ -310,9 +334,10 @@ main() {
   need_cmd sed
   need_cmd rm
   need_cmd sleep
+  need_cmd openssl
   validate_inputs
 
-  local session_id session_binding_sha256 apply_body apply_output evidence_summary summary_hash_output remote_scp_path release_policy_arguments mask_policy_arguments
+  local session_id session_binding_sha256 apply_body apply_output evidence_summary summary_hash_output remote_scp_path release_policy_arguments mask_policy_arguments permit_public_key_b64 permit_public_key_arguments
   if [[ -n "${TRANSACTION_ID_OVERRIDE:-}" ]]; then
     [[ "${ALLOW_TEST_TRANSACTION_ID_OVERRIDE:-0}" == "1" ]] || {
       echo "denetim-attestation-migration: TRANSACTION_ID_OVERRIDE is test-only and requires ALLOW_TEST_TRANSACTION_ID_OVERRIDE=1" >&2
@@ -346,7 +371,9 @@ main() {
   session_binding_sha256="sha256:$(printf '%s' "$session_id" | sha256_text)"
   release_policy_arguments="$(release_policy_patch_arguments)"
   mask_policy_arguments="-ExpectedViewOnlyMaskRectBps '$(powershell_single_quote "$DLP_MASK_RECT_BPS")'"
-  apply_body="$(verified_patch_body "-Action Apply -TransactionId '${transaction_id}' ${release_policy_arguments} ${mask_policy_arguments} -Confirm:\$false")"
+  permit_public_key_b64="$(derive_permit_public_key_b64)"
+  permit_public_key_arguments="-ExpectedPermitPublicKeyB64 '$(powershell_single_quote "$permit_public_key_b64")'"
+  apply_body="$(verified_patch_body "-Action Apply -TransactionId '${transaction_id}' ${release_policy_arguments} ${mask_policy_arguments} ${permit_public_key_arguments} -Confirm:\$false")"
   rollback_armed=1
   trap rollback_on_failure EXIT
   apply_output="$(run_denetimepc_powershell "$apply_body")"

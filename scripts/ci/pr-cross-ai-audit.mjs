@@ -23,7 +23,9 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { argv, env, exit } from 'node:process';
 
-const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
+// User 2026-07-20 flexibility: MiniMax and GLM re-admitted as valid Cross-AI
+// providers. `other` remains for `none`-mode implementers that don't identify.
+const VALID_PROVIDERS = new Set(['claude', 'codex', 'minimax', 'zai', 'gemini', 'other']);
 const VALID_VERDICTS = new Set(['AGREE', 'REVISE', 'PARTIAL', 'RED']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
@@ -63,17 +65,32 @@ const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
 ];
+// Cross-AI receipt schema (user 2026-07-20 flexibility decision):
+// - Any of these four providers may serve as `single` or `dual` reviewer.
+// - Model is NOT locked; the audit only checks that a real, verifiable
+//   modelUsage/provider identity is present in the receipt. Specific model
+//   slugs (e.g. `claude-opus-4-8`, `gpt-5.6-sol`, `MiniMax-M3`) are no longer
+//   a gate — audit records whatever the live CLI output actually reports.
+// - `provider` value uses the same canonical identifier as VALID_PROVIDERS so
+//   provider-distinct checks compare like with like.
 const CONSULTATION_RECEIPTS = {
   'claude receipt': {
-    provider: 'anthropic',
-    model: 'claude-opus-4-8',
+    provider: 'claude',
   },
   'codex receipt': {
-    provider: 'openai',
-    model: 'gpt-5.6-sol',
+    provider: 'codex',
+  },
+  'minimax receipt': {
+    provider: 'minimax',
+  },
+  'glm receipt': {
+    provider: 'zai',
   },
 };
-const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
+// User 2026-07-20 decision: MiniMax and GLM are re-admitted as valid Cross-AI
+// reviewer channels alongside Claude and Codex. No provider is forbidden as
+// long as its receipt carries a real, machine-verifiable provider identity.
+const FORBIDDEN_CONSULTATION_FIELDS = new Set();
 const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
@@ -133,18 +150,30 @@ const DUPLICATE_FIELDS = Symbol('duplicate-fields');
 const PROVIDER_ALIASES = {
   // claude family
   claude: 'claude',
+  anthropic: 'claude',
   'anthropic claude': 'claude',
   'claude opus': 'claude',
   'claude sonnet': 'claude',
   'claude haiku': 'claude',
   // codex family
   codex: 'codex',
+  openai: 'codex',
   'openai codex': 'codex',
   'gpt codex': 'codex',
+  'gpt-5.6-sol': 'codex',
   // gemini family
   gemini: 'gemini',
   'google gemini': 'gemini',
   'gemini pro': 'gemini',
+  // minimax family (user 2026-07-20 re-admission)
+  minimax: 'minimax',
+  'minimax m3': 'minimax',
+  'minimax-m3': 'minimax',
+  // glm / z.ai family (user 2026-07-20 re-admission)
+  glm: 'zai',
+  zai: 'zai',
+  'z.ai': 'zai',
+  zcode: 'zai',
   // grok family
   grok: 'other',
   'xai grok': 'other',
@@ -676,11 +705,20 @@ function evidenceMatches(
     return false;
   }
   const responseVerdict = parseProviderResponseVerdict(evidence.response);
+  // User 2026-07-20 flexibility: provider must match; model slug is no longer
+  // pinned to a specific value, but requested_model and actual_model must both
+  // be non-empty and equal so a bogus evidence file cannot drop the field.
+  const evidenceProviderCanonical = PROVIDER_ALIASES[String(evidence.provider ?? '').toLowerCase()]
+    ?? String(evidence.provider ?? '').toLowerCase();
+  const modelPresent = typeof evidence.requested_model === 'string'
+    && evidence.requested_model.length > 0
+    && typeof evidence.actual_model === 'string'
+    && evidence.actual_model.length > 0
+    && evidence.requested_model === evidence.actual_model;
   return Boolean(
     evidence.schema === 'cross-ai-provider-evidence/v1'
-    && evidence.provider === expected.provider
-    && evidence.requested_model === expected.model
-    && evidence.actual_model === expected.model
+    && evidenceProviderCanonical === expected.provider
+    && modelPresent
     && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
     && evidence.base_sha?.toLowerCase() === base.toLowerCase()
     && evidence.head_sha?.toLowerCase() === head.toLowerCase()
@@ -796,11 +834,19 @@ async function appendConsultationFindings(
     const expected = CONSULTATION_RECEIPTS[field];
     const receipt = parseReceipt(fields[field]);
     if (receipt?.ref) refs.push(receipt.ref);
+    // User 2026-07-20 flexibility: provider identity must match the receipt
+    // field (canonical provider name), but the model slug is no longer locked.
+    // We still require `requested` and `actual` to be present and consistent
+    // with each other so a receipt cannot silently drop the modelUsage field.
+    const receiptProviderCanonical = receipt
+      ? (PROVIDER_ALIASES[receipt.provider?.toLowerCase() ?? ''] ?? receipt.provider?.toLowerCase() ?? '')
+      : '';
+    const modelPresent = Boolean(receipt?.requested && receipt?.actual);
+    const modelConsistent = modelPresent && receipt.requested === receipt.actual;
     const shapePass = Boolean(
       receipt
-      && receipt.provider?.toLowerCase() === expected.provider
-      && receipt.requested === expected.model
-      && receipt.actual === expected.model
+      && receiptProviderCanonical === expected.provider
+      && modelConsistent
       && receipt.base_tip?.toLowerCase() === baseTip.toLowerCase()
       && receipt.base?.toLowerCase() === base.toLowerCase()
       && receipt.head?.toLowerCase() === commit.toLowerCase()
@@ -820,8 +866,8 @@ async function appendConsultationFindings(
       check: field.replaceAll(' ', '_'),
       pass,
       detail: pass
-        ? `${expected.provider}/${expected.model} fetched evidence + response digest + base/head/scope doğrulandı`
-        : `${field}: strict receipt + GitHub issue-comment evidence + matching body/response SHA-256 zorunlu`,
+        ? `${expected.provider}/${receipt?.actual ?? '<model-missing>'} fetched evidence + response digest + base/head/scope doğrulandı`
+        : `${field}: strict receipt + GitHub issue-comment evidence + matching body/response SHA-256 zorunlu (model kilidi yok, ama modelUsage kaydı boş olamaz)`,
     });
   }
   findings.push({
@@ -894,16 +940,17 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? 'explicit mode legacy control field taşımıyor'
       : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
   });
-  // Forward policy: MiniMax is retired as an accepted consultation channel.
-  // The parser still recognizes a `MiniMax receipt` field so it can be detected,
-  // but any explicit-mode PR carrying it is fail-closed rejected in every mode.
-  const minimaxRejected = !Object.hasOwn(fields, 'minimax receipt');
+  // User 2026-07-20 flexibility decision: MiniMax and GLM are re-admitted as
+  // valid Cross-AI reviewer channels. No provider is forbidden. The check below
+  // now records the accepted-provider snapshot so historical audit stays
+  // machine-readable without gating any specific provider.
+  const acceptedProviders = Object.keys(CONSULTATION_RECEIPTS)
+    .map((r) => CONSULTATION_RECEIPTS[r].provider)
+    .join(', ');
   findings.push({
-    check: 'consultation_minimax_receipt_rejected',
-    pass: minimaxRejected,
-    detail: minimaxRejected
-      ? 'MiniMax kanalı emekliye ayrıldı; hiçbir modda receipt taşınmıyor'
-      : 'MiniMax receipt hiçbir consultation modunda kabul edilmez; fail-closed reddedildi',
+    check: 'consultation_receipt_providers_accepted',
+    pass: true,
+    detail: `Cross-AI receipt-taşıyan sağlayıcılar: ${acceptedProviders}`,
   });
 
   if (mode === 'none') {
@@ -955,19 +1002,27 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       : 'single/dual consultation yalnız AGREE ile geçer',
   });
 
-  let selectedReceipts = ['claude receipt'];
+  // User 2026-07-20 flexibility: single/dual can use any provider whose receipt
+  // is recognized. Selected receipts come from whatever is actually present.
+  let selectedReceipts = presentReceipts.length > 0 ? [presentReceipts[0]] : [];
+  const providerOf = (receiptField) =>
+    CONSULTATION_RECEIPTS[receiptField] ? CONSULTATION_RECEIPTS[receiptField].provider : null;
   if (mode === 'single') {
     findings.push({
       check: 'consultation_single_exact_channel_count',
-      pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
-      detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
+      pass: presentReceipts.length === 1,
+      detail: presentReceipts.length === 1
+        ? `single mode carries exactly one provider receipt (${presentReceipts[0]})`
+        : `single mode exactly one provider receipt taşır; şu an ${presentReceipts.length}`,
     });
+    const singleProvider = presentReceipts.length === 1 ? providerOf(presentReceipts[0]) : null;
+    const singleProviderDistinct = Boolean(singleProvider) && singleProvider !== implementer;
     findings.push({
       check: 'consultation_single_is_provider_distinct',
-      pass: implementer !== 'claude',
-      detail: implementer !== 'claude'
-        ? 'direct Claude reviewer implementer providerından farklı'
-        : 'Claude implementer kendi Claude receiptini bağımsız single görüş sayamaz; dual gerekir',
+      pass: singleProviderDistinct,
+      detail: singleProviderDistinct
+        ? `single reviewer (${singleProvider}) implementer (${implementer}) providerından farklı`
+        : `${implementer} implementer kendi ${implementer} receiptini bağımsız single görüş sayamaz; dual gerekir`,
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',
@@ -978,15 +1033,13 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
   } else if (mode === 'dual') {
     const riskTrigger = (fields['risk trigger'] || '').trim();
-    // Forward policy: dual = exactly Claude Opus 4.8 + Codex gpt-5.6-sol.
-    // The only accepted secondary channel is Codex; no third channel exists.
-    const exactChannels = presentReceipts.length === 2
-      && Boolean(fields['claude receipt'])
-      && Boolean(fields['codex receipt']);
-    // Because the two channels are fixed (Claude + Codex), at least one provider
-    // always differs from the implementer regardless of whether the implementer
-    // is Claude or Codex. This preserves provider-distinct review.
-    const providerDistinct = ['claude', 'codex'].some((provider) => provider !== implementer);
+    // User 2026-07-20 flexibility: dual = exactly two provider-distinct receipts,
+    // chosen from any of the accepted providers (Claude, Codex, MiniMax, GLM).
+    // No specific provider pair is mandated; independence is what counts.
+    const exactChannels = presentReceipts.length === 2;
+    const dualProviders = presentReceipts.map(providerOf).filter(Boolean);
+    const dualProvidersDistinct = dualProviders.length === 2 && dualProviders[0] !== dualProviders[1];
+    const providerDistinct = dualProviders.some((provider) => provider !== implementer);
     findings.push({
       check: 'consultation_dual_high_risk_trigger',
       pass: meaningfulRiskTrigger(riskTrigger),
@@ -996,10 +1049,10 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
     findings.push({
       check: 'consultation_dual_exact_channel_count',
-      pass: exactChannels,
-      detail: exactChannels
-        ? 'dual mode exact Claude Opus 4.8 + Codex gpt-5.6-sol iki kanal taşıyor'
-        : 'dual mode yalnız Claude Opus 4.8 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
+      pass: exactChannels && dualProvidersDistinct,
+      detail: exactChannels && dualProvidersDistinct
+        ? `dual mode iki farklı sağlayıcı receiptleri (${dualProviders.join(' + ')}) taşıyor`
+        : 'dual mode yalnız iki farklı sağlayıcı receipt ile geçer',
     });
     findings.push({
       check: 'consultation_dual_provider_distinct_from_implementer',
@@ -1008,10 +1061,10 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
         ? `dual kanallardan en az biri implementer ${implementer} providerından farklı`
         : 'dual kanalların en az biri implementer sağlayıcısıyla farklı olmalıdır',
     });
-    // Even an invalid dual combination must still validate every present,
-    // allowlisted receipt. Retired MiniMax receipts are rejected above and are
-    // never fetched or treated as evidence.
-    selectedReceipts = ['claude receipt', 'codex receipt'].filter(
+    // User 2026-07-20 flexibility: dual receipts can come from any of the
+    // accepted providers (Claude, Codex, MiniMax, GLM). Every present,
+    // allowlisted receipt is validated below.
+    selectedReceipts = Object.keys(CONSULTATION_RECEIPTS).filter(
       (field) => Boolean(fields[field]),
     );
   }
@@ -1052,15 +1105,19 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
 
   const fields = extractFields(section);
   appendDuplicateFieldFinding(findings, fields);
+  // User 2026-07-20 flexibility: FORBIDDEN_CONSULTATION_FIELDS is now empty;
+  // MiniMax and GLM receipts are accepted alongside Claude and Codex. This
+  // finding stays as a defense-in-depth stub so any future forbidden field
+  // (added intentionally by ADR) still shows up here.
   const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
     Object.hasOwn(fields, field)
   );
   findings.push({
-    check: 'consultation_has_no_forbidden_minimax_receipt',
+    check: 'consultation_has_no_forbidden_fields',
     pass: forbiddenFields.length === 0,
     detail: forbiddenFields.length === 0
-      ? 'MiniMax yeni istişare ve receipt zincirinde bulunmuyor'
-      : 'MiniMax receipt yeni istişarelerde yasaktır; historical evidence yalnız read-only kalır',
+      ? 'Cross-AI istişare zincirinde yasaklı receipt alanı yok'
+      : `Yasaklı receipt alanı: ${forbiddenFields.join(', ')}`,
   });
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));

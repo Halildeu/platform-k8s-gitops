@@ -46,6 +46,7 @@ VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
+VIEWER_ARGO_APPLICATION="$ROOT/argocd/applications/platform-test.yaml"
 
 future_date_utc() {
   local days="$1"
@@ -118,7 +119,8 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_EXACT_ZIP" \
-  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH"; do
+  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" \
+  "$VIEWER_CONFIG_PATCH" "$VIEWER_ARGO_APPLICATION"; do
   require_file "$path"
 done
 
@@ -260,14 +262,15 @@ import sys
 
 path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-pair = re.compile(
+profile = re.compile(
     r"(?m)^(?P<indent>[ ]+)DENETIM_SSH_TARGET: denetim-pc\n"
+    r"(?P=indent)DEFAULT_DENETIM_SSH_CONFIG: /home/aiadmin/\.ssh/config\n"
     r"(?P=indent)DENETIM_SSH_OPTS: __SSH_CONFIG__$"
 )
-matches = pair.findall(text)
+matches = profile.findall(text)
 if len(matches) != 1:
     raise SystemExit(
-        f"VIEW_ONLY collector must contain exactly one adjacent canonical Denetim SSH env pair: {path}"
+        f"VIEW_ONLY collector must contain exactly one adjacent canonical Denetim SSH env profile: {path}"
     )
 if "DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2" in text:
     raise SystemExit(
@@ -370,6 +373,16 @@ require_grep "verify-view-only-pilot-authorization-receipt.py" "$VIEWER_APPLY_WO
 require_grep "--triggering-actor" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
+require_grep "authorization_ttl_minutes=120" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'authorization_expires_epoch="$((issued_epoch + authorization_ttl_minutes * 60))"' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'date -u -d "@$authorization_expires_epoch" +%Y-%m-%dT%H:%M:%SZ' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep '--expires-at "$authorization_expires_at"' "$VIEWER_APPLY_WORKFLOW"
+if grep -Fq 'VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT' "$VIEWER_APPLY_WORKFLOW"; then
+  echo "viewer apply workflow must not consume a pre-approval absolute expiry secret" >&2
+  exit 1
+fi
 require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'rm -f "$out/owner-comment.json" "$out/advisory-comment.json"' \
   "$VIEWER_APPLY_WORKFLOW"
@@ -380,8 +393,22 @@ require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_BUILDER"
 require_grep 'action=rollback' "$VIEWER_OWNER_POLICY"
 require_grep '"revokedAuthorizationSha256": []' "$VIEWER_REVOCATIONS"
 require_grep "pilot_ttl_minutes must be between 5 and 120" "$VIEWER_APPLY_WORKFLOW"
-require_grep "requested watchdog expiry exceeds the signed protected authorization" \
+require_grep 'now_epoch="$(date -u +%s)"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'requested_expires_epoch="$(( now_epoch + PILOT_TTL_MINUTES * 60 ))"' \
   "$VIEWER_APPLY_WORKFLOW"
+require_grep 'expires_epoch="$requested_expires_epoch"' "$VIEWER_APPLY_WORKFLOW"
+require_grep '[ "$AUTHORIZATION_EXPIRES_EPOCH" -gt "$now_epoch" ]' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'if [ "$expires_epoch" -gt "$AUTHORIZATION_EXPIRES_EPOCH" ]; then' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'expires_epoch="$AUTHORIZATION_EXPIRES_EPOCH"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'active_deadline="$(( expires_epoch - now_epoch + 600 ))"' \
+  "$VIEWER_APPLY_WORKFLOW"
+if grep -Fq 'expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"' \
+  "$VIEWER_APPLY_WORKFLOW"; then
+  echo "viewer watchdog must not start a new full TTL beyond authorization issuance" >&2
+  exit 1
+fi
 require_grep "BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "endpoint-admin-remote-bridge-device-key-live" "$VIEWER_APPLY_WORKFLOW"
@@ -396,13 +423,24 @@ require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORK
 require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
 require_grep "GATEWAY_CONFIGMAP: api-gateway-config" "$VIEWER_APPLY_WORKFLOW"
-require_grep "GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_28_" "$VIEWER_APPLY_WORKFLOW"
+require_grep "GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_29_" "$VIEWER_APPLY_WORKFLOW"
+require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID=budget-service-route" "$VIEWER_APPLY_WORKFLOW"
+require_grep "viewer route 29 is not clean before apply" "$VIEWER_APPLY_WORKFLOW"
+for suffix in ID URI ORDER PREDICATES_0 PREDICATES_1 FILTERS_0; do
+  require_grep \
+    "/data/SPRING_CLOUD_GATEWAY_ROUTES_29_${suffix}" \
+    "$VIEWER_ARGO_APPLICATION"
+done
+if grep -Fq "/data/SPRING_CLOUD_GATEWAY_ROUTES_28_" "$VIEWER_ARGO_APPLICATION"; then
+  echo "GitOps-owned Budget Control route 28 must not be ignored by ArgoCD" >&2
+  exit 1
+fi
 require_grep 's/__GATEWAY_ROUTE_PREFIX__/${GATEWAY_ROUTE_PREFIX}/g' "$VIEWER_APPLY_WORKFLOW"
 require_grep "rollback-view-only-viewer-pilot-config.sh" "$VIEWER_APPLY_WORKFLOW"
 require_grep '"REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null' "$VIEWER_ROLLBACK_CONFIG"
-require_grep 'GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-28}"' "$VIEWER_ROLLBACK_CONFIG"
+require_grep 'GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-29}"' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'GATEWAY_ROUTE_PREFIX="SPRING_CLOUD_GATEWAY_ROUTES_${GATEWAY_ROUTE_INDEX}_"' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '($prefix + "ID"): null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'has("REMOTE_BRIDGE_VIEWER_ENABLED") | not' "$VIEWER_ROLLBACK_CONFIG"

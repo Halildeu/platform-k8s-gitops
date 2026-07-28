@@ -177,7 +177,7 @@ PY
 
 keycloak_admin_password_candidates() {
   printf '%s\t%s\n' \
-    "canonical-home-repo" "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "canonical-aiserver-repo" "/srv/platform/gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "canonical-home-compose" "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "runner-home-compose" "${HOME}/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "checkout-absolute" "${PWD}/host-compose/keycloak/test/secrets/kc_admin_password.txt" \

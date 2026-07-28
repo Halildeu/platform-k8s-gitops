@@ -9,18 +9,128 @@
 # Önkoşullar (39d-2, 2026-07-11'de TAMAM):
 #   - PG: ats DB + ats_app kullanıcı (test compose PG; canlı login kanıtlı)
 #   - Vault: kv/platform/ats (DB url/user/pass) → ESO ClusterSecretStore
-#   - KC platform-test: ats-api client + 14 client-role + 15 default-scope
-#     scope'ları (Codex 019f50b7 verdict A: default scope + rol-kapısı ats#96)
+#   - KC platform-test: ats-api client + 16 client-role + 17 default-scope
+#     scope'ları (Faz 25 #2441: ats.screening.{read,write} eklendi; default scope
+#     + rol-kapısı ats#96/#168 modeli değişmez)
 #
-# Güncel Faz 25 #2615 branch-acceptance imaj pini. Numerik UID (10001:10001) ve deployment
-# securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:
-#   source  ats#183 f4d2b4f79b10fa879e610a102acf1eb54eba9964
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-f4d2b4f
-#   digest  sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
-#   build   https://github.com/Halildeu/ats/actions/runs/29629811674
-# Son canlı D29 kanıtlı baseline: sha-e6b7409 /
-#   sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
-# Yeni 8812ab4e pini için canlı D29, #2615 recovery + acceptance koşumunda üretilecektir.
+# Faz 25 #2526 Full ATS ilk müşteri yüzeyinin backend pini. Bu kaynak;
+# güvenli PDF alan önerisi, kalıcı başvuru makbuzu, recruiter detay/evaluation
+# ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
+# (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
+# tag yalnız provenance alias'ıdır:
+#   source  ats@1ba4344 (ats#241 + #243 + #244 — tarih biçimi sunucuda zorlanıyor)
+#   önceki  ats@9445c60 (ats#236 / #235 dilim 1 — aday e-posta + kod girişi)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-1ba4344
+#   digest  sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
+#   build   ats image-push @ 1ba4344 (completed/success)
+#
+# #244 CANLI BİR KUSURU KAPATIYOR: #241 yalnız YYYY-AA kabul ediyordu, ama
+# ayrıştırıcı yıl-only CV satırından "2019" üretiyor ve sunucu reddediyordu —
+# aday olmayan bir ayı uydurmadan gönderemiyordu. Bu pine kadar kusur CANLIDA.
+#
+# ats#235 dilim 1 bu pinle canlıya çıkar: V19 challenge/oturum tabloları + üç
+# aday giriş ucu + kod isteği/doğrulama hız kovaları. Aday erişimi bugüne kadar
+# başvuru-BAŞINA anahtardı; anahtar kaybolunca kurtarma yolu yoktu ve aynı
+# adayın başvuruları hiçbir yerde tek arada görünmüyordu (#226'nın kökü).
+#
+# Graph gönderici kimliği (ats.mail.graph.*) BU PİNDE YOK — bu bilinçli:
+# `kv/platform/graph` yalnız PROD Vault'ta duruyor (ölçüldü: test Vault'ta
+# `graph` yok) ve o Entra uygulama secret'ını test hücresine kopyalamak, test
+# tarafında bir sızıntının şirket adına mail gönderebilen bir kimliğe dönüşmesi
+# demektir. Ayrı test kimliği üretmek Entra Admin Center gerektirir (owner).
+# Bu yüzden uç fail-closed davranır: yapılandırma yokken 503 döner, arayüz de
+# "kullanılamıyor, takip anahtarınızla girin" der. Sessiz sahte "gönderdim" YOK.
+# Önceki pin: sha-fd56617 / ats#218 tarih satırı ayrıştırma /
+#   sha256:47c97a0a8925e5af3a342b4b99f826bbc510e22536c58c97af9fe91a1ca1146b
+# ats#208: bilinmeyen yan cubuk basligi artik aktif bolumu KAPATIR; boylece
+# bir sonraki bolumun basligi bir onceki alanin sonuna yapismiyor. Kural
+# yalnizca yan cubuk akisina uygulanir: olcum (gercek CV) ana kolondaki ayni
+# sekilli satirlarin IS UNVANI oldugunu gosterdi (HSE MANAGER, SITE CHIEF) ve
+# onlarda kapatmak deneyim bolumunu yok ederdi. Baslik iki satira sariyorsa
+# (CERTIFICATIONS & / TRAINING) devam satiri yutulur, bolum kapanmaz.
+# Lokal olcum (gercek CV, ayni motor) v5 -> v6:
+#   education 61c -> 51c, languages 168c -> 45c, certifications 467c -> 158c,
+#   kapsam 9/10 korundu.
+# ats#212 (parserVersion v7): (a) Turkce ekli basliklar eslesir —
+# "IS DENEYIMLERI" sozlukteki "deneyim" ile artik tutuyor, ek toleransi yalniz
+# 5+ karakter etiketlerde acik; (b) korumali etiket eslesmesi kesinlestirildi —
+# bare "saglik" onek eslesmesiyle MESRU IS UNVANINI siliyordu
+# ("Saglik Emniyet Cevre Koordinatoru"), bu da aktif bolumu kapatip adayin tum
+# deneyimini yok ediyordu. Cok kelimeli biçimler acikca listelendi; tek
+# kelimeliler tam eslesmeyle korunmaya devam eder.
+# Lokal olcum (4 gercek CV): kariyer.net CV'sinde deneyim 35c -> 170c,
+# yanlis bastirma 10 -> 5; Ingilizce referans CV 9/10 korundu; 4 CV'de
+# PII sizinti kontrolu temiz (dogum tarihi/cinsiyet/medeni durum/adres yok).
+# KALAN: kariyer.net iki-kolon + mixed-case baslik duzeni ayri is (ats#213).
+# ats#216 (#215 A): experience/education artik YAPISAL girdi olarak da kabul edilir.
+# Genislet/daralt: V17 experience_entries/education_entries JSONB + languages/
+# certifications TEXT kolonlarini ESKILERIN YANINA ekler; mevcut satirlar tek
+# girdiye backfill edilir. Yeni istemci yalniz girdi gonderebilir, backend eski
+# tek-string alani ondan turetir (effectiveExperience/-Education) — boylece IK
+# gorunumu, export ve DSAR yuzeyleri degismez ve frontend ile backend'i ayni
+# anda deploy etmek GEREKMEZ. Frontend hala eski bicimi gonderiyor; cogaltilabilir
+# arayuz ayri PR (#215 B).
+# API: experience/education artik `required` DEGIL (dogrulama turetilmis deger
+# uzerinde kosar). OpenAPI snapshot diff'i incelenerek yeniden pinlendi:
+# 2 yeni sema, 4 opsiyonel alan, silinen sema/yol YOK.
+#
+# ats#217 (parserVersion v8) — SAHIP BILDIRIMI, canli form ekran goruntusuyle:
+# CV ice aktarma ZORUNLU ad alanini "Calismak Istedigi Iller :" ile doldurmustu;
+# bu bir kariyer.net FORM ETIKETI. Alan bos kalmadi, YANLIS doldu — daha kotusu,
+# cunku aday fark etmeyebilir. Kok neden: looksLikeHeading iki nokta ile biten
+# satiri KOSULSUZ baslik sayar (bolum tespiti icin dogru — form etiketi gercekten
+# bolum baslatir) ama bu %70 buyuk-harf olcutunu atlatir ve ad-soyad sezgisi
+# etiketi ilk aday yapar. Iki nokta tam olarak "bu bir etikettir" sinyalidir.
+# Uc dar duzeltme (hepsi DARALTMA; buyuk-harf kurali gevsetilmedi — gevsetme
+# daha once olculdu ve reddedildi, referans CV 9/10 -> 5/10 dusmustu):
+#   1) ad adayi iki nokta iceren satiri reddeder
+#   2) TEKIL "sertifika" sozluge eklendi — ek toleransi tek yone calisir (satir
+#      token'i etiketi uzatabilir, kisaltamaz); CV "SERTIFIKA BILGILERI" yaziyor,
+#      sozlukte yalniz cogul vardi, bolum acilmadi ve sertifikalar DILLER
+#      alanina yutuldu (645c)
+#   3) "bilgisayar bilgileri" SKILLS'e COK KELIMELI eklendi — tek basina
+#      "bilgisayar" ek toleransiyla "BILGISAYAR MUHENDISLIGI"ni de yakalar ve
+#      egitim bolumunu kapatirdi (test iki yonu de sabitler)
+# Olcum, 5 gercek CV, uretim motoruyla (PDFBox), v7 -> v8:
+#   kariyer.net CV 7/10 -> 8/10; FULL_NAME yanlis deger -> yok;
+#   LANGUAGES 645c -> 26c; SKILLS yok -> 49c; CERTIFICATIONS yok -> 527c
+#   Ingilizce referans CV 9/10 -> 9/10, HER DEGER BIREBIR AYNI
+#   diger 3 CV degismedi (2/10, 3/10, 3/10)
+# YAPMADIGI: yanlis adi keser, DOGRU adi bulmaz. O CV'nin baslik satirlari
+# yapisal olarak olculdu: ad satiri %20 buyuk harf — kariyer.net'te ad da diger
+# basliklar gibi mixed-case. Yakalamak tipografi sinyali ister (font boyutu +
+# bold) ve ayri istir (ats#213). Simdilik alan BOS kalir; bos, yanlistan iyidir.
+# Bu pin iki merged isi canliya tasir:
+#   ats#220 (#215 C) — recruiter yanitinda experienceEntries/educationEntries +
+#     languages/certifications OKUNUR. Bu alanlar yoktu; frontend (platform-web
+#     #1019) canli backend'in donmedigi alanlari okuyunca IK paneli comuyordu,
+#     o yuzden frontend tarafi yokluga toleransli yazildi. Bu pin sonrasi
+#     alanlar gercekten geliyor ve IK her deneyim kaydini AYRI goruyor.
+#   ats#223 (#222) — aday kimlikli bes uc (durum/gorusme/teklif okuma,
+#     withdraw, teklif yaniti) hiz siniri kapsamina alindi; onceki
+#     shouldNotFilter "POST degilse atla" dedigi icin bu uclar HIC
+#     sayilmiyordu. Okuma 120/10dk, mutasyon 20/10dk ayri kovada; mevcut
+#     gonderim/CV uclari YAPILANDIRILMIS siniri korur (davranis degismedi).
+# Digest build log'undan DEGIL, registry manifest'inden alindi ve node'da
+# pull-proof edildi: crictl pull + inspecti repoDigests == bu digest.
+# (crictl pull ekrana sha256:e3655e03… yaziyor — o local image ID, cekilebilir
+# manifest digest'i DEGIL; gecmiste bu tuzak auth-service'i 106dk indirdi.)
+# Onceki pin: sha-7fbe88f / #218 gruplama /
+#   sha256:35da6411f134fa039e9db26cae2fc1933227c386fdd01491fa6c9f43f346090f
+# Ondan onceki: sha-e1eca6d / ats#217 form etiketi + parserVersion v8 /
+#   sha256:1a16e78ec2a78b87b7d51e0a76bf74004a0d83adcb1ab3d2603722addfbe7c48
+# Ondan onceki: sha-ef2b3cc / #215 A yapisal girdiler + V17 /
+#   sha256:f3450fd6e59d1dd4f750fbcef4fc2866f31285ea95c4f8466d2476cdad7ea09c
+# Ondan onceki: sha-21356f1 / v6 davranisi ama parserVersion yanlis "v5" /
+#   sha256:4ced4cd00c82b3282352079679125d710c85641a629afca645845aecb01441bc
+# Full ATS ilk müşteri yüzeyi için sonradan eklenen V15 DSAR legacy-data
+# migration'ı bilinçli olarak ayrıştırıldı: TEST'teki 12 eski DSAR satırı
+# identity-owner/DPO eşlemesi olmadan değiştirilemez. Bu pin V5..V13 ile
+# ilan, CV import, pipeline/evaluation ve mülakat akışlarını taşır; DSAR
+# remediation ayrı owner-gated iş olarak fail-closed kalır.
+#   build   https://github.com/Halildeu/ats/actions/runs/30205479631
+# Canlı D29 + aday/İK yolculuğu bu GitOps değişikliği ArgoCD ile
+# eşitlendikten sonra faz25-fullats-live-browser-acceptance ile üretilecektir.
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
@@ -31,16 +141,39 @@ namespace: platform-test
 
 resources:
   - ../../../../base/apps/ats-interview-evidence
+  - ../../../../base/apps/ats-interview-evidence-ui
   - externalsecret.yaml
   - externalsecret-mtls.yaml
   - ingress-ats-api.yaml
+  - ingress-ats-ui.yaml
   - netpol.yaml
+  - netpol-ui.yaml
+  # ats#235: Graph mail egress (config ile AYNI değişiklikte — ağ izni eksikse
+  # adapter ağ hatasını "yapılandırılmamış" diye raporlar ve arıza yanlış
+  # katmanda aranır).
+  - netpol-graph-mail-egress.yaml
   # ai-stub artık resource değildir: provider live-stt fail-closed; kullanılmayan
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+    digest: sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
+  # mfe-interview-evidence UI — mülakat inceleme ekranının yayın imajı.
+  # Bu ekran ats#231'e kadar hiçbir ortamda açılamıyordu: bundle her push'ta
+  # derlenip atılıyordu, hiçbir adım yayınlamıyordu. Zincir ats#232 ile kuruldu;
+  # bu pin onu canlıya taşır.
+  #   source  ats@05666f5 (ats#234 — taban openssl CVE düzeltmesi)
+  #   tag     ghcr.io/halildeu/ats-interview-evidence-ui:sha-05666f5
+  #   digest  sha256:08eacb6e0e092912d63d4995d0b341a43a270eeae17b85cf84feb294b66a9fb6
+  #   build   https://github.com/Halildeu/ats/actions/runs/30309878938
+  # Digest build log'undan DEĞİL, GHCR paket sürüm manifest'inden alındı ve
+  # node'da pull-proof edildi: crictl pull + inspecti repoDigests == bu digest.
+  # (crictl pull ekrana sha256:2dbd1690… yazdı — o LOCAL IMAGE ID'dir,
+  #  çekilebilir manifest digest'i değil; aynı tuzak geçmişte auth-service'i
+  #  106 dakika indirtmişti.)
+  # Önceki pin YOK — bu imajın ilk yayını.
+  - name: ghcr.io/halildeu/ats-interview-evidence-ui
+    digest: sha256:08eacb6e0e092912d63d4995d0b341a43a270eeae17b85cf84feb294b66a9fb6
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
@@ -85,3 +218,17 @@ patches:
       - op: add
         path: /data/ATS_AI_MTLS_TRUSTSTORE
         value: "/etc/ats-mtls/truststore.p12"
+      # ats#200 — aday verisi politikası TEST ortamı beyanı.
+      # Owner kararı (2026-07-23): KVKK kısıtı test ortamında uçtan uca
+      # doğrulamayı engellememeli; prod'a geçişte engellemeli.
+      # Bu iki satır YALNIZ test activation overlay'indedir; base
+      # (synthetic-only + prod) prod tarafında değişmeden kalır ve app-boot
+      # real-allowed+prod kombinasyonunda fail-closed boot düşürür.
+      # Kapsam: sentetik olmayan e-posta/CV yalnız TEST tenant'ında kabul edilir;
+      # gerçek aday PII production pilotu hâlâ Legal/DPO owner gate'indedir.
+      - op: replace
+        path: /data/ATS_CANDIDATE_DATA_MODE
+        value: "real-allowed"
+      - op: replace
+        path: /data/ATS_CANDIDATE_DATA_ENVIRONMENT
+        value: "test"

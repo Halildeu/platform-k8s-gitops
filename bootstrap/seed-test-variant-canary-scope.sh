@@ -1,17 +1,81 @@
 #!/usr/bin/env bash
-# Test authz canary scope seed
-# Variant allow probe'u JWT + permission set ile bitmiyor; variant-service
-# numeric PROJECT scope ref'i bekliyor. Bu helper, test permission_db içine
-# idempotent canary scope seed yazar.
+# DEPRECATED — DEAD CODE. Fail-closed since board #2534 (Faz 22, 2026-07-22).
 #
-# Usage:
-#   bash bootstrap/seed-test-variant-canary-scope.sh
-#   GRID_REF_ID=1301 USER_ID=5 bash bootstrap/seed-test-variant-canary-scope.sh
+# ## Why this cannot work
 #
-# Notes:
-# - Sadece test içindir; prod'a uygulanmaz.
-# - Seed sonrası variant-service authz context cache'i için rollout restart gerekir.
+# This helper seeds permission_db `public.scopes` + `public.user_permission_scope`.
+# Those tables are NOT read on any live cluster:
+#
+#   1. `kustomize/base/apps/permission-service/configmap.yaml:51` sets
+#      ERP_OPENFGA_ENABLED: "true".
+#   2. That wires the `openFgaScopeReader` bean
+#      (`OpenFgaAuthzConfig`, @ConditionalOnProperty erp.openfga.enabled).
+#   3. `AuthorizationQueryService.getUserScopeSummary()` early-returns inside
+#      `if (openFgaScopeReader != null) { ... return groupedByType; }` — the
+#      `userPermissionScopeRepository` branch below it is UNREACHABLE.
+#
+# So the seed reported success, the rows landed in Postgres, and
+# `/authz/me.allowedScopes` stayed empty. A tool that prints OK while changing
+# nothing observable is worse than no tool: it consumed debugging time and
+# produced false "scope granted" claims in acceptance notes.
+#
+# Two further defects, independent of the above:
+#   * USER_ID defaults to the platform NUMERIC id (2) while the live subject is
+#     a Keycloak UUID — the two identity spaces are not interchangeable (#2530).
+#   * The closing instructions tell the operator to `kubectl rollout restart`
+#     a Deployment on the shared k3d-test cluster, which ADR-0023 forbids
+#     (imperative mutation of GitOps-owned desired state; it also disrupts other
+#     sessions sharing the cluster).
+#
+# ## What to use instead
+#
+# Grant a data-access scope through the PRODUCT path, which writes the
+# ADR-0008 canonical tuple and is the same path a real admin uses:
+#
+#     POST /api/v1/access/scope
+#     {"userId":"<kc-uuid>","orgId":1,"scopeKind":"PROJECT",
+#      "scopeRef":"[\"1204\"]","grantedBy":"<kc-uuid>"}
+#
+# `scopeRef` is a JSON ARRAY STRING; a bare "1204" is rejected 400
+# ScopeReferenceInvalid (#2555 Slice B). A ready-made idempotent wrapper with
+# --check / --apply / --dispose lives at:
+#
+#     scripts/acceptance/grant-data-access-scope.sh
+#
+# Direct DB or direct OpenFGA seeding does NOT count as evidence that the
+# supported product path works (#2534 decision). Acceptance must traverse the
+# product API.
+#
+# ## Status
+#
+# Retained (not deleted) so the runbooks and evidence notes that cite this path
+# still resolve to an explanation rather than a 404. The original body is kept
+# verbatim below the guard for audit; it is unreachable.
 
+set -euo pipefail
+
+cat >&2 <<'DEPRECATION'
+[seed-test-variant-canary-scope] REFUSING TO RUN — this helper is dead code.
+
+  It writes permission_db public.scopes / public.user_permission_scope, but
+  ERP_OPENFGA_ENABLED=true on every live overlay, so
+  AuthorizationQueryService.getUserScopeSummary() reads OpenFGA and never
+  reaches the DB branch. The seed would report success and change nothing
+  observable.
+
+  Use the product path instead:
+      scripts/acceptance/grant-data-access-scope.sh --apply ...
+  which calls POST /api/v1/access/scope.
+
+  Details + proof chain: board #2534, and the header of this file.
+DEPRECATION
+exit 2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUDIT-ONLY: original implementation, unreachable. Do not re-enable without
+# first proving the DB branch is read (it is not — see header).
+# ─────────────────────────────────────────────────────────────────────────────
+if false; then
 set -euo pipefail
 
 DB_CONTAINER="${DB_CONTAINER:-platform-pg-test}"
@@ -123,3 +187,5 @@ NEXT:
      "https://testai.acik.com/api/v1/variants?gridId=test-grid"
    # Beklenen: 403
 EOF
+
+fi

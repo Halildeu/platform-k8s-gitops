@@ -1,7 +1,7 @@
 # Host-level PostgreSQL bridge (D19: Service + Endpoints, IP pin değil ExternalName)
-# Host IP ve port overlays'de override edilir. Live values (2026-05-11):
-#   prod (staging-sw): 172.21.0.4:5432   (Docker bridge IP, platform-prod-net)
-#   test (staging-sw): 172.19.0.6:5432   (Docker bridge IP, platform-test-net)
+# Host IP ve port overlays'de override edilir. Active aiserver topology:
+#   prod: 172.21.0.10:5432 (Docker bridge IP, platform-prod-net)
+#   test: 172.19.0.6:5432  (Docker bridge IP, platform-test-net)
 #   local (Docker Desktop): host.docker.internal (resolve edilen IP)
 #
 # 2026-05-11 (PR #519): the older host-LAN model (10.9.10.53:5432 prod,
@@ -37,7 +37,7 @@ metadata:
     app.kubernetes.io/name: postgres
 subsets:
   - addresses:
-      - ip: 10.9.10.53              # overlays'de override
+      - ip: 192.0.2.1               # fail-closed placeholder; overlay override zorunlu
     ports:
       - name: pg
         port: 5432                  # overlays'de override (prod 5432, test 5433)

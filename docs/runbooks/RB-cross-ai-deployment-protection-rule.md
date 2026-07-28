@@ -602,7 +602,7 @@ Its shell commands execute against the single signed-head checkout: the runner
 bootstrap binds `GITHUB_SHA`, workflow blob and repository identity before the
 action can run, while `scripts/faz22-remote-ops/**` is part of the declared
 runtime-authority inventory that retriggers this gate. The browser stage uses
-the fixed runner-owned `/home/halil/.ssh/config`; OpenSSH host-key verification,
+the fixed runner-owned `/home/aiadmin/.ssh/config`; OpenSSH host-key verification,
 the signed endpoint-ID digest, live certificate/channel checks and attended
 consent remain cumulative gates rather than interchangeable identity claims.
 The watchdog NetworkPolicy permits only the Kubernetes service ClusterIP
