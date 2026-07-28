@@ -6072,7 +6072,13 @@ images:
     # 2026-07-26 #2913 scoped Endpoint Admin tenant claim: platform-backend
     # 2dc8452f131b6a37dcf454a353eab41f8c6e03c5, Actions run 30216061034,
     # endpoint-admin-service job 89830348624, tag sha-2dc8452.
-    digest: sha256:51b3f64d235adf1de4265b8e896ff6800d3f89e939b445951b7a8e97610c46a3
+    # 2026-07-28 #2913 fresh service observations: platform-backend PR #985,
+    # main dad91e45189df76bdd1b5fe556154f156e0887e3. Identical service
+    # payloads remain source-result idempotent but now create a fresh
+    # observation for each distinct inventory command result. Image build run
+    # 30336183050, endpoint-admin-service job 90201462863; GitHub provenance
+    # and OCI manifest verified at the immutable digest below.
+    digest: sha256:abab574627dd0775918f0c3d1a25cf0d9e7089e2ac8dcb277b5c1abd420f5c4b
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

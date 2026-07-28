@@ -214,6 +214,9 @@ images:
   # and the device-key bridge overlay (remote-bridge-digest-alignment gate).
   # 2026-07-26 #2913 same-image co-bump: backend 2dc8452f, build run
   # 30216061034, endpoint-admin job 89830348624. Activation remains owner-gated.
+  # 2026-07-28 #2913 fresh service observation same-image co-bump: backend
+  # dad91e45, build run 30336183050, endpoint-admin job 90201462863.
+  # Activation remains owner-gated.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:51b3f64d235adf1de4265b8e896ff6800d3f89e939b445951b7a8e97610c46a3
+    digest: sha256:abab574627dd0775918f0c3d1a25cf0d9e7089e2ac8dcb277b5c1abd420f5c4b
