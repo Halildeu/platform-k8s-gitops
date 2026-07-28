@@ -83,11 +83,12 @@ This is the owner decision. Do not flip the flag until every box holds:
 - [ ] A single **pilot device** identified + consenting (attended).
 - [ ] GitHub Environment `faz22-view-only-pilot` has a required reviewer,
       `prevent_self_review=true`,
-      and the three protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256`,
-      `VIEW_ONLY_PILOT_DEVICE_SHA256`, and
-      `VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT`. The first two are distinct
+      and the two protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256` and
+      `VIEW_ONLY_PILOT_DEVICE_SHA256`. They are distinct
       `sha256:<64hex>` opaque bindings; raw identity/device values do not enter
-      workflow inputs or logs.
+      workflow inputs or logs. The authorization expiry is not a static
+      Environment secret: the protected job derives it after reviewer approval,
+      with a fixed 120-minute upper bound.
 
 ## 3. Enable steps (TEST/pilot env; each: command → expected → fail signal)
 
@@ -122,8 +123,11 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
 The `apply` run waits for the protected Environment reviewer, verifies the
 content-addressed owner directive, provider-distinct advisory consensus, open
 #2374 escalation, bounded scope and current revocation ledger, then emits a v2
-protected-authorization receipt before the deployment job can start. The
-workflow then installs a cluster-side
+protected-authorization receipt before the deployment job can start. Its
+receipt validity window starts only after the Environment approval is recorded,
+so time spent waiting for a reviewer cannot consume the authorization lifetime.
+The signed receipt remains bounded to 120 minutes and is verified before the
+deployment job can use it. The workflow then installs a cluster-side
 absolute-expiry watchdog **before** exposure, applies the bridge-side viewer
 overlay, patches only route-28 keys
 into the live `api-gateway-config`, restarts the bridge and gateway, and verifies:

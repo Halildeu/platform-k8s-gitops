@@ -67,7 +67,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PILOT_OPERATOR_SHA256: ${{ secrets.VIEW_ONLY_PILOT_OPERATOR_SHA256 }}
           PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
-          PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
         run: |
           set -euo pipefail
           policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
@@ -85,15 +84,6 @@ jobs:
             echo "::error::operator and device authorization hashes must be distinct"
             exit 1
           }
-          printf '%s' "${PILOT_AUTHORIZATION_EXPIRES_AT:-}" \
-            | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || {
-              echo "::error::protected authorization expiry must be RFC3339 UTC"
-              exit 1
-            }
-          [ "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" -gt "$(date -u +%s)" ] || {
-            echo "::error::protected pilot authorization is expired"
-            exit 1
-          }
 
           out="$RUNNER_TEMP/faz22-view-only-pilot-authorization"
           mkdir -p "$out"
@@ -103,7 +93,13 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/issues/comments/$advisory_comment_id" > "$out/advisory-comment.json"
           gh api "repos/$GITHUB_REPOSITORY/issues/2374" > "$out/legal-issue.json"
           gh api "repos/$GITHUB_REPOSITORY/environments/faz22-view-only-pilot" > "$out/environment.json"
+          authorization_ttl_minutes=120
           issued_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          issued_epoch="$(date -u -d "$issued_at" +%s)"
+          authorization_expires_epoch="$((issued_epoch + authorization_ttl_minutes * 60))"
+          authorization_expires_at="$(
+            date -u -d "@$authorization_expires_epoch" +%Y-%m-%dT%H:%M:%SZ
+          )"
           python3 scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py \
             --policy "$policy" \
             --owner-comment "$out/owner-comment.json" \
@@ -114,7 +110,7 @@ jobs:
             --operator-sha256 "$PILOT_OPERATOR_SHA256" \
             --device-sha256 "$PILOT_DEVICE_SHA256" \
             --issued-at "$issued_at" \
-            --expires-at "$PILOT_AUTHORIZATION_EXPIRES_AT" \
+            --expires-at "$authorization_expires_at" \
             --run-id "$GITHUB_RUN_ID" \
             --head-sha "$GITHUB_SHA" \
             --triggering-actor "$GITHUB_ACTOR" \
@@ -128,7 +124,7 @@ jobs:
           authorization_sha256="sha256:$(sha256sum "$out/protected-authorization.json" | awk '{print $1}')"
           printf 'authorization_sha256=%s\n' "$authorization_sha256" >> "$GITHUB_OUTPUT"
           printf 'authorization_expires_epoch=%s\n' \
-            "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" >> "$GITHUB_OUTPUT"
+            "$authorization_expires_epoch" >> "$GITHUB_OUTPUT"
           (cd "$out" && sha256sum protected-authorization.json > SHA256SUMS)
           (cd "$out" && sha256sum -c SHA256SUMS)
           rm -f "$out/owner-comment.json" "$out/advisory-comment.json" \
