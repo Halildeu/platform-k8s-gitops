@@ -43,7 +43,7 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:0b18e27883cdbd8af1375f69694c92680bb3f1207b43beef3cc0957ef3192357
+    digest: sha256:c0fea74424bcbc3329b38ce161cf234125debecba80e56dca9cccf4c7c9e7d81
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -67,7 +67,7 @@ images:
     #   docker pull ...:sha-f2973351... && docker inspect --format '{{.RepoDigests}}'
     # Build-log digest'i o etiketin cekilebilir oldugunun kaniti degildir ve
     # boyle bir pin daha once bir servisi sessizce roll etmeden birakti.
-    digest: sha256:b65e6fd0ff503f5c45dfd54455cf496da3a97d6c84e7887798ed3ab5c63aec3e
+    digest: sha256:acb24dfc25601a5c04c7d0c5004448a02842c50c980300bdb4d2d5b3b3011e6b
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
