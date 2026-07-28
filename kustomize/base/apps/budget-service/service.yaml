@@ -12,5 +12,9 @@ spec:
   ports:
     - name: http
       port: 8101
-      targetPort: http
+      # The workload exposes HTTP and management on the same numeric port.
+      # Kustomize merges duplicate containerPort entries by port number, so a
+      # named target can disappear in the rendered pod and leave EndpointSlice
+      # with ports:null. Pin the actual listener port instead.
+      targetPort: 8101
       protocol: TCP
