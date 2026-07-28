@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519"
-DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
+DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
 DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
 if [[ "$DENETIM_SSH_OPTS" == "__SSH_CONFIG__" ]]; then
@@ -43,7 +43,7 @@ Environment:
   DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
   DENETIM_SSH_OPTS="-i ../.faz24-i3-ssh/faz24-i3-denetim_ed25519 -o IdentitiesOnly=yes"
   DENETIM_SSH_OPTS=__SSH_CONFIG__ with DENETIM_SSH_TARGET=denetim-pc
-    Uses /home/halil/.ssh/config on the self-hosted staging-sw runner.
+    Uses /home/aiadmin/.ssh/config on the self-hosted aiserver runner.
   REQUIRE_ACTIVE_GUI=1
   EVIDENCE_DIR=/tmp/faz22-6-denetim-ssh-preflight-<run>
 

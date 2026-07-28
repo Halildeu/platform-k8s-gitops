@@ -262,14 +262,15 @@ import sys
 
 path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-pair = re.compile(
+profile = re.compile(
     r"(?m)^(?P<indent>[ ]+)DENETIM_SSH_TARGET: denetim-pc\n"
+    r"(?P=indent)DEFAULT_DENETIM_SSH_CONFIG: /home/aiadmin/\.ssh/config\n"
     r"(?P=indent)DENETIM_SSH_OPTS: __SSH_CONFIG__$"
 )
-matches = pair.findall(text)
+matches = profile.findall(text)
 if len(matches) != 1:
     raise SystemExit(
-        f"VIEW_ONLY collector must contain exactly one adjacent canonical Denetim SSH env pair: {path}"
+        f"VIEW_ONLY collector must contain exactly one adjacent canonical Denetim SSH env profile: {path}"
     )
 if "DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2" in text:
     raise SystemExit(
