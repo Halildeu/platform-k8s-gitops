@@ -111,7 +111,7 @@ status=000
 if [[ -n "$token" ]]; then
   status="$(curl -s -o /dev/null -w '%{http_code}' \
     -H "Authorization: Bearer ${token}" \
-    -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' \
+    -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' \
     "https://ghcr.io/v2/${repo_path}/manifests/${digest}" 2>/dev/null || echo 000)"
 fi
 token=""
@@ -122,7 +122,7 @@ if [[ "$status" == "200" ]]; then
 fi
 
 cat >&2 <<EOF
-::error::frontend image is NOT retrievable — promotion would silently fail to roll out
+::error::image is NOT retrievable — promotion would silently fail to roll out
   image     : ${repo_with_host}@${digest}
   node cache: MISS
   registry  : HTTP ${status} as ${identity}
