@@ -58,12 +58,16 @@ images:
     digest: sha256:10675d11e6ece4c71e222dff0089075f316b77db2a429f2a16207661773ae445
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    # platform-web #1005 — panel sessiz SSO ile acilir; /ethic tek sahipli.
-    # Kaynak: c6a4ea28c70d9814d6d6f74038d8e74e5798b92f
-    # Etiket: sha-c6a4ea28c70d9814d6d6f74038d8e74e5798b92f (bu hat TAM sha etiketi kullanir;
+    # platform-web #1063 — vakanin kendi gecmisi ekranda; okunamadiginda bos
+    # liste degil, okunamadigi yazili.
+    # Kaynak: f2973351d2c7155d4fc5c10768f0d84fe1325c84
+    # Etiket: sha-f2973351d2c7155d4fc5c10768f0d84fe1325c84 (bu hat TAM sha etiketi kullanir;
     # frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
-    # Digest etiketten cozuldu ve GHCR'da 200 ile dogrulandi.
-    digest: sha256:66ddd1ea5ecd11f74d5bccc17b3957aec8d9a857a018d3ab64395183e719bef3
+    # Digest build log'undan DEGIL, hedef node'a gercek pull ile okundu:
+    #   docker pull ...:sha-f2973351... && docker inspect --format '{{.RepoDigests}}'
+    # Build-log digest'i o etiketin cekilebilir oldugunun kaniti degildir ve
+    # boyle bir pin daha once bir servisi sessizce roll etmeden birakti.
+    digest: sha256:ac34673b426768be1a9725d3db9ef9b978bc80ac13237c2f927b805ceeb26347
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
