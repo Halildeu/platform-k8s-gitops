@@ -18,10 +18,15 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@9445c60 (ats#236 / #235 dilim 1 — aday e-posta + tek kullanımlık kod girişi)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-9445c60
-#   digest  sha256:c3c4afdf84f36fd7bd29fc2b64fec03a0fced0151344d4b4f2b9446fc0cb839b
-#   build   https://github.com/Halildeu/ats/actions/runs/30308972064
+#   source  ats@1ba4344 (ats#241 + #243 + #244 — tarih biçimi sunucuda zorlanıyor)
+#   önceki  ats@9445c60 (ats#236 / #235 dilim 1 — aday e-posta + kod girişi)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-1ba4344
+#   digest  sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
+#   build   ats image-push @ 1ba4344 (completed/success)
+#
+# #244 CANLI BİR KUSURU KAPATIYOR: #241 yalnız YYYY-AA kabul ediyordu, ama
+# ayrıştırıcı yıl-only CV satırından "2019" üretiyor ve sunucu reddediyordu —
+# aday olmayan bir ayı uydurmadan gönderemiyordu. Bu pine kadar kusur CANLIDA.
 #
 # ats#235 dilim 1 bu pinle canlıya çıkar: V19 challenge/oturum tabloları + üç
 # aday giriş ucu + kod isteği/doğrulama hız kovaları. Aday erişimi bugüne kadar
@@ -152,7 +157,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:c3c4afdf84f36fd7bd29fc2b64fec03a0fced0151344d4b4f2b9446fc0cb839b
+    digest: sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
   # mfe-interview-evidence UI — mülakat inceleme ekranının yayın imajı.
   # Bu ekran ats#231'e kadar hiçbir ortamda açılamıyordu: bundle her push'ta
   # derlenip atılıyordu, hiçbir adım yayınlamıyordu. Zincir ats#232 ile kuruldu;
