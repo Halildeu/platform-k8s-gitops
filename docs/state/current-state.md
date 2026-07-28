@@ -1,5 +1,39 @@
 # Current State — Platform K8s Migration
 
+## Desired-State Delta — Faz 24 TEST direct-STT fallback latency (2026-07-29, live read-back pending)
+
+Issue `#2610` altındaki TEST-only öneri, audio-gateway Direct-STT HTTP fallback
+cevap süresini `12000ms` değerinden bounded backend varsayılanı olan `30000ms`
+değerine yükseltir ve ConfigMap değerinin pod tarafından yeniden okunması için
+pod-template revision annotation'ını değiştirir. Immutable audio-gateway image
+digest'i ve production render değişmez; production render'da audio-gateway
+Deployment/ConfigMap bulunmaz.
+
+Kararı tetikleyen canlı kanıt:
+
+- Public `testai.acik.com` üzerinden yetkili token, meeting create, consent,
+  `PCM16/16000Hz/mono` session, chunk, finish ve `FINISHED` read-back zinciri
+  geçti;
+- 16ms boundary fixture için gateway `12000ms` timeout verdi, Denetim
+  live-stt yaklaşık `19s` sonra `Transcribe success` yazdı;
+- 5 saniyelik gerçek Türkçe konuşma fixture'ı için gateway yine `12000ms`
+  timeout verdi, aynı mTLS compute hattı yaklaşık `23.2s` sonra
+  `Transcribe success` yazdı;
+- smoke helper yalnız recorder lifecycle'ını kanıtlar; direct-STT transcript,
+  canonical association veya attended mic/loopback acceptance iddiası üretmez.
+
+Bu değişiklik `#2199` stale-geç-draft mitigasyonunu kontrollü biçimde yeniden
+değerlendirir. Güncel desktop, direct WebSocket stream event'i gördükten sonra
+gecikmiş non-final gateway fallback (`DRAFT`/`UTTERANCE`) event'lerini uygulamaz;
+yalnız `FINAL`/`REVISED` fallback'i metin çakışması yoksa kabul eder. Yine de
+stream yokken geç fallback ve `maxInFlight=2` doygunluğu TEST'te izlenecektir.
+Rollback, timeout'u `12000ms` değerine döndürmek ve revision annotation'ını
+yeniden bump etmektir.
+
+Bu blok source-reviewed desired-state'i kaydeder. ArgoCD revision, pod env,
+imageID, yeni PCM16 success/result-stream, canonical persistence ve attended
+capture→stop→reopen kanıtları alınmadan live/runtime acceptance söylenmez.
+
 ## Live Delta — Budget actuals TEST customer journey accepted (2026-07-28)
 
 Bu delta yalnız TEST ortamındaki proje bazlı gerçekleşen maliyet dilimini

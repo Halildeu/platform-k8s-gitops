@@ -8861,7 +8861,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-26-sentence-assembly-v1"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-29-2610-v5-stt-timeout"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -8893,6 +8893,21 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED
         value: "true"
+      # 2026-07-29 #2610 live PCM16 smokes: Denetim live-stt returned
+      # Transcribe success after about 19s for the 16ms boundary fixture and
+      # 23.2s for a real 5s Turkish speech fixture; the 12s gateway timeout
+      # discarded both results. Keep TEST above the observed latency and aligned
+      # with the backend's bounded 30s default.
+      #
+      # This deliberately revisits #2199's stale-draft mitigation. The current
+      # desktop suppresses delayed non-final gateway fallback events after the
+      # direct stream has produced events, while retaining FINAL/REVISED fallback
+      # with text deduplication. TEST must still monitor maxInFlight=2 saturation
+      # and late fallback latency. Rollback: restore "12000" and bump
+      # direct-stt-enable-rev so the pod re-reads the ConfigMap.
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS
+        value: "30000"
       # --- Faz 24 cumle birlestirme (platform-backend#918) ---
       #
       # SORUN: kullanicinin bildirdigi "ayni cumleyi on satirda okuyorsun".
