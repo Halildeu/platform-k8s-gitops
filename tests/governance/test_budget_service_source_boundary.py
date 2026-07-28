@@ -158,6 +158,56 @@ def test_workcube_mssql_policy_does_not_select_budget_service():
     assert _ports(policy) == {1433}
 
 
+def test_budget_api_path_is_limited_to_gateway_and_http_port():
+    relative_path = (
+        "kustomize/overlays/test/netpol-budget-service-api-gateway.yaml"
+    )
+    egress = _named_policy(
+        relative_path, "allow-api-gateway-egress-to-budget-service"
+    )
+    ingress = _named_policy(
+        relative_path, "allow-budget-service-ingress-from-api-gateway"
+    )
+
+    assert egress["spec"]["podSelector"] == {
+        "matchLabels": {"app.kubernetes.io/name": "api-gateway"}
+    }
+    assert egress["spec"]["policyTypes"] == ["Egress"]
+    assert egress["spec"]["egress"] == [
+        {
+            "to": [
+                {
+                    "podSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/name": "budget-service"
+                        }
+                    }
+                }
+            ],
+            "ports": [{"protocol": "TCP", "port": 8101}],
+        }
+    ]
+
+    assert ingress["spec"]["podSelector"] == {
+        "matchLabels": {"app.kubernetes.io/name": "budget-service"}
+    }
+    assert ingress["spec"]["policyTypes"] == ["Ingress"]
+    assert ingress["spec"]["ingress"] == [
+        {
+            "from": [
+                {
+                    "podSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/name": "api-gateway"
+                        }
+                    }
+                }
+            ],
+            "ports": [{"protocol": "TCP", "port": 8101}],
+        }
+    ]
+
+
 def test_no_effective_erp_policy_selects_budget_service():
     budget_labels = {
         "app.kubernetes.io/name": "budget-service",

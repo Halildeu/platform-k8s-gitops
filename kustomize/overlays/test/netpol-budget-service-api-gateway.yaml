@@ -1,0 +1,49 @@
+# Budget Control TEST API path.
+#
+# The namespace baseline remains default-deny. Live acceptance on 2026-07-28
+# proved api-gateway -> budget-service timed out even though both workloads
+# carry the generic platform label. Keep the product path explicit and narrow:
+# only api-gateway pods may reach budget-service, and only on its HTTP port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-gateway-egress-to-budget-service
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: netpol
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: budget-service
+      ports:
+        - protocol: TCP
+          port: 8101
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-budget-service-ingress-from-api-gateway
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: netpol
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: budget-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8101
