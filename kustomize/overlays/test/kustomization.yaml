@@ -4597,7 +4597,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: c5f9a568682dc20790ea1f7a1c0ef45587c0ebdf
+    # sourceRevision: 03fb152dc080e9b1c0c31cbe879edf00b40f52a1
     # 2026-07-28 project actuals workspace: platform-web PR #1050,
     # merge 03fb152dc080e9b1c0c31cbe879edf00b40f52a1; signed testai
     # image build run 30318186229 (job 90148263512).
