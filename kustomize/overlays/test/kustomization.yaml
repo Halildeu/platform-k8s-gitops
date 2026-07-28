@@ -6957,6 +6957,12 @@ patches:
       - op: add
         path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1tpm-manufacturer-roots-rev
         value: "2913-nuvoton-2111-1"
+      # AppRole credentials are imported through envFrom and are therefore
+      # process-start values. Bump this public revision after a Vault/ESO
+      # rotation so ArgoCD replaces the pod with the newly synced Secret.
+      - op: add
+        path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1tpm-vault-credential-rev
+        value: "2913-approle-secret-20260728-1"
   - target:
       kind: ConfigMap
       name: endpoint-admin-service-config
