@@ -519,7 +519,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--capture-id")
     parser.add_argument("--device-id", default="codex-faz24-smoke")
     parser.add_argument("--language", default="tr")
-    parser.add_argument("--audio-format", default="WAV")
+    # Match the production desktop capture contract. Direct-STT admission
+    # meters PCM16 frames and deliberately rejects non-PCM16 payloads before
+    # Redis dispatch because their buffered duration cannot be bounded.
+    parser.add_argument("--audio-format", default="PCM16")
     parser.add_argument("--sample-rate-hz", type=int, default=16000)
     parser.add_argument("--channels", type=int, default=1)
     parser.add_argument("--consent-version", default="recorder-consent-v1")

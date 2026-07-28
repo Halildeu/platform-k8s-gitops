@@ -29,6 +29,14 @@ on:
           - "true"
           - "false"
         default: "true"
+      run_meeting_ai_result_acceptance:
+        description: "Write, user-read, and audit a synthetic canonical Meeting-AI result"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
       run_session_expiry_smoke:
         description: "Run transient audio-gateway session-expiry capacity smoke"
         required: true
@@ -65,7 +73,9 @@ jobs:
       TOKEN_CONTRACT_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-platform-desktop-token-contract.json
       SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.json
       SMOKE_VERIFY_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.verify.json
+      MEETING_AI_RESULT_ACCEPTANCE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-meeting-ai-user-result-acceptance.json
       SESSION_EXPIRY_SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-audio-gateway-session-expiry-smoke.json
+      REDIS_RUNTIME_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-redis-streams-runtime.json
       RUNNER_STDOUT: /tmp/faz24-platform-desktop-token-runner-${{ github.run_id }}-${{ github.run_attempt }}.stdout
       RUNNER_STDERR: /tmp/faz24-platform-desktop-token-runner-${{ github.run_id }}-${{ github.run_attempt }}.stderr
 
@@ -76,6 +86,7 @@ jobs:
           EXPECTED_ISSUER_INPUT: ${{ inputs.expected_issuer }}
           KEYCLOAK_BASE_URL_INPUT: ${{ inputs.keycloak_base_url }}
           RUN_EXTERNAL_SMOKE_INPUT: ${{ inputs.run_external_smoke }}
+          RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT: ${{ inputs.run_meeting_ai_result_acceptance }}
           RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
           RECOVER_STALE_RUN_ID_INPUT: ${{ inputs.recover_stale_run_id }}
           EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT: ${{ inputs.expected_audio_gateway_image }}
@@ -118,6 +129,7 @@ jobs:
           reject_multiline expected_issuer "${EXPECTED_ISSUER_INPUT}"
           reject_multiline keycloak_base_url "${KEYCLOAK_BASE_URL_INPUT}"
           reject_multiline run_external_smoke "${RUN_EXTERNAL_SMOKE_INPUT}"
+          reject_multiline run_meeting_ai_result_acceptance "${RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT}"
           reject_multiline run_session_expiry_smoke "${RUN_SESSION_EXPIRY_SMOKE_INPUT}"
           reject_multiline recover_stale_run_id "${RECOVER_STALE_RUN_ID_INPUT}"
           reject_multiline expected_audio_gateway_image "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
@@ -129,6 +141,14 @@ jobs:
             true|false) ;;
             *)
               echo "::error::run_external_smoke must be true or false"
+              exit 1
+              ;;
+          esac
+
+          case "${RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT}" in
+            true|false) ;;
+            *)
+              echo "::error::run_meeting_ai_result_acceptance must be true or false"
               exit 1
               ;;
           esac
@@ -154,8 +174,9 @@ jobs:
           fi
 
           if [ "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" = "true" ]; then
-            if [ "${RUN_EXTERNAL_SMOKE_INPUT}" != "false" ]; then
-              echo "::error::session-expiry and external-recorder smokes cannot run in the same dispatch"
+            if [ "${RUN_EXTERNAL_SMOKE_INPUT}" != "false" ] \
+                || [ "${RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT}" != "false" ]; then
+              echo "::error::session-expiry excludes external-recorder and Meeting-AI result acceptance"
               exit 1
             fi
             require_audio_gateway_digest "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
@@ -163,7 +184,13 @@ jobs:
             require_audio_gateway_digest "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           fi
 
-          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}${RUN_SESSION_EXPIRY_SMOKE_INPUT}${RECOVER_STALE_RUN_ID_INPUT}${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
+          if [ "${RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT}" = "true" ] \
+              && [ "${RUN_EXTERNAL_SMOKE_INPUT}" != "true" ]; then
+            echo "::error::Meeting-AI result acceptance requires external-recorder smoke"
+            exit 1
+          fi
+
+          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}${RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT}${RUN_SESSION_EXPIRY_SMOKE_INPUT}${RECOVER_STALE_RUN_ID_INPUT}${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |Authorization:|eyJ[A-Za-z0-9_-]+\.'; then
             echo "::error::inputs must not contain token/private/secret-like material"
             exit 1
@@ -171,6 +198,14 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Reconcile test Redis Streams runtime
+        if: inputs.run_external_smoke == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          OUT="${REDIS_RUNTIME_JSON}" \
+            bash scripts/faz24/reconcile_redis_streams_test_runtime.sh
 
       - name: Run platform-desktop token evidence chain
         id: run_chain
@@ -181,6 +216,7 @@ jobs:
           KC_BASE_URL: ${{ inputs.keycloak_base_url }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: ${{ inputs.run_external_smoke == 'true' && '1' || '0' }}
+          RUN_MEETING_AI_RESULT_ACCEPTANCE: ${{ inputs.run_meeting_ai_result_acceptance == 'true' && '1' || '0' }}
           RUN_SESSION_EXPIRY_SMOKE: ${{ inputs.run_session_expiry_smoke == 'true' && '1' || '0' }}
           RECOVER_STALE_RUN_ID: ${{ inputs.recover_stale_run_id }}
           EXPECTED_AUDIO_GATEWAY_IMAGE: ${{ inputs.expected_audio_gateway_image }}
@@ -267,6 +303,7 @@ jobs:
                 tokenContract: {status: "not-proven"},
                 externalRecorderSmoke: {status: "not-proven"},
                 externalRecorderVerifier: {status: "not-proven"},
+                meetingAiUserResultAcceptance: {status: "not-proven"},
                 audioGatewaySessionExpirySmoke: {status: "not-proven"}
               }
             }' > "${DIAG_JSON}"
@@ -354,13 +391,14 @@ jobs:
         if: always() && steps.secret_scan.outcome == 'success'
         env:
           RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
+          RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT: ${{ inputs.run_meeting_ai_result_acceptance }}
           RECOVER_STALE_RUN_ID_INPUT: ${{ inputs.recover_stale_run_id }}
         run: |
           set -euo pipefail
 
           test -s "${DIAG_JSON}"
 
-          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" "${RECOVER_STALE_RUN_ID_INPUT}" <<'PY'
+          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" "${RECOVER_STALE_RUN_ID_INPUT}" "${MEETING_AI_RESULT_ACCEPTANCE_JSON}" "${RUN_MEETING_AI_RESULT_ACCEPTANCE_INPUT}" <<'PY'
           import json
           import pathlib
           import sys
@@ -393,6 +431,24 @@ jobs:
               assert session["boundaries"]["sessionRegistryCapacityReused"] is True
               assert session["boundaries"]["aggregationReservationReleased"] is True
               assert session["boundaries"]["negativeInvariantStable"] is True
+          if sys.argv[6] == "true":
+              result_path = pathlib.Path(sys.argv[5])
+              result_status = data["results"]["meetingAiUserResultAcceptance"]["status"]
+              if result_path.is_file():
+                  result = json.load(result_path.open(encoding="utf-8"))
+                  assert data["status"] == "pass"
+                  assert result_status == "pass"
+                  assert result["accepted"] is True
+                  assert result["boundaries"]["platformTestOnly"] is True
+                  assert result["boundaries"]["userTokenIncluded"] is False
+                  assert result["boundaries"]["canonicalResponseBodyIncluded"] is False
+                  assert result["boundaries"]["auditPayloadIncluded"] is False
+                  assert result["serviceWrite"]["accepted"] is True
+                  assert result["userRead"]["accepted"] is True
+                  assert result["metadataOnlyAudit"]["accepted"] is True
+              else:
+                  assert data["status"] != "pass"
+                  assert result_status == "not-run"
           PY
 
       - name: Write workflow summary
@@ -406,6 +462,7 @@ jobs:
           token_contract="missing"
           smoke="missing"
           verifier="missing"
+          meeting_ai_result="missing"
           session_expiry="missing"
           if [ -s "${DIAG_JSON}" ]; then
             status="$(jq -r '.status // "missing"' "${DIAG_JSON}")"
@@ -413,6 +470,7 @@ jobs:
             token_contract="$(jq -r '.results.tokenContract.status // "missing"' "${DIAG_JSON}")"
             smoke="$(jq -r '.results.externalRecorderSmoke.status // "missing"' "${DIAG_JSON}")"
             verifier="$(jq -r '.results.externalRecorderVerifier.status // "missing"' "${DIAG_JSON}")"
+            meeting_ai_result="$(jq -r '.results.meetingAiUserResultAcceptance.status // "missing"' "${DIAG_JSON}")"
             session_expiry="$(jq -r '.results.audioGatewaySessionExpirySmoke.status // "missing"' "${DIAG_JSON}")"
           fi
           {
@@ -427,6 +485,7 @@ jobs:
             echo "- Token contract: \`${token_contract}\`"
             echo "- External recorder smoke: \`${smoke}\`"
             echo "- External recorder verifier: \`${verifier}\`"
+            echo "- Meeting-AI canonical result user read + audit: \`${meeting_ai_result}\`"
             echo "- Audio-gateway session expiry: \`${session_expiry}\`"
             echo
             echo "Boundary: platform-test only. The workflow restores direct grants, deletes the temporary smoke user, removes local token/password files, cleans transient Job/NetworkPolicy resources, and uploads only structured redacted evidence. Free-form runner logs are ephemeral and never uploaded. Session-expiry mode proves only transient test direct-STT capacity reuse; no production or desktop mic/loopback closure claim is made."

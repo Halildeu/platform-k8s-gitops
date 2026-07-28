@@ -24,6 +24,7 @@ CAPABILITY_ROLE="${CAPABILITY_ROLE:-audio_record}"
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
+RUN_MEETING_AI_RESULT_ACCEPTANCE="${RUN_MEETING_AI_RESULT_ACCEPTANCE:-0}"
 RUN_SESSION_EXPIRY_SMOKE="${RUN_SESSION_EXPIRY_SMOKE:-0}"
 RECOVER_STALE_RUN_ID="${RECOVER_STALE_RUN_ID:-}"
 SESSION_EXPIRY_AUDIO_BASE_URL="${SESSION_EXPIRY_AUDIO_BASE_URL:-}"
@@ -31,8 +32,8 @@ SESSION_EXPIRY_METRICS_BASE_URL="${SESSION_EXPIRY_METRICS_BASE_URL:-}"
 SESSION_EXPIRY_EXPECTED_IMAGE="${SESSION_EXPIRY_EXPECTED_IMAGE:-}"
 SESSION_EXPIRY_POD_UID="${SESSION_EXPIRY_POD_UID:-}"
 SMOKE_CHUNK_FILE="${SMOKE_CHUNK_FILE:-}"
-SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
-SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
+SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-PCM16}"
+SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-16000}"
 SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -58,6 +59,11 @@ if [[ -n "${RECOVER_STALE_RUN_ID}" && ! "${RECOVER_STALE_RUN_ID}" =~ ^[0-9]{6,20
 fi
 if [[ -n "${RECOVER_STALE_RUN_ID}" && "${RUN_SESSION_EXPIRY_SMOKE}" != "1" ]]; then
   echo "ERROR: stale test-state recovery requires session-expiry smoke mode" >&2
+  exit 2
+fi
+if [[ "${RUN_MEETING_AI_RESULT_ACCEPTANCE}" == "1" \
+    && ( "${RUN_EXTERNAL_SMOKE}" != "1" || "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ) ]]; then
+  echo "ERROR: Meeting-AI user-result acceptance requires external smoke and excludes session-expiry mode" >&2
   exit 2
 fi
 
@@ -96,6 +102,7 @@ DIAG_JSON="${OUT_DIR}/faz24-platform-desktop-token-diagnostic.json"
 TOKEN_CONTRACT_JSON="${OUT_DIR}/faz24-platform-desktop-token-contract.json"
 SMOKE_JSON="${OUT_DIR}/faz24-external-recorder-smoke.json"
 SMOKE_VERIFY_JSON="${OUT_DIR}/faz24-external-recorder-smoke.verify.json"
+MEETING_AI_RESULT_ACCEPTANCE_JSON="${OUT_DIR}/faz24-meeting-ai-user-result-acceptance.json"
 SESSION_EXPIRY_SMOKE_JSON="${OUT_DIR}/faz24-audio-gateway-session-expiry-smoke.json"
 CLIENT_BEFORE_JSON="${TMP_DIR}/client-before.json"
 CLIENT_AFTER_JSON="${TMP_DIR}/client-after.json"
@@ -137,6 +144,7 @@ TOKEN_PRESENT="false"
 TOKEN_CONTRACT_EXIT="not-run"
 SMOKE_EXIT="not-run"
 SMOKE_VERIFY_EXIT="not-run"
+MEETING_AI_RESULT_ACCEPTANCE_EXIT="not-run"
 SESSION_EXPIRY_SMOKE_EXIT="not-run"
 DIAGNOSTIC_WRITTEN="false"
 CLEANUP_DONE="false"
@@ -1171,6 +1179,35 @@ run_token_contract_and_smoke() {
       FAILURE_REASON="external-recorder-smoke-verifier-failed"
       return 1
     fi
+
+    if [[ "${RUN_MEETING_AI_RESULT_ACCEPTANCE}" == "1" ]]; then
+      local meeting_id
+      meeting_id="$(jq -er '
+        .ids.meetingId
+        | strings
+        | select(test("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"; "i"))
+      ' "${SMOKE_JSON}")" || {
+        STATUS="fail"
+        FAILURE_REASON="external-recorder-meeting-id-missing"
+        return 1
+      }
+
+      set +e
+      python3 scripts/faz24/run_meeting_ai_user_result_acceptance.py \
+        --meeting-id "${meeting_id}" \
+        --token-file "${TOKEN_FILE}" \
+        --output "${MEETING_AI_RESULT_ACCEPTANCE_JSON}" \
+        > "${TMP_DIR}/meeting-ai-result-acceptance.stdout" \
+        2> "${TMP_DIR}/meeting-ai-result-acceptance.stderr"
+      MEETING_AI_RESULT_ACCEPTANCE_EXIT="$?"
+      set -e
+
+      if [[ "${MEETING_AI_RESULT_ACCEPTANCE_EXIT}" != "0" ]]; then
+        STATUS="fail"
+        FAILURE_REASON="meeting-ai-user-result-acceptance-failed"
+        return 1
+      fi
+    fi
   fi
 
   if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
@@ -1305,6 +1342,7 @@ write_diagnostic() {
   local token_contract_status="not-run"
   local smoke_status="not-run"
   local smoke_verify_status="not-run"
+  local meeting_ai_result_acceptance_status="not-run"
   local session_expiry_smoke_status="not-run"
   local grant_attempts_array="${TMP_DIR}/grant-attempts-array.json"
   if [[ -s "${TOKEN_CONTRACT_JSON}" ]]; then
@@ -1315,6 +1353,10 @@ write_diagnostic() {
   fi
   if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
     smoke_verify_status="$(jq -r '.status // "unknown"' "${SMOKE_VERIFY_JSON}" 2>/dev/null || printf 'unknown')"
+  fi
+  if [[ -s "${MEETING_AI_RESULT_ACCEPTANCE_JSON}" ]]; then
+    meeting_ai_result_acceptance_status="$(jq -r 'if .accepted == true then "pass" else "fail" end' \
+      "${MEETING_AI_RESULT_ACCEPTANCE_JSON}" 2>/dev/null || printf 'unknown')"
   fi
   if [[ -s "${SESSION_EXPIRY_SMOKE_JSON}" ]]; then
     session_expiry_smoke_status="$(jq -r '.status // "unknown"' "${SESSION_EXPIRY_SMOKE_JSON}" 2>/dev/null || printf 'unknown')"
@@ -1343,6 +1385,8 @@ write_diagnostic() {
     --arg smokeStatus "${smoke_status}" \
     --arg smokeVerifyExit "${SMOKE_VERIFY_EXIT}" \
     --arg smokeVerifyStatus "${smoke_verify_status}" \
+    --arg meetingAiResultAcceptanceExit "${MEETING_AI_RESULT_ACCEPTANCE_EXIT}" \
+    --arg meetingAiResultAcceptanceStatus "${meeting_ai_result_acceptance_status}" \
     --arg sessionExpirySmokeExit "${SESSION_EXPIRY_SMOKE_EXIT}" \
     --arg sessionExpirySmokeStatus "${session_expiry_smoke_status}" \
     --argjson directGrantsToggled "${DIRECT_GRANTS_TOGGLED}" \
@@ -1405,6 +1449,10 @@ write_diagnostic() {
           exitCode: $smokeVerifyExit,
           status: $smokeVerifyStatus
         },
+        meetingAiUserResultAcceptance: {
+          exitCode: $meetingAiResultAcceptanceExit,
+          status: $meetingAiResultAcceptanceStatus
+        },
         audioGatewaySessionExpirySmoke: {
           exitCode: $sessionExpirySmokeExit,
           status: $sessionExpirySmokeStatus
@@ -1462,7 +1510,7 @@ on_exit() {
 trap 'on_exit "$?"' EXIT
 
 echo "Faz 24 platform-desktop token evidence chain started"
-echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE} run_session_expiry_smoke=${RUN_SESSION_EXPIRY_SMOKE}"
+echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE} run_meeting_ai_result_acceptance=${RUN_MEETING_AI_RESULT_ACCEPTANCE} run_session_expiry_smoke=${RUN_SESSION_EXPIRY_SMOKE}"
 
 kcadm_login
 resolve_client_uuid
@@ -1501,6 +1549,9 @@ if [[ -s "${SMOKE_JSON}" ]]; then
 fi
 if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
   echo "external_smoke_verify=${SMOKE_VERIFY_JSON}"
+fi
+if [[ -s "${MEETING_AI_RESULT_ACCEPTANCE_JSON}" ]]; then
+  echo "meeting_ai_user_result_acceptance=${MEETING_AI_RESULT_ACCEPTANCE_JSON}"
 fi
 if [[ -s "${SESSION_EXPIRY_SMOKE_JSON}" ]]; then
   echo "session_expiry_smoke=${SESSION_EXPIRY_SMOKE_JSON}"

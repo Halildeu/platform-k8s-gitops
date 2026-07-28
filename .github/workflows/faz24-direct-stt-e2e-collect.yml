@@ -38,7 +38,7 @@ on:
         required: true
         default: "platform-redis-streams-test"
       chunk_file:
-        description: "Runner-local privacy-safe WAV fixture path"
+        description: "Optional runner-local privacy-safe WAV source fixture path"
         required: true
         default: "/tmp/sample-tr-cv17-001.wav"
       audio_format:
@@ -46,12 +46,12 @@ on:
         required: true
         type: choice
         options:
-          - "WAV"
-        default: "WAV"
+          - "PCM16"
+        default: "PCM16"
       sample_rate_hz:
         description: "Sample rate header for the fixture"
         required: true
-        default: "48000"
+        default: "16000"
       channels:
         description: "Channel count header for the fixture"
         required: true
@@ -81,6 +81,8 @@ jobs:
       SMOKE_VERIFY_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-external-recorder-smoke.verify.json
       DIRECT_STT_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-direct-stt-e2e.json
       DIRECT_STT_VERIFY_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-direct-stt-e2e.verify.json
+      REDIS_RUNTIME_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-redis-streams-runtime.json
+      DISPATCH_DIAGNOSTIC_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-audio-gateway-dispatch-diagnostic.json
 
     steps:
       - name: Validate dispatch inputs
@@ -170,7 +172,7 @@ jobs:
           require_name deployment "${DEPLOYMENT_INPUT}"
           require_name redis_container "${REDIS_CONTAINER_INPUT}"
           require_path chunk_file "${CHUNK_FILE_INPUT}"
-          test "${AUDIO_FORMAT_INPUT}" = "WAV"
+          test "${AUDIO_FORMAT_INPUT}" = "PCM16"
           printf '%s' "${SAMPLE_RATE_HZ_INPUT}" | grep -Eq '^[1-9][0-9]{3,5}$'
           printf '%s' "${CHANNELS_INPUT}" | grep -Eq '^[1-2]$'
           printf '%s' "${PROBE_TIMEOUT_INPUT}" | grep -Eq '^[1-9][0-9]*$'
@@ -194,43 +196,36 @@ jobs:
         run: |
           set -euo pipefail
 
+          chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"
+          repo_fixture="${GITHUB_WORKSPACE}/tests/faz24/fixtures/privacy-safe-tr-direct-stt.wav"
           if [ -r "${CHUNK_FILE_INPUT}" ]; then
-            chunk_file="${CHUNK_FILE_INPUT}"
-            fixture_source="input"
+            fixture_source="input-wav-converted"
+            source_fixture="${CHUNK_FILE_INPUT}"
           else
-            chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"
-            fixture_source="generated"
-            python3 - "${chunk_file}" "${SAMPLE_RATE_HZ_INPUT}" "${CHANNELS_INPUT}" <<'PY'
-          import math
-          import struct
+            fixture_source="repo-synthetic-speech-converted"
+            source_fixture="${repo_fixture}"
+          fi
+
+          test -r "${source_fixture}"
+          python3 - "${source_fixture}" "${chunk_file}" "${SAMPLE_RATE_HZ_INPUT}" "${CHANNELS_INPUT}" <<'PY'
           import sys
           import wave
 
-          path = sys.argv[1]
-          rate = int(sys.argv[2])
-          channels = int(sys.argv[3])
-          duration_s = 5.0
-          frames = int(rate * duration_s)
+          source = sys.argv[1]
+          target = sys.argv[2]
+          expected_rate = int(sys.argv[3])
+          expected_channels = int(sys.argv[4])
 
-          with wave.open(path, "wb") as wav:
-              wav.setnchannels(channels)
-              wav.setsampwidth(2)
-              wav.setframerate(rate)
-              for idx in range(frames):
-                  t = idx / rate
-                  # Deterministic synthetic, privacy-safe fixture. It is audio-shaped
-                  # enough for transport and format gates, but contains no human speech.
-                  envelope = min(1.0, t / 0.08, (duration_s - t) / 0.08)
-                  carrier = (
-                      0.55 * math.sin(2.0 * math.pi * 220.0 * t)
-                      + 0.30 * math.sin(2.0 * math.pi * 440.0 * t)
-                      + 0.15 * math.sin(2.0 * math.pi * 660.0 * t)
-                  )
-                  value = int(max(-1.0, min(1.0, carrier * envelope * 0.25)) * 32767)
-                  packed = struct.pack("<h", value)
-                  wav.writeframesraw(packed * channels)
+          with wave.open(source, "rb") as wav:
+              if wav.getsampwidth() != 2 or wav.getcomptype() != "NONE":
+                  raise SystemExit("source fixture must be uncompressed 16-bit PCM WAV")
+              if wav.getframerate() != expected_rate or wav.getnchannels() != expected_channels:
+                  raise SystemExit("source fixture shape does not match declared PCM16 headers")
+              frames = wav.readframes(wav.getnframes())
+
+          with open(target, "wb") as raw:
+              raw.write(frames)
           PY
-          fi
 
           test -s "${chunk_file}"
           echo "chunk_file=${chunk_file}" >> "${GITHUB_OUTPUT}"
@@ -238,6 +233,13 @@ jobs:
           echo "chunk_fixture_source=${fixture_source}"
           echo "chunk_fixture.bytes=$(wc -c < "${chunk_file}" | tr -d ' ')"
           echo "chunk_fixture.sha256=$(sha256sum "${chunk_file}" | awk '{print $1}')"
+
+      - name: Reconcile test Redis Streams runtime
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          OUT="${REDIS_RUNTIME_JSON}" \
+            bash scripts/faz24/reconcile_redis_streams_test_runtime.sh
 
       - name: Run token and external recorder lifecycle
         id: run_chain
@@ -284,6 +286,8 @@ jobs:
             --redis-container "${{ inputs.redis_container }}" \
             --gitops-commit "${GITHUB_SHA}" \
             --probe-timeout "${{ inputs.probe_timeout }}" \
+            --result-wait-seconds 20 \
+            --result-poll-interval-seconds 1 \
             > "${EVIDENCE_DIR}/collector.stdout" \
             2> "${EVIDENCE_DIR}/collector.stderr"
           exit_code="$?"
@@ -292,6 +296,31 @@ jobs:
           grep -E '^(evidence=|collector=metadata-written$)' "${EVIDENCE_DIR}/collector.stdout" || true
           echo "collector.stderr.bytes=$(wc -c < "${EVIDENCE_DIR}/collector.stderr" | tr -d ' ')"
           echo "collector.stderr.sha256=$(sha256sum "${EVIDENCE_DIR}/collector.stderr" | awk '{print $1}')"
+          exit 0
+
+      - name: Classify audio-gateway dispatch failure without raw logs
+        id: dispatch_diagnostic
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          set +e
+          python3 scripts/faz24/collect_audio_gateway_dispatch_diagnostic.py \
+            --external-smoke-file "${SMOKE_JSON}" \
+            --output "${DISPATCH_DIAGNOSTIC_JSON}" \
+            --context "${{ inputs.kube_context }}" \
+            --namespace "${{ inputs.namespace }}" \
+            --deployment "${{ inputs.deployment }}" \
+            --since "10m" \
+            > "${EVIDENCE_DIR}/dispatch-diagnostic.stdout" \
+            2> "${EVIDENCE_DIR}/dispatch-diagnostic.stderr"
+          exit_code="$?"
+          set -e
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          grep -E '^(dispatch_diagnostic=|dispatch_classification=)' \
+            "${EVIDENCE_DIR}/dispatch-diagnostic.stdout" || true
+          echo "dispatch-diagnostic.stderr.bytes=$(wc -c < "${EVIDENCE_DIR}/dispatch-diagnostic.stderr" | tr -d ' ')"
+          echo "dispatch-diagnostic.stderr.sha256=$(sha256sum "${EVIDENCE_DIR}/dispatch-diagnostic.stderr" | awk '{print $1}')"
           exit 0
 
       - name: Verify direct-STT e2e evidence
@@ -326,6 +355,7 @@ jobs:
 
           test -d "${EVIDENCE_DIR}"
           test -s "${DIAG_JSON}"
+          test -s "${DISPATCH_DIAGNOSTIC_JSON}"
 
           if grep -R -a -E \
             -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
@@ -360,6 +390,7 @@ jobs:
           COLLECT_EXIT_CODE: ${{ steps.collect_e2e.outputs.exit_code }}
           VERIFY_EXIT_CODE: ${{ steps.verify_e2e.outputs.exit_code }}
           CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}
+          DISPATCH_DIAGNOSTIC_EXIT_CODE: ${{ steps.dispatch_diagnostic.outputs.exit_code }}
         run: |
           set -euo pipefail
           direct_status="missing"
@@ -367,6 +398,12 @@ jobs:
           if [ -s "${DIRECT_STT_JSON}" ]; then
             direct_status="$(jq -r '.status // "missing"' "${DIRECT_STT_JSON}")"
             direct_failures="$(jq -r '(.failures // []) | join(",")' "${DIRECT_STT_JSON}")"
+          fi
+          dispatch_classification="missing"
+          dispatch_exception="none"
+          if [ -s "${DISPATCH_DIAGNOSTIC_JSON}" ]; then
+            dispatch_classification="$(jq -r '.diagnostic.classification // "missing"' "${DISPATCH_DIAGNOSTIC_JSON}")"
+            dispatch_exception="$(jq -r '.diagnostic.exceptionClass // "none"' "${DISPATCH_DIAGNOSTIC_JSON}")"
           fi
           {
             echo "## Faz 24 direct-STT e2e collect"
@@ -380,6 +417,9 @@ jobs:
             echo "- Chunk fixture source: \`${CHUNK_FIXTURE_SOURCE:-missing}\`"
             echo "- Direct-STT evidence status: \`${direct_status}\`"
             echo "- Direct-STT failures: \`${direct_failures:-none}\`"
+            echo "- Dispatch diagnostic exit code: \`${DISPATCH_DIAGNOSTIC_EXIT_CODE:-missing}\`"
+            echo "- Dispatch classification: \`${dispatch_classification}\`"
+            echo "- Dispatch exception class: \`${dispatch_exception}\`"
             echo
             echo "Boundary: platform-test metadata-only Gate 2 evidence collection. The workflow uses a privacy-safe runner-local fixture, uploads only hashes/ids/status/timing metadata, and does not claim production readiness, desktop mic-loopback, or real confidential meeting audio."
           } >> "${GITHUB_STEP_SUMMARY}"

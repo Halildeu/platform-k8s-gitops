@@ -1,15 +1,19 @@
 from pathlib import Path
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
 import sys
+import wave
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github/workflows/faz24-direct-stt-e2e-collect.yml"
 COLLECTOR = REPO_ROOT / "scripts/faz24/collect_direct_stt_e2e_evidence.py"
 RUNNER = REPO_ROOT / "scripts/faz24/run-platform-desktop-token-evidence-chain.sh"
+SPEECH_FIXTURE = REPO_ROOT / "tests/faz24/fixtures/privacy-safe-tr-direct-stt.wav"
+SPEECH_FIXTURE_METADATA = REPO_ROOT / "tests/faz24/fixtures/privacy-safe-tr-direct-stt.json"
 
 
 def _load_collector():
@@ -241,13 +245,23 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "collect_direct_stt_e2e_evidence.py" in workflow
     assert "verify_direct_stt_e2e_evidence.py" in workflow
+    assert "collect_audio_gateway_dispatch_diagnostic.py" in workflow
+    assert "--result-wait-seconds 20" in workflow
+    assert "--result-poll-interval-seconds 1" in workflow
+    assert "Classify audio-gateway dispatch failure without raw logs" in workflow
+    assert "faz24-audio-gateway-dispatch-diagnostic.json" in workflow
+    assert "dispatch-diagnostic.stderr.sha256=" in workflow
+    assert "Dispatch classification:" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert 'CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"' in workflow
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
     assert "Prepare privacy-safe smoke chunk fixture" in workflow
     assert "CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}" in workflow
-    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"' in workflow
-    assert "contains no human speech" in workflow
+    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"' in workflow
+    assert 'test "${AUDIO_FORMAT_INPUT}" = "PCM16"' in workflow
+    assert 'fixture_source="input-wav-converted"' in workflow
+    assert 'fixture_source="repo-synthetic-speech-converted"' in workflow
+    assert "privacy-safe-tr-direct-stt.wav" in workflow
     assert "chunk_fixture_source=${fixture_source}" in workflow
     assert "CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}" in workflow
     assert "SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}" in workflow
@@ -262,6 +276,23 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "collector.stderr.sha256=" in workflow
     assert "sed -n '1,120p' \"${EVIDENCE_DIR}/runner.stderr\"" not in workflow
     assert "sed -n '1,120p' \"${EVIDENCE_DIR}/collector.stderr\"" not in workflow
+
+
+def test_privacy_safe_speech_fixture_matches_direct_stt_pcm_contract():
+    assert SPEECH_FIXTURE.stat().st_size < 300_000
+    metadata = json.loads(SPEECH_FIXTURE_METADATA.read_text(encoding="utf-8"))
+    assert hashlib.sha256(SPEECH_FIXTURE.read_bytes()).hexdigest() == metadata["sha256"]
+    assert metadata["privacy"] == {
+        "containsHumanVoice": False,
+        "containsPersonalData": False,
+        "intendedUse": "platform-test Direct-STT end-to-end acceptance only",
+    }
+    with wave.open(str(SPEECH_FIXTURE), "rb") as fixture:
+        assert fixture.getcomptype() == "NONE"
+        assert fixture.getsampwidth() == 2
+        assert fixture.getframerate() == 16_000
+        assert fixture.getnchannels() == 1
+        assert 5.0 < fixture.getnframes() / fixture.getframerate() < 8.0
 
 
 def test_workflow_does_not_accept_secret_shaped_inputs():
@@ -498,3 +529,69 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
     assert evidence["audit"]["chunkSeqMatches"] is True
     assert "Merhaba dunya" not in rendered
     assert "textDraft" not in rendered
+
+
+def test_result_poll_waits_for_exact_async_record_without_rescanning_other_streams():
+    collector = _load_collector()
+    calls = []
+    clock = [0.0]
+
+    def fake_runner(argv, _timeout):
+        calls.append(argv)
+        if argv[:2] != ["docker", "exec"]:
+            raise AssertionError(f"unexpected command: {argv}")
+        if len(calls) == 1:
+            return collector.CommandResult(0, "[]", "")
+        return collector.CommandResult(
+            0,
+            json.dumps(
+                [
+                    [
+                        "1782471276845-0",
+                        [
+                            "eventType",
+                            "DIRECT_STT_TRANSCRIPT_RESULT",
+                            "sessionId",
+                            "SES-delayed",
+                            "chunkSeq",
+                            "0",
+                            "correlationId",
+                            "faz24-delayed",
+                            "textDraft",
+                            "Merhaba",
+                        ],
+                    ]
+                ]
+            ),
+            "",
+        )
+
+    def sleeper(seconds):
+        clock[0] += seconds
+
+    match, attempts, errors = collector.wait_for_result_record(
+        fake_runner,
+        initial_records=[],
+        session_id="SES-delayed",
+        chunk_seq=0,
+        correlation_id="faz24-delayed",
+        container="platform-redis-streams-test",
+        count=1000,
+        context="k3d-test",
+        namespace="platform-test",
+        service="redis-streams",
+        secret="audio-gateway-secrets",
+        secret_key="SPRING_DATA_REDIS_PASSWORD",
+        image="redis:7.4-alpine",
+        exec_pod="audio-gateway-abc",
+        exec_container="audio-gateway",
+        wait_seconds=5,
+        poll_interval_seconds=1,
+        sleeper=sleeper,
+        monotonic=lambda: clock[0],
+    )
+
+    assert errors == []
+    assert attempts == 2
+    assert match and match[0] == "1782471276845-0"
+    assert all(argv[-2] == "transcript:direct-stt-results" for argv in calls)
