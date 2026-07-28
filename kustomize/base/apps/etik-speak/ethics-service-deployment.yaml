@@ -33,12 +33,26 @@ spec:
           ports:
             - {name: http, containerPort: 8099, protocol: TCP}
             - {name: management, containerPort: 8081, protocol: TCP}
+          env:
+            # Without a ceiling the JVM sizes itself from its own default heuristics and
+            # grows into the container limit until the kernel kills it — 2026-07-28, three
+            # OOMKills (exit 137) in ninety minutes, each roughly half an hour apart, which
+            # read to the user as "Etik Speak servisine ulaşılamadı". Every sibling Spring
+            # Boot service on this platform already carries this line; ethics-service was
+            # the one that did not.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
           envFrom:
             - configMapRef: {name: ethics-service-config}
             - secretRef: {name: ethics-service-secrets, optional: false}
           resources:
-            requests: {cpu: 75m, memory: 128Mi}
-            limits: {cpu: 400m, memory: 384Mi}
+            # Matches permission-service, the closest sibling ("Spring Boot 3 + Flyway +
+            # Tomcat"). This service carries more than that one does — JPA, the OpenFGA SDK,
+            # the MinIO evidence client and two HTTP clients — and was running on half its
+            # budget. Heap is pinned to 384m above so the remainder stays available for
+            # metaspace, thread stacks and direct buffers rather than being contested.
+            requests: {cpu: 75m, memory: 384Mi}
+            limits: {cpu: 400m, memory: 768Mi}
           startupProbe:
             httpGet: {path: /actuator/health, port: management}
             periodSeconds: 10
