@@ -51,8 +51,13 @@ spec:
             # the MinIO evidence client and two HTTP clients — and was running on half its
             # budget. Heap is pinned to 384m above so the remainder stays available for
             # metaspace, thread stacks and direct buffers rather than being contested.
-            requests: {cpu: 75m, memory: 384Mi}
-            limits: {cpu: 400m, memory: 768Mi}
+            #
+            # CPU was half the fleet's figure too, and it showed: cpu.stat reported 1186 of
+            # 2866 periods throttled (41%, 74s of stall), which is why boot took 88 seconds
+            # and the startup probe kept finding a socket that was not listening yet. Every
+            # sibling here runs at 750m.
+            requests: {cpu: 150m, memory: 384Mi}
+            limits: {cpu: 750m, memory: 768Mi}
           startupProbe:
             httpGet: {path: /actuator/health, port: management}
             periodSeconds: 10
