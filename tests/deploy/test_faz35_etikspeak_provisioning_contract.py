@@ -1983,6 +1983,36 @@ spec:
             "prompt=login",
         ):
             self.assertIn(expected, self.topology_adr)
+
+    def test_auth_contract_anchor_points_at_the_guard_that_can_actually_fail(self):
+        """The ADR must say where the living check is, and must not claim to be it.
+
+        This assertion exists because of the failure it replaces (#3078). The ADR used to
+        state that `apps/etik-speak-manager` had not changed since a reviewed commit, and
+        the test above "verified" it by checking that the ADR text *contained* that commit
+        hash. When the auth path did change — scope handling and `prompt: 'login'`, twelve
+        files — the sentence became false and every gate stayed green: evidence about a
+        fact had been mistaken for the fact.
+
+        This repository cannot fix that by asserting harder. It has no platform-web
+        checkout, so any continuing claim it makes about that directory is unfalsifiable
+        here by construction. What it *can* enforce is that the ADR keeps pointing at the
+        guard that lives next to the source and can genuinely fail — and that the pointer
+        cannot be quietly deleted while the historical hashes above stay put.
+        """
+        self.assertIn(
+            "apps/etik-speak-manager/src/auth-contract-anchor.test.ts",
+            self.topology_adr,
+            "ADR-0046 auth sözleşmesinin canlı korumasına işaret etmiyor",
+        )
+        # A dated record, not a standing equality claim. The exact wording is the point:
+        # the earlier sentence promised present-tense sameness and could not keep it.
+        self.assertIn("Auth sözleşmesi inceleme kaydı", self.topology_adr)
+        self.assertNotIn(
+            "arasında `apps/etik-speak-manager` farkı yoktur",
+            self.topology_adr,
+            "süregelen eşitlik iddiası geri gelmiş — bu cümle bir kez yanlışa düştü",
+        )
         for expected in (
             "ES-1 TEST isolated manager",
             "aud=ethics-manager",
