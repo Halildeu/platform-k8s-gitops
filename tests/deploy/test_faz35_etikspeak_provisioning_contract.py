@@ -108,6 +108,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.service_config = (
             ROOT / "kustomize/base/apps/etik-speak/ethics-service-config.yaml"
         ).read_text()
+        cls.ethics_deployment = (
+            ROOT / "kustomize/base/apps/etik-speak/ethics-service-deployment.yaml"
+        ).read_text()
         cls.eso_policy = (
             ROOT / "bootstrap/vault-policies/test/etik-speak-eso.hcl"
         ).read_text()
@@ -171,14 +174,23 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertLess(self.pg_vault.index("set +x"), self.pg_vault.index("root_token"))
         self.assertNotIn("root_token", self.openfga)
 
-    def test_test_ethics_service_keeps_native_memory_headroom(self):
+    def test_ethics_service_keeps_native_memory_headroom(self):
         self.assertIn(
-            "path: /spec/template/spec/containers/0/env",
-            self.activation_kustomization,
+            'value: "-Xmx384m -XX:+UseG1GC '
+            '-XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"',
+            self.ethics_deployment,
         )
         self.assertIn(
-            'value: "-Xmx256m -XX:+UseG1GC '
-            '-XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"',
+            "requests: {cpu: 150m, memory: 384Mi}",
+            self.ethics_deployment,
+        )
+        self.assertIn(
+            "limits: {cpu: 750m, memory: 768Mi}",
+            self.ethics_deployment,
+        )
+        self.assertNotIn("-Xmx256m", self.activation_kustomization)
+        self.assertNotIn(
+            "path: /spec/template/spec/containers/0/resources/limits/memory",
             self.activation_kustomization,
         )
 
