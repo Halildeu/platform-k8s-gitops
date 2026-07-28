@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "faz24.transcriptReadyPreEnableBoundary.v1",
+  "generatedAt": "2026-07-18T14:30:00Z",
+  "issue": "platform-k8s-gitops#2610",
+  "status": "tracked-pending",
+  "enableAuthorized": false,
+  "observedSourceBoundary": {
+    "readyEventSchema": "meeting.event.v1",
+    "readyEventAnalysisRunId": "null",
+    "finalizationAnalysisRunIdColumn": "absent",
+    "finalizationOccurrenceBinding": "absent",
+    "readyConsumerDefault": "false",
+    "readyConsumerGroupStart": "0-0",
+    "hostStartupPermitEnforcement": "absent"
+  },
+  "policyBoundary": {
+    "producerCapabilityAllowlistCount": 0,
+    "hostStartupGuardAllowlistCount": 0,
+    "postgresTarget": "172.19.0.6:5432/transcript",
+    "redisTarget": "172.19.0.250:6379/meeting:events",
+    "gpuHostComputerName": "DENETIM-PC",
+    "maxCollectionSeconds": 300,
+    "consumerMustRemainDisabled": true
+  },
+  "requiredBeforeFreshLiveCollectionCanPass": [
+    "non-null-analysis-run-producer-capability",
+    "transcript-finalization-analysis-run-uuid-not-null-event-bound-schema",
+    "backfill-outbox-redis-remediation-evidence-digests",
+    "repository-artifact-byte-and-type-specific-closed-schema-verification",
+    "separate-claimed-remediation-issue-receipt-before-fresh-zero-scan",
+    "legacy-outbox-zero-or-remediated",
+    "legacy-redis-zero-or-durable-dlq-ack-xdel",
+    "postgres-redis-compatible-occurrence-binding-set-match",
+    "ready-consumer-group-absent-before-enable",
+    "permit-enforcing-platform-ai-startup-guard"
+  ],
+  "boundary": {
+    "runtimeAcceptance": false,
+    "customerJourneyAcceptance": false,
+    "productionReady": false,
+    "secretValuesIncluded": false,
+    "customerContentIncluded": false
+  }
+}

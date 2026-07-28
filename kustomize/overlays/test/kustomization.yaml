@@ -68,6 +68,10 @@ resources:
   - netpol-budget-service-api-gateway.yaml  # #3007: exact api-gateway -> budget-service:8101 TEST path
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
   - netpol-audio-gateway-live-stt-mtls.yaml  # Faz 24 #182/#198: audio-gateway -> platform-ai live-stt app-mTLS 10.99.0.2:8243
+  # #2610: this bridge is reachability only. The Windows-host
+  # MAI_READY_CONSUMER_ENABLED flag remains absent/default-off. A later enable
+  # requires the fresh machine-bound gate in
+  # RB-faz24-transcript-ready-legacy-pre-enable.md; this overlay cannot turn it on.
   - netpol-audio-gateway-egress-meeting-ai-tombstone.yaml  # Faz 24: revoke stale #2777 allow while Argo automated prune=false
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
@@ -346,6 +350,15 @@ images:
     # carries the typed meeting.consent.revoked event contract used by the
     # durable audit outbox relay. Canonical image run 29603219415 produced the
     # immutable digest below. This test pin does not claim attended acceptance.
+    # 2026-07-18 canonical finalization rollout: platform-backend#872 adds the
+    # exact PT6M/PT1M/PT15M bounded state machine, atomic meeting finish + outbox,
+    # thin transcript.ready payload and fail-closed transcript token minting.
+    # Reviewed source df812c57341f; squash merge 315f351a8ebf; immutable image
+    # build run 29633149322. Source/CI evidence remains separate from runtime
+    # acceptance in docs/faz-24-evidence/2026-07-18-finalization-source-ci.json.
+    # 2026-07-19 family re-pin: full backend main image run 29672315566 at
+    # merge 74f6b9c preserves the #872 finalization state machine while aligning
+    # meeting-service with the exact audio/transcript/auth rollout family.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
     digest: sha256:8265d161a7076f128513a905842d2026c57e6e550f2465225c5043b977f267c5
 
@@ -6604,6 +6617,60 @@ patches:
       - op: add
         path: /data/MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED
         value: "true"
+      # The pinned test image understands the plural allow-list. Keep this
+      # authorization expansion test-only until each later overlay pins that
+      # same contract deliberately.
+      - op: add
+        path: /data/MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS
+        value: "meeting-ai,transcript-service"
+      - op: add
+        path: /data/MEETING_REDIS_HOST
+        value: "redis-streams"
+      # Test-only activation. Base defaults stay off so this overlay can be
+      # rolled back atomically without silently enabling Redis in production.
+      - op: add
+        path: /data/MEETING_REDIS_PORT
+        value: "6379"
+      - op: add
+        path: /data/MEETING_REDIS_HEALTH_ENABLED
+        value: "true"
+      # Surface Redis health on Actuator without coupling the core API
+      # readiness group to the event transport. Finalization alarms can fire
+      # while non-Redis meeting journeys keep serving.
+      - op: add
+        path: /data/MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE
+        value: "readinessState"
+      - op: add
+        path: /data/MEETING_EVENTS_REDIS_ENABLED
+        value: "true"
+      - op: add
+        path: /data/MEETING_EVENTS_OUTBOX_POLLER_ENABLED
+        value: "true"
+
+  # meeting-service-secrets already exists before this rollout, so envFrom by
+  # itself cannot prove that ESO has reconciled the newly added Redis key. Make
+  # the key mandatory on the new pod template: Kubernetes retries pod startup
+  # after ESO writes the key and no process can start with a stale empty value.
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: meeting-service
+      spec:
+        template:
+          spec:
+            containers:
+              - name: meeting-service
+                env:
+                  - name: MEETING_REDIS_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: meeting-service-secrets
+                        key: MEETING_REDIS_PASSWORD
+                        optional: false
 
   # notification-orchestrator-secrets is owned by the ExternalSecret rendered
   # exclusively by platform-eso-test. The base bootstrap Secret is for non-ESO
@@ -6650,7 +6717,10 @@ patches:
             secretKeyRef:
               name: auth-service-transcript-service-secret
               key: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
-              optional: true  # core auth stays available; meeting-ai mint remains fail-closed
+              # The isolated ExternalSecret reconciles before this workload.
+              # Keep the replacement pod pending if the issuer credential is
+              # absent; otherwise a late Secret would leave stale env forever.
+              optional: false
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
@@ -6710,14 +6780,13 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
-      # #2186 Meeting AI analyze bridge changes meeting-service ConfigMap
-      # envFrom data. Static ConfigMap data does not restart existing pods, so
-      # this test-only marker makes the env pickup rollout GitOps-authoritative
-      # and avoids a direct kubectl rollout restart on the shared test cluster.
+      # #2186 Meeting AI bridge and #2610 finalization both change
+      # meeting-service ConfigMap envFrom data. Static ConfigMap data does not
+      # restart existing pods, so this marker makes pickup GitOps-authoritative.
       - op: add
         path: /spec/template/metadata/annotations
         value:
-          platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-03-2186"
+          platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-18-2610"
 
   # Faz 24 Meeting Intelligence foundation (#411): replica 1 default
   # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
@@ -6735,9 +6804,10 @@ patches:
         template:
           metadata:
             annotations:
-              # v3: resolver aktivasyonu (gitops#2568). ConfigMap/Secret degisimi
-              # envFrom ile otomatik pickup ETMEZ; bu damga rollout'u tetikler.
-              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-25-2568-v3-resolver"
+              # v4: resolver + durable recording-finished finalization rollout
+              # (gitops#2610). ConfigMap/Secret envFrom ile otomatik pickup
+              # ETMEZ; bu damga exact pod-template rollout'unu tetikler.
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-29-2610-v4-finalization"
           spec:
             containers:
               - name: transcript-service
@@ -6750,6 +6820,12 @@ patches:
                       secretKeyRef:
                         name: transcript-service-secrets
                         key: TRANSCRIPT_REDIS_PASSWORD
+                        optional: false
+                  - name: TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: transcript-service-secrets
+                        key: TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET
                         optional: false
       # #2568: transcript-service consumes ConfigMap values through envFrom.
       # Keep the activation rollbackable and force a pod roll whenever the
@@ -6779,6 +6855,17 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_REDIS_HEALTH_ENABLED
         value: "true"
+      # transcript-service cannot perform any durable work without Redis, so
+      # unlike meeting-service its readiness intentionally includes Redis.
+      - op: add
+        path: /data/MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE
+        value: "readinessState,redis"
+      - op: add
+        path: /data/TRANSCRIPT_REDIS_HOST
+        value: "redis-streams"
+      - op: add
+        path: /data/TRANSCRIPT_REDIS_PORT
+        value: "6379"
       # gitops#2568 ikinci aktivasyon kapisi — RESOLVER.
       #
       # Stream tuketimini acmak TEK BASINA yetmiyor: kaynak kod bunu acikca
@@ -6808,6 +6895,35 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_MEETING_SERVICE_TOKEN_URL
         value: "http://auth-service:8088/oauth2/token"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_CLIENT_ID
+        value: "transcript-service"
+      - op: add
+        path: /data/TRANSCRIPT_RECORDING_FINISHED_CONSUMER_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_WORKER_ENABLED
+        value: "true"
+      # Direct STT windows can arrive late after recorder stop. Test waits at
+      # least six minutes, requires one quiet minute, and fails boundedly at
+      # fifteen minutes; production tuning remains evidence-gated.
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_QUIESCENCE
+        value: "PT1M"
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_MIN_WAIT
+        value: "PT6M"
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_MAX_WAIT
+        value: "PT15M"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_EVENTS_REDIS_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_EVENTS_OUTBOX_POLLER_ENABLED
+        value: "true"
+      # Consumer, finalizer and both outbox relays are one rollback unit: their
+      # shared pod revision marker above forces deterministic reconciliation.
 
   # Faz 24 KVKK audit pipeline (#1249): replica 1 default (HARD RULE —
   # Scale-to-Zero YASAK). Pure Redis consumer (no mTLS, no inbound API) → base
@@ -8093,6 +8209,51 @@ patches:
           rollingUpdate:
             maxSurge: 0
             maxUnavailable: 1
+
+  # Faz 24 customer-critical chain exception to the historical test-cluster
+  # terminate-first policy. Live preflight on 2026-07-17 proved node pod
+  # capacity 50/80 and namespace pod quota 26/30, with enough CPU/memory for
+  # the three dependency-ordered surge pods. If headroom later disappears,
+  # these rollouts stall boundedly while the old Ready pod keeps serving.
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
+  - target:
+      kind: Deployment
+      name: transcript-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
   - target:
       kind: ConfigMap
       name: notification-orchestrator-config
