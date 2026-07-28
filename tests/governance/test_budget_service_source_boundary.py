@@ -280,6 +280,28 @@ def test_budget_runtime_receives_only_postgres_connection_material():
     assert remote_properties == {"db_username", "db_password"}
 
 
+def test_budget_service_target_port_survives_kustomize_port_name_merge():
+    service = _documents(
+        "kustomize/base/apps/budget-service/service.yaml"
+    )[0]
+    assert service["spec"]["ports"] == [
+        {
+            "name": "http",
+            "port": 8101,
+            "targetPort": 8101,
+            "protocol": "TCP",
+        }
+    ]
+
+    rendered_service = next(
+        document
+        for document in _render_test_overlay()
+        if document.get("kind") == "Service"
+        and document.get("metadata", {}).get("name") == "budget-service"
+    )
+    assert rendered_service["spec"]["ports"][0]["targetPort"] == 8101
+
+
 def test_budget_service_is_test_only_and_prod_remains_deferred():
     test_kustomization = (
         REPO_ROOT / "kustomize/overlays/test/kustomization.yaml"
