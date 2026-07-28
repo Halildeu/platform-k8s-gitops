@@ -408,7 +408,12 @@ images:
     # 1e661a7aa4da930c4fad8615ef13f9e6b7bd63dc. The change logs only safe
     # scope-decision metadata; signed main build run 30339869236,
     # budget-service job 90212795962.
-    digest: sha256:4f233ab7e2bf5e5f8706ac6e9a0c909c1565db66d27864231542b5980d096169
+    # 2026-07-28 safe request-level forbidden diagnostics:
+    # platform-backend PR #987, merge
+    # 1da6a7392ed3a5d18a207ed61dbe89c6628dcfb0. The post-authorization
+    # observer emits only low-cardinality boolean claim/authority presence;
+    # signed main build run 30343681779, budget-service job 90224807075.
+    digest: sha256:fd3a8d8e6e42764634af5609ae540be0db871c209b0ec03e7f849827beb256b6
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
