@@ -18,7 +18,7 @@ KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 NAMESPACE="${NAMESPACE:-platform-test}"
 BROKER_DEPLOYMENT="${BROKER_DEPLOYMENT:-endpoint-admin-remote-bridge-device-key}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetim-pc}"
-DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
+DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}"
 REMOTE_PATCH_SCRIPT=""
 PATCH_SCRIPT_SHA256=""
 

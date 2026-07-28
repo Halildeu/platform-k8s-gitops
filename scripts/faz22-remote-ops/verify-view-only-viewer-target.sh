@@ -12,7 +12,7 @@ PG_DATABASE="${PG_DATABASE:-endpoint_admin}"
 PG_USER="${PG_USER:-postgres}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetim-pc}"
-DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
+DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}"
 
 fail() {
   echo "target-preflight: $1" >&2

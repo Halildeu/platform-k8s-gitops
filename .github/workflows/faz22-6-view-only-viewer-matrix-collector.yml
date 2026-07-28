@@ -183,6 +183,7 @@ jobs:
           # device-key-attested channel. The smoke fail-closed validates this protected
           # runner alias as denetimpc@10.99.0.2 with an id_denetim identity.
           DENETIM_SSH_TARGET: denetim-pc
+          DEFAULT_DENETIM_SSH_CONFIG: /home/aiadmin/.ssh/config
           DENETIM_SSH_OPTS: __SSH_CONFIG__
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-negative-collector
           AUTO_FINALIZE: "0"

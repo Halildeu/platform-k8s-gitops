@@ -234,7 +234,7 @@ grep -q "DEFAULT_DENETIM_SSH_IDENTITY=\"\${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-
 grep -q "DENETIM_SSH_TARGET=\"\${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}\"" "$SCRIPT"
 grep -q "DENETIM_SSH_OPTS=\"\${DENETIM_SSH_OPTS:--i \${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}\"" "$SCRIPT"
 grep -q 'denetim-ssh-key-not-readable' "$SCRIPT"
-grep -q "DEFAULT_DENETIM_SSH_CONFIG=\"\${DEFAULT_DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}\"" "$SCRIPT"
+grep -q "DEFAULT_DENETIM_SSH_CONFIG=\"\${DEFAULT_DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}\"" "$SCRIPT"
 grep -q "ssh \"\${opts\\[@\\]}\" -G \"\$DENETIM_SSH_TARGET\"" "$SCRIPT"
 grep -q 'denetim-ssh-alias-missing-identity' "$SCRIPT"
 grep -q "WHERE chain_id = :'sid'" "$SCRIPT"

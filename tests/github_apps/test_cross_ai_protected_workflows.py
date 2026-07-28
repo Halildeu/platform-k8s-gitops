@@ -240,7 +240,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DENETIM_SSH_OPTS="-F /home/halil/.ssh/config -o StrictHostKeyChecking=yes"',
+            'DENETIM_SSH_OPTS="-F /home/aiadmin/.ssh/config -o StrictHostKeyChecking=yes"',
             script,
         )
         self.assertGreaterEqual(script.count("StrictHostKeyChecking=yes"), 2)
