@@ -6478,6 +6478,12 @@ patches:
       - op: replace
         path: /data/ENDPOINT_ADMIN_TENANT_ORG_ALIASES
         value: "68c73eb9-c410-37dc-aff7-5ade8fbbcbb7=00000000-0000-0000-0000-000000000001"
+      # TEST tokens currently carry both canonical org_id and a legacy numeric
+      # companyId. The resolver must trust the proven canonical org during this
+      # migration instead of rejecting the otherwise valid Platform Admin token.
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_TENANT_ENFORCE_CLAIM_CONSISTENCY
+        value: "false"
   # A ConfigMap edit alone does NOT reach a running pod: env is computed at container start and
   # envFrom leaves the Deployment hash untouched, so Argo reports Synced while the process keeps
   # the old value (learned the hard way on #2533). This marker rolls the pods.
@@ -6487,7 +6493,7 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1org-alias-rev
-        value: "2559-1"
+        value: "2913-tenant-claim-transition-1"
   - target:
       kind: ConfigMap
       name: user-service-config
