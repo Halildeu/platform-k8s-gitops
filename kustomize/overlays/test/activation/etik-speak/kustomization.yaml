@@ -55,7 +55,7 @@ images:
     # Kaynak: 598f79538360bf001d35496893aeea5ee02e2b2e
     # Etiket: sha-598f79538360bf001d35496893aeea5ee02e2b2e (bu hat TAM sha kullanir).
     # Digest hedef kumeye gercek pull ile okundu, build log'undan kopyalanmadi.
-    digest: sha256:10675d11e6ece4c71e222dff0089075f316b77db2a429f2a16207661773ae445
+    digest: sha256:2a47d483a5ff7119f88e59ef9fc28fab5fd5f549efde21e0a5e20861d1fdea86
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1063 — vakanin kendi gecmisi ekranda; okunamadiginda bos
