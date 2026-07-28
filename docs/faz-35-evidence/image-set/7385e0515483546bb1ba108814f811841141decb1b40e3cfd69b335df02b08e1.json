@@ -1,10 +1,10 @@
 {
     "images": {
         "ethics_service": {
-            "digest": "sha256:6fecaa974ca6a7c8fa125a9776742945dd2f72f5976dcde105d2e75607b43d0e",
+            "digest": "sha256:0b18e27883cdbd8af1375f69694c92680bb3f1207b43beef3cc0957ef3192357",
             "repository": "ghcr.io/halildeu/platform-backend-ethics-service",
-            "source_head": "c143f9ce44d08ec82f870a0337b03e57dd32fc8c",
-            "workflow_run": 30319590762
+            "source_head": "1ec64a37ada84f47bf7f6029708d7b16578bc5b1",
+            "workflow_run": 30326947155
         },
         "manager_web": {
             "digest": "sha256:ac34673b426768be1a9725d3db9ef9b978bc80ac13237c2f927b805ceeb26347",
@@ -21,7 +21,7 @@
     },
     "schema_version": "faz35-test-image-set-v2",
     "source_heads": {
-        "backend": "c143f9ce44d08ec82f870a0337b03e57dd32fc8c",
+        "backend": "1ec64a37ada84f47bf7f6029708d7b16578bc5b1",
         "web_manager": "f2973351d2c7155d4fc5c10768f0d84fe1325c84",
         "web_public": "598f79538360bf001d35496893aeea5ee02e2b2e"
     }
