@@ -74,7 +74,7 @@ jobs:
         # present in the local git object database. Default `actions/checkout`
         # is shallow (fetch-depth: 1) and would silently produce false-negative
         # "not ancestor" results for older revisions.
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

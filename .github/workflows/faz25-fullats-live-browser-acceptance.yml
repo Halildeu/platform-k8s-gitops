@@ -41,7 +41,7 @@ jobs:
           [[ "$CONFIRM_INPUT" != *$'\n'* && "$CONFIRM_INPUT" != *$'\r'* ]]
 
       - name: Checkout canonical acceptance scripts
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           fetch-depth: 0
 
@@ -148,7 +148,7 @@ jobs:
       - name: Checkout failed promotion with rollback App identity
         if: failure() && steps.rollback-app-token.outcome == 'success'
         id: rollback-checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           token: ${{ steps.rollback-app-token.outputs.token }}
           fetch-depth: 0

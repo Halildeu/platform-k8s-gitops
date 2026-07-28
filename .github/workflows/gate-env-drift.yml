@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Codex iter-2 must_fix #1 — job-level `if` cannot reference matrix.env
       # (matrix expands after job-level if eval). Step-level conditions are

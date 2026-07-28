@@ -101,7 +101,7 @@ jobs:
           echo "✓ main'den dispatch edildi"
 
       - name: Checkout (tam geçmiş — ancestor kontrolü)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -223,7 +223,7 @@ jobs:
       PROD_DEPLOY_SMOKE_KUBECONFIG_B64: ${{ secrets.PROD_DEPLOY_SMOKE_KUBECONFIG_B64 }}
     steps:
       - name: Checkout (main HEAD yeniden doğrulama)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

@@ -62,13 +62,13 @@ jobs:
           printf 'TARGET_COMMIT=%s\n' "${TARGET_COMMIT}" >> "${GITHUB_ENV}"
 
       - name: Checkout GitOps authority
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: gitops
           persist-credentials: false
 
       - name: Checkout exact platform-ai source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: Halildeu/platform-ai
           ref: ${{ inputs.target_commit }}

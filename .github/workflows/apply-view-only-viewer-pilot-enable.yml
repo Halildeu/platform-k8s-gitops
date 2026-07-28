@@ -59,7 +59,7 @@ jobs:
 
     steps:
       - name: Checkout canonical owner policy and authorization builder
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Verify owner directive, advisory provenance and protected authorization
         id: authorization
@@ -193,7 +193,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Reconcile least-privilege VIEW_ONLY audit DB role
         if: inputs.action == 'apply'
