@@ -206,6 +206,14 @@ def test_budget_runtime_receives_only_postgres_connection_material():
         "data"
     ]
     assert config["BUDGET_DB_URL"].startswith("jdbc:postgresql://")
+    assert (
+        config["BUDGET_ACTUAL_PROVIDER_BASE_URL"]
+        == "http://report-service:8095"
+    )
+    assert (
+        config["PERMISSION_SERVICE_BASE_URL"]
+        == "http://permission-service:8090"
+    )
     serialized_config = yaml.safe_dump(config).lower()
     for forbidden in ("mssql", "sqlserver", "smb", "10.9.193."):
         assert forbidden not in serialized_config
