@@ -19,7 +19,9 @@ type ethics_product
     define case_viewer: (viewer or triager or handler) but not content_denied
     define case_triager: triager but not content_denied
     define case_handler: handler but not content_denied
+    define subject_approver: [user, team#member]
     define evidence_reveal_approved: evidence_approver but not content_denied
+    define subject_reveal_approved: subject_approver but not content_denied
 
 type ethics_case
   relations
@@ -31,3 +33,4 @@ type ethics_case
     define case_triager: case_triager from product but not denied
     define case_handler: case_handler from product but not denied
     define evidence_reveal_approved: evidence_reveal_approved from product but not denied
+    define subject_reveal_approved: subject_reveal_approved from product but not denied

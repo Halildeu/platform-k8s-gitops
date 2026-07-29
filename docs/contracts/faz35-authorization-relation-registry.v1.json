@@ -2,7 +2,10 @@
   "schema_version": "faz35-relation-registry-v1",
   "purpose": "Every relation in authorization-model-v1.fga, with what it is expected to allow and to deny. The completeness gate refuses a model relation that is absent here, so a new relation cannot land without someone stating what it must not reach.",
   "model_source": "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
-  "principal_types": ["user", "team"],
+  "principal_types": [
+    "user",
+    "team"
+  ],
   "relations": [
     {
       "type": "team",
@@ -12,7 +15,6 @@
       "denies": "Nothing on its own. Membership is not access; it only carries whatever the product grants the team.",
       "owner_repo": "platform-k8s-gitops"
     },
-
     {
       "type": "ethics_product",
       "relation": "viewer",
@@ -106,7 +108,23 @@
       "denies": "Anyone who is not an evidence_approver, and any technical_admin.",
       "owner_repo": "platform-backend"
     },
-
+    {
+      "type": "ethics_product",
+      "relation": "subject_approver",
+      "kind": "direct",
+      "allows": "A named user or team may be trusted to approve revealing who a report is about. Assignable on its own, so the circle can be smaller than the set of people handling cases.",
+      "denies": "Deliberately NOT derived from handler or triager. Handling a case must not by itself reveal the identity of the person it names — nothing has been established about them yet, and the product protects them as well as the reporter. Holding every other product role grants nothing here.",
+      "owner_repo": "platform-k8s-gitops"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_reveal_approved",
+      "kind": "derived",
+      "derivation": "subject_approver but not content_denied",
+      "allows": "Effective subject-reveal approval at product level: subject_approver minus content_denied.",
+      "denies": "Operators. An account that can run the system is subtracted here exactly as it is from case content, so administering the platform never becomes a way to learn who was reported.",
+      "owner_repo": "platform-k8s-gitops"
+    },
     {
       "type": "ethics_case",
       "relation": "product",
@@ -175,6 +193,15 @@
       "allows": "Approve a reveal on one specific case.",
       "denies": "A conflicted or recused approver — the exclusion for reveal approvers, so an interested party cannot approve unsealing evidence about themselves.",
       "owner_repo": "platform-backend"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "subject_reveal_approved",
+      "kind": "derived",
+      "derivation": "subject_reveal_approved from product but not denied",
+      "allows": "Effective subject-reveal approval on one case, inherited through the product.",
+      "denies": "Anyone conflicted or recused on that case, through the same `denied` subtraction every positive case relation carries. Stepping away from a case removes subject access with it.",
+      "owner_repo": "platform-k8s-gitops"
     }
   ]
 }
