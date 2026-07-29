@@ -130,15 +130,28 @@ grep -q 'does not write the #1580 acceptance marker' <<<"$workflow_text"
 grep -q 'does not assert KVKK/DPIA legal signoff' <<<"$workflow_text"
 grep -q 'Stage redacted collector diagnostic' <<<"$browser_workflow_text"
 grep -q 'Upload redacted collector diagnostic' <<<"$browser_workflow_text"
+grep -q 'name: Resolve immutable protected activation head' <<<"$browser_workflow_text"
+grep -q 'git merge-base --is-ancestor "$activation_head_sha" "$GITHUB_SHA"' <<<"$browser_workflow_text"
+grep -q 'activation run must predate the evidence run' <<<"$browser_workflow_text"
 grep -q 'name: Verify attended endpoint target before approval' <<<"$browser_workflow_text"
-grep -q 'needs: target-preflight' <<<"$browser_workflow_text"
+grep -q 'needs: activation_head' <<<"$browser_workflow_text"
+grep -q 'needs: \[activation_head, target-preflight\]' <<<"$browser_workflow_text"
+grep -q 'needs: \[activation_head, target-preflight, product-auth-preflight\]' <<<"$browser_workflow_text"
 grep -q 'verify-view-only-viewer-target.sh' <<<"$browser_workflow_text"
 grep -q 'name: Re-verify live target after protected approval' <<<"$browser_workflow_text"
-# Every job checks out the workflow event revision, and all producer/reader
-# bindings use that same immutable revision. Schema upgrades cannot mix within
-# an already-running evidence job.
-[[ "$(grep -Fc 'uses: actions/checkout@' <<<"$browser_workflow_text")" == "3" ]]
-[[ "$(grep -Fc 'SOURCE_REVISION: ${{ github.sha }}' <<<"$browser_workflow_text")" == "3" ]]
+# The bootstrap job verifies that the successful protected activation head is
+# an ancestor of main. Every producer/reader then checks out and binds evidence
+# to that same immutable activation revision even when main advances during a
+# human approval wait.
+[[ "$(grep -Fc 'uses: actions/checkout@' <<<"$browser_workflow_text")" == "4" ]]
+[[ "$(grep -Fc 'ref: ${{ needs.activation_head.outputs.activation_head_sha }}' <<<"$browser_workflow_text")" == "3" ]]
+[[ "$(grep -Fc 'SOURCE_REVISION: ${{ needs.activation_head.outputs.activation_head_sha }}' <<<"$browser_workflow_text")" == "3" ]]
+[[ "$(grep -Fc -- '--expected-head-sha "$ACTIVATION_HEAD_SHA"' <<<"$browser_workflow_text")" == "1" ]]
+if grep -Fq 'SOURCE_REVISION: ${{ github.sha }}' <<<"$browser_workflow_text" \
+  || grep -Fq -- '--expected-head-sha "$GITHUB_SHA"' <<<"$browser_workflow_text"; then
+  echo "browser evidence must bind to the verified activation head, not moving main" >&2
+  exit 1
+fi
 # VIEWER_URL is assembled inside the trusted runner from a fixed test origin;
 # workflow inputs cannot provide an alternate origin, path, or query key.
 grep -Fq 'VIEWER_PRODUCT_BASE_URL: https://testai.acik.com' <<<"$browser_workflow_text"
