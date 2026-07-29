@@ -44,6 +44,7 @@ VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization
 VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
 VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
+VIEWER_LEGACY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge/configmap-activation-patch.yaml"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
 VIEWER_ARGO_APPLICATION="$ROOT/argocd/applications/platform-test.yaml"
@@ -119,7 +120,8 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_EXACT_ZIP" \
-  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" \
+  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_LEGACY_CONFIG" \
+  "$VIEWER_DEVICE_KEY_CONFIG" \
   "$VIEWER_CONFIG_PATCH" "$VIEWER_ARGO_APPLICATION"; do
   require_file "$path"
 done
@@ -202,6 +204,13 @@ require_grep 'CONSENT_WAIT_SECONDS: "240"' "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + OPEN_SESSION_DEVICE_READY_SECONDS + 120 ))"' \
   "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'OPEN_SESSION_DEVICE_READY_SECONDS: "180"' "$VIEWER_BROWSER_WORKFLOW"
+for config in "$VIEWER_LEGACY_CONFIG" "$VIEWER_DEVICE_KEY_CONFIG"; do
+  require_grep 'REMOTE_BRIDGE_OPERATOR_AUTH_JWT_SUBJECT_CLAIM: "sub"' "$config"
+  if grep -Fq 'REMOTE_BRIDGE_OPERATOR_AUTH_JWT_SUBJECT_CLAIM: "preferred_username"' "$config"; then
+    echo "VIEW_ONLY operator audit identity must remain bound to the immutable JWT sub: $config" >&2
+    exit 1
+  fi
+done
 python3 - "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH" <<'PY'
 import pathlib
 import re
