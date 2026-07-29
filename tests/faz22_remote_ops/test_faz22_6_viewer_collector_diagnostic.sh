@@ -26,7 +26,7 @@ bash "$SCRIPT" "$TMP/summary.json" "$TMP/operation.json" \
   70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/out"
 jq -e '
   .status == "no-go"
-  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v5"
+  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v6"
   and .failureReasonCode == "open-session-device-not-connected-timeout"
   and .browserFailureCode == null
   and .browserReplayHttpStatus == null
@@ -111,7 +111,7 @@ cat > "$TMP/browser-summary.json" <<'JSON'
 JSON
 cat > "$TMP/browser-diagnostic.json" <<'JSON'
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v4",
   "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
   "failureCode": "browser-ack-count-diverged",
   "ackTelemetry": {
@@ -122,6 +122,7 @@ cat > "$TMP/browser-diagnostic.json" <<'JSON'
     "acceptedSamples": 704,
     "lastAcceptedSeq": 731
   },
+  "consoleTelemetry": null,
   "replayHttpStatus": null
 }
 JSON
@@ -144,7 +145,7 @@ jq -e '
 
 cat > "$TMP/browser-diagnostic-all-rejected.json" <<'JSON'
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v4",
   "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
   "failureCode": "browser-ack-rejected",
   "ackTelemetry": {
@@ -155,6 +156,7 @@ cat > "$TMP/browser-diagnostic-all-rejected.json" <<'JSON'
     "acceptedSamples": 0,
     "lastAcceptedSeq": null
   },
+  "consoleTelemetry": null,
   "replayHttpStatus": null
 }
 JSON
@@ -175,10 +177,11 @@ jq -e '
 
 cat > "$TMP/browser-diagnostic-replay.json" <<'JSON'
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v4",
   "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
   "failureCode": "browser-replay-not-rejected",
   "ackTelemetry": null,
+  "consoleTelemetry": null,
   "replayHttpStatus": 405
 }
 JSON
@@ -188,8 +191,67 @@ bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
 jq -e '
   .browserFailureCode == "browser-replay-not-rejected"
   and .browserAckTelemetry == null
+  and .browserConsoleTelemetry == null
   and .browserReplayHttpStatus == "405"
 ' "$TMP/browser-replay/collector-diagnostic.json" >/dev/null
+
+cat > "$TMP/browser-diagnostic-console.json" <<'JSON'
+{
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v4",
+  "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
+  "failureCode": "browser-console-error",
+  "ackTelemetry": null,
+  "consoleTelemetry": {
+    "count": 4,
+    "entries": [
+      {
+        "category": "http-4xx",
+        "kind": "console-error",
+        "locationClass": "viewer-api",
+        "locationSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "messageSha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "category": "page-error",
+        "kind": "page-error",
+        "locationClass": "unknown",
+        "locationSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "messageSha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "truncatedCount": 2
+  },
+  "replayHttpStatus": null
+}
+JSON
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-console" \
+  "$TMP/browser-diagnostic-console.json"
+jq -e '
+  .browserFailureCode == "browser-console-error"
+  and .browserAckTelemetry == null
+  and .browserReplayHttpStatus == null
+  and .browserConsoleTelemetry.count == 4
+  and .browserConsoleTelemetry.truncatedCount == 2
+  and (.browserConsoleTelemetry.entries | length) == 2
+  and (.browserConsoleTelemetry.entries[0] | keys)
+    == ["category", "kind", "locationClass", "locationSha256", "messageSha256"]
+' "$TMP/browser-console/collector-diagnostic.json" >/dev/null
+if grep -Eiq 'sessionId|deviceId|operatorId|bearer|private key' \
+    "$TMP/browser-console/collector-diagnostic.json"; then
+  echo "console diagnostic leaked a forbidden raw field" >&2
+  exit 1
+fi
+
+jq '.consoleTelemetry.count = 3' "$TMP/browser-diagnostic-console.json" \
+  > "$TMP/browser-diagnostic-console-invalid.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-console-invalid" \
+  "$TMP/browser-diagnostic-console-invalid.json"
+jq -e '
+  .browserFailureCode == "browser-unclassified-failure"
+  and .browserConsoleTelemetry == null
+' "$TMP/browser-console-invalid/collector-diagnostic.json" >/dev/null
 
 jq '.replayHttpStatus = 404' "$TMP/browser-diagnostic-replay.json" \
   > "$TMP/browser-diagnostic-replay-impossible.json"
@@ -264,10 +326,11 @@ if VIEWER_URL='https://testai.acik.com/endpoint-admin/remote-access/sessions/tes
   exit 1
 fi
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
+  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v4"
   and .sourceRevision == "70d8286163651805cd5ebd537d3836d02fb1692d"
   and .failureCode == "browser-binding-invalid"
   and .ackTelemetry == null
+  and .consoleTelemetry == null
   and .replayHttpStatus == null
 ' "$TMP/browser-script-diagnostic.json" >/dev/null
 grep -Fxq 'browser_evidence=fail code=browser-binding-invalid' "$TMP/browser-script.err"
@@ -282,6 +345,7 @@ const allowlistPath = process.argv[3];
 const {
   BROWSER_FAILURE_CODES,
   ackDiagnostic,
+  buildConsoleDiagnosticEntry,
   classifyAckDrainSnapshot,
   classifyReplayProbeStatus,
   classifyViewerDrainSnapshot,
@@ -293,6 +357,31 @@ const {
 } = await import(pathToFileURL(browserScript));
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
 assert.deepEqual([...BROWSER_FAILURE_CODES].sort(), [...allowlist.failureCodes].sort());
+assert.deepEqual(
+  buildConsoleDiagnosticEntry({
+    kind: 'console-error',
+    text: 'Failed to load resource: the server responded with a status of 404',
+    url: 'https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=secret',
+    lineNumber: 12,
+    columnNumber: 4,
+  }),
+  {
+    category: 'http-4xx',
+    kind: 'console-error',
+    locationClass: 'viewer-api',
+    locationSha256: 'sha256:81e674987ff919c32aecf0e702994b90f01fd9dbee539740653ec2913c6ae0e8',
+    messageSha256: 'sha256:a81077a4234eb51400ddd3395729561270fecb0aa28d3900b4e50606aaa8aa4c',
+  },
+);
+assert.equal(
+  JSON.stringify(
+    buildConsoleDiagnosticEntry({
+      kind: 'page-error',
+      text: 'private-message-must-not-appear',
+    }),
+  ).includes('private-message-must-not-appear'),
+  false,
+);
 assert.equal(classifyPreflightApiStatus(null), 'browser-preflight-api-response-missing');
 assert.equal(classifyPreflightApiStatus(200), 'browser-preflight-api-status-unexpected-success');
 assert.equal(classifyPreflightApiStatus(401), 'browser-preflight-api-status-unauthorized');
@@ -585,8 +674,8 @@ grep -Fq 'browser-auth-route-preflight-script-required' "$SMOKE" || {
   echo "auth route preflight must fail closed when the browser harness is absent" >&2
   exit 1
 }
-grep -Fq 'needs: [target-preflight, product-auth-preflight]' "$WORKFLOW" || {
-  echo "attended browser evidence must remain blocked by both preflights" >&2
+grep -Fq 'needs: [activation_head, target-preflight, product-auth-preflight]' "$WORKFLOW" || {
+  echo "attended browser evidence must remain blocked by activation resolution and both preflights" >&2
   exit 1
 }
 grep -Fq 'if: ${{ !inputs.preflight_only }}' "$WORKFLOW" || {
@@ -607,7 +696,7 @@ grep -Fq 'session-side-effect-attestation.json' <<< "$product_preflight_block" |
   echo "product preflight must publish its scoped session side-effect attestation" >&2
   exit 1
 }
-grep -Fq '/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt' "$SMOKE" || {
+grep -Fq '/srv/platform/gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt' "$SMOKE" || {
   echo "viewer preflight must retain the canonical runner-local Keycloak credential source" >&2
   exit 1
 }

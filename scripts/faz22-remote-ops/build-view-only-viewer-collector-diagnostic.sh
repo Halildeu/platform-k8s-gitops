@@ -70,6 +70,20 @@ jq -cS -n \
   --slurpfile browserAllowlist "$BROWSER_ALLOWLIST_PATH" \
   'def bounded($pattern; $fallback):
      if type == "string" and test($pattern) then . else $fallback end;
+   def valid_console_telemetry:
+     (. | keys) == ["count", "entries", "truncatedCount"]
+     and (.count | type == "number" and floor == . and . >= 1 and . <= 10000000)
+     and (.truncatedCount | type == "number" and floor == . and . >= 0 and . <= 10000000)
+     and (.entries | type == "array" and length >= 1 and length <= 16)
+     and (.count == ((.entries | length) + .truncatedCount))
+     and (.entries | all(
+       keys == ["category", "kind", "locationClass", "locationSha256", "messageSha256"]
+       and (.category | test("^(application-error|http-[1-5]xx|network-error|page-error)$"))
+       and (.kind | test("^(console-error|page-error)$"))
+       and (.locationClass | test("^(authentication|endpoint-admin-api|endpoint-admin-page|external|product-api|product-page|static-asset|unknown|viewer-api)$"))
+       and (.locationSha256 | test("^sha256:[a-f0-9]{64}$"))
+       and (.messageSha256 | test("^sha256:[a-f0-9]{64}$"))
+     ));
    def http_or_null:
      if type == "number" and . >= 100 and . <= 599 then tostring
      elif type == "string" and test("^[0-9]{3}$") then .
@@ -80,7 +94,7 @@ jq -cS -n \
    | ($operation[0] // {}) as $operation
    | ($browser[0] // {}) as $browser
    | {
-       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v5",
+       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v6",
        sourceRevision:$sourceRevision,
        status:(($summary.status // "collector-did-not-write-summary") as $status
          | if ["starting", "no-go", "accepted-candidate", "collector-did-not-write-summary"]
@@ -97,17 +111,24 @@ jq -cS -n \
        ),
        browserFailureCode:(
          if $summary.reason != "browser-product-evidence-failed" then null
-         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
+         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v4"
            and $browser.sourceRevision == $sourceRevision
            and (($browser.failureCode | type) == "string")
            and (($browserAllowlist.failureCodes | index($browser.failureCode)) != null)
            and (if $browser.failureCode == "browser-replay-not-rejected" then
              $browser.ackTelemetry == null
+             and $browser.consoleTelemetry == null
              and ($browser.replayHttpStatus | type) == "number"
              and ($browser.replayHttpStatus | floor) == $browser.replayHttpStatus
              and $browser.replayHttpStatus >= 100 and $browser.replayHttpStatus <= 599
              and $browser.replayHttpStatus != 404
+           elif $browser.failureCode == "browser-console-error" then
+             $browser.ackTelemetry == null
+             and $browser.replayHttpStatus == null
+             and ($browser.consoleTelemetry | valid_console_telemetry)
            else
+             $browser.consoleTelemetry == null
+             and
              $browser.replayHttpStatus == null
            end)
            then $browser.failureCode
@@ -116,9 +137,11 @@ jq -cS -n \
        ),
        browserAckTelemetry:(
          if $summary.reason != "browser-product-evidence-failed"
-           or $browser.schemaVersion != "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
+           or $browser.schemaVersion != "faz22.6.viewOnlyViewerBrowserDiagnostic.v4"
            or $browser.sourceRevision != $sourceRevision
            or $browser.failureCode == "browser-replay-not-rejected"
+           or $browser.failureCode == "browser-console-error"
+           or $browser.consoleTelemetry != null
            or $browser.replayHttpStatus != null
            or ($browser.ackTelemetry | type) != "object"
            or ($browser.ackTelemetry | keys) != ["accepted", "acceptedSamples", "attempted", "lastAcceptedSeq", "pending", "rejected"]
@@ -142,12 +165,25 @@ jq -cS -n \
          else null
          end
        ),
+       browserConsoleTelemetry:(
+         if $summary.reason == "browser-product-evidence-failed"
+           and $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v4"
+           and $browser.sourceRevision == $sourceRevision
+           and $browser.failureCode == "browser-console-error"
+           and $browser.ackTelemetry == null
+           and $browser.replayHttpStatus == null
+           and ($browser.consoleTelemetry | valid_console_telemetry)
+           then $browser.consoleTelemetry
+         else null
+         end
+       ),
        browserReplayHttpStatus:(
          if $summary.reason == "browser-product-evidence-failed"
-           and $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
+           and $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v4"
            and $browser.sourceRevision == $sourceRevision
            and $browser.failureCode == "browser-replay-not-rejected"
            and $browser.ackTelemetry == null
+           and $browser.consoleTelemetry == null
            and ($browser.replayHttpStatus | type) == "number"
            and $browser.replayHttpStatus >= 100 and $browser.replayHttpStatus <= 599
            and $browser.replayHttpStatus != 404
@@ -181,7 +217,21 @@ jq -cS -n \
      }' > "$output"
 
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v5"
+  def valid_console_telemetry:
+    (. | keys) == ["count", "entries", "truncatedCount"]
+    and (.count | type == "number" and floor == . and . >= 1 and . <= 10000000)
+    and (.truncatedCount | type == "number" and floor == . and . >= 0 and . <= 10000000)
+    and (.entries | type == "array" and length >= 1 and length <= 16)
+    and (.count == ((.entries | length) + .truncatedCount))
+    and (.entries | all(
+      keys == ["category", "kind", "locationClass", "locationSha256", "messageSha256"]
+      and (.category | test("^(application-error|http-[1-5]xx|network-error|page-error)$"))
+      and (.kind | test("^(console-error|page-error)$"))
+      and (.locationClass | test("^(authentication|endpoint-admin-api|endpoint-admin-page|external|product-api|product-page|static-asset|unknown|viewer-api)$"))
+      and (.locationSha256 | test("^sha256:[a-f0-9]{64}$"))
+      and (.messageSha256 | test("^sha256:[a-f0-9]{64}$"))
+    ));
+  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v6"
   and (.sourceRevision | test("^[a-f0-9]{40}$"))
   and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
   and (.failureReasonCode == null or (.failureReasonCode | test("^[A-Za-z0-9:._-]{1,160}$")))
@@ -201,6 +251,7 @@ jq -e '
     and (.browserAckTelemetry.pending | type == "number"
       and floor == . and . >= 0 and . <= 1000)
   ))
+  and (.browserConsoleTelemetry == null or (.browserConsoleTelemetry | valid_console_telemetry))
   and (.browserReplayHttpStatus == null or (
     (.browserReplayHttpStatus | type) == "string"
     and (.browserReplayHttpStatus | test("^[1-5][0-9]{2}$"))
