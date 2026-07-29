@@ -29,16 +29,33 @@ grep -Fq 'pem_file /etc/platform/meeting-ai-gateway/tls/client-ca.crt' "${GW}/Ca
   fail "dedicated client CA missing"
 grep -Fq 'tls/current/server.crt' "${GW}/Caddyfile" || \
   fail "atomic certificate pointer missing"
-grep -Fq 'method POST' "${GW}/Caddyfile" || fail "POST method restrictions missing"
 grep -Fq 'path /oauth2/token' "${GW}/Caddyfile" || fail "token path missing"
 grep -Fq 'path_regexp result ^/api/v1/internal/meetings/' "${GW}/Caddyfile" || \
   fail "UUID-scoped ingestion path missing"
+awk '/^[[:space:]]*@transcript_capability \{/,/^[[:space:]]*\}/' "${GW}/Caddyfile" | \
+  grep -Fq 'method POST' || fail "transcript capability must be POST-only"
+grep -Fq 'path_regexp transcript_capability ^/api/v1/internal/tenants/' "${GW}/Caddyfile" || \
+  fail "tuple-scoped transcript capability path missing"
+grep -Fq '/finalizations/[1-9][0-9]*/analysis-capability$' "${GW}/Caddyfile" || \
+  fail "exact transcript capability suffix missing"
+awk '/^[[:space:]]*handle @transcript_capability \{/,/^[[:space:]]*\}/' "${GW}/Caddyfile" | \
+  grep -Fq 'max_size 16KiB' || fail "transcript capability body limit missing"
+awk '/^[[:space:]]*@transcript_snapshot \{/,/^[[:space:]]*\}/' "${GW}/Caddyfile" | \
+  grep -Fq 'method GET' || fail "canonical transcript snapshot must be GET-only"
+grep -Fq 'path_regexp transcript_snapshot ^/api/v1/internal/tenants/' "${GW}/Caddyfile" || \
+  fail "tuple-scoped canonical transcript path missing"
+grep -Fq '/finalizations/[1-9][0-9]*$' "${GW}/Caddyfile" || \
+  fail "exact canonical transcript suffix missing"
 grep -Fq $'\t\trespond 404' "${GW}/Caddyfile" || fail "default deny response missing"
 if grep -Eq '(^|[[:space:]])(0\.0\.0\.0|:80|:443)([[:space:]]|$)' "${GW}/Caddyfile"; then
   fail "Caddy contains a broad/public listener"
 fi
 grep -Fq 'request>headers>Authorization delete' "${GW}/Caddyfile" || \
   fail "Authorization redaction missing"
+grep -Fq 'request>headers>X-Analysis-Job-Capability delete' "${GW}/Caddyfile" || \
+  fail "request capability redaction missing"
+grep -Fq 'resp_headers>X-Analysis-Job-Capability delete' "${GW}/Caddyfile" || \
+  fail "response capability redaction missing"
 
 grep -Fq 'readonly WG_INTERFACE="wg0"' "${GW}/firewall.sh" || fail "wg0 firewall pin missing"
 grep -Fq 'readonly CLIENT_IP="10.99.0.2/32"' "${GW}/firewall.sh" || fail "client /32 missing"
@@ -89,11 +106,20 @@ grep -Fq 'SPRING_CLOUD_GATEWAY_ROUTES_26_ID: meeting-admin-route' \
 if grep -Fq '/api/v1/internal/meetings/' "${PUBLIC_GATEWAY_RENDER}"; then
   fail "private analysis-result path leaked into the public api-gateway route table"
 fi
+if grep -Fq '/api/v1/internal/tenants/' "${PUBLIC_GATEWAY_RENDER}"; then
+  fail "private transcript path leaked into the public api-gateway route table"
+fi
 
 grep -Fq 'host: meeting-ai-private.testai.internal' "${TEST_RENDER}" || fail "private ingress missing"
 grep -Fq 'path: /oauth2/token$' "${TEST_RENDER}" || fail "exact token ingress route missing"
 grep -Fq 'path: /api/v1/internal/meetings/' "${TEST_RENDER}" || fail "UUID ingestion ingress route missing"
 grep -Fq '/analysis-results$' "${TEST_RENDER}" || fail "exact analysis-result ingress suffix missing"
+grep -Fq 'path: /api/v1/internal/tenants/' "${TEST_RENDER}" || \
+  fail "tuple-scoped transcript ingress routes missing"
+grep -Fq '/finalizations/[1-9][0-9]*/analysis-capability$' "${TEST_RENDER}" || \
+  fail "exact transcript capability ingress suffix missing"
+grep -Fq '/finalizations/[1-9][0-9]*$' "${TEST_RENDER}" || \
+  fail "exact canonical transcript ingress suffix missing"
 if grep -Eq '^[[:space:]]+path: \^' "${TEST_RENDER}"; then
   fail "Ingress paths must start with / for Kubernetes API validation"
 fi
@@ -124,6 +150,36 @@ grep -Fq 'name: allow-meeting-ai-private-ingress-auth' "${TEST_RENDER}" || \
   fail "private auth ingress NetworkPolicy missing"
 grep -Fq 'name: allow-meeting-ai-private-ingress-meeting' "${TEST_RENDER}" || \
   fail "private meeting ingress NetworkPolicy missing"
+grep -Fq 'name: allow-meeting-ai-private-ingress-transcript' "${TEST_RENDER}" || \
+  fail "private transcript ingress NetworkPolicy missing"
+transcript_private_policy="$(
+  awk 'BEGIN { RS="---" }
+    /kind:[[:space:]]*NetworkPolicy/ &&
+    /name:[[:space:]]*allow-meeting-ai-private-ingress-transcript/ { print }
+  ' "${TEST_RENDER}"
+)"
+[[ -n "${transcript_private_policy}" ]] || fail "private transcript policy render missing"
+grep -Fq 'kubernetes.io/metadata.name: ingress-nginx' <<<"${transcript_private_policy}" || \
+  fail "private transcript policy source is not ingress-nginx"
+grep -Fq 'port: 8098' <<<"${transcript_private_policy}" || \
+  fail "private transcript policy does not pin port 8098"
+[[ "$(grep -c 'port:' <<<"${transcript_private_policy}")" -eq 1 ]] || \
+  fail "private transcript policy exposes more than one port"
+intra_namespace_policy="$(
+  awk 'BEGIN { RS="---" }
+    /kind:[[:space:]]*NetworkPolicy/ &&
+    /name:[[:space:]]*allow-ingress-intra-ns/ { print }
+  ' "${TEST_RENDER}"
+)"
+grep -Fq 'app.kubernetes.io/part-of: platform' <<<"${intra_namespace_policy}" || \
+  fail "same-namespace platform ingress baseline missing"
+for binding in \
+  'TRANSCRIPT_INTERNAL_SERVICE_JWT_JWK_SET_URI: http://auth-service:8088/oauth2/jwks' \
+  'TRANSCRIPT_INTERNAL_SERVICE_JWT_ISSUER: auth-service' \
+  'TRANSCRIPT_INTERNAL_SERVICE_JWT_AUDIENCE: transcript-service' \
+  'TRANSCRIPT_INTERNAL_SERVICE_JWT_CLIENT_IDS: meeting-ai,meeting-service'; do
+  grep -Fq "${binding}" "${TEST_RENDER}" || fail "missing transcript verifier binding: ${binding}"
+done
 for binding in \
   'MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI: http://auth-service:8088/oauth2/jwks' \
   'MEETING_INTERNAL_SERVICE_JWT_ISSUER: auth-service' \

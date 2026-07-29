@@ -33,6 +33,8 @@ https://meeting-ai-gateway.internal:9447 {
 				request>headers>Authorization delete
 				request>headers>Cookie delete
 				request>headers>Set-Cookie delete
+				request>headers>X-Analysis-Job-Capability delete
+				resp_headers>X-Analysis-Job-Capability delete
 			}
 		}
 	}
@@ -58,6 +60,37 @@ https://meeting-ai-gateway.internal:9447 {
 			transport http {
 				dial_timeout 3s
 				response_header_timeout 10s
+			}
+		}
+	}
+
+	@transcript_capability {
+		method POST
+		path_regexp transcript_capability ^/api/v1/internal/tenants/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/sessions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/finalizations/[1-9][0-9]*/analysis-capability$
+	}
+	handle @transcript_capability {
+		request_body {
+			max_size 16KiB
+		}
+		reverse_proxy http://127.0.0.1:31080 {
+			header_up Host meeting-ai-private.testai.internal
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 10s
+			}
+		}
+	}
+
+	@transcript_snapshot {
+		method GET
+		path_regexp transcript_snapshot ^/api/v1/internal/tenants/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/sessions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/finalizations/[1-9][0-9]*$
+	}
+	handle @transcript_snapshot {
+		reverse_proxy http://127.0.0.1:31080 {
+			header_up Host meeting-ai-private.testai.internal
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 20s
 			}
 		}
 	}
