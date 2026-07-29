@@ -38,20 +38,20 @@ on:
         required: true
         default: "platform-redis-streams-test"
       chunk_file:
-        description: "Runner-local privacy-safe WAV fixture path"
+        description: "Runner-local privacy-safe raw PCM16 fixture path"
         required: true
-        default: "/tmp/sample-tr-cv17-001.wav"
+        default: "/tmp/sample-tr-cv17-001.pcm"
       audio_format:
-        description: "Audio format header for the fixture"
+        description: "Direct-STT audio format header for the fixture"
         required: true
         type: choice
         options:
-          - "WAV"
-        default: "WAV"
+          - "PCM16"
+        default: "PCM16"
       sample_rate_hz:
         description: "Sample rate header for the fixture"
         required: true
-        default: "48000"
+        default: "16000"
       channels:
         description: "Channel count header for the fixture"
         required: true
@@ -170,7 +170,7 @@ jobs:
           require_name deployment "${DEPLOYMENT_INPUT}"
           require_name redis_container "${REDIS_CONTAINER_INPUT}"
           require_path chunk_file "${CHUNK_FILE_INPUT}"
-          test "${AUDIO_FORMAT_INPUT}" = "WAV"
+          test "${AUDIO_FORMAT_INPUT}" = "PCM16"
           printf '%s' "${SAMPLE_RATE_HZ_INPUT}" | grep -Eq '^[1-9][0-9]{3,5}$'
           printf '%s' "${CHANNELS_INPUT}" | grep -Eq '^[1-2]$'
           printf '%s' "${PROBE_TIMEOUT_INPUT}" | grep -Eq '^[1-9][0-9]*$'
@@ -198,13 +198,12 @@ jobs:
             chunk_file="${CHUNK_FILE_INPUT}"
             fixture_source="input"
           else
-            chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"
+            chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"
             fixture_source="generated"
             python3 - "${chunk_file}" "${SAMPLE_RATE_HZ_INPUT}" "${CHANNELS_INPUT}" <<'PY'
           import math
           import struct
           import sys
-          import wave
 
           path = sys.argv[1]
           rate = int(sys.argv[2])
@@ -212,10 +211,7 @@ jobs:
           duration_s = 5.0
           frames = int(rate * duration_s)
 
-          with wave.open(path, "wb") as wav:
-              wav.setnchannels(channels)
-              wav.setsampwidth(2)
-              wav.setframerate(rate)
+          with open(path, "wb") as pcm:
               for idx in range(frames):
                   t = idx / rate
                   # Deterministic synthetic, privacy-safe fixture. It is audio-shaped
@@ -228,7 +224,7 @@ jobs:
                   )
                   value = int(max(-1.0, min(1.0, carrier * envelope * 0.25)) * 32767)
                   packed = struct.pack("<h", value)
-                  wav.writeframesraw(packed * channels)
+                  pcm.write(packed * channels)
           PY
           fi
 
