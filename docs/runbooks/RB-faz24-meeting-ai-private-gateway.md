@@ -2,8 +2,8 @@
 
 ## 1. Amaç ve sınır
 
-`meeting-ai-service` GPU hostundan (`10.99.0.2`) staging-sw üzerindeki auth ve
-meeting servislerine yalnız aşağıdaki zincirle erişir:
+`meeting-ai-service` GPU hostundan (`10.99.0.2`) staging-sw üzerindeki auth,
+meeting ve transcript servislerine yalnız aşağıdaki zincirle erişir:
 
 `GPU process -> WireGuard wg0 -> Caddy 10.99.0.1:9447 -> host loopback 127.0.0.1:31080 -> private Ingress -> service`
 
@@ -14,12 +14,23 @@ Kontroller birbirinin yerine geçmez:
 - Caddy TLS sunucu kimliğini ve yalnız `meeting-ai` issuance role'una ayrılmış
   dedicated client CA zincirini doğrular. Client role yalnız
   `meeting-ai.client.faz24.internal` adına clientAuth leaf üretebilir.
-- Caddy yalnız `POST /oauth2/token`, UUID-scoped analysis-result `POST` ve
-  client-authenticated `GET /healthz` yollarını taşır; generic proxy yoktur.
-- Auth-service yalnız `meeting-ai` client için `meeting-service` audience ve
-  `meeting:analysis-result:write` izniyle kısa ömürlü token üretir.
+- Caddy yalnız `POST /oauth2/token`, UUID-scoped analysis-result `POST`,
+  tenant/meeting/session/finalization-scoped capability `POST`, aynı tuple'a
+  bağlı canonical snapshot `GET` ve client-authenticated `GET /healthz`
+  yollarını taşır; generic proxy yoktur.
+- Auth-service yalnız `meeting-ai` client için `meeting-service` audience ile
+  `meeting:analysis-result:write` veya `transcript-service` audience ile
+  `transcript:canonical:read` / `transcript:analysis-job-capability:issue`
+  izinlerinden istenen dar kümeyi taşıyan kısa ömürlü token üretir.
 - Meeting-service issuer, audience, `sub == client_id == svc == meeting-ai` ve
   permission bağlarını tekrar doğrular.
+- Transcript-service issuer ve audience bağlarını doğrular; internal verifier
+  allowlist'i `meeting-ai` ile mevcut `meeting-service` canonical-read
+  istemcisini kabul eder. Yetki permission ile ayrılır: yalnız `meeting-ai`
+  `transcript:analysis-job-capability:issue` alabilir; `meeting-service` yalnız
+  mevcut `transcript:canonical:read` akışını kullanır. Private gateway mTLS
+  yüzeyi yine yalnız `meeting-ai` client sertifikasını kabul eder ve
+  capability/snapshot yolları public gateway'e eklenmez.
 
 Bu runbook **test aktivasyonu** içindir. Kaynak/CI geçişi canlı bağlantı,
 sertifika rotasyonu veya ürün kabulü değildir.
@@ -248,6 +259,10 @@ $secret = Read-Host 'meeting-ai OAuth client secret' -AsSecureString
 .\deploy\gpu-host\configure-meeting-ai.ps1 `
   -MeetingServiceBaseUrl 'https://meeting-ai-gateway.internal:9447' `
   -MeetingServiceTokenUrl 'https://meeting-ai-gateway.internal:9447/oauth2/token' `
+  -TranscriptServiceBaseUrl 'https://meeting-ai-gateway.internal:9447' `
+  -TranscriptServiceTokenUrl 'https://meeting-ai-gateway.internal:9447/oauth2/token' `
+  -TranscriptServiceSnapshotPathTemplate '/api/v1/internal/tenants/{tenant_id}/meetings/{meeting_id}/sessions/{session_id}/finalizations/{finalization_version}' `
+  -TranscriptServiceCapabilityPathTemplate '/api/v1/internal/tenants/{tenant_id}/meetings/{meeting_id}/sessions/{session_id}/finalizations/{finalization_version}/analysis-capability' `
   -ClientId 'meeting-ai' -ClientSecret $secret `
   -Audience 'meeting-service' `
   -Permission 'meeting:analysis-result:write' `
@@ -307,15 +322,23 @@ GPU outbox veya Electron viewer kabulünün yerine geçmez.
 6. Client CA role/policy negatif testi: role izinli ad dışındaki CN/SAN issuance
    denemesi Vault tarafından reddedilir.
 7. Yanlış method/path: HTTP 404; `/oauth2/jwks`, actuator ve admin yüzeyleri yok.
-8. Token claim özeti: `iss=auth-service`, `aud=meeting-service`,
-   `sub=client_id=svc=meeting-ai`, TTL <= 60 saniye, yalnız write permission.
+   Sıfır finalization, eksik/bozuk UUID veya capability yolunda `GET` de
+   gateway katmanında 404 olur.
+8. Token claim özeti: `iss=auth-service`, `sub=client_id=svc=meeting-ai`,
+   TTL <= 60 saniye. Result token'ı yalnız `aud=meeting-service` + write izni;
+   transcript token'ları yalnız `aud=transcript-service` + çağrıya uygun
+   canonical-read veya capability-issue izni taşır.
 9. Geçersiz/expired/wrong-audience token ingestion 401; doğru token fakat
-   yanlış client/permission 403; geçerli ilk POST 201; aynı Idempotency-Key 200.
+   yanlış client/permission 403; geçerli ilk result POST 201; aynı
+   Idempotency-Key 200. Capability POST exact tuple/run/spec bağında 204 ve
+   header-only capability döndürür; snapshot GET aynı capability ve tuple ile
+   200, farklı tuple/run/spec veya tekrar kullanılmış capability ile fail-closed
+   sonuç verir. Transcript metni kanıta veya loga yazılmaz.
 10. Meeting-AI task restartında encrypted SQLite outbox korunur, geçici outage
     sonrası drain olur; raw transcript/Authorization/private key loglarda yoktur.
 11. Public negative iki ayrı kanıtla doğrulanır:
     - public `api-gateway-config` route envanterinde
-      `/api/v1/internal/meetings/` içeren hiçbir
+      `/api/v1/internal/meetings/` veya `/api/v1/internal/tenants/` içeren hiçbir
       `SPRING_CLOUD_GATEWAY_ROUTES_*` predicate yoktur;
     - `testai.acik.com` ve `ai.acik.com` üzerinden anonymous internal-path
       probe fail-closed `401` veya `404` döner; `2xx`, redirect ve `5xx`

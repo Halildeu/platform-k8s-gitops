@@ -6825,6 +6825,9 @@ patches:
               # (backend#996, gitops#2610). ConfigMap/Secret envFrom ve image
               # pin degisimi icin exact pod-template rollout receipt'i.
               transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-29-2610-v6-transport-epoch"
+              # #2321: pick up the auth-service internal JWT verifier bindings
+              # required by the private canonical transcript gateway routes.
+              transcript-service.acik.com/internal-service-jwt-rev: "2026-07-29-2321-v1"
           spec:
             containers:
               - name: transcript-service
@@ -6860,6 +6863,18 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_DIRECT_STT_RESULT_CONSUMER_ENABLED
         value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_INTERNAL_SERVICE_JWT_JWK_SET_URI
+        value: "http://auth-service:8088/oauth2/jwks"
+      - op: add
+        path: /data/TRANSCRIPT_INTERNAL_SERVICE_JWT_ISSUER
+        value: "auth-service"
+      - op: add
+        path: /data/TRANSCRIPT_INTERNAL_SERVICE_JWT_AUDIENCE
+        value: "transcript-service"
+      - op: add
+        path: /data/TRANSCRIPT_INTERNAL_SERVICE_JWT_CLIENT_IDS
+        value: "meeting-ai,meeting-service"
       - op: add
         path: /data/TRANSCRIPT_DIRECT_STT_RESULT_STREAM_KEY
         value: "transcript:direct-stt-results"

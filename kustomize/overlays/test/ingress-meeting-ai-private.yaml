@@ -1,3 +1,5 @@
+---
+# yamllint disable rule:line-length
 # Internal upstream for the staging host's WireGuard + application-mTLS edge.
 #
 # This host has no public DNS/TLS route. k3d-test publishes ingress-nginx only
@@ -32,6 +34,20 @@ spec:
                 name: auth-service
                 port:
                   number: 8088
+          - path: /api/v1/internal/tenants/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/sessions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/finalizations/[1-9][0-9]*/analysis-capability$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: transcript-service
+                port:
+                  number: 8098
+          - path: /api/v1/internal/tenants/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/sessions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/finalizations/[1-9][0-9]*$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: transcript-service
+                port:
+                  number: 8098
           - path: /api/v1/internal/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/analysis-results$
             pathType: ImplementationSpecific
             backend:
