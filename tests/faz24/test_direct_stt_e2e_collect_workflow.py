@@ -328,7 +328,7 @@ def test_durable_audit_record_via_postgres_returns_metadata_only_projection():
     assert "prev_hash" in calls[0][-1]
 
 
-def test_wait_for_durable_audit_record_polls_until_row_exists():
+def test_wait_for_durable_audit_record_polls_until_hash_chain_is_ready():
     collector = _load_collector()
     now = [0.0]
     fetch_count = [0]
@@ -337,7 +337,23 @@ def test_wait_for_durable_audit_record_polls_until_row_exists():
         fetch_count[0] += 1
         if fetch_count[0] == 1:
             return None, None
-        return {"recordId": "2-0"}, None
+        if fetch_count[0] == 2:
+            return {
+                "recordId": "2-0",
+                "eventTimestampPresent": "f",
+                "entryHashPresent": "f",
+                "prevHashPresent": "f",
+                "entryHashAlgorithm": "SHA-256",
+                "entryHashVersion": "1",
+            }, None
+        return {
+            "recordId": "2-0",
+            "eventTimestampPresent": "t",
+            "entryHashPresent": "t",
+            "prevHashPresent": "t",
+            "entryHashAlgorithm": "SHA-256",
+            "entryHashVersion": "1",
+        }, None
 
     record, error = collector.wait_for_durable_audit_record(
         fetch_record,
@@ -348,9 +364,10 @@ def test_wait_for_durable_audit_record_polls_until_row_exists():
     )
 
     assert error is None
-    assert record == {"recordId": "2-0"}
-    assert fetch_count[0] == 2
-    assert now[0] == 2
+    assert record["recordId"] == "2-0"
+    assert record["entryHashPresent"] == "t"
+    assert fetch_count[0] == 3
+    assert now[0] == 4
 
 
 def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():

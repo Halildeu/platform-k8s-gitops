@@ -27,6 +27,16 @@ projection'ından poll eder. Artifact yalnız stream entry kimliği, eşleşme
 boolean'ları, timestamp/hash varlığı ve hash algoritma/sürüm metadata'sını
 taşır; raw hash, transcript, audio, token veya credential taşımaz.
 
+İlk post-rollout run `30417859131`, exact GitOps merge
+`68cdd0cb33d1b5b0bddaeca073394995ad148443` ve audio-gateway digest'i
+üzerinde gerçek PCM16 transcript-result'ı yeniden üretti. Durable compute audit
+satırı exact session/chunk/correlation ile bulundu; collector satırı hash
+enrichment transaction'ı tamamlanmadan okuduğu için timestamp ve hash-varlığı
+boolean'larını erken `false` kaydedip fail-closed kaldı. Aynı satırın sonraki
+salt-okunur DB read-back'i timestamp, entry hash ve prev hash alanlarının
+`SHA-256`/sürüm `1` ile mevcut olduğunu gösterdi. Collector bu nedenle yalnız
+satır varlığını değil, enrichment metadata'sının tamamını poll eder.
+
 Bu blok desired-state'i kaydeder. ArgoCD exact merge revision ile
 `Synced/Healthy`, audio-gateway `imageID` exact digest, ExternalSecret
 `Ready=True`, gerçek Türkçe PCM16 run sonucu ve aynı session/chunk/correlation

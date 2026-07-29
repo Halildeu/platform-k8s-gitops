@@ -946,15 +946,25 @@ def wait_for_durable_audit_record(
 ) -> tuple[dict[str, str] | None, str | None]:
     deadline = monotonic() + max(0.0, timeout_seconds)
     latest_error: str | None = None
+    latest_record: dict[str, str] | None = None
 
     while True:
         record, latest_error = fetch_record()
         if record:
+            latest_record = record
+        if (
+            record
+            and record.get("eventTimestampPresent") == "t"
+            and record.get("entryHashPresent") == "t"
+            and record.get("prevHashPresent") == "t"
+            and record.get("entryHashAlgorithm") == "SHA-256"
+            and record.get("entryHashVersion") == "1"
+        ):
             return record, latest_error
 
         remaining = deadline - monotonic()
         if remaining <= 0:
-            return None, latest_error
+            return latest_record, latest_error
         sleep(min(poll_interval_seconds, remaining))
 
 
