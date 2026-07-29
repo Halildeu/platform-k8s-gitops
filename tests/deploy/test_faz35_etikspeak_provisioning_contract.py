@@ -108,6 +108,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.service_config = (
             ROOT / "kustomize/base/apps/etik-speak/ethics-service-config.yaml"
         ).read_text()
+        cls.evidence_worker_config = (
+            ROOT / "kustomize/base/apps/etik-speak/evidence-worker-config.yaml"
+        ).read_text()
         cls.ethics_deployment = (
             ROOT / "kustomize/base/apps/etik-speak/ethics-service-deployment.yaml"
         ).read_text()
@@ -1959,6 +1962,38 @@ spec:
             self.activation_runbook,
         )
         self.assertIn("NO_CORRELATION_ACCEPTED=true", self.activation_runbook)
+
+    def test_recorded_scanner_identity_is_the_scanner_that_actually_runs(self):
+        """The provenance digest and the deployed ClamAV image must be the same value.
+
+        `ETHICS_EVIDENCE_PARSER_DIGEST` is what every scanned attachment records as the
+        thing that scanned it. The overlay separately pins the ClamAV image. Today the two
+        strings match, but only because someone typed them that way — nothing kept them
+        matching.
+
+        That gap fails in the direction you least want. Updating the scanner is the
+        *correct* operational move; when someone bumps the image digest for a security
+        release, this config keeps the old value and every attachment scanned afterwards
+        records a scanner version that never touched it. The custody chain would read as
+        intact and be wrong, which is worse than an obvious break.
+        """
+        recorded = re.search(
+            r'ETHICS_EVIDENCE_PARSER_DIGEST:\s*"(sha256:[0-9a-f]{64})"', self.evidence_worker_config
+        )
+        self.assertIsNotNone(recorded, "worker config carries no parser digest")
+
+        deployed = re.search(
+            r"docker\.io/clamav/clamav\s*\n\s*digest:\s*(sha256:[0-9a-f]{64})",
+            self.activation_kustomization,
+        )
+        self.assertIsNotNone(deployed, "overlay pins no clamav image digest")
+
+        self.assertEqual(
+            recorded.group(1),
+            deployed.group(1),
+            "kanit kokenine yazilan tarayici digest'i, dagitilan clamav imajiyla ayni degil; "
+            "tarayici guncellenirken bu deger de tasinmali",
+        )
 
     def test_manager_ui_is_isolated_at_the_exact_test_path(self):
         self.assertIn("name: etik-speak-manager-ui", self.manager_ui_ingress)
