@@ -37,6 +37,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -44,8 +45,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  activation_head:
+    name: Resolve immutable protected activation head
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 5
+    outputs:
+      activation_head_sha: ${{ steps.activation.outputs.activation_head_sha }}
+    steps:
+      - name: Checkout dispatch verifier revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve successful protected activation head
+        id: activation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ACTIVATION_RUN_ID" | grep -Eq '^[1-9][0-9]{5,19}$'
+          [ "$ACTIVATION_RUN_ID" -lt "$GITHUB_RUN_ID" ] || {
+            echo "::error::activation run must predate the evidence run"
+            exit 1
+          }
+
+          source scripts/faz22-remote-ops/lib-github-read-api.sh
+          github_read_api_preflight
+          out="$RUNNER_TEMP/faz22-viewer-activation-head"
+          mkdir -p "$out"
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" \
+            > "$out/run.json"
+          activation_head_sha="$(jq -er '
+            select(
+              .status == "completed"
+              and .conclusion == "success"
+              and .event == "workflow_dispatch"
+              and .head_branch == "main"
+              and .name == "Apply #2373 VIEW_ONLY viewer product pilot surface"
+              and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
+            )
+            | .head_sha
+            | select(test("^[a-f0-9]{40}$"))
+          ' "$out/run.json")"
+
+          git cat-file -e "${activation_head_sha}^{commit}"
+          git merge-base --is-ancestor "$activation_head_sha" "$GITHUB_SHA" || {
+            echo "::error::activation head is not an ancestor of the evidence main head"
+            exit 1
+          }
+
+          github_read_api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
+            > "$out/artifacts.json"
+          expected="faz22-view-only-pilot-protected-authorization-$ACTIVATION_RUN_ID"
+          jq -e --arg name "$expected" '
+            [.artifacts[] | select(.name == $name and .expired == false)] | length == 1
+          ' "$out/artifacts.json" >/dev/null
+
+          printf 'activation_head_sha=%s\n' "$activation_head_sha" >> "$GITHUB_OUTPUT"
+
   target-preflight:
     name: Verify attended endpoint target before approval
+    needs: activation_head
     runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 5
     steps:
@@ -68,6 +131,8 @@ jobs:
 
       - name: Checkout target verifier revision
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.activation_head.outputs.activation_head_sha }}
 
       - name: Verify least-privilege VIEW_ONLY audit DB role before approval
         run: bash scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh check
@@ -82,7 +147,7 @@ jobs:
 
   product-auth-preflight:
     name: Verify product PKCE login and viewer route before approval
-    needs: target-preflight
+    needs: [activation_head, target-preflight]
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 15
@@ -90,6 +155,8 @@ jobs:
     steps:
       - name: Checkout evidence producer revision
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.activation_head.outputs.activation_head_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -113,7 +180,7 @@ jobs:
           DEVICE_ID: ${{ inputs.device_id }}
           SESSION_ID: rb-auth-route-preflight-${{ github.run_id }}
           OPERATION_ID: auth-route-${{ github.run_id }}
-          SOURCE_REVISION: ${{ github.sha }}
+          SOURCE_REVISION: ${{ needs.activation_head.outputs.activation_head_sha }}
           BROWSER_EVIDENCE_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs
           BROWSER_DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/browser-diagnostic.json
           PLAYWRIGHT_PACKAGE_ROOT: ${{ runner.temp }}/faz22-viewer-preflight-playwright
@@ -143,7 +210,7 @@ jobs:
 
   browser-evidence:
     name: Attended testai browser render and ACK evidence
-    needs: [target-preflight, product-auth-preflight]
+    needs: [activation_head, target-preflight, product-auth-preflight]
     if: ${{ !inputs.preflight_only }}
     runs-on: [self-hosted, aiserver, testai-deploy]
     timeout-minutes: 45
@@ -185,6 +252,8 @@ jobs:
 
       - name: Checkout evidence producer revision
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.activation_head.outputs.activation_head_sha }}
 
       - name: Re-verify live target after protected approval
         env:
@@ -201,6 +270,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
+          ACTIVATION_HEAD_SHA: ${{ needs.activation_head.outputs.activation_head_sha }}
         run: |
           set -euo pipefail
           # Minimal protected runners do not carry gh. The shared helper uses
@@ -211,7 +281,7 @@ jobs:
           out="$RUNNER_TEMP/faz22-viewer-activation"
           mkdir -p "$out"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
-          jq -e --arg sha "$GITHUB_SHA" '
+          jq -e --arg sha "$ACTIVATION_HEAD_SHA" '
             .status == "completed"
             and .conclusion == "success"
             and .event == "workflow_dispatch"
@@ -242,7 +312,7 @@ jobs:
             --policy config/faz22-6-view-only-pilot-owner-policy.v1.json \
             --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
             --expected-run-id "$ACTIVATION_RUN_ID" \
-            --expected-head-sha "$GITHUB_SHA"
+            --expected-head-sha "$ACTIVATION_HEAD_SHA"
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -294,7 +364,7 @@ jobs:
           PILOT_SECONDS: ${{ inputs.pilot_seconds }}
           PRODUCT_PILOT_SECONDS: ${{ inputs.pilot_seconds }}
           CONSENT_WAIT_SECONDS: "240"
-          SOURCE_REVISION: ${{ github.sha }}
+          SOURCE_REVISION: ${{ needs.activation_head.outputs.activation_head_sha }}
           BROWSER_EVIDENCE_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs
           BROWSER_DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/faz22-viewer-browser-collector/browser-diagnostic.json
           PLAYWRIGHT_PACKAGE_ROOT: ${{ runner.temp }}/faz22-viewer-playwright
@@ -466,7 +536,7 @@ jobs:
         if: ${{ always() }}
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
-          SOURCE_REVISION: ${{ github.sha }}
+          SOURCE_REVISION: ${{ needs.activation_head.outputs.activation_head_sha }}
         run: |
           set -euo pipefail
           diagnostic_dir="$RUNNER_TEMP/faz22-viewer-collector-diagnostic"
