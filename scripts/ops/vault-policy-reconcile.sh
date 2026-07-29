@@ -41,6 +41,7 @@ POLICIES=(
   "common/eso-runtime.hcl|eso-runtime"
   "common/bootstrap-writer.hcl|platform-bootstrap-writer"
   "test/eso-runtime-extras.hcl|eso-runtime-test-extras"
+  "test/meeting-analysis-capability-writer.hcl|meeting-analysis-capability-writer-test"
   "test/audio-gateway-mtls-seeder.hcl|audio-gateway-mtls-seeder"
   "test/cross-ai-issuer-anthropic.hcl|cross-ai-issuer-anthropic-test"
   "test/cross-ai-issuer-openai.hcl|cross-ai-issuer-openai-test"
@@ -89,7 +90,7 @@ lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
 # ── Manifest: AppRole NAME | token_policies (csv) | extra `vault write` kv args ─
 APPROLES=(
   "eso-runtime|eso-runtime,eso-runtime-test-extras|token_ttl=1h token_max_ttl=24h secret_id_ttl=0"
-  "platform-bootstrap-writer-test|platform-bootstrap-writer|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
+  "platform-bootstrap-writer-test|platform-bootstrap-writer,meeting-analysis-capability-writer-test|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
   "audio-gateway-mtls-seeder-test|audio-gateway-mtls-seeder|token_ttl=15m token_max_ttl=15m token_num_uses=0 secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true"
   # Issuer/coordinator AppRole definitions are intentionally owner-managed.
   # This routine reconciler applies their sign-only ACL policies but cannot

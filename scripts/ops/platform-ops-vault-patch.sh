@@ -24,6 +24,7 @@
 #                               report-service, budget-service, schema-service,
 #                               permission-service,
 #                               cross-ai-deployment-protection-test, openfga,
+#                               meeting-analysis-capability,
 #                               ghcr-token
 #                               (ghcr-token uses kv/data/gitops/ghcr-token).
 #   --field key=value           Set a single key-value (value visible in argv;
@@ -115,7 +116,7 @@ fi
 case "$SERVICE" in
   auth-service|user-service|variant-service|core-data-service|\
   report-service|budget-service|schema-service|permission-service|\
-  cross-ai-deployment-protection-test|openfga)
+  cross-ai-deployment-protection-test|meeting-analysis-capability|openfga)
     KV_PATH="kv/data/platform/$SERVICE"
     ;;
   ghcr-token)
@@ -148,6 +149,19 @@ if [[ "$SERVICE" == "cross-ai-deployment-protection-test" ]]; then
   fi
   if [[ "$WEBHOOK_OPERATION" -ne 1 && "$PEM_OPERATION" -ne 1 ]]; then
     echo "ERROR: $SERVICE accepts only github_webhook_secret_current from stdin or github_app_private_key_pem from file" >&2
+    exit 2
+  fi
+fi
+
+# The Faz 24 shared capability path accepts one exact base64 secret via stdin.
+# This keeps the sensitive value out of argv/history and prevents the generic
+# KV writer from adding unrelated fields to the dedicated trust-root path.
+if [[ "$SERVICE" == "meeting-analysis-capability" ]]; then
+  if [[ "${#FIELDS[@]}" -ne 0 \
+        || "${#STDIN_KEYS[@]}" -ne 1 \
+        || "${STDIN_KEYS[0]:-}" != "hmac_secret_base64" \
+        || "${#FILE_SPECS[@]}" -ne 0 ]]; then
+    echo "ERROR: $SERVICE accepts only hmac_secret_base64 from stdin" >&2
     exit 2
   fi
 fi

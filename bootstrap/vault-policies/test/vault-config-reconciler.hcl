@@ -54,6 +54,10 @@ path "sys/policies/acl/eso-runtime-test-extras" {
   capabilities = ["create", "update", "read"]
 }
 
+path "sys/policies/acl/meeting-analysis-capability-writer-test" {
+  capabilities = ["create", "update", "read"]
+}
+
 path "sys/policies/acl/platform-bootstrap-writer" {
   capabilities = ["create", "update", "read"]
 }

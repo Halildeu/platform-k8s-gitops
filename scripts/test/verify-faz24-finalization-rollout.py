@@ -227,6 +227,9 @@ def reject_prod_leakage(
         "transcript meeting client secret Vault property": (
             "service_client_transcript_service_secret"
         ),
+        "analysis capability HMAC env": "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
+        "analysis capability Vault path": "meeting-analysis-capability",
+        "analysis capability Vault property": "hmac_secret_base64",
         "meeting rollout marker": "platform.acik.com/faz24-meeting-ai-base-url-rev",
         "transcript rollout marker": "transcript-service.acik.com/direct-stt-result-consumer-rev",
         "meeting test digest": "sha256:03378764b00ba1a08fd73fd18ddb3ed3bd7c2ecfaeb8903a9050c0830d6fd4a2",
@@ -305,6 +308,18 @@ def main() -> None:
         "kv/platform/auth-service",
         "service_client_transcript_service_secret",
     )
+    external_secret_binding(
+        meeting_eso,
+        "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
+        "kv/platform/meeting-analysis-capability",
+        "hmac_secret_base64",
+    )
+    external_secret_binding(
+        transcript_eso,
+        "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
+        "kv/platform/meeting-analysis-capability",
+        "hmac_secret_base64",
+    )
 
     meeting_deploy = resource(workload_docs, "Deployment", "meeting-service")
     auth_deploy = resource(workload_docs, "Deployment", "auth-service")
@@ -325,6 +340,16 @@ def main() -> None:
     zero_downtime_rollout(auth_deploy, "auth-service")
     zero_downtime_rollout(meeting_deploy, "meeting-service")
     zero_downtime_rollout(transcript_deploy, "transcript-service")
+    pod_annotation(
+        meeting_deploy,
+        "meeting-service.acik.com/analysis-capability-rev",
+        "2026-07-29-3144-v1",
+    )
+    pod_annotation(
+        transcript_deploy,
+        "transcript-service.acik.com/analysis-capability-rev",
+        "2026-07-29-3144-v1",
+    )
     sync_wave(auth_deploy, "10")
     sync_wave(meeting_deploy, "19")
     sync_wave(transcript_deploy, "20")
@@ -337,6 +362,13 @@ def main() -> None:
         "MEETING_REDIS_PASSWORD",
         "meeting-service-secrets",
         "MEETING_REDIS_PASSWORD",
+    )
+    required_secret_env(
+        meeting_deploy,
+        "meeting-service",
+        "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
+        "meeting-service-secrets",
+        "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
     )
     required_secret_env(
         auth_deploy,
@@ -358,6 +390,13 @@ def main() -> None:
         "TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET",
         "transcript-service-secrets",
         "TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET",
+    )
+    required_secret_env(
+        transcript_deploy,
+        "transcript-service",
+        "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
+        "transcript-service-secrets",
+        "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
     )
 
     meeting_config = resource(workload_docs, "ConfigMap", "meeting-service-config")

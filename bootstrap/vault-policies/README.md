@@ -15,7 +15,9 @@ bootstrap/vault-policies/
 ├── prod/
 │   └── eso-runtime-extras.hcl       # Prod Vault'a özel ek path/capability
 └── test/
-    └── eso-runtime-extras.hcl       # Test Vault'a özel ek path/capability
+    ├── eso-runtime-extras.hcl       # Test Vault'a özel ek path/capability
+    └── meeting-analysis-capability-writer.hcl
+                                      # Faz 24 shared capability seed, TEST-only
 ```
 
 ## 2. Policy Listesi
@@ -24,7 +26,8 @@ bootstrap/vault-policies/
 |---|---|---|---|
 | `eso-runtime` | `common/` | ESO ExternalSecret read (kv/platform/* + kv/gitops/* + smoke-client) | Hem prod hem test Vault |
 | `eso-runtime-prod-extras` | `prod/` | Prod-only ek paths (sys/audit read, forward-extension) | SADECE prod Vault |
-| `eso-runtime-test-extras` | `test/` | Test-only ek paths (token self-lookup debug, forward-extension) | SADECE test Vault |
+| `eso-runtime-test-extras` | `test/` | Test-only ek paths (Faz 24 analysis capability read + token self-lookup) | SADECE test Vault |
+| `meeting-analysis-capability-writer-test` | `test/` | Faz 24 shared analysis capability trust-root create/update/read; property boundary wrapper'da | SADECE test Vault |
 
 ## 3. Apply (Prod Vault)
 
@@ -59,6 +62,8 @@ vault login <test-root-token>
 
 vault policy write eso-runtime bootstrap/vault-policies/common/eso-runtime.hcl
 vault policy write eso-runtime-test-extras bootstrap/vault-policies/test/eso-runtime-extras.hcl
+vault policy write meeting-analysis-capability-writer-test \
+  bootstrap/vault-policies/test/meeting-analysis-capability-writer.hcl
 
 vault auth enable approle 2>/dev/null || true
 vault write auth/approle/role/eso-runtime \
@@ -66,6 +71,16 @@ vault write auth/approle/role/eso-runtime \
   token_ttl=1h \
   token_max_ttl=24h \
   secret_id_ttl=0
+
+# platform-bootstrap-writer-test receives the common writer policy plus the
+# TEST-only Faz 24 path. Production writer roles do not receive this policy.
+vault write auth/approle/role/platform-bootstrap-writer-test \
+  token_policies="platform-bootstrap-writer,meeting-analysis-capability-writer-test" \
+  token_ttl=30m \
+  token_max_ttl=60m \
+  secret_id_ttl=60m \
+  secret_id_num_uses=10 \
+  bind_secret_id=true
 ```
 
 ## 5. Apply Pattern (common policy her iki Vault'ta aynı)

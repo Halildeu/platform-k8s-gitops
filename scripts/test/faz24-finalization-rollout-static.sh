@@ -40,6 +40,7 @@ python3 "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
 python3 "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   "${ROOT}/docs/faz-24-evidence/2026-07-18-finalization-source-ci.json"
 python3 -m unittest \
+  tests.faz24.test_analysis_capability_secret_contract \
   tests.faz24.test_finalization_evidence_verifiers \
   tests.faz24.test_transcript_ready_pre_enable_gate \
   tests.faz24.test_transcript_ready_permit_bootstrap \
