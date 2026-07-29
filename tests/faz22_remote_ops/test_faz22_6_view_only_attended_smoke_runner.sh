@@ -31,10 +31,11 @@ trap 'rm -rf "$TMP"' EXIT
 diagnostic_source='70d8286163651805cd5ebd537d3836d02fb1692d'
 cat > "$TMP/strict-browser-diagnostic.json" <<JSON
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v4",
   "sourceRevision": "$diagnostic_source",
   "failureCode": "browser-binding-invalid",
   "ackTelemetry": null,
+  "consoleTelemetry": null,
   "replayHttpStatus": null
 }
 JSON
@@ -77,6 +78,37 @@ if bash "$BROWSER_DIAGNOSTIC_READER" \
   exit 1
 fi
 grep -Fxq 'browser-diagnostic-schema-mismatch' "$TMP/old-schema.err"
+
+cat > "$TMP/strict-browser-console-diagnostic.json" <<JSON
+{
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v4",
+  "sourceRevision": "$diagnostic_source",
+  "failureCode": "browser-console-error",
+  "ackTelemetry": null,
+  "consoleTelemetry": {
+    "count": 1,
+    "entries": [{
+      "category": "http-4xx",
+      "kind": "console-error",
+      "locationClass": "viewer-api",
+      "locationSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "messageSha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }],
+    "truncatedCount": 0
+  },
+  "replayHttpStatus": null
+}
+JSON
+[[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
+  "$TMP/strict-browser-console-diagnostic.json" "$diagnostic_source")" == "browser-console-error" ]]
+
+jq '.consoleTelemetry.count = 2' "$TMP/strict-browser-console-diagnostic.json" \
+  > "$TMP/strict-browser-console-diagnostic-invalid.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-console-diagnostic-invalid.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted inconsistent console telemetry" >&2
+  exit 1
+fi
 
 jq '.failureCode = "browser-not-allowlisted"' "$TMP/strict-browser-diagnostic.json" \
   > "$TMP/strict-browser-diagnostic-unknown.json"
@@ -175,7 +207,7 @@ if grep -Fq -- '--argjson operation "$operation"' <<<"$browser_workflow_text"; t
   echo "browser collector diagnostic must not expose raw operation response in process arguments" >&2
   exit 1
 fi
-grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v5' "$DIAGNOSTIC_SCRIPT"
+grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v6' "$DIAGNOSTIC_SCRIPT"
 grep -q 'failureReasonCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'browserFailureCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'openSessionHttp' "$DIAGNOSTIC_SCRIPT"

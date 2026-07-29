@@ -19,6 +19,7 @@ const MAX_PILOT_SECONDS = 1800;
 const ACK_DRAIN_TIMEOUT_MILLIS = 10_000;
 const ACK_DRAIN_POLL_MILLIS = 100;
 const MAX_ACK_PENDING = 1_000;
+const MAX_CONSOLE_DIAGNOSTIC_ENTRIES = 16;
 const MASK_BASIS_POINTS = 10_000;
 const VIEWER_INPUT_CONTROL_SELECTOR = [
   'input',
@@ -344,6 +345,71 @@ function sha256(value) {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
+function classifyConsoleLocation(rawUrl) {
+  if (!rawUrl) return 'unknown';
+  try {
+    const url = new URL(rawUrl);
+    if (url.origin !== VIEWER_ORIGIN) return 'external';
+    if (/^\/api\/v1\/endpoint-admin\/remote-access\/sessions\/[^/]+\/view$/.test(url.pathname)) {
+      return 'viewer-api';
+    }
+    if (url.pathname.startsWith('/api/v1/endpoint-admin/')) return 'endpoint-admin-api';
+    if (url.pathname.startsWith('/api/')) return 'product-api';
+    if (url.pathname.startsWith('/assets/') || /\.[A-Za-z0-9]{1,8}$/.test(url.pathname)) {
+      return 'static-asset';
+    }
+    if (url.pathname.startsWith('/endpoint-admin/')) return 'endpoint-admin-page';
+    if (url.pathname.startsWith('/login') || url.pathname.startsWith('/auth')) return 'authentication';
+    return 'product-page';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function classifyConsoleMessage(text, kind) {
+  if (kind === 'page-error') return 'page-error';
+  const statusMatch = text.match(/\bstatus(?:\s+code)?(?:\s+of|:)?\s*([1-5][0-9]{2})\b/i);
+  if (statusMatch) return `http-${statusMatch[1][0]}xx`;
+  if (/failed to load resource|networkerror|err_[a-z_]+/i.test(text)) return 'network-error';
+  return 'application-error';
+}
+
+export function buildConsoleDiagnosticEntry({
+  kind,
+  text,
+  url = '',
+  lineNumber = null,
+  columnNumber = null,
+}) {
+  const normalizedKind = kind === 'page-error' ? 'page-error' : 'console-error';
+  const normalizedText = typeof text === 'string' ? text.slice(0, 4096) : '';
+  const boundedLine = boundedNonNegativeInteger(lineNumber, 10_000_000);
+  const boundedColumn = boundedNonNegativeInteger(columnNumber, 10_000_000);
+  return {
+    category: classifyConsoleMessage(normalizedText, normalizedKind),
+    kind: normalizedKind,
+    locationClass: classifyConsoleLocation(typeof url === 'string' ? url : ''),
+    locationSha256: sha256(
+      JSON.stringify({
+        url: typeof url === 'string' ? url.slice(0, 4096) : '',
+        lineNumber: boundedLine,
+        columnNumber: boundedColumn,
+      }),
+    ),
+    messageSha256: sha256(normalizedText),
+  };
+}
+
+function consoleDiagnostic(entries, totalCount) {
+  const boundedTotal = boundedNonNegativeInteger(totalCount);
+  if (boundedTotal === null || boundedTotal < entries.length) return null;
+  return {
+    count: boundedTotal,
+    entries,
+    truncatedCount: boundedTotal - entries.length,
+  };
+}
+
 function utcSeconds(date = new Date()) {
   return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
@@ -491,13 +557,33 @@ async function main() {
       browser.newContext({ viewport: { width: 1440, height: 900 } }),
     );
     let consoleErrorCount = 0;
+    const consoleDiagnosticEntries = [];
     let viewerApiStatus = null;
     const page = await evidenceStep('browser-runtime-start-failed', async () => context.newPage());
     page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrorCount += 1;
-    });
-    page.on('pageerror', () => {
+      if (message.type() !== 'error') return;
       consoleErrorCount += 1;
+      if (consoleDiagnosticEntries.length >= MAX_CONSOLE_DIAGNOSTIC_ENTRIES) return;
+      const location = message.location();
+      consoleDiagnosticEntries.push(
+        buildConsoleDiagnosticEntry({
+          kind: 'console-error',
+          text: message.text(),
+          url: location.url,
+          lineNumber: location.lineNumber,
+          columnNumber: location.columnNumber,
+        }),
+      );
+    });
+    page.on('pageerror', (error) => {
+      consoleErrorCount += 1;
+      if (consoleDiagnosticEntries.length >= MAX_CONSOLE_DIAGNOSTIC_ENTRIES) return;
+      consoleDiagnosticEntries.push(
+        buildConsoleDiagnosticEntry({
+          kind: 'page-error',
+          text: error instanceof Error ? `${error.name}:${error.message}` : String(error),
+        }),
+      );
     });
     page.on('response', (response) => {
       const responseUrl = new URL(response.url());
@@ -586,6 +672,7 @@ async function main() {
           browserAuthSessionPresent: browserAuthReady,
           viewerApiStatus,
           consoleErrorCount,
+          consoleTelemetry: consoleDiagnostic(consoleDiagnosticEntries, consoleErrorCount),
           viewerUrlSha256: sha256(viewerUrl),
         },
       };
@@ -915,7 +1002,12 @@ async function main() {
         },
       },
     };
-    if (consoleErrorCount !== 0) throw evidenceFailure('browser-console-error');
+    if (consoleErrorCount !== 0) {
+      throw evidenceFailure(
+        'browser-console-error',
+        consoleDiagnostic(consoleDiagnosticEntries, consoleErrorCount),
+      );
+    }
     await evidenceStep('browser-evidence-write-failed', async () =>
       writeFile(output, `${JSON.stringify(child, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 }),
     );
@@ -934,17 +1026,20 @@ async function writeFailureDiagnostic(code, error) {
   const rawDiagnostic =
     error instanceof BrowserEvidenceError && error.diagnostic !== null ? error.diagnostic : null;
   const isReplayDiagnostic = code === 'browser-replay-not-rejected';
+  const isConsoleDiagnostic = code === 'browser-console-error';
   const replayHttpStatus =
     isReplayDiagnostic && rawDiagnostic && Number.isSafeInteger(rawDiagnostic.replayHttpStatus)
       && rawDiagnostic.replayHttpStatus >= 100 && rawDiagnostic.replayHttpStatus <= 599
       ? rawDiagnostic.replayHttpStatus
       : null;
-  const ackTelemetry = isReplayDiagnostic ? null : rawDiagnostic;
+  const ackTelemetry = isReplayDiagnostic || isConsoleDiagnostic ? null : rawDiagnostic;
+  const consoleTelemetry = isConsoleDiagnostic ? rawDiagnostic : null;
   const diagnostic = {
-    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v3',
+    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v4',
     sourceRevision: GIT_SHA.test(sourceRevision) ? sourceRevision : null,
     failureCode: code,
     ackTelemetry,
+    consoleTelemetry,
     replayHttpStatus,
   };
   await writeFile(output, `${JSON.stringify(diagnostic, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
