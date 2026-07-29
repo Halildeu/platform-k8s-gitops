@@ -25,11 +25,12 @@ Bu kanıt read helper'ın canlı yolculuğuna aittir. `graph-mail-send.sh` aynı
 fail-closed AppRole sözleşmesini paylaşır ve statik/shell testleri geçmiştir;
 bu değişikliği doğrulamak için mail gönderilmedi, dolayısıyla send helper'ın
 yeni auth bloğuyla gerçek Graph `202` ve Sent Items read-back'i bu turda
-`unverified` kalır. Source branch/PR ve ana otomasyon çalışma ağacına güvenli
-taşıma ayrıca doğrulanacaktır. Mevcut `aiadmin` geniş `NOPASSWD: ALL` sudo
-yetkisi host hesabını root eşdeğerinden ayırmadığı için R17 bütünüyle
-mitigated değildir; değişiklik routine helper root-token tüketimini ve
-yanlışlıkla geniş credential kullanımını daraltır.
+`unverified` kalır. Source PR `#3172` main'e `c4f1eb3b` olarak merge edildi;
+ana otomasyon çalışma ağacındaki mevcut full-body davranışı korunarak read
+helper aynı AppRole yolunda tekrar geçti. Mevcut `aiadmin` geniş
+`NOPASSWD: ALL` sudo yetkisi host hesabını root eşdeğerinden ayırmadığı için
+R17 bütünüyle mitigated değildir; değişiklik routine helper root-token
+tüketimini ve yanlışlıkla geniş credential kullanımını daraltır.
 
 ## Live Delta — Faz 24 durable compute-audit evidence and TEST image pin (2026-07-29)
 
