@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Desired-State Delta — Faz 24 TEST direct-STT fallback latency (2026-07-29, live read-back pending)
+## Desired-State Delta — Faz 24 TEST direct-STT fallback latency and projection handling (2026-07-29, live read-back pending)
 
 Issue `#2610` altındaki TEST-only öneri, audio-gateway Direct-STT HTTP fallback
 cevap süresini `12000ms` değerinden bounded backend varsayılanı olan `30000ms`
@@ -33,6 +33,29 @@ yeniden bump etmektir.
 Bu blok source-reviewed desired-state'i kaydeder. ArgoCD revision, pod env,
 imageID, yeni PCM16 success/result-stream, canonical persistence ve attended
 capture→stop→reopen kanıtları alınmadan live/runtime acceptance söylenmez.
+
+Timeout sonrası gerçek PCM16 smoke ikinci bir source contract kusurunu açığa
+çıkardı: audio-gateway aynı result stream'e ham `DRAFT` ve cümle birleştirilmiş
+`UTTERANCE` kayıtlarını yazıyor; transcript-service ise daha önce her
+non-`DRAFT` status'ü poison sayıyordu. Bu nedenle ham `DRAFT` canonical
+persistence girdisi olmasına rağmen desteklenen `UTTERANCE` projection'ı
+metadata-only DLQ'yu `status must be DRAFT` ile büyütüyordu.
+
+Backend PR `platform-backend#995`, `DRAFT` yolunu değiştirmeden yalnız exact
+desteklenen schema/event/status `UTTERANCE` projection'ını ACK+ignore eder.
+Bilinmeyen schema, event type veya status metadata-only DLQ'ya fail-closed
+gitmeye devam eder. Reviewed source head
+`2c3f1fdd2f4cf58682e2468bc01b184227fd62e0`, 23 focused test, 211-test full
+transcript-service suite ve tüm PR CI lane'lerini geçtikten sonra
+`7dacfb2d42e3be50b452b69f29cd879844e2a55a` olarak squash merge edildi.
+
+Image build run `30410463016`, transcript job `90445150736`,
+`ghcr.io/halildeu/platform-backend-transcript-service:sha-7dacfb2` artifact'ini
+`sha256:5fa1f15b532108d2ba70e238d0331be9b19eff65205b0f571ab2038d1bafad0d`
+immutable digest'iyle üretti ve attestation yazdı. GHCR manifest çözümlemesi
+aynı digest'i döndürdü. TEST overlay önerisi bu digest'i pinler ve yalnız
+transcript-service pod-template revision'ını bump eder; production render
+değişmez.
 
 ## Live Delta — Budget actuals TEST customer journey accepted (2026-07-28)
 

@@ -383,8 +383,14 @@ images:
     # retry CASE branches as TIMESTAMPTZ, preventing PostgreSQL 42804 from
     # wedging canonical Direct-STT session-association retries. Image build
     # run 30008690343 produced the immutable digest below.
+    # 2026-07-29 projection repair: gitops issue #2610, platform-backend issue
+    # #994 and PR #995. The backend preserves DRAFT canonical persistence while
+    # ACK+ignoring the gateway's supported non-canonical UTTERANCE projection.
+    # Unknown schema/event/status values remain fail-closed on the metadata-only
+    # DLQ. Source merge 7dacfb2d42e3; image run 30410463016, transcript job
+    # 90445150736.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:a6a7dc01268055ca50ecf5296c955fe72d5ff18350e1fad883a90f131373d019
+    digest: sha256:5fa1f15b532108d2ba70e238d0331be9b19eff65205b0f571ab2038d1bafad0d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -6804,10 +6810,10 @@ patches:
         template:
           metadata:
             annotations:
-              # v4: resolver + durable recording-finished finalization rollout
-              # (gitops#2610). ConfigMap/Secret envFrom ile otomatik pickup
-              # ETMEZ; bu damga exact pod-template rollout'unu tetikler.
-              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-29-2610-v4-finalization"
+              # v5: non-canonical UTTERANCE ACK+ignore projection repair
+              # (backend#994, gitops#2610). ConfigMap/Secret envFrom ve image
+              # pin degisimi icin exact pod-template rollout receipt'i.
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-29-2610-v5-utterance-projection"
           spec:
             containers:
               - name: transcript-service
