@@ -234,6 +234,50 @@ def test_redis_stream_records_keeps_kube_exec_partial_successes():
     assert "audit:events:command-exit-124" in errors[0]
 
 
+def test_wait_for_direct_stt_records_polls_until_matching_result_and_audit():
+    collector = _load_collector()
+    now = [0.0]
+    fetch_count = [0]
+
+    def fetch_records():
+        fetch_count[0] += 1
+        if fetch_count[0] == 1:
+            return {
+                collector.EXPECTED_RESULT_STREAM: [],
+                collector.EXPECTED_AUDIT_STREAM: [],
+            }, []
+        fields = {
+            "sessionId": "SES-test",
+            "chunkSeq": "0",
+            "correlationId": "faz24-test",
+        }
+        return {
+            collector.EXPECTED_RESULT_STREAM: [
+                ("1-0", {**fields, "eventType": collector.EXPECTED_RESULT_EVENT})
+            ],
+            collector.EXPECTED_AUDIT_STREAM: [
+                ("2-0", {**fields, "eventType": collector.EXPECTED_AUDIT_EVENT})
+            ],
+        }, []
+
+    records, errors = collector.wait_for_direct_stt_records(
+        fetch_records,
+        session_id="SES-test",
+        chunk_seq=0,
+        correlation_id="faz24-test",
+        timeout_seconds=60,
+        poll_interval_seconds=2,
+        monotonic=lambda: now[0],
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    assert errors == []
+    assert fetch_count[0] == 2
+    assert now[0] == 2
+    assert records[collector.EXPECTED_RESULT_STREAM][0][0] == "1-0"
+    assert records[collector.EXPECTED_AUDIT_STREAM][0][0] == "2-0"
+
+
 def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -246,7 +290,9 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
     assert "Prepare privacy-safe smoke chunk fixture" in workflow
     assert "CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}" in workflow
-    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"' in workflow
+    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"' in workflow
+    assert 'test "${AUDIO_FORMAT_INPUT}" = "PCM16"' in workflow
+    assert 'default: "16000"' in workflow
     assert "contains no human speech" in workflow
     assert "chunk_fixture_source=${fixture_source}" in workflow
     assert "CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}" in workflow
