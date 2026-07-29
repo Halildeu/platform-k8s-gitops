@@ -43,7 +43,7 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:4b5fa0ae6dea67905911171972bf37439cbbf52cadd72eb5a59b96fb8f6bb43b
+    digest: sha256:90ca084bfe62658f577575aea6459061539ad2ce156a7fdb1f2386c0e2e6c455
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
