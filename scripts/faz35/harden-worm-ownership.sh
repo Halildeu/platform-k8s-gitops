@@ -263,6 +263,20 @@ printf '%s\n' "$migrator_password" | docker exec -i "$PG_CONTAINER" sh -c '
 '
 unset migrator_password existing_password
 
+# 2b. Connect-level rights, granted here rather than with the ownership transfer.
+#     Flyway starts using this role the moment the secret syncs — which happens before
+#     the transfer, by design — and a role that cannot CONNECT fails the pod at boot.
+#     Measured the hard way: the first run of this script left the role unable to reach
+#     the database at all ("User does not have CONNECT privilege"), which would have
+#     surfaced as an outage rather than as a message.
+docker exec -i "$PG_CONTAINER" psql -U postgres -d "$DB_NAME" -v ON_ERROR_STOP=1 >/dev/null <<SQL
+GRANT CONNECT, TEMPORARY ON DATABASE $DB_NAME TO $MIGRATOR_ROLE;
+GRANT USAGE ON SCHEMA $DB_SCHEMA TO $MIGRATOR_ROLE;
+-- Flyway reads and appends its own history on every boot, ownership or not.
+GRANT SELECT, INSERT, UPDATE, DELETE ON $DB_SCHEMA.ethics_flyway_history TO $MIGRATOR_ROLE;
+SQL
+echo "  baglanti yetkileri verildi (CONNECT + USAGE + flyway gecmisi)"
+
 # 3. Ownership transfer is refused until the deployment can actually run Flyway as the
 #    new role. Moving ownership first would leave the next pending migration unable to
 #    alter the ledger, and the failure would surface as a service that will not boot —
@@ -280,7 +294,6 @@ fi
 #    rights over as explicit ones, so the runtime role must already hold what it needs or
 #    it loses access the moment ownership moves.
 docker exec -i "$PG_CONTAINER" psql -U postgres -d "$DB_NAME" -v ON_ERROR_STOP=1 >/dev/null <<SQL
-GRANT CONNECT, TEMPORARY ON DATABASE $DB_NAME TO $MIGRATOR_ROLE;
 GRANT USAGE ON SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
