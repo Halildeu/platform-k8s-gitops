@@ -37,6 +37,15 @@ salt-okunur DB read-back'i timestamp, entry hash ve prev hash alanlarının
 `SHA-256`/sürüm `1` ile mevcut olduğunu gösterdi. Collector bu nedenle yalnız
 satır varlığını değil, enrichment metadata'sının tamamını poll eder.
 
+İkinci run `30418200292`, exact merge
+`2b17f69c51aa3046f48beeb5fb97bdd90f7e3b93` üzerinde aynı 41-karakter
+transcript hash'ini ve yeni bir durable compute-audit satırını üretti. DB
+read-back yine timestamp/hash zincirinin mevcut olduğunu gösterdi; collector
+ise PostgreSQL'in `boolean::text` çıktısı olan `true` değerini yalnız kısa `t`
+biçimiyle karşılaştırdığı için timeout'a kadar fail-closed kaldı. Parser
+`t/true/1` ile `f/false/0` biçimlerini canonical `t/f` değerlerine normalize
+eder; tanınmayan boolean biçimi kabul edilmez.
+
 Bu blok desired-state'i kaydeder. ArgoCD exact merge revision ile
 `Synced/Healthy`, audio-gateway `imageID` exact digest, ExternalSecret
 `Ready=True`, gerçek Türkçe PCM16 run sonucu ve aynı session/chunk/correlation

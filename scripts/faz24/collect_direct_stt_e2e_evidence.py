@@ -933,7 +933,16 @@ def durable_audit_record_via_postgres(
         "entryHashAlgorithm",
         "entryHashVersion",
     )
-    return dict(zip(keys, fields, strict=True)), None
+    record = dict(zip(keys, fields, strict=True))
+    for key in ("eventTimestampPresent", "entryHashPresent", "prevHashPresent"):
+        value = record[key].strip().lower()
+        if value in {"t", "true", "1"}:
+            record[key] = "t"
+        elif value in {"f", "false", "0"}:
+            record[key] = "f"
+        else:
+            return None, f"audit-db-query:invalid-boolean-{key}"
+    return record, None
 
 
 def wait_for_durable_audit_record(

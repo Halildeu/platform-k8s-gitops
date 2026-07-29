@@ -289,9 +289,9 @@ def test_durable_audit_record_via_postgres_returns_metadata_only_projection():
                     "SES-test",
                     "0",
                     "faz24-test",
-                    "t",
-                    "t",
-                    "t",
+                    "true",
+                    "true",
+                    "true",
                     "SHA-256",
                     "1",
                 ]
