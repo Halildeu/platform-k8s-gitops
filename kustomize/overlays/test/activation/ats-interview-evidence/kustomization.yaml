@@ -141,13 +141,19 @@ namespace: platform-test
 
 resources:
   - ../../../../base/apps/ats-interview-evidence
-  - ../../../../base/apps/ats-interview-evidence-ui
   - externalsecret.yaml
   - externalsecret-mtls.yaml
   - ingress-ats-api.yaml
-  - ingress-ats-ui.yaml
   - netpol.yaml
-  - netpol-ui.yaml
+  # ats#238: standalone mülakat-inceleme UI'ı (ats web/mfe-interview-evidence)
+  # bu overlay'den ÇIKARILDI — geri eklenmemeli. Kendi README'sinin ilk satırı
+  # DEPRECATED/audit-only (ATS-0019): lokal dev-IdP (:9451) ile çalışmak üzere
+  # yazılmış bir koşum takımıdır, ekrandaki "Erişim anahtarı (JWT)" alanının
+  # sebebi bu. Test hücresinde o dev-IdP YOK, dolayısıyla ekran orada tanım
+  # gereği kullanılamazdı (sahip birebir bunu yaşadı: "ne işe yaradığını
+  # anlamadım"). Kanonik yüzey platform-web kabuğundaki federe MFE'dir
+  # (shell-managed Keycloak → JWT alanı hiç olmaz); ölçüldü: kaldırma anında
+  # /remotes/interview-evidence/remoteEntry.js = 200.
   # ats#235: Graph mail egress (config ile AYNI değişiklikte — ağ izni eksikse
   # adapter ağ hatasını "yapılandırılmamış" diye raporlar ve arıza yanlış
   # katmanda aranır).
@@ -158,22 +164,10 @@ resources:
 images:
   - name: ghcr.io/halildeu/ats-app-boot
     digest: sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
-  # mfe-interview-evidence UI — mülakat inceleme ekranının yayın imajı.
-  # Bu ekran ats#231'e kadar hiçbir ortamda açılamıyordu: bundle her push'ta
-  # derlenip atılıyordu, hiçbir adım yayınlamıyordu. Zincir ats#232 ile kuruldu;
-  # bu pin onu canlıya taşır.
-  #   source  ats@05666f5 (ats#234 — taban openssl CVE düzeltmesi)
-  #   tag     ghcr.io/halildeu/ats-interview-evidence-ui:sha-05666f5
-  #   digest  sha256:08eacb6e0e092912d63d4995d0b341a43a270eeae17b85cf84feb294b66a9fb6
-  #   build   https://github.com/Halildeu/ats/actions/runs/30309878938
-  # Digest build log'undan DEĞİL, GHCR paket sürüm manifest'inden alındı ve
-  # node'da pull-proof edildi: crictl pull + inspecti repoDigests == bu digest.
-  # (crictl pull ekrana sha256:2dbd1690… yazdı — o LOCAL IMAGE ID'dir,
-  #  çekilebilir manifest digest'i değil; aynı tuzak geçmişte auth-service'i
-  #  106 dakika indirtmişti.)
-  # Önceki pin YOK — bu imajın ilk yayını.
-  - name: ghcr.io/halildeu/ats-interview-evidence-ui
-    digest: sha256:08eacb6e0e092912d63d4995d0b341a43a270eeae17b85cf84feb294b66a9fb6
+  # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
+  # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
+  # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
+  # git geçmişinden: ats@05666f5 → sha-05666f5.
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
