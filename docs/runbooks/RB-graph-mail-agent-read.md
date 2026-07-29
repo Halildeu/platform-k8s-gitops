@@ -118,51 +118,54 @@ Add-DistributionGroupMember -Identity "<existing-policy-group-name>" `
 
 ## 4. Activation Smoke (agent-driven, post-operator)
 
-### 4.1 Vault Credential Verify
+### 4.1 Dedicated Vault AppRole Provision / Rotation
 
 ```bash
-ssh halil@staging-sw '
-VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \
-                   jq -r .root_token /home/halil/bootstrap-drill/vault-init.json)
-docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-    vault kv get kv/platform/graph 2>/dev/null || \
-docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault \
-    vault kv get kv/platform/graph | head -20
-unset VAULT_ROOT_TOKEN
-' | grep -E "graph_client_id|graph_tenant_id" | head -5
-# Expected: graph_client_id + graph_tenant_id keys visible (client_secret value not echoed)
+./scripts/ops/provision-graph-mail-vault-approle.sh
 ```
 
-### 4.2 Token Smoke
+Beklenen sanitized çıktı:
+
+```json
+{
+  "status": "provisioned_and_verified",
+  "role": "graph-mail-ops",
+  "policy": "graph-mail-ops-ro",
+  "token_ttl_seconds": 900,
+  "token_num_uses": 3,
+  "default_policy": false,
+  "allowed_path": "kv/data/platform/graph",
+  "denied_other_path": true,
+  "denied_list": true,
+  "bootstrap_files": "400:root:root"
+}
+```
+
+Provisioner root token'ı yalnız explicit bootstrap/rotation işlemi içinde okur; ham
+değeri argv, stdout veya evidence'e yazmaz. Yeni secret-id, exact-path pozitif test
+ve iki negatif authorization testi geçmeden kalıcı dosyalara alınmaz. Başarılı
+doğrulamadan sonra eski secret-id accessor'ları imha edilir.
+
+### 4.2 AppRole Contract Verify
 
 ```bash
-ssh halil@staging-sw '
-VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \
-                   jq -r .root_token /home/halil/bootstrap-drill/vault-init.json)
-GRAPH_DATA=$(docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-    vault kv get -format=json kv/platform/graph 2>/dev/null || \
-    docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault \
-    vault kv get -format=json kv/platform/graph)
-
-CLIENT_ID=$(echo "$GRAPH_DATA" | jq -r ".data.data.graph_client_id // .data.data.client_id")
-CLIENT_SECRET=$(echo "$GRAPH_DATA" | jq -r ".data.data.graph_client_secret // .data.data.client_secret")
-TENANT_ID=$(echo "$GRAPH_DATA" | jq -r ".data.data.graph_tenant_id // .data.data.tenant_id")
-
-TOKEN_RESPONSE=$(curl -sS -X POST \
-    "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "client_id=${CLIENT_ID}" \
-    --data-urlencode "client_secret=${CLIENT_SECRET}" \
-    -d "scope=https://graph.microsoft.com/.default" \
-    -d "grant_type=client_credentials")
-
-# Sanitized: only token type + expiry shown, never the access_token value
-echo "$TOKEN_RESPONSE" | jq "{token_type, expires_in, has_access_token: (.access_token != null)}"
-
-unset CLIENT_SECRET VAULT_ROOT_TOKEN GRAPH_DATA TOKEN_RESPONSE
+ssh aiadmin@aiserver '
+sudo -n stat -c "%a:%U:%G %n" \
+  /srv/platform/secrets/graph-mail-vault/role-id \
+  /srv/platform/secrets/graph-mail-vault/secret-id
 '
-# Expected: {"token_type":"Bearer","expires_in":3599,"has_access_token":true}
+# Expected: both files 400:root:root
+
+python3 -m pytest -q tests/operations/test_graph_mail_vault_approle_contract.py
 ```
+
+Helper sözleşmesi fail-closed'dur:
+
+- Sadece `graph-mail-ops-ro` policy kabul edilir; `default` dahil ek policy reddedilir.
+- Token TTL `1..1800` saniye dışında ise Graph credential okunmaz.
+- KV yolu sabit `kv/data/platform/graph`; CLI ile başka Vault yolu seçilemez.
+- Her çağrı sonunda `auth/token/revoke-self` çalışır.
+- AppRole login veya bootstrap dosyası yoksa root-token fallback yapılmaz.
 
 ### 4.3 Graph List Smoke
 
@@ -207,9 +210,14 @@ Agent: `./scripts/ops/graph-mail-list.sh --top 1 --include-body --filter "id eq 
 
 ### 6.1 Credential
 
-- `graph_client_secret` SADECE `staging-sw` Vault'unda; her çağrıda SSH round-trip okur
-- Token cache YOK default (1h TTL Graph; her çağrı yeni token = 2s latency)
-- Helper script `unset` chain final (token + secret asla disk veya log'a düşmez)
+- `graph_client_secret` SADECE aiserver production Vault `kv/platform/graph` yolunda
+- Helper'lar root token okumaz; root-only `0400` AppRole bootstrap dosyalarıyla login olur
+- Vault policy exact-path read + self-revoke ile sınırlıdır; wildcard/list/default policy yoktur
+- Vault token TTL 15 dakika, max TTL 30 dakika, use limit 3; her helper çağrısı sonunda revoke edilir
+- Graph access-token cache YOK (Graph default ~1h TTL; her çağrı yeni token)
+- Secret ve token değerleri stdout/evidence'e veya kalıcı helper cache'ine yazılmaz
+- Host `aiadmin` hesabının mevcut geniş `sudo` yetkisi ayrı R17 host-admin riskidir;
+  bu AppRole değişikliği o hesabı root'tan izole ettiğini iddia etmez
 
 ### 6.2 ApplicationAccessPolicy gate
 

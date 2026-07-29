@@ -6,7 +6,7 @@
 # Runbook: docs/runbooks/RB-graph-mail-agent-read.md
 #
 # Boundary:
-# - Vault credential read on aiserver (D43 stdin-pipe pattern — credential never logged)
+# - Vault credential read on aiserver with a dedicated AppRole (no routine root token)
 # - Client-credentials token (~1h TTL Graph default); NO persistent token cache (default)
 # - Graph REST GET /users/ai@acik.com/messages (read-only; no write/delete/move)
 # - ApplicationAccessPolicy restricts app to ai@acik.com mailbox only (Exchange Online)
@@ -28,7 +28,8 @@
 # 2. Exchange Online ApplicationAccessPolicy RestrictAccess to ai@acik.com (via mail-enabled
 #    security group `Mail-Graph-Allowed-Mailboxes`)
 # 3. Vault path kv/platform/graph populated with graph_client_id + graph_client_secret +
-#    graph_tenant_id (mevcut send-path setup zaten kullanır)
+#    graph_tenant_id; dedicated graph-mail-ops AppRole provisioned by
+#    scripts/ops/provision-graph-mail-vault-approle.sh
 
 set -euo pipefail
 
@@ -105,19 +106,95 @@ fi
 # single-quoted env vars in the SSH command string (protects $top/$select/& chars),
 # and the remote body is a QUOTED heredoc (<<'EOSSH') so NO client-side expansion
 # occurs — every $VAR inside is evaluated on aiserver only. This keeps Vault
-# credentials (CLIENT_SECRET, VAULT_ROOT_TOKEN, ACCESS_TOKEN) from ever leaving
+# credentials (CLIENT_SECRET, VAULT_TOKEN, ACCESS_TOKEN) from ever leaving
 # the server, and avoids the double-expansion that breaks OData $-prefixed params.
 ssh -o BatchMode=yes "$SSH_HOST" \
     "VAULT_PATH='${VAULT_PATH}' MAILBOX='${MAILBOX}' GRAPH_QUERY='${GRAPH_QUERY}' bash -s" <<'EOSSH'
 set -euo pipefail
 
-VAULT_ROOT_TOKEN=$(sudo -n jq -r .root_token /srv/platform/secrets/backup-auth/vault-init-prod.json)
+readonly VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
+readonly APPROLE_ROLE_ID_FILE="${APPROLE_ROLE_ID_FILE:-/srv/platform/secrets/graph-mail-vault/role-id}"
+readonly APPROLE_SECRET_ID_FILE="${APPROLE_SECRET_ID_FILE:-/srv/platform/secrets/graph-mail-vault/secret-id}"
+readonly EXPECTED_VAULT_PATH="kv/platform/graph"
+readonly EXPECTED_VAULT_POLICY="graph-mail-ops-ro"
+readonly MAX_VAULT_TOKEN_TTL=1800
 
-# Read Graph credentials from Vault (no echo)
-GRAPH_DATA=$(docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-    vault kv get -format=json "${VAULT_PATH}" 2>/dev/null || \
-    docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault \
-    vault kv get -format=json "${VAULT_PATH}")
+VAULT_TOKEN=""
+GRAPH_DATA_FILE=""
+
+vault_curl() {
+    local token="$1"
+    shift
+    # Feed the token header through curl config stdin so it is absent from argv.
+    printf 'header = "X-Vault-Token: %s"\n' "$token" | curl --config - "$@"
+}
+
+cleanup() {
+    local cleanup_rc=$?
+    if [[ -n "$VAULT_TOKEN" ]]; then
+        vault_curl "$VAULT_TOKEN" -sS -o /dev/null -X POST \
+            "${VAULT_ADDR}/v1/auth/token/revoke-self" || true
+    fi
+    [[ -z "$GRAPH_DATA_FILE" ]] || rm -f "$GRAPH_DATA_FILE"
+    unset VAULT_TOKEN ROLE_ID SECRET_ID LOGIN_RESPONSE CLIENT_SECRET ACCESS_TOKEN
+    exit "$cleanup_rc"
+}
+trap cleanup EXIT
+
+if [[ "$VAULT_PATH" != "$EXPECTED_VAULT_PATH" ]]; then
+    echo "ERROR: Graph mail Vault path is fixed to ${EXPECTED_VAULT_PATH}" >&2
+    exit 2
+fi
+
+ROLE_ID=$(sudo -n cat "$APPROLE_ROLE_ID_FILE" 2>/dev/null) || {
+    echo "ERROR: Graph mail Vault AppRole role-id is unavailable" >&2
+    exit 2
+}
+SECRET_ID=$(sudo -n cat "$APPROLE_SECRET_ID_FILE" 2>/dev/null) || {
+    echo "ERROR: Graph mail Vault AppRole secret-id is unavailable" >&2
+    exit 2
+}
+
+LOGIN_RESPONSE=$(
+    jq -n --arg role_id "$ROLE_ID" --arg secret_id "$SECRET_ID" \
+        '{role_id: $role_id, secret_id: $secret_id}' |
+        curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            --data-binary @- \
+            "${VAULT_ADDR}/v1/auth/approle/login"
+) || {
+    echo "ERROR: Graph mail Vault AppRole login request failed" >&2
+    exit 2
+}
+
+VAULT_TOKEN=$(printf '%s' "$LOGIN_RESPONSE" | jq -r '.auth.client_token // empty')
+VAULT_TOKEN_TTL=$(printf '%s' "$LOGIN_RESPONSE" | jq -r '.auth.lease_duration // 0')
+VAULT_POLICY_MATCH=$(printf '%s' "$LOGIN_RESPONSE" | jq -r \
+    --arg expected "$EXPECTED_VAULT_POLICY" \
+    '((.auth.policies // []) == [$expected]) and ((.auth.token_policies // []) == [$expected])')
+
+if [[ -z "$VAULT_TOKEN" || "$VAULT_POLICY_MATCH" != "true" || \
+      ! "$VAULT_TOKEN_TTL" =~ ^[0-9]+$ || "$VAULT_TOKEN_TTL" -lt 1 || \
+      "$VAULT_TOKEN_TTL" -gt "$MAX_VAULT_TOKEN_TTL" ]]; then
+    echo "ERROR: Graph mail Vault AppRole contract rejected login response" >&2
+    exit 2
+fi
+
+unset ROLE_ID SECRET_ID LOGIN_RESPONSE
+
+# Read the one allowed KV v2 path. The response file is mode 0600 via umask.
+umask 077
+GRAPH_DATA_FILE=$(mktemp)
+VAULT_HTTP_STATUS=$(vault_curl "$VAULT_TOKEN" -sS -o "$GRAPH_DATA_FILE" \
+    -w '%{http_code}' "${VAULT_ADDR}/v1/kv/data/platform/graph") || {
+    echo "ERROR: Graph mail Vault read request failed" >&2
+    exit 2
+}
+if [[ "$VAULT_HTTP_STATUS" != "200" ]]; then
+    echo "ERROR: Graph mail Vault read denied (HTTP ${VAULT_HTTP_STATUS})" >&2
+    exit 2
+fi
+GRAPH_DATA=$(cat "$GRAPH_DATA_FILE")
 
 CLIENT_ID=$(echo "$GRAPH_DATA" | jq -r '.data.data.graph_client_id // .data.data.client_id')
 CLIENT_SECRET=$(echo "$GRAPH_DATA" | jq -r '.data.data.graph_client_secret // .data.data.client_secret')
@@ -170,6 +247,6 @@ echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
     }]
 }'
 
-# Cleanup
-unset ACCESS_TOKEN CLIENT_SECRET VAULT_ROOT_TOKEN GRAPH_DATA TOKEN_RESPONSE
+# cleanup trap revokes the short-lived Vault token.
+unset ACCESS_TOKEN CLIENT_SECRET GRAPH_DATA TOKEN_RESPONSE VAULT_TOKEN_TTL VAULT_POLICY_MATCH
 EOSSH

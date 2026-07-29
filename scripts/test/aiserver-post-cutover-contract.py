@@ -148,11 +148,15 @@ expected_source_fragments = {
     ),
     "scripts/ops/graph-mail-list.sh": (
         'SSH_HOST="aiadmin@aiserver"',
-        "/srv/platform/secrets/backup-auth/vault-init-prod.json",
+        "/srv/platform/secrets/graph-mail-vault/role-id",
+        "/srv/platform/secrets/graph-mail-vault/secret-id",
+        'EXPECTED_VAULT_POLICY="graph-mail-ops-ro"',
     ),
     "scripts/ops/graph-mail-send.sh": (
         'SSH_HOST="aiadmin@aiserver"',
-        "/srv/platform/secrets/backup-auth/vault-init-prod.json",
+        "/srv/platform/secrets/graph-mail-vault/role-id",
+        "/srv/platform/secrets/graph-mail-vault/secret-id",
+        'EXPECTED_VAULT_POLICY="graph-mail-ops-ro"',
     ),
     "scripts/faz24/build-wg-bplus-operator-handoff.py": (
         'parser.add_argument("--i6-target-host", default="aiserver")',
