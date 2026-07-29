@@ -345,17 +345,29 @@ CAPS=$(curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
   -d "{\"paths\":[\"$KV_PATH\"]}" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(','.join(sorted(d['capabilities'])))")
 
-if ! echo "$CAPS" | grep -q 'create' || ! echo "$CAPS" | grep -q 'update'; then
-  echo "ERROR: capabilities-self missing create/update on $KV_PATH" >&2
-  echo "       got: $CAPS" >&2
-  exit 4
-fi
-
-if echo "$CAPS" | grep -q 'delete'; then
-  echo "WARNING: capabilities-self includes 'delete' on $KV_PATH" >&2
-  echo "         (boundary violation — bootstrap-writer should NOT have delete)" >&2
-  echo "         policy may be misconfigured. Aborting." >&2
-  exit 4
+if [[ "$SERVICE" == "meeting-analysis-capability" ]]; then
+  if ! echo "$CAPS" | grep -q 'create' || ! echo "$CAPS" | grep -q 'read'; then
+    echo "ERROR: capabilities-self missing create/read on $KV_PATH" >&2
+    echo "       got: $CAPS" >&2
+    exit 4
+  fi
+  if echo "$CAPS" | grep -Eq '(^|,)(update|delete)(,|$)'; then
+    echo "ERROR: capabilities-self permits update/delete on create-only $KV_PATH" >&2
+    echo "       active-key overwrite/rotation is forbidden; got: $CAPS" >&2
+    exit 4
+  fi
+else
+  if ! echo "$CAPS" | grep -q 'create' || ! echo "$CAPS" | grep -q 'update'; then
+    echo "ERROR: capabilities-self missing create/update on $KV_PATH" >&2
+    echo "       got: $CAPS" >&2
+    exit 4
+  fi
+  if echo "$CAPS" | grep -q 'delete'; then
+    echo "WARNING: capabilities-self includes 'delete' on $KV_PATH" >&2
+    echo "         (boundary violation — bootstrap-writer should NOT have delete)" >&2
+    echo "         policy may be misconfigured. Aborting." >&2
+    exit 4
+  fi
 fi
 
 # ============================================================================

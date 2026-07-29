@@ -55,6 +55,7 @@ class VaultHandler(BaseHTTPRequestHandler):
     existing_data: ClassVar[dict[str, object] | None] = None
     existing_version: ClassVar[int] = 0
     force_cas_conflict: ClassVar[bool] = False
+    capabilities: ClassVar[list[str]] = ["create", "read"]
 
     def log_message(self, format: str, *args: object) -> None:
         del format, args
@@ -95,7 +96,7 @@ class VaultHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/v1/sys/capabilities-self":
             self._body()
-            self._json(200, {"capabilities": ["create", "read", "update"]})
+            self._json(200, {"capabilities": type(self).capabilities})
             return
         if self.path == VAULT_API_PATH:
             if type(self).force_cas_conflict:
@@ -152,7 +153,7 @@ class AnalysisCapabilitySecretContractTests(unittest.TestCase):
         ):
             self.assertNotIn(ENV_KEY, path.read_text(encoding="utf-8"))
 
-    def test_vault_policies_keep_runtime_read_only_and_writer_delete_free(self) -> None:
+    def test_vault_policies_keep_runtime_read_only_and_writer_rotation_free(self) -> None:
         api_path = "kv/data/platform/meeting-analysis-capability"
         runtime = policy_capabilities(
             ROOT / "bootstrap/vault-policies/test/eso-runtime-extras.hcl",
@@ -164,7 +165,8 @@ class AnalysisCapabilitySecretContractTests(unittest.TestCase):
             api_path,
         )
         self.assertEqual(runtime, {"read"})
-        self.assertEqual(writer, {"create", "update", "read"})
+        self.assertEqual(writer, {"create", "read"})
+        self.assertNotIn("update", writer)
         self.assertNotIn("delete", writer)
 
         common_runtime = (
@@ -224,12 +226,14 @@ class AnalysisCapabilitySecretContractTests(unittest.TestCase):
         existing_version: int,
         create_only: bool = False,
         force_cas_conflict: bool = False,
+        capabilities: list[str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         VaultHandler.writes = []
         VaultHandler.revoked = False
         VaultHandler.existing_data = existing_data
         VaultHandler.existing_version = existing_version
         VaultHandler.force_cas_conflict = force_cas_conflict
+        VaultHandler.capabilities = capabilities or ["create", "read"]
         server = ThreadingHTTPServer(("127.0.0.1", 0), VaultHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -311,6 +315,22 @@ class AnalysisCapabilitySecretContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 5)
         self.assertIn("possible CAS conflict", result.stderr)
         self.assertNotIn(synthetic_secret, result.stdout + result.stderr)
+        self.assertEqual(VaultHandler.writes, [])
+        self.assertTrue(VaultHandler.revoked)
+
+    def test_create_only_refuses_overbroad_update_capability(self) -> None:
+        result = self.run_writer(
+            synthetic_secret=base64.b64encode(b"a" * 32).decode(),
+            existing_data=None,
+            existing_version=0,
+            create_only=True,
+            capabilities=["create", "read", "update"],
+        )
+        self.assertEqual(result.returncode, 4)
+        self.assertIn(
+            "permits update/delete on create-only",
+            result.stderr,
+        )
         self.assertEqual(VaultHandler.writes, [])
         self.assertTrue(VaultHandler.revoked)
 
