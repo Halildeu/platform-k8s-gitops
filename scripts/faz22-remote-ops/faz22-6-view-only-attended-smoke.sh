@@ -53,7 +53,7 @@ PG_USER="${PG_USER:-postgres}"
 PG_HOST="${PG_HOST:-127.0.0.1}"
 PG_PORT="${PG_PORT:-5433}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
-PG_SECRET_NAME="${PG_SECRET_NAME:-endpoint-admin-remote-bridge-secrets}"
+PG_SECRET_NAME="${PG_SECRET_NAME:-endpoint-admin-remote-bridge-secrets-device-key}"
 PG_USER_SECRET_KEY="${PG_USER_SECRET_KEY:-SPRING_DATASOURCE_USERNAME}"
 PG_PASSWORD_SECRET_KEY="${PG_PASSWORD_SECRET_KEY:-SPRING_DATASOURCE_PASSWORD}"
 
@@ -887,7 +887,7 @@ runtime_step_up_public_key_matches() {
 }
 
 export_step_up_public_key() {
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret "$PG_SECRET_NAME" \
     -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' | base64 -d > "${TMP_DIR}/step-up-public.pem"
   [[ -s "${TMP_DIR}/step-up-public.pem" ]] || fail_smoke "step-up-public-key-missing"
   step_up_public_key_sha256="$(sha256_public_key_material_file "${TMP_DIR}/step-up-public.pem")" \

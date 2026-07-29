@@ -202,6 +202,12 @@ grep -q 'broker-relevant.log' "$SCRIPT"
 grep -q 'recording.tsv' "$SCRIPT"
 grep -q 'summary.json' "$SCRIPT"
 grep -q 'SHA256SUMS' "$SCRIPT"
+grep -Fq 'PG_SECRET_NAME="${PG_SECRET_NAME:-endpoint-admin-remote-bridge-secrets-device-key}"' "$SCRIPT"
+[[ "$(grep -Fc 'get secret "$PG_SECRET_NAME"' "$SCRIPT")" == "3" ]]
+if grep -Fq 'get secret endpoint-admin-remote-bridge-secrets \' "$SCRIPT"; then
+  echo "attended smoke must not read the removed legacy broker secret" >&2
+  exit 1
+fi
 grep -q '! -name workflow-smoke.log' "$SCRIPT"
 grep -q 'lib-remote-bridge-digest.sh' "$SCRIPT"
 grep -q 'rbd_expected_digest' "$SCRIPT"
