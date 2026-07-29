@@ -429,7 +429,7 @@ def main() -> None:
         audio_deploy,
         "audio-gateway",
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:0bd85f41c5d72b8b202fc833ad3e489c992db9aa924f83fb44c7caef6f17c7ca",
+        "sha256:20e0b573c31774b2eb8f870ba3e304c0bd9035a66c8f58f533da58fc28012030",
     )
     pod_annotation(
         meeting_deploy,
