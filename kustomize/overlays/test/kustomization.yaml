@@ -389,8 +389,13 @@ images:
     # Unknown schema/event/status values remain fail-closed on the metadata-only
     # DLQ. Source merge 7dacfb2d42e3; image run 30410463016, transcript job
     # 90445150736.
+    # 2026-07-29 transport-epoch repair: platform-backend#996 and PR #997 key
+    # Direct-STT replay identity by source session + transport epoch + window
+    # sequence, preserving distinct reconnect windows while retaining legacy
+    # epoch-zero compatibility. Source merge b3fa783f3eb9; image run
+    # 30414108934, transcript job 90456685854.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:5fa1f15b532108d2ba70e238d0331be9b19eff65205b0f571ab2038d1bafad0d
+    digest: sha256:5ad3a6d4028bf439eb855e8c0cb06139ac06424ee4793238451a9b577c0b8f16
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -6810,10 +6815,10 @@ patches:
         template:
           metadata:
             annotations:
-              # v5: non-canonical UTTERANCE ACK+ignore projection repair
-              # (backend#994, gitops#2610). ConfigMap/Secret envFrom ve image
+              # v6: transport-epoch replay identity and Flyway V12 repair
+              # (backend#996, gitops#2610). ConfigMap/Secret envFrom ve image
               # pin degisimi icin exact pod-template rollout receipt'i.
-              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-29-2610-v5-utterance-projection"
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-29-2610-v6-transport-epoch"
           spec:
             containers:
               - name: transcript-service
