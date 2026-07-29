@@ -5,8 +5,8 @@ The #182 acceptance surface is narrow but strict:
 
 - audio-gateway direct-STT is enabled in the real test deployment.
 - The pod uses the mTLS/SNI path to live-stt and receives a transcript result.
-- The same session/chunk/correlation is present in the result stream and
-  compute-plane audit event.
+- The same session/chunk/correlation is present in the result stream and the
+  durable, hash-chained compute-plane audit record.
 - Evidence stays metadata-only: no PEM values, tokens, raw audio, transcript
   text, destination URLs, or raw command output.
 
@@ -381,12 +381,19 @@ def validate_audit(data: dict[str, Any], checks: list[Check]) -> None:
         add(checks, "audit_shape", False, "audit must be an object")
         return
     add(checks, "audit_stream_key", audit.get("streamKey") == EXPECTED_AUDIT_STREAM, f"streamKey must be {EXPECTED_AUDIT_STREAM}")
+    add(checks, "audit_evidence_source", audit.get("evidenceSource") == "durable-db", "evidenceSource must be durable-db")
     add(checks, "audit_event_type", audit.get("eventType") == EXPECTED_AUDIT_EVENT, f"eventType must be {EXPECTED_AUDIT_EVENT}")
     add(checks, "audit_event_found", audit.get("eventFound") is True, "audit event must be found")
+    add(checks, "audit_durable_event_found", audit.get("durableEventFound") is True, "durable audit event must be found")
     add(checks, "audit_record_id", redis_id(audit.get("recordId")), "recordId must be Redis stream id shaped")
     add(checks, "audit_session_match", audit.get("sessionIdMatches") is True, "sessionIdMatches must be true")
     add(checks, "audit_chunk_match", audit.get("chunkSeqMatches") is True, "chunkSeqMatches must be true")
     add(checks, "audit_correlation_match", audit.get("correlationIdMatches") is True, "correlationIdMatches must be true")
+    add(checks, "audit_timestamp_present", audit.get("eventTimestampPresent") is True, "eventTimestampPresent must be true")
+    add(checks, "audit_entry_hash_present", audit.get("entryHashPresent") is True, "entryHashPresent must be true")
+    add(checks, "audit_prev_hash_present", audit.get("prevHashPresent") is True, "prevHashPresent must be true")
+    add(checks, "audit_hash_algorithm", audit.get("entryHashAlgorithm") == "SHA-256", "entryHashAlgorithm must be SHA-256")
+    add(checks, "audit_hash_version", str(audit.get("entryHashVersion")) == "1", "entryHashVersion must be 1")
 
 
 def validate_persistence(data: dict[str, Any], checks: list[Check]) -> None:

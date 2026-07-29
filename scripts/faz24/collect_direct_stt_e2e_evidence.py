@@ -3,7 +3,7 @@
 
 This collector is intentionally narrow. It consumes the redacted
 faz24.externalRecorderSmoke.v1 JSON emitted by run_external_recorder_smoke.py,
-then reads only bounded Kubernetes/Redis/log metadata needed by
+then reads only bounded Kubernetes/Redis/PostgreSQL/log metadata needed by
 verify_direct_stt_e2e_evidence.py. It never writes tokens, PEM values, raw
 audio, raw transcript text, destination URLs, or raw command output.
 """
@@ -36,6 +36,9 @@ DEFAULT_REDIS_SERVICE = "redis-streams"
 DEFAULT_REDIS_SECRET = "audio-gateway-secrets"
 DEFAULT_REDIS_SECRET_KEY = "SPRING_DATA_REDIS_PASSWORD"
 DEFAULT_REDIS_CLI_IMAGE = "redis:7.4-alpine"
+DEFAULT_AUDIT_DB_CONTAINER = "platform-pg-test"
+DEFAULT_AUDIT_DB_USER = "platform"
+DEFAULT_AUDIT_DB_NAME = "audit_event"
 EXPECTED_TRANSCRIBE_HOST = "live-stt.denetim"
 EXPECTED_TRANSCRIBE_PORT = 8243
 EXPECTED_HOST_ALIAS_IP = "10.99.0.2"
@@ -67,6 +70,7 @@ CommandRunner = Callable[[list[str], int], CommandResult]
 RedisRecordFetcher = Callable[
     [], tuple[dict[str, list[tuple[str, dict[str, str]]]], list[str]]
 ]
+AuditRecordFetcher = Callable[[], tuple[dict[str, str] | None, str | None]]
 
 
 def utc_now() -> str:
@@ -827,7 +831,7 @@ def find_record(
     return None
 
 
-def wait_for_direct_stt_records(
+def wait_for_direct_stt_result(
     fetch_records: RedisRecordFetcher,
     *,
     session_id: str,
@@ -851,19 +855,106 @@ def wait_for_direct_stt_records(
             correlation_id=correlation_id,
             event_type=EXPECTED_RESULT_EVENT,
         )
-        audit_record = find_record(
-            latest_records.get(EXPECTED_AUDIT_STREAM, []),
-            session_id=session_id,
-            chunk_seq=chunk_seq,
-            correlation_id=correlation_id,
-            event_type=EXPECTED_AUDIT_EVENT,
-        )
-        if result_record and audit_record:
+        if result_record:
             return latest_records, latest_errors
 
         remaining = deadline - monotonic()
         if remaining <= 0:
             return latest_records, latest_errors
+        sleep(min(poll_interval_seconds, remaining))
+
+
+def durable_audit_record_via_postgres(
+    runner: CommandRunner,
+    *,
+    container: str,
+    user: str,
+    database: str,
+    session_id: str,
+    chunk_seq: int,
+    correlation_id: str,
+    timeout: int = 20,
+) -> tuple[dict[str, str] | None, str | None]:
+    if not SAFE_NAME_RE.match(container) or not SAFE_NAME_RE.match(user) or not SAFE_NAME_RE.match(database):
+        return None, "audit-db-identifier-shape"
+    if not SESSION_ID_RE.match(session_id) or not SAFE_NAME_RE.match(correlation_id):
+        return None, "audit-db-query-metadata-shape"
+
+    query = (
+        "SELECT coalesce(stream_entry_id,''),event_type,session_id,"
+        "chunk_seq::text,correlation_id,"
+        "(event_timestamp IS NOT NULL)::text,"
+        "(entry_hash IS NOT NULL)::text,"
+        "(prev_hash IS NOT NULL)::text,"
+        "coalesce(entry_hash_alg,''),coalesce(entry_hash_version::text,'') "
+        "FROM audit_event.audit_event "
+        f"WHERE event_type='{EXPECTED_AUDIT_EVENT}' "
+        f"AND session_id='{session_id}' "
+        f"AND chunk_seq={int(chunk_seq)} "
+        f"AND correlation_id='{correlation_id}' "
+        "ORDER BY seq DESC LIMIT 1"
+    )
+    result = runner(
+        [
+            "docker",
+            "exec",
+            container,
+            "psql",
+            "--no-psqlrc",
+            "-U",
+            user,
+            "-d",
+            database,
+            "-At",
+            "-F",
+            "\t",
+            "-c",
+            query,
+        ],
+        timeout,
+    )
+    if result.returncode != 0:
+        return None, f"audit-db-query:command-exit-{result.returncode}"
+    line = next((item for item in result.stdout.splitlines() if item.strip()), "")
+    if not line:
+        return None, None
+    fields = line.split("\t")
+    if len(fields) != 10:
+        return None, "audit-db-query:unexpected-column-count"
+    keys = (
+        "recordId",
+        "eventType",
+        "sessionId",
+        "chunkSeq",
+        "correlationId",
+        "eventTimestampPresent",
+        "entryHashPresent",
+        "prevHashPresent",
+        "entryHashAlgorithm",
+        "entryHashVersion",
+    )
+    return dict(zip(keys, fields, strict=True)), None
+
+
+def wait_for_durable_audit_record(
+    fetch_record: AuditRecordFetcher,
+    *,
+    timeout_seconds: float,
+    poll_interval_seconds: float = 2.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[dict[str, str] | None, str | None]:
+    deadline = monotonic() + max(0.0, timeout_seconds)
+    latest_error: str | None = None
+
+    while True:
+        record, latest_error = fetch_record()
+        if record:
+            return record, latest_error
+
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return None, latest_error
         sleep(min(poll_interval_seconds, remaining))
 
 
@@ -949,6 +1040,9 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     redis_secret = getattr(args, "redis_secret", DEFAULT_REDIS_SECRET)
     redis_secret_key = getattr(args, "redis_secret_key", DEFAULT_REDIS_SECRET_KEY)
     redis_cli_image = getattr(args, "redis_cli_image", DEFAULT_REDIS_CLI_IMAGE)
+    audit_db_container = getattr(args, "audit_db_container", DEFAULT_AUDIT_DB_CONTAINER)
+    audit_db_user = getattr(args, "audit_db_user", DEFAULT_AUDIT_DB_USER)
+    audit_db_name = getattr(args, "audit_db_name", DEFAULT_AUDIT_DB_NAME)
 
     if smoke.get("status") != "pass":
         failures.append("external-smoke-not-pass")
@@ -1010,17 +1104,17 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         failures.append(str(probe.get("error") or "mtls-health-not-200"))
 
     result_record: tuple[str, dict[str, str]] | None = None
-    audit_record: tuple[str, dict[str, str]] | None = None
+    audit_record: dict[str, str] | None = None
     transcript_hash = ""
     transcript_chars = 0
     transcript_text = ""
     result_wait_timeout = float(getattr(args, "result_wait_timeout", 60))
     result_wait_interval = float(getattr(args, "result_wait_interval", 2))
-    waited_records, wait_errors = wait_for_direct_stt_records(
+    waited_records, wait_errors = wait_for_direct_stt_result(
         lambda: redis_stream_records(
             runner,
             container=args.redis_container,
-            streams=[EXPECTED_RESULT_STREAM, EXPECTED_AUDIT_STREAM],
+            streams=[EXPECTED_RESULT_STREAM],
             count=args.redis_count,
             context=args.context,
             namespace=args.namespace,
@@ -1037,7 +1131,7 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         timeout_seconds=result_wait_timeout,
         poll_interval_seconds=result_wait_interval,
     )
-    redis_streams = [EXPECTED_RESULT_STREAM, EXPECTED_AUDIT_STREAM]
+    redis_streams = [EXPECTED_RESULT_STREAM]
     redis_streams.extend(f"audio:chunks:p{idx:02d}" for idx in range(32))
     redis_records_by_stream, redis_errors = redis_stream_records(
         runner,
@@ -1076,16 +1170,34 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         if not transcript_text:
             failures.append("result-stream-transcript-empty")
 
-    audit_records = redis_records_by_stream.get(EXPECTED_AUDIT_STREAM, [])
-    audit_record = find_record(
-        audit_records,
-        session_id=session_id,
-        chunk_seq=chunk_seq,
-        correlation_id=correlation_id,
-        event_type=EXPECTED_AUDIT_EVENT,
+    audit_record, audit_error = wait_for_durable_audit_record(
+        lambda: durable_audit_record_via_postgres(
+            runner,
+            container=audit_db_container,
+            user=audit_db_user,
+            database=audit_db_name,
+            session_id=session_id,
+            chunk_seq=chunk_seq,
+            correlation_id=correlation_id,
+        ),
+        timeout_seconds=result_wait_timeout,
+        poll_interval_seconds=result_wait_interval,
     )
+    if audit_error:
+        failures.append(audit_error)
     if not audit_record:
-        failures.append("compute-plane-audit-not-found")
+        failures.append("compute-plane-durable-audit-not-found")
+    else:
+        if audit_record.get("eventTimestampPresent") != "t":
+            failures.append("compute-plane-audit-timestamp-missing")
+        if audit_record.get("entryHashPresent") != "t":
+            failures.append("compute-plane-audit-entry-hash-missing")
+        if audit_record.get("prevHashPresent") != "t":
+            failures.append("compute-plane-audit-prev-hash-missing")
+        if audit_record.get("entryHashAlgorithm") != "SHA-256":
+            failures.append("compute-plane-audit-hash-algorithm")
+        if audit_record.get("entryHashVersion") != "1":
+            failures.append("compute-plane-audit-hash-version")
 
     audio_stream, audio_fields, err = find_audio_chunk_record(
         records_by_stream=redis_records_by_stream,
@@ -1172,12 +1284,19 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         },
         "audit": {
             "streamKey": EXPECTED_AUDIT_STREAM,
+            "evidenceSource": "durable-db",
             "eventType": EXPECTED_AUDIT_EVENT,
             "eventFound": audit_record is not None,
-            "recordId": audit_record[0] if audit_record else "",
-            "sessionIdMatches": bool(audit_record and audit_record[1].get("sessionId") == session_id),
-            "chunkSeqMatches": bool(audit_record and str(audit_record[1].get("chunkSeq")) == str(chunk_seq)),
-            "correlationIdMatches": bool(audit_record and audit_record[1].get("correlationId") == correlation_id),
+            "durableEventFound": audit_record is not None,
+            "recordId": audit_record.get("recordId", "") if audit_record else "",
+            "sessionIdMatches": bool(audit_record and audit_record.get("sessionId") == session_id),
+            "chunkSeqMatches": bool(audit_record and str(audit_record.get("chunkSeq")) == str(chunk_seq)),
+            "correlationIdMatches": bool(audit_record and audit_record.get("correlationId") == correlation_id),
+            "eventTimestampPresent": bool(audit_record and audit_record.get("eventTimestampPresent") == "t"),
+            "entryHashPresent": bool(audit_record and audit_record.get("entryHashPresent") == "t"),
+            "prevHashPresent": bool(audit_record and audit_record.get("prevHashPresent") == "t"),
+            "entryHashAlgorithm": audit_record.get("entryHashAlgorithm", "") if audit_record else "",
+            "entryHashVersion": audit_record.get("entryHashVersion", "") if audit_record else "",
         },
         "persistence": {
             "redisAudioChunkMetadataOnly": bool(audio_stream and not audio_chunk_has_raw),
@@ -1190,7 +1309,12 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         "boundaries": {
             "directAudioE2eProven": status == "pass",
             "directSttTranscriptProven": status == "pass" and bool(transcript_hash),
-            "computePlaneAuditProven": audit_record is not None,
+            "computePlaneAuditProven": bool(
+                audit_record
+                and audit_record.get("eventTimestampPresent") == "t"
+                and audit_record.get("entryHashPresent") == "t"
+                and audit_record.get("prevHashPresent") == "t"
+            ),
             "directClientToStt": False,
             "rawAudioIncluded": False,
             "rawTranscriptIncluded": False,
@@ -1227,6 +1351,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--redis-secret", default=DEFAULT_REDIS_SECRET)
     parser.add_argument("--redis-secret-key", default=DEFAULT_REDIS_SECRET_KEY)
     parser.add_argument("--redis-cli-image", default=DEFAULT_REDIS_CLI_IMAGE)
+    parser.add_argument("--audit-db-container", default=DEFAULT_AUDIT_DB_CONTAINER)
+    parser.add_argument("--audit-db-user", default=DEFAULT_AUDIT_DB_USER)
+    parser.add_argument("--audit-db-name", default=DEFAULT_AUDIT_DB_NAME)
     parser.add_argument("--gitops-commit")
     parser.add_argument("--probe-timeout", type=int, default=40)
     parser.add_argument("--redis-count", type=int, default=1000)
