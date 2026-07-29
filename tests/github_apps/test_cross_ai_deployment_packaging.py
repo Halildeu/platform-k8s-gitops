@@ -171,7 +171,8 @@ class PackagingContractTests(unittest.TestCase):
         wrapper = VAULT_PATCH_WRAPPER.read_text(encoding="utf-8")
         self.assertRegex(
             wrapper,
-            r"cross-ai-deployment-protection-test\|openfga\)\s*\n\s*KV_PATH=",
+            r"cross-ai-deployment-protection-test\|"
+            r"meeting-analysis-capability\|openfga\)\s*\n\s*KV_PATH=",
         )
         self.assertIn("--field-from-stdin", wrapper)
         self.assertIn("--field-from-file", wrapper)

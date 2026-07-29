@@ -12,7 +12,9 @@ resources:
   - alertmanager/    # Faz 23.2.D T1.4 D43 outage fallback (Codex 019e0dea iter-2)
   - audio-gateway/externalsecret.yaml    # Faz 24 Aşama-2 staging (platform-ai#151)
   - meeting-service/externalsecret.yaml    # Faz 24 Meeting Intelligence foundation (#410)
+  - meeting-service/analysis-capability-externalsecret.yaml    # Faz 24 #3144 isolated verifier trust root
   - transcript-service/externalsecret.yaml    # Faz 24 Meeting Intelligence foundation (#411)
+  - transcript-service/analysis-capability-externalsecret.yaml    # Faz 24 #3144 isolated issuer trust root
   - audit-event-consumer-service/externalsecret.yaml    # Faz 24 KVKK audit pipeline Redis consumer (#1249)
   - budget-service/externalsecret.yaml    # Budget Control product PostgreSQL credentials (#3007)
   - redis-streams-exporter/externalsecret.yaml    # Faz 24 PR-obs-01a (gitops#1247; shared redis_password — ACL ayrımı #1457)

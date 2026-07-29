@@ -10,9 +10,9 @@
 # Auth (no root): role-id/secret-id of the reconciler AppRole, provisioned ONCE by
 # the owner (README §6.6) into host-local 0600 files (or env). Token self-revoked.
 #
-# Usage (on staging-sw, where platform-vault-test :8201 is reachable):
-#   VAULT_RECONCILER_ROLE_ID_FILE=/home/halil/.vault/reconciler-role-id \
-#   VAULT_RECONCILER_SECRET_ID_FILE=/home/halil/.vault/reconciler-secret-id \
+# Usage (on aiserver, where platform-vault-test :8201 is reachable):
+#   VAULT_RECONCILER_ROLE_ID_FILE="$HOME/.vault/reconciler-role-id" \
+#   VAULT_RECONCILER_SECRET_ID_FILE="$HOME/.vault/reconciler-secret-id" \
 #   scripts/ops/vault-policy-reconcile.sh [--dry-run] [--emit-seed-secret-id <approle>]
 #
 # Scope: TEST Vault only. Applies common/*.hcl + test/*.hcl. NEVER prod/*.
@@ -41,6 +41,7 @@ POLICIES=(
   "common/eso-runtime.hcl|eso-runtime"
   "common/bootstrap-writer.hcl|platform-bootstrap-writer"
   "test/eso-runtime-extras.hcl|eso-runtime-test-extras"
+  "test/meeting-analysis-capability-writer.hcl|meeting-analysis-capability-writer-test"
   "test/audio-gateway-mtls-seeder.hcl|audio-gateway-mtls-seeder"
   "test/cross-ai-issuer-anthropic.hcl|cross-ai-issuer-anthropic-test"
   "test/cross-ai-issuer-openai.hcl|cross-ai-issuer-openai-test"
@@ -89,7 +90,7 @@ lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
 # ── Manifest: AppRole NAME | token_policies (csv) | extra `vault write` kv args ─
 APPROLES=(
   "eso-runtime|eso-runtime,eso-runtime-test-extras|token_ttl=1h token_max_ttl=24h secret_id_ttl=0"
-  "platform-bootstrap-writer-test|platform-bootstrap-writer|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
+  "platform-bootstrap-writer-test|platform-bootstrap-writer,meeting-analysis-capability-writer-test|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
   "audio-gateway-mtls-seeder-test|audio-gateway-mtls-seeder|token_ttl=15m token_max_ttl=15m token_num_uses=0 secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true"
   # Issuer/coordinator AppRole definitions are intentionally owner-managed.
   # This routine reconciler applies their sign-only ACL policies but cannot
@@ -105,8 +106,9 @@ EMITTABLE_APPROLES=(
 )
 
 # ── reconciler AppRole auth ──────────────────────────────────────────────────
-ROLE_ID="${VAULT_RECONCILER_ROLE_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_ROLE_ID_FILE:-/home/halil/.vault/reconciler-role-id}" 2>/dev/null)}"
-SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_SECRET_ID_FILE:-/home/halil/.vault/reconciler-secret-id}" 2>/dev/null)}"
+RECONCILER_CREDENTIAL_DIR="${VAULT_RECONCILER_CREDENTIAL_DIR:-${HOME:-/home/aiadmin}/.vault}"
+ROLE_ID="${VAULT_RECONCILER_ROLE_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_ROLE_ID_FILE:-$RECONCILER_CREDENTIAL_DIR/reconciler-role-id}" 2>/dev/null)}"
+SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_SECRET_ID_FILE:-$RECONCILER_CREDENTIAL_DIR/reconciler-secret-id}" 2>/dev/null)}"
 [[ -n "$ROLE_ID" && -n "$SECRET_ID" ]] || { echo "ERROR: reconciler role-id/secret-id missing (owner provision — README §6.6)" >&2; exit 2; }
 
 api() { # api METHOD PATH [JSON]

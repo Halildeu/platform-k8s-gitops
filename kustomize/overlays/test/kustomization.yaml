@@ -6665,9 +6665,10 @@ patches:
         value: "true"
 
   # meeting-service-secrets already exists before this rollout, so envFrom by
-  # itself cannot prove that ESO has reconciled the newly added Redis key. Make
-  # the key mandatory on the new pod template: Kubernetes retries pod startup
-  # after ESO writes the key and no process can start with a stale empty value.
+  # itself cannot prove that ESO has reconciled newly added keys. Make Redis
+  # and the analysis trust root mandatory on the new pod template: Kubernetes
+  # retries pod startup after ESO writes them and no process can start with a
+  # stale empty value.
   - target:
       kind: Deployment
       name: meeting-service
@@ -6687,6 +6688,12 @@ patches:
                       secretKeyRef:
                         name: meeting-service-secrets
                         key: MEETING_REDIS_PASSWORD
+                        optional: false
+                  - name: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: meeting-service-analysis-capability
+                        key: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                         optional: false
 
   # notification-orchestrator-secrets is owned by the ExternalSecret rendered
@@ -6804,6 +6811,7 @@ patches:
         path: /spec/template/metadata/annotations
         value:
           platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-18-2610"
+          meeting-service.acik.com/analysis-capability-rev: "2026-07-29-3144-v1"
 
   # Faz 24 Meeting Intelligence foundation (#411): replica 1 default
   # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
@@ -6828,6 +6836,10 @@ patches:
               # #2321: pick up the auth-service internal JWT verifier bindings
               # required by the private canonical transcript gateway routes.
               transcript-service.acik.com/internal-service-jwt-rev: "2026-07-29-2321-v1"
+              # #3144: dedicated rollout marker for the shared capability trust
+              # root. v1 is first activation; active-key rotation is blocked by
+              # the runbook until a reviewed dual-key/key-id contract exists.
+              transcript-service.acik.com/analysis-capability-rev: "2026-07-29-3144-v1"
           spec:
             containers:
               - name: transcript-service
@@ -6846,6 +6858,12 @@ patches:
                       secretKeyRef:
                         name: transcript-service-secrets
                         key: TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET
+                        optional: false
+                  - name: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: transcript-service-analysis-capability
+                        key: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                         optional: false
       # #2568: transcript-service consumes ConfigMap values through envFrom.
       # Keep the activation rollbackable and force a pod roll whenever the

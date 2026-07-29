@@ -24,6 +24,7 @@
 #                               report-service, budget-service, schema-service,
 #                               permission-service,
 #                               cross-ai-deployment-protection-test, openfga,
+#                               meeting-analysis-capability,
 #                               ghcr-token
 #                               (ghcr-token uses kv/data/gitops/ghcr-token).
 #   --field key=value           Set a single key-value (value visible in argv;
@@ -34,8 +35,11 @@
 #                               regular file. The value never enters argv.
 #   --cleanup-field-files       Securely removes --field-from-file inputs.
 #   --cleanup-secret-id-file    Securely removes the secret-id file on exit.
-#   --vault-addr <url>          Default: http://127.0.0.1:8301 (test).
-#                               Use http://127.0.0.1:8200 for prod.
+#   --create-only               Fail unless the KV v2 path is absent (version 0).
+#   --vault-addr <url>          Generic default: http://127.0.0.1:8301.
+#                               Faz 24 capability first activation passes the
+#                               canonical TEST host endpoint :8201 explicitly;
+#                               canonical PROD :8200 is rejected for that path.
 #   --dry-run                   Print the would-be PATCH body, don't write.
 #   --help                      Show this message.
 #
@@ -68,6 +72,7 @@ declare -a FILE_PATHS=()
 DRY_RUN=0
 CLEANUP_SECRET_ID_FILE=0
 CLEANUP_FIELD_FILES=0
+CREATE_ONLY=0
 TOKEN_HEADER_FILE=""
 
 usage() {
@@ -89,6 +94,8 @@ while [[ $# -gt 0 ]]; do
       CLEANUP_FIELD_FILES=1; shift ;;
     --cleanup-secret-id-file)
       CLEANUP_SECRET_ID_FILE=1; shift ;;
+    --create-only)
+      CREATE_ONLY=1; shift ;;
     --vault-addr)
       VAULT_ADDR="$2"; shift 2 ;;
     --dry-run)
@@ -115,7 +122,7 @@ fi
 case "$SERVICE" in
   auth-service|user-service|variant-service|core-data-service|\
   report-service|budget-service|schema-service|permission-service|\
-  cross-ai-deployment-protection-test|openfga)
+  cross-ai-deployment-protection-test|meeting-analysis-capability|openfga)
     KV_PATH="kv/data/platform/$SERVICE"
     ;;
   ghcr-token)
@@ -148,6 +155,25 @@ if [[ "$SERVICE" == "cross-ai-deployment-protection-test" ]]; then
   fi
   if [[ "$WEBHOOK_OPERATION" -ne 1 && "$PEM_OPERATION" -ne 1 ]]; then
     echo "ERROR: $SERVICE accepts only github_webhook_secret_current from stdin or github_app_private_key_pem from file" >&2
+    exit 2
+  fi
+fi
+
+# The Faz 24 shared capability path accepts one exact base64 secret via stdin.
+# This keeps the sensitive value out of argv/history and prevents the generic
+# KV writer from adding unrelated fields to the dedicated trust-root path.
+if [[ "$SERVICE" == "meeting-analysis-capability" ]]; then
+  if [[ "${#FIELDS[@]}" -ne 0 \
+        || "${#STDIN_KEYS[@]}" -ne 1 \
+        || "${STDIN_KEYS[0]:-}" != "hmac_secret_base64" \
+        || "${#FILE_SPECS[@]}" -ne 0 \
+        || "$CREATE_ONLY" -ne 1 ]]; then
+    echo "ERROR: $SERVICE accepts only create-only hmac_secret_base64 from stdin" >&2
+    exit 2
+  fi
+  if [[ "$VAULT_ADDR" == "http://127.0.0.1:8200" \
+        || "$VAULT_ADDR" == "https://127.0.0.1:8200" ]]; then
+    echo "ERROR: $SERVICE is TEST-only and refuses the canonical PROD Vault address" >&2
     exit 2
   fi
 fi
@@ -223,6 +249,23 @@ if [[ "${#STDIN_KEYS[@]}" -gt 0 ]]; then
     if [[ -z "$value" ]]; then
       echo "ERROR: empty value for $key" >&2
       exit 2
+    fi
+    if [[ "$SERVICE" == "meeting-analysis-capability" \
+          && "$key" == "hmac_secret_base64" ]]; then
+      if ! printf '%s' "$value" | python3 -c '
+import base64
+import binascii
+import sys
+
+try:
+    decoded = base64.b64decode(sys.stdin.buffer.read(), validate=True)
+except (binascii.Error, ValueError):
+    raise SystemExit(1)
+raise SystemExit(0 if len(decoded) == 32 else 1)
+'; then
+        echo "ERROR: hmac_secret_base64 must encode exactly 32 bytes" >&2
+        exit 2
+      fi
     fi
     STDIN_FIELD_PAIRS+=("$key=$value")
     unset value
@@ -302,17 +345,29 @@ CAPS=$(curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
   -d "{\"paths\":[\"$KV_PATH\"]}" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(','.join(sorted(d['capabilities'])))")
 
-if ! echo "$CAPS" | grep -q 'create' || ! echo "$CAPS" | grep -q 'update'; then
-  echo "ERROR: capabilities-self missing create/update on $KV_PATH" >&2
-  echo "       got: $CAPS" >&2
-  exit 4
-fi
-
-if echo "$CAPS" | grep -q 'delete'; then
-  echo "WARNING: capabilities-self includes 'delete' on $KV_PATH" >&2
-  echo "         (boundary violation — bootstrap-writer should NOT have delete)" >&2
-  echo "         policy may be misconfigured. Aborting." >&2
-  exit 4
+if [[ "$SERVICE" == "meeting-analysis-capability" ]]; then
+  if ! echo "$CAPS" | grep -q 'create' || ! echo "$CAPS" | grep -q 'read'; then
+    echo "ERROR: capabilities-self missing create/read on $KV_PATH" >&2
+    echo "       got: $CAPS" >&2
+    exit 4
+  fi
+  if echo "$CAPS" | grep -Eq '(^|,)(update|delete)(,|$)'; then
+    echo "ERROR: capabilities-self permits update/delete on create-only $KV_PATH" >&2
+    echo "       active-key overwrite/rotation is forbidden; got: $CAPS" >&2
+    exit 4
+  fi
+else
+  if ! echo "$CAPS" | grep -q 'create' || ! echo "$CAPS" | grep -q 'update'; then
+    echo "ERROR: capabilities-self missing create/update on $KV_PATH" >&2
+    echo "       got: $CAPS" >&2
+    exit 4
+  fi
+  if echo "$CAPS" | grep -q 'delete'; then
+    echo "WARNING: capabilities-self includes 'delete' on $KV_PATH" >&2
+    echo "         (boundary violation — bootstrap-writer should NOT have delete)" >&2
+    echo "         policy may be misconfigured. Aborting." >&2
+    exit 4
+  fi
 fi
 
 # ============================================================================
@@ -340,6 +395,12 @@ else
   exit 5
 fi
 unset EXISTING_BODY
+
+if [[ "$CREATE_ONLY" -eq 1 && "$CURRENT_VERSION" -ne 0 ]]; then
+  echo "ERROR: --create-only refused existing KV path $KV_PATH" >&2
+  echo "       current_version=$CURRENT_VERSION; no value was logged" >&2
+  exit 2
+fi
 
 # Merge new fields into existing data
 PATCHED_DATA=$({
