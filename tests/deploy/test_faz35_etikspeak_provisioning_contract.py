@@ -119,7 +119,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         ).read_text()
         cls.model_ledger_path = (
             ROOT
-            / "runtime-artifacts/openfga-model/711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33.json"
+            / "runtime-artifacts/openfga-model/3a426b464bced864e0da8431b56bcb85a5584eabb8d09d68f8b2d7d384848e30.json"
         )
         cls.model_ledger = cls.model_ledger_path.read_text()
         cls.test_root = (

@@ -4,7 +4,7 @@
   "artifact_content_digest": "sha256:3a426b464bced864e0da8431b56bcb85a5584eabb8d09d68f8b2d7d384848e30",
   "source": {
     "kind": "openfga-server",
-    "canonical_source_ref": null
+    "canonical_source_ref": "openfga://platform-test/authorization-models/01KYQ1GX5SB1FBH5GK98A70T00"
   },
   "runtime_selector": {
     "selector_kind": "kubernetes-configmap",
@@ -16,14 +16,14 @@
   },
   "promotion": {
     "test": {
-      "status": "pending",
+      "status": "verified",
       "method": "pr-promotion",
       "store_ref": "platform-test/etik-speak",
-      "verified_at": null,
+      "verified_at": "2026-07-29T13:45:00Z",
       "promoted_at": null,
       "verified_by_pr": null,
       "promoted_by_pr": null,
-      "model_id_env": "01KXYKECVDKPK3B45A8RNXKS4X",
+      "model_id_env": "01KYQ1GX5SB1FBH5GK98A70T00",
       "evidence": {
         "required_types_present": [
           "user",

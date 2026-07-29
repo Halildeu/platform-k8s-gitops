@@ -29,7 +29,7 @@ data:
   # Isolated TEST store/model created, semantically read back and exercised by
   # the reviewed provisioner before root activation. These IDs are non-secret.
   ERP_OPENFGA_STORE_ID: "01KXYKEBVTSGEDYJ5GJ0TY67JD"
-  ERP_OPENFGA_MODEL_ID: "01KXYKECVDKPK3B45A8RNXKS4X"
+  ERP_OPENFGA_MODEL_ID: "01KYQ1GX5SB1FBH5GK98A70T00"
   # --- ES-104G evidence custody, request-facing half -----------------------
   # This process admits an upload and streams a finished derivative back to an
   # authorized manager. It deliberately does NOT run the pipeline and does NOT
