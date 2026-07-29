@@ -4,7 +4,10 @@
 The smoke is deliberately test-only. It reads the dedicated client secret from
 Kubernetes into process memory, never forwards credentials through argv, and
 writes metadata-only evidence. A synthetic analysis result can be persisted to
-prove the canonical first-write/replay/conflict contract.
+prove the canonical first-write/replay/conflict contract only when the operator
+confirms that the supplied transcript finalization is synthetic. Each write
+attempt obtains a fresh transcript-service analysis capability bound to the
+exact producer-owned finalization occurrence.
 """
 
 from __future__ import annotations
@@ -20,16 +23,21 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit
 
 
-SCHEMA_VERSION = "faz24-meeting-ai-private-runtime-smoke.v1"
+SCHEMA_VERSION = "faz24-meeting-ai-private-runtime-smoke.v2"
 WRITE_PERMISSION = "meeting:analysis-result:write"
+CAPABILITY_PERMISSION = "transcript:analysis-job-capability:issue"
+CAPABILITY_HEADER = "x-analysis-job-capability"
+CAPABILITY_EXPIRES_HEADER = "x-analysis-job-capability-expires-at"
+DEFAULT_ANALYSIS_SPEC_VERSION = "meeting-intelligence-v1"
 SAFE_ERROR_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 TEST_CONTEXT = "k3d-test"
 TEST_NAMESPACE = "platform-test"
 MAX_HTTP_TIMEOUT_SECONDS = 10
@@ -43,6 +51,7 @@ class SmokeError(RuntimeError):
 class HttpResult:
     status: int
     body: bytes
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 def _utc_now() -> datetime:
@@ -84,7 +93,13 @@ def _claim_list(value: Any, name: str) -> list[str]:
     return result
 
 
-def summarize_and_validate_claims(token: str, now_epoch: int | None = None) -> dict[str, Any]:
+def summarize_and_validate_claims(
+    token: str,
+    now_epoch: int | None = None,
+    *,
+    expected_audience: str = "meeting-service",
+    expected_permission: str = WRITE_PERMISSION,
+) -> dict[str, Any]:
     parts = token.split(".")
     if len(parts) != 3:
         raise SmokeError("service token must be a compact three-part JWT")
@@ -101,9 +116,9 @@ def summarize_and_validate_claims(token: str, now_epoch: int | None = None) -> d
     for name, expected in expected_scalars.items():
         if claims.get(name) != expected:
             raise SmokeError(f"service token {name} claim is not bound to {expected}")
-    if audience != ["meeting-service"]:
-        raise SmokeError("service token audience is not exactly meeting-service")
-    if permissions != [WRITE_PERMISSION]:
+    if audience != [expected_audience]:
+        raise SmokeError(f"service token audience is not exactly {expected_audience}")
+    if permissions != [expected_permission]:
         raise SmokeError("service token permission set is not least privilege")
 
     try:
@@ -129,19 +144,94 @@ def summarize_and_validate_claims(token: str, now_epoch: int | None = None) -> d
     }
 
 
-def require_ingest_token_window(token: str, timeout_seconds: int) -> None:
+def _parse_instant(value: Any, name: str) -> datetime:
+    if not isinstance(value, str) or len(value) > 64:
+        raise SmokeError(f"analysis capability {name} claim is missing or invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SmokeError(f"analysis capability {name} claim is missing or invalid") from exc
+    if parsed.tzinfo is None:
+        raise SmokeError(f"analysis capability {name} claim is missing or invalid")
+    return parsed.astimezone(timezone.utc)
+
+
+def summarize_and_validate_capability(
+    token: str,
+    *,
+    tenant_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    session_id: uuid.UUID,
+    finalization_version: int,
+    analysis_run_id: uuid.UUID,
+    analysis_spec_version: str,
+    expires_header: str,
+    now_epoch: int | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     parts = token.split(".")
     if len(parts) != 3:
-        raise SmokeError("service token must be a compact three-part JWT")
+        raise SmokeError("analysis capability must be a compact three-part JWT")
     claims = _b64url_json(parts[1])
+    audience = _claim_list(claims.get("aud"), "aud")
+    expected = {
+        "iss": "transcript-service",
+        "sub": "meeting-ai",
+        "client_id": "meeting-ai",
+        "perm": WRITE_PERMISSION,
+        "tenant_id": str(tenant_id),
+        "meeting_id": str(meeting_id),
+        "session_id": str(session_id),
+        "analysis_run_id": str(analysis_run_id),
+        "analysis_spec_version": analysis_spec_version,
+    }
+    for name, value in expected.items():
+        if claims.get(name) != value:
+            raise SmokeError(f"analysis capability {name} claim is not exactly bound")
+    if audience != ["meeting-service"]:
+        raise SmokeError("analysis capability audience is not exactly meeting-service")
     try:
+        capability_id = uuid.UUID(str(claims["jti"]))
+        claim_finalization_version = int(claims["finalization_version"])
         expires_at = int(claims["exp"])
+        issued_at = int(claims["iat"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise SmokeError("service token exp claim is missing or invalid") from exc
-    remaining_seconds = expires_at - int(_utc_now().timestamp())
-    required_seconds = (5 * timeout_seconds) + 5
-    if remaining_seconds < required_seconds:
-        raise SmokeError("service token has insufficient lifetime for the ingest matrix")
+        raise SmokeError("analysis capability identity/time claims are invalid") from exc
+    if claim_finalization_version != finalization_version:
+        raise SmokeError("analysis capability finalization_version claim is not exactly bound")
+    ttl_seconds = expires_at - issued_at
+    if ttl_seconds <= 0 or ttl_seconds > 300:
+        raise SmokeError("analysis capability TTL is outside the 1..300 second boundary")
+    effective_now = int(_utc_now().timestamp()) if now_epoch is None else now_epoch
+    if expires_at <= effective_now:
+        raise SmokeError("analysis capability is already expired")
+    header_expiry = _parse_instant(expires_header, "expires header")
+    if int(header_expiry.timestamp()) != expires_at:
+        raise SmokeError("analysis capability expiry header does not match JWT exp")
+    finalized_at_raw = claims.get("finalized_at")
+    _parse_instant(finalized_at_raw, "finalized_at")
+    transcript_sha256 = claims.get("transcript_sha256")
+    if not isinstance(transcript_sha256, str) or not SHA256_RE.fullmatch(
+        transcript_sha256
+    ):
+        raise SmokeError("analysis capability transcript_sha256 claim is invalid")
+    binding = {
+        "capabilityId": str(capability_id),
+        "sessionId": str(session_id),
+        "transcriptSha256": transcript_sha256,
+        "finalizationVersion": finalization_version,
+        "finalizedAt": finalized_at_raw,
+        "analysisSpecVersion": analysis_spec_version,
+    }
+    summary = {
+        "issuer": "transcript-service",
+        "subject": "meeting-ai",
+        "clientId": "meeting-ai",
+        "audience": audience,
+        "permission": WRITE_PERMISSION,
+        "ttlSeconds": ttl_seconds,
+        "exactTupleBound": True,
+    }
+    return binding, summary
 
 
 def load_kubernetes_secret(
@@ -214,7 +304,14 @@ def http_request(
         connection.request(method, path, body=body, headers=request_headers)
         response = connection.getresponse()
         response_body = response.read(1_048_576)
-        return HttpResult(status=response.status, body=response_body)
+        response_headers = {
+            name.lower(): value.strip() for name, value in response.getheaders()
+        }
+        return HttpResult(
+            status=response.status,
+            body=response_body,
+            headers=response_headers,
+        )
     except (OSError, http.client.HTTPException) as exc:
         raise SmokeError("private runtime HTTP request failed") from exc
     finally:
@@ -290,6 +387,7 @@ def _ingest_call(
     meeting_id: uuid.UUID,
     analysis_run_id: uuid.UUID,
     token: str | None,
+    job_capability: str | None,
     body: bytes,
     timeout_seconds: int,
 ) -> HttpResult:
@@ -300,6 +398,8 @@ def _ingest_call(
     }
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
+    if job_capability is not None:
+        headers["X-Analysis-Job-Capability"] = job_capability
     return request(
         base_url,
         host_header,
@@ -311,12 +411,49 @@ def _ingest_call(
     )
 
 
-def _synthetic_body(meeting_id: uuid.UUID, analysis_run_id: uuid.UUID) -> bytes:
-    source_marker = f"faz24-runtime-smoke:{analysis_run_id}"
+def _capability_call(
+    request: Callable[..., HttpResult],
+    base_url: str,
+    host_header: str,
+    *,
+    tenant_id: uuid.UUID,
+    meeting_id: uuid.UUID,
+    session_id: uuid.UUID,
+    finalization_version: int,
+    analysis_run_id: uuid.UUID,
+    analysis_spec_version: str,
+    token: str,
+    timeout_seconds: int,
+) -> HttpResult:
+    return request(
+        base_url,
+        host_header,
+        "POST",
+        (
+            f"/api/v1/internal/tenants/{tenant_id}/meetings/{meeting_id}"
+            f"/sessions/{session_id}/finalizations/{finalization_version}"
+            "/analysis-capability"
+        ),
+        {
+            "Authorization": f"Bearer {token}",
+            "X-Tenant-Id": str(tenant_id),
+            "X-Analysis-Run-Id": str(analysis_run_id),
+            "X-Analysis-Spec-Version": analysis_spec_version,
+            "Accept": "application/json",
+        },
+        None,
+        timeout_seconds,
+    )
+
+
+def _synthetic_body(meeting_id: uuid.UUID, binding: dict[str, Any]) -> bytes:
     payload = {
         "meeting_id": str(meeting_id),
-        "transcript_session_id": f"SES-F24-{analysis_run_id.hex[:24]}",
-        "transcript_sha256": hashlib.sha256(source_marker.encode("ascii")).hexdigest(),
+        "transcript_session_id": binding["sessionId"],
+        "transcript_sha256": binding["transcriptSha256"],
+        "finalization_version": binding["finalizationVersion"],
+        "finalized_at": binding["finalizedAt"],
+        "analysis_spec_version": binding["analysisSpecVersion"],
         "analyzer_contract_version": "5-adr0043",
         "model": "runtime-smoke",
         "backend": "synthetic",
@@ -345,12 +482,40 @@ def run_smoke(
     base_url: str,
     host_header: str,
     meeting_id: uuid.UUID,
+    tenant_id: uuid.UUID | None,
+    session_id: uuid.UUID | None,
+    finalization_version: int | None,
+    analysis_run_id: uuid.UUID | None,
+    analysis_spec_version: str,
     write_synthetic_result: bool,
+    confirm_synthetic_finalization: bool,
     timeout_seconds: int,
     secret_loader: Callable[..., str] = load_kubernetes_secret,
     request: Callable[..., HttpResult] = http_request,
 ) -> tuple[dict[str, Any], bool]:
     validate_test_target(context, namespace, timeout_seconds)
+    if write_synthetic_result:
+        if not confirm_synthetic_finalization:
+            raise SmokeError(
+                "synthetic write requires --confirm-synthetic-finalization"
+            )
+        if (
+            tenant_id is None
+            or session_id is None
+            or finalization_version is None
+            or analysis_run_id is None
+        ):
+            raise SmokeError(
+                "synthetic write requires tenant/session/finalization/analysis-run tuple"
+            )
+        if finalization_version < 1:
+            raise SmokeError("finalization version must be positive")
+        if (
+            not analysis_spec_version
+            or len(analysis_spec_version) > 64
+            or not SAFE_ERROR_RE.fullmatch(analysis_spec_version)
+        ):
+            raise SmokeError("analysis spec version has an invalid shape")
     secret = secret_loader(context, namespace, secret_name, secret_key, timeout_seconds)
     checks: list[dict[str, Any]] = []
     invalid_secret = "invalid-" + uuid.uuid4().hex
@@ -464,15 +629,14 @@ def run_smoke(
             }
         )
 
-    analysis_run_id = uuid.uuid4()
     if write_synthetic_result and token is not None:
-        require_ingest_token_window(token, timeout_seconds)
-        body = _synthetic_body(meeting_id, analysis_run_id)
+        assert tenant_id is not None
+        assert session_id is not None
+        assert finalization_version is not None
+        assert analysis_run_id is not None
         for check_id, expected_status, presented_token in (
             ("ingest-no-token", 401, None),
             ("ingest-malformed-token", 401, "not-a-jwt"),
-            ("ingest-first-write", 201, token),
-            ("ingest-idempotent-replay", 200, token),
         ):
             checks.append(
                 _check(
@@ -485,30 +649,228 @@ def run_smoke(
                         meeting_id,
                         analysis_run_id,
                         presented_token,
-                        body,
+                        None,
+                        b"{}",
                         timeout_seconds,
                     ),
                 )
             )
-        changed = json.loads(body)
-        changed["summary"] = "Synthetic conflict probe; no user transcript or PII."
-        conflict_body = json.dumps(changed, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        checks.append(
-            _check(
-                "ingest-idempotency-conflict",
-                409,
-                _ingest_call(
-                    request,
-                    base_url,
-                    host_header,
-                    meeting_id,
-                    analysis_run_id,
-                    token,
-                    conflict_body,
-                    timeout_seconds,
-                ),
+
+        base_body: bytes | None = None
+        canonical_binding: dict[str, Any] | None = None
+        capability_summary: dict[str, Any] | None = None
+        used_capability_ids: set[str] = set()
+        for phase, ingest_check_id, expected_status in (
+            ("first-write", "ingest-first-write", 201),
+            ("replay", "ingest-idempotent-replay", 200),
+            ("conflict", "ingest-idempotency-conflict", 409),
+        ):
+            capability_token_result = _token_call(
+                request,
+                base_url,
+                host_header,
+                secret,
+                "transcript-service",
+                [CAPABILITY_PERMISSION],
+                timeout_seconds,
             )
-        )
+            checks.append(
+                _check(
+                    f"capability-token-{phase}",
+                    200,
+                    capability_token_result,
+                )
+            )
+            capability_service_token: str | None = None
+            if capability_token_result.status == 200:
+                try:
+                    capability_token_document = json.loads(
+                        capability_token_result.body
+                    )
+                    capability_service_token = capability_token_document[
+                        "access_token"
+                    ]
+                    if (
+                        not isinstance(capability_service_token, str)
+                        or not capability_service_token
+                    ):
+                        raise KeyError("access_token")
+                    summarize_and_validate_claims(
+                        capability_service_token,
+                        expected_audience="transcript-service",
+                        expected_permission=CAPABILITY_PERMISSION,
+                    )
+                except (KeyError, TypeError, json.JSONDecodeError, SmokeError):
+                    capability_service_token = None
+            checks.append(
+                {
+                    "id": f"capability-token-claims-{phase}",
+                    "expectedStatus": "bound",
+                    "actualStatus": (
+                        "bound"
+                        if capability_service_token is not None
+                        else "invalid"
+                    ),
+                    "pass": capability_service_token is not None,
+                }
+            )
+            if capability_service_token is None:
+                continue
+
+            capability_result = _capability_call(
+                request,
+                base_url,
+                host_header,
+                tenant_id=tenant_id,
+                meeting_id=meeting_id,
+                session_id=session_id,
+                finalization_version=finalization_version,
+                analysis_run_id=analysis_run_id,
+                analysis_spec_version=analysis_spec_version,
+                token=capability_service_token,
+                timeout_seconds=timeout_seconds,
+            )
+            checks.append(
+                _check(
+                    f"capability-issue-{phase}",
+                    204,
+                    capability_result,
+                )
+            )
+            job_capability = capability_result.headers.get(CAPABILITY_HEADER)
+            expires_header = capability_result.headers.get(
+                CAPABILITY_EXPIRES_HEADER
+            )
+            binding: dict[str, Any] | None = None
+            summary: dict[str, Any] | None = None
+            if (
+                capability_result.status == 204
+                and job_capability is not None
+                and expires_header is not None
+            ):
+                try:
+                    binding, summary = summarize_and_validate_capability(
+                        job_capability,
+                        tenant_id=tenant_id,
+                        meeting_id=meeting_id,
+                        session_id=session_id,
+                        finalization_version=finalization_version,
+                        analysis_run_id=analysis_run_id,
+                        analysis_spec_version=analysis_spec_version,
+                        expires_header=expires_header,
+                    )
+                    capability_id = binding["capabilityId"]
+                    if capability_id in used_capability_ids:
+                        raise SmokeError("analysis capability was reused")
+                    used_capability_ids.add(capability_id)
+                    comparable = {
+                        key: value
+                        for key, value in binding.items()
+                        if key != "capabilityId"
+                    }
+                    if canonical_binding is None:
+                        canonical_binding = comparable
+                    elif canonical_binding != comparable:
+                        raise SmokeError(
+                            "analysis capability tuple changed between attempts"
+                        )
+                except SmokeError:
+                    binding = None
+                    summary = None
+            checks.append(
+                {
+                    "id": f"capability-binding-{phase}",
+                    "expectedStatus": "bound",
+                    "actualStatus": "bound" if binding is not None else "invalid",
+                    "pass": binding is not None,
+                }
+            )
+            if binding is None or job_capability is None:
+                continue
+            if capability_summary is None:
+                capability_summary = summary
+            if base_body is None:
+                base_body = _synthetic_body(meeting_id, binding)
+
+            fresh_write_token_result = _token_call(
+                request,
+                base_url,
+                host_header,
+                secret,
+                "meeting-service",
+                [WRITE_PERMISSION],
+                timeout_seconds,
+            )
+            checks.append(
+                _check(
+                    f"write-token-{phase}",
+                    200,
+                    fresh_write_token_result,
+                )
+            )
+            fresh_write_token: str | None = None
+            if fresh_write_token_result.status == 200:
+                try:
+                    fresh_write_token_document = json.loads(
+                        fresh_write_token_result.body
+                    )
+                    fresh_write_token = fresh_write_token_document["access_token"]
+                    if (
+                        not isinstance(fresh_write_token, str)
+                        or not fresh_write_token
+                    ):
+                        raise KeyError("access_token")
+                    summarize_and_validate_claims(fresh_write_token)
+                except (KeyError, TypeError, json.JSONDecodeError, SmokeError):
+                    fresh_write_token = None
+            checks.append(
+                {
+                    "id": f"write-token-claims-{phase}",
+                    "expectedStatus": "bound",
+                    "actualStatus": (
+                        "bound" if fresh_write_token is not None else "invalid"
+                    ),
+                    "pass": fresh_write_token is not None,
+                }
+            )
+            if fresh_write_token is None:
+                continue
+
+            request_body = base_body
+            if phase == "conflict":
+                changed = json.loads(base_body)
+                changed["summary"] = (
+                    "Synthetic conflict probe; no user transcript or PII."
+                )
+                request_body = json.dumps(
+                    changed,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            checks.append(
+                _check(
+                    ingest_check_id,
+                    expected_status,
+                    _ingest_call(
+                        request,
+                        base_url,
+                        host_header,
+                        meeting_id,
+                        analysis_run_id,
+                        fresh_write_token,
+                        job_capability,
+                        request_body,
+                        timeout_seconds,
+                    ),
+                )
+            )
+            capability_service_token = None
+            fresh_write_token = None
+            job_capability = None
+        claims_summary = {
+            "serviceToken": claims_summary,
+            "analysisCapability": capability_summary,
+        }
     elif not write_synthetic_result:
         checks.append(
             {
@@ -543,7 +905,18 @@ def run_smoke(
         "syntheticWrite": {
             "requested": write_synthetic_result,
             "meetingId": str(meeting_id) if write_synthetic_result else None,
-            "analysisRunId": str(analysis_run_id) if write_synthetic_result else None,
+            "tenantId": str(tenant_id) if write_synthetic_result else None,
+            "sessionId": str(session_id) if write_synthetic_result else None,
+            "finalizationVersion": (
+                finalization_version if write_synthetic_result else None
+            ),
+            "analysisRunId": (
+                str(analysis_run_id) if write_synthetic_result else None
+            ),
+            "analysisSpecVersion": (
+                analysis_spec_version if write_synthetic_result else None
+            ),
+            "syntheticFinalizationConfirmed": confirm_synthetic_finalization,
             "containsUserTranscript": False,
             "containsPii": False,
         },
@@ -583,7 +956,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--base-url", default="http://127.0.0.1:31080")
     parser.add_argument("--host-header", default="meeting-ai-private.testai.internal")
     parser.add_argument("--meeting-id", required=True, type=uuid.UUID)
+    parser.add_argument("--tenant-id", type=uuid.UUID)
+    parser.add_argument("--session-id", type=uuid.UUID)
+    parser.add_argument("--finalization-version", type=int)
+    parser.add_argument("--analysis-run-id", type=uuid.UUID)
+    parser.add_argument(
+        "--analysis-spec-version",
+        default=DEFAULT_ANALYSIS_SPEC_VERSION,
+    )
     parser.add_argument("--write-synthetic-result", action="store_true")
+    parser.add_argument("--confirm-synthetic-finalization", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=10)
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args(argv)
@@ -605,7 +987,13 @@ def main(argv: list[str] | None = None) -> int:
             base_url=args.base_url,
             host_header=args.host_header,
             meeting_id=args.meeting_id,
+            tenant_id=args.tenant_id,
+            session_id=args.session_id,
+            finalization_version=args.finalization_version,
+            analysis_run_id=args.analysis_run_id,
+            analysis_spec_version=args.analysis_spec_version,
             write_synthetic_result=args.write_synthetic_result,
+            confirm_synthetic_finalization=args.confirm_synthetic_finalization,
             timeout_seconds=args.timeout_seconds,
         )
         write_evidence(args.output, evidence)

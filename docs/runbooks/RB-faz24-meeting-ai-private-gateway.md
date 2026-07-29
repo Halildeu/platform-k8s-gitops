@@ -293,23 +293,35 @@ Canlı kabul tek başarılı istek değildir. Redacted evidence aşağıdakileri
 tamamını içermelidir:
 
 Gateway aktivasyonundan bağımsız backend claim ve persistence matrisi staging
-hostta aşağıdaki test-only araçla çalıştırılır. Araç client secret ve JWT'yi
-yalnız proses belleğinde tutar; argv, stdout ve evidence JSON'a yazmaz. Yazma
-seçeneği yalnız PII/transcript içermeyen sentetik bir canonical result üretir:
+hostta aşağıdaki test-only araçla çalıştırılır. Araç client secret, service JWT
+ve tek-kullanımlık analysis capability'yi yalnız proses belleğinde tutar; argv,
+stdout ve evidence JSON'a yazmaz. Yazma seçeneği yalnız PII/transcript içermeyen
+sentetik bir canonical result üretir. Tuple, transcript-service'in oluşturduğu
+sentetik finalization occurrence'dan alınmalıdır; kullanıcı toplantısı veya
+gerçek transcript occurrence'ı bu smoke için kullanılmaz:
 
 ```bash
 umask 077
 python3 scripts/faz24/run_meeting_ai_private_runtime_smoke.py \
   --context k3d-test \
   --namespace platform-test \
+  --tenant-id '<synthetic-tenant-uuid>' \
   --meeting-id '<test-meeting-uuid>' \
+  --session-id '<synthetic-canonical-session-uuid>' \
+  --finalization-version '<positive-version>' \
+  --analysis-run-id '<producer-owned-analysis-run-uuid>' \
+  --analysis-spec-version 'meeting-intelligence-v1' \
   --write-synthetic-result \
+  --confirm-synthetic-finalization \
   --output /secure/evidence/faz24-meeting-ai-private-runtime-smoke.json
 ```
 
-Araç test dışı context/namespace'i fail-closed reddeder. Evidence ancak yanlış
-secret/audience/permission negatifleri, exact JWT claim/TTL bağları, unauthenticated
-ingestion, ilk `201`, idempotent replay `200` ve payload conflict `409`
+Araç test dışı context/namespace'i ve açık sentetik-finalization onayı olmayan
+yazmayı fail-closed reddeder. Evidence ancak yanlış secret/audience/permission
+negatifleri, exact service JWT claim/TTL bağları, her deneme için ayrı
+transcript-service JIT capability, exact tenant/meeting/session/finalization/
+analysis-run/spec binding'i, unauthenticated ingestion, ilk `201`, fresh
+capability ile idempotent replay `200` ve payload conflict `409`
 beklentilerinin tamamı geçerse `accepted=true` olur. Bu backend matrisi mTLS,
 GPU outbox veya Electron viewer kabulünün yerine geçmez.
 
