@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
   "artifact_kind": "openfga-model",
-  "artifact_content_digest": "sha256:711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33",
+  "artifact_content_digest": "sha256:3a426b464bced864e0da8431b56bcb85a5584eabb8d09d68f8b2d7d384848e30",
   "source": {
     "kind": "openfga-server",
-    "canonical_source_ref": "openfga://platform-test/authorization-models/01KXYKECVDKPK3B45A8RNXKS4X"
+    "canonical_source_ref": null
   },
   "runtime_selector": {
     "selector_kind": "kubernetes-configmap",
@@ -16,10 +16,10 @@
   },
   "promotion": {
     "test": {
-      "status": "verified",
+      "status": "pending",
       "method": "pr-promotion",
       "store_ref": "platform-test/etik-speak",
-      "verified_at": "2026-07-20T02:18:48Z",
+      "verified_at": null,
       "promoted_at": null,
       "verified_by_pr": null,
       "promoted_by_pr": null,
