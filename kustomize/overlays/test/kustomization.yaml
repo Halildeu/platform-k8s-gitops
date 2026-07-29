@@ -4652,15 +4652,15 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: cadc6ad00a9061bf93d716962b63be9abb6100e3
+    # sourceRevision: e49b544971626c5cf6a011178f34f92efaa4d136
     # 2026-07-28 project actuals workspace: platform-web PR #1050,
     # merge 03fb152dc080e9b1c0c31cbe879edf00b40f52a1; signed testai
     # image build run 30318186229 (job 90148263512).
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-cadc6ad
-    digest: sha256:b1beb38912d595619b944fd08fccd6af05dcaf6a1342687b474d32dcee4e8fe4
+    newTag: sha-e49b544
+    digest: sha256:c028fa5cbf5383bfb0ae793ad5cd98c96e3647eb5dfc014c4e79bc85828ceeac
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
