@@ -58,16 +58,15 @@ images:
     digest: sha256:2a47d483a5ff7119f88e59ef9fc28fab5fd5f549efde21e0a5e20861d1fdea86
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
-    # platform-web #1063 — vakanin kendi gecmisi ekranda; okunamadiginda bos
-    # liste degil, okunamadigi yazili.
-    # Kaynak: f5e32d6da97000e29717fa8ec42781ca6ac0e361
-    # Etiket: sha-f5e32d6da97000e29717fa8ec42781ca6ac0e361 (bu hat TAM sha etiketi kullanir;
-    # frontend hattindaki kisa sha-XXXXXXX bicimi burada YOKTUR).
-    # Digest build log'undan DEGIL, hedef node'a gercek pull ile okundu:
-    #   docker pull ...:sha-f2973351... && docker inspect --format '{{.RepoDigests}}'
-    # Build-log digest'i o etiketin cekilebilir oldugunun kaniti degildir ve
-    # boyle bir pin daha once bir servisi sessizce roll etmeden birakti.
-    digest: sha256:acb24dfc25601a5c04c7d0c5004448a02842c50c980300bdb4d2d5b3b3011e6b
+    # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
+    # gerçek design-system ShellHeader+ShellSidebar, kanonik üretilmiş tema,
+    # taklit adapter silindi. (Önceki blokta defter 69a4a304, yorum f5e32d6d
+    # diyordu — aynı digest için iki farklı kaynak kaydı; bu blok ikisini de
+    # tek gerçeğe bağlıyor.)
+    # Kaynak: ca9ce3a9eeda58ea2e48a4ab95ea948031a73a49
+    # Etiket: sha-ca9ce3a9eeda58ea2e48a4ab95ea948031a73a49 (bu hat TAM sha etiketi kullanır)
+    # Digest registry manifest'inden çözüldü; build-log digest'i pin'lenmez.
+    digest: sha256:e658bd5f84b6abc11e7f5506dfe8594f49a3665d241fdfc4d261cf51680b1af1
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
