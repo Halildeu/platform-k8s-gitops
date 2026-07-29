@@ -1,5 +1,36 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Graph mailbox routine Vault access uses a scoped AppRole (2026-07-30)
+
+Board issue `#771` kapsamında production Vault üzerinde `graph-mail-ops`
+AppRole ve `graph-mail-ops-ro` policy oluşturuldu. Policy yalnız
+`kv/data/platform/graph` read ve `auth/token/revoke-self` update yetkilerini
+taşır; wildcard, list ve default policy yoktur. Role tokenı 15 dakika TTL,
+30 dakika max TTL ve üç kullanım ile sınırlıdır; token ve secret-id source
+CIDR'ları canlı Vault Docker bridge gateway'i `172.21.0.1/32` değerine bağlıdır.
+Root-only AppRole bootstrap dosyaları
+`/srv/platform/secrets/graph-mail-vault/{role-id,secret-id}` altında
+`0400 root:root` olarak doğrulandı.
+
+Canlı provision/rotation doğrulaması exact Graph KV read için `200`, kapsam dışı
+KV read ve metadata LIST için ayrı ayrı `403` üretti. Yeni secret-id bu testler
+geçtikten sonra kalıcılaştırıldı; önceki accessor'lar bundan sonra imha edildi.
+Branch'teki `graph-mail-list.sh --top 1` AppRole login, Vault secret read,
+Microsoft Graph token ve inbox GET zincirinde `count=1`, `error=null` döndürdü.
+Vault runtime logu aynı helper çağrısının AppRole lease'inin hemen revoke
+edildiğini gösterdi. Mail konusu, gövdesi, token, credential veya secret
+kanıta yazılmadı.
+
+Bu kanıt read helper'ın canlı yolculuğuna aittir. `graph-mail-send.sh` aynı
+fail-closed AppRole sözleşmesini paylaşır ve statik/shell testleri geçmiştir;
+bu değişikliği doğrulamak için mail gönderilmedi, dolayısıyla send helper'ın
+yeni auth bloğuyla gerçek Graph `202` ve Sent Items read-back'i bu turda
+`unverified` kalır. Source branch/PR ve ana otomasyon çalışma ağacına güvenli
+taşıma ayrıca doğrulanacaktır. Mevcut `aiadmin` geniş `NOPASSWD: ALL` sudo
+yetkisi host hesabını root eşdeğerinden ayırmadığı için R17 bütünüyle
+mitigated değildir; değişiklik routine helper root-token tüketimini ve
+yanlışlıkla geniş credential kullanımını daraltır.
+
 ## Live Delta — Faz 24 durable compute-audit evidence and TEST image pin (2026-07-29)
 
 Issue `#2610` altındaki bu TEST-only değişiklik, `platform-backend#999`
