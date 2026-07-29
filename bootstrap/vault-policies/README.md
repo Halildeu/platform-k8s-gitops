@@ -27,7 +27,7 @@ bootstrap/vault-policies/
 | `eso-runtime` | `common/` | ESO ExternalSecret read (kv/platform/* + kv/gitops/* + smoke-client) | Hem prod hem test Vault |
 | `eso-runtime-prod-extras` | `prod/` | Prod-only ek paths (sys/audit read, forward-extension) | SADECE prod Vault |
 | `eso-runtime-test-extras` | `test/` | Test-only ek paths (Faz 24 analysis capability read + token self-lookup) | SADECE test Vault |
-| `meeting-analysis-capability-writer-test` | `test/` | Faz 24 shared analysis capability trust-root create/update/read; property boundary wrapper'da | SADECE test Vault |
+| `meeting-analysis-capability-writer-test` | `test/` | Faz 24 shared analysis capability trust-root create/update/read; exact-property restriction is an audited wrapper guard, not a Vault ACL boundary | SADECE test Vault |
 
 ## 3. Apply (Prod Vault)
 

@@ -6692,7 +6692,7 @@ patches:
                   - name: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                     valueFrom:
                       secretKeyRef:
-                        name: meeting-service-secrets
+                        name: meeting-service-analysis-capability
                         key: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                         optional: false
 
@@ -6837,7 +6837,8 @@ patches:
               # required by the private canonical transcript gateway routes.
               transcript-service.acik.com/internal-service-jwt-rev: "2026-07-29-2321-v1"
               # #3144: dedicated rollout marker for the shared capability trust
-              # root. Increment only after a reviewed Vault rotation.
+              # root. v1 is first activation; active-key rotation is blocked by
+              # the runbook until a reviewed dual-key/key-id contract exists.
               transcript-service.acik.com/analysis-capability-rev: "2026-07-29-3144-v1"
           spec:
             containers:
@@ -6861,7 +6862,7 @@ patches:
                   - name: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                     valueFrom:
                       secretKeyRef:
-                        name: transcript-service-secrets
+                        name: transcript-service-analysis-capability
                         key: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                         optional: false
       # #2568: transcript-service consumes ConfigMap values through envFrom.

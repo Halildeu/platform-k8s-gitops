@@ -35,8 +35,11 @@
 #                               regular file. The value never enters argv.
 #   --cleanup-field-files       Securely removes --field-from-file inputs.
 #   --cleanup-secret-id-file    Securely removes the secret-id file on exit.
-#   --vault-addr <url>          Default: http://127.0.0.1:8301 (test).
-#                               Use http://127.0.0.1:8200 for prod.
+#   --create-only               Fail unless the KV v2 path is absent (version 0).
+#   --vault-addr <url>          Generic default: http://127.0.0.1:8301.
+#                               Faz 24 capability first activation passes the
+#                               canonical TEST host endpoint :8201 explicitly;
+#                               canonical PROD :8200 is rejected for that path.
 #   --dry-run                   Print the would-be PATCH body, don't write.
 #   --help                      Show this message.
 #
@@ -69,6 +72,7 @@ declare -a FILE_PATHS=()
 DRY_RUN=0
 CLEANUP_SECRET_ID_FILE=0
 CLEANUP_FIELD_FILES=0
+CREATE_ONLY=0
 TOKEN_HEADER_FILE=""
 
 usage() {
@@ -90,6 +94,8 @@ while [[ $# -gt 0 ]]; do
       CLEANUP_FIELD_FILES=1; shift ;;
     --cleanup-secret-id-file)
       CLEANUP_SECRET_ID_FILE=1; shift ;;
+    --create-only)
+      CREATE_ONLY=1; shift ;;
     --vault-addr)
       VAULT_ADDR="$2"; shift 2 ;;
     --dry-run)
@@ -160,8 +166,14 @@ if [[ "$SERVICE" == "meeting-analysis-capability" ]]; then
   if [[ "${#FIELDS[@]}" -ne 0 \
         || "${#STDIN_KEYS[@]}" -ne 1 \
         || "${STDIN_KEYS[0]:-}" != "hmac_secret_base64" \
-        || "${#FILE_SPECS[@]}" -ne 0 ]]; then
-    echo "ERROR: $SERVICE accepts only hmac_secret_base64 from stdin" >&2
+        || "${#FILE_SPECS[@]}" -ne 0 \
+        || "$CREATE_ONLY" -ne 1 ]]; then
+    echo "ERROR: $SERVICE accepts only create-only hmac_secret_base64 from stdin" >&2
+    exit 2
+  fi
+  if [[ "$VAULT_ADDR" == "http://127.0.0.1:8200" \
+        || "$VAULT_ADDR" == "https://127.0.0.1:8200" ]]; then
+    echo "ERROR: $SERVICE is TEST-only and refuses the canonical PROD Vault address" >&2
     exit 2
   fi
 fi
@@ -237,6 +249,23 @@ if [[ "${#STDIN_KEYS[@]}" -gt 0 ]]; then
     if [[ -z "$value" ]]; then
       echo "ERROR: empty value for $key" >&2
       exit 2
+    fi
+    if [[ "$SERVICE" == "meeting-analysis-capability" \
+          && "$key" == "hmac_secret_base64" ]]; then
+      if ! printf '%s' "$value" | python3 -c '
+import base64
+import binascii
+import sys
+
+try:
+    decoded = base64.b64decode(sys.stdin.buffer.read(), validate=True)
+except (binascii.Error, ValueError):
+    raise SystemExit(1)
+raise SystemExit(0 if len(decoded) == 32 else 1)
+'; then
+        echo "ERROR: hmac_secret_base64 must encode exactly 32 bytes" >&2
+        exit 2
+      fi
     fi
     STDIN_FIELD_PAIRS+=("$key=$value")
     unset value
@@ -354,6 +383,12 @@ else
   exit 5
 fi
 unset EXISTING_BODY
+
+if [[ "$CREATE_ONLY" -eq 1 && "$CURRENT_VERSION" -ne 0 ]]; then
+  echo "ERROR: --create-only refused existing KV path $KV_PATH" >&2
+  echo "       current_version=$CURRENT_VERSION; no value was logged" >&2
+  exit 2
+fi
 
 # Merge new fields into existing data
 PATCHED_DATA=$({

@@ -258,7 +258,13 @@ def main() -> None:
         workload_docs, "ExternalSecret", "auth-service-transcript-service-secret"
     )
     meeting_eso = resource(eso_docs, "ExternalSecret", "meeting-service-secrets")
+    meeting_capability_eso = resource(
+        eso_docs, "ExternalSecret", "meeting-service-analysis-capability"
+    )
     transcript_eso = resource(eso_docs, "ExternalSecret", "transcript-service-secrets")
+    transcript_capability_eso = resource(
+        eso_docs, "ExternalSecret", "transcript-service-analysis-capability"
+    )
     audio_eso = resource(eso_docs, "ExternalSecret", "audio-gateway-secrets")
 
     secret_targets = {
@@ -266,10 +272,16 @@ def main() -> None:
             auth_transcript, "auth-service-transcript-service-secret"
         ),
         external_secret_target(meeting_eso, "meeting-service-secrets"),
+        external_secret_target(
+            meeting_capability_eso, "meeting-service-analysis-capability"
+        ),
         external_secret_target(transcript_eso, "transcript-service-secrets"),
+        external_secret_target(
+            transcript_capability_eso, "transcript-service-analysis-capability"
+        ),
         external_secret_target(audio_eso, "audio-gateway-secrets"),
     }
-    if len(secret_targets) != 4:
+    if len(secret_targets) != 6:
         fail("Faz 24 ExternalSecret target names must be distinct")
 
     core_keys = {
@@ -277,6 +289,14 @@ def main() -> None:
     }
     if "SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET" in core_keys:
         fail("transcript-service issuer key leaked into core auth ExternalSecret")
+    for manifest in (meeting_eso, transcript_eso):
+        service_secret_keys = {
+            item.get("secretKey")
+            for item in manifest.get("spec", {}).get("data", [])
+        }
+        if "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET" in service_secret_keys:
+            name = manifest.get("metadata", {}).get("name", "unknown")
+            fail(f"analysis capability key must be isolated from {name}")
 
     external_secret_binding(
         auth_transcript,
@@ -309,13 +329,13 @@ def main() -> None:
         "service_client_transcript_service_secret",
     )
     external_secret_binding(
-        meeting_eso,
+        meeting_capability_eso,
         "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
         "kv/platform/meeting-analysis-capability",
         "hmac_secret_base64",
     )
     external_secret_binding(
-        transcript_eso,
+        transcript_capability_eso,
         "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
         "kv/platform/meeting-analysis-capability",
         "hmac_secret_base64",
@@ -355,7 +375,9 @@ def main() -> None:
     sync_wave(transcript_deploy, "20")
     sync_wave(auth_transcript, "0")
     sync_wave(meeting_eso, "0")
+    sync_wave(meeting_capability_eso, "0")
     sync_wave(transcript_eso, "0")
+    sync_wave(transcript_capability_eso, "0")
     required_secret_env(
         meeting_deploy,
         "meeting-service",
@@ -367,7 +389,7 @@ def main() -> None:
         meeting_deploy,
         "meeting-service",
         "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
-        "meeting-service-secrets",
+        "meeting-service-analysis-capability",
         "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
     )
     required_secret_env(
@@ -395,7 +417,7 @@ def main() -> None:
         transcript_deploy,
         "transcript-service",
         "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
-        "transcript-service-secrets",
+        "transcript-service-analysis-capability",
         "ANALYSIS_JOB_CAPABILITY_HMAC_SECRET",
     )
 
