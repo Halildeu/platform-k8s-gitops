@@ -374,6 +374,19 @@ function classifyConsoleMessage(text, kind) {
   return 'application-error';
 }
 
+export function isExpectedBootstrapProvisionConsoleError({
+  authBootstrapComplete,
+  kind,
+  text,
+  url,
+}) {
+  if (authBootstrapComplete || kind !== 'console-error') return false;
+  if (url !== `${VIEWER_ORIGIN}/api/v1/users/me/profile`) return false;
+  return /^Failed to load resource: the server responded with a status of 403(?: \([^)\r\n]*\))?$/.test(
+    text,
+  );
+}
+
 export function buildConsoleDiagnosticEntry({
   kind,
   text,
@@ -558,13 +571,37 @@ async function main() {
     );
     let consoleErrorCount = 0;
     const consoleDiagnosticEntries = [];
+    let authBootstrapComplete = false;
+    const bootstrapProvisionConsoleEntries = [];
+    const bootstrapProvisionResponseStatuses = [];
     let viewerApiStatus = null;
     const page = await evidenceStep('browser-runtime-start-failed', async () => context.newPage());
     page.on('console', (message) => {
       if (message.type() !== 'error') return;
+      const location = message.location();
+      if (
+        isExpectedBootstrapProvisionConsoleError({
+          authBootstrapComplete,
+          kind: 'console-error',
+          text: message.text(),
+          url: location.url,
+        })
+      ) {
+        if (bootstrapProvisionConsoleEntries.length < 2) {
+          bootstrapProvisionConsoleEntries.push(
+            buildConsoleDiagnosticEntry({
+              kind: 'console-error',
+              text: message.text(),
+              url: location.url,
+              lineNumber: location.lineNumber,
+              columnNumber: location.columnNumber,
+            }),
+          );
+        }
+        return;
+      }
       consoleErrorCount += 1;
       if (consoleDiagnosticEntries.length >= MAX_CONSOLE_DIAGNOSTIC_ENTRIES) return;
-      const location = message.location();
       consoleDiagnosticEntries.push(
         buildConsoleDiagnosticEntry({
           kind: 'console-error',
@@ -587,6 +624,13 @@ async function main() {
     });
     page.on('response', (response) => {
       const responseUrl = new URL(response.url());
+      if (
+        responseUrl.origin === VIEWER_ORIGIN &&
+        responseUrl.pathname === '/api/v1/users/me/profile' &&
+        responseUrl.search === ''
+      ) {
+        bootstrapProvisionResponseStatuses.push(response.status());
+      }
       if (
         responseUrl.origin === 'https://testai.acik.com' &&
         /^\/api\/v1\/endpoint-admin\/remote-access\/sessions\/[A-Za-z0-9._:-]{1,160}\/view$/.test(
@@ -644,6 +688,23 @@ async function main() {
       return typeof token === 'string' && token.length >= 32;
     });
     if (!browserAuthReady) throw evidenceFailure('browser-auth-session-missing');
+    authBootstrapComplete = true;
+    if (
+      bootstrapProvisionConsoleEntries.length > 0 &&
+      (
+        bootstrapProvisionConsoleEntries.length !== 1 ||
+        bootstrapProvisionResponseStatuses.length !== 1 ||
+        bootstrapProvisionResponseStatuses[0] !== 403
+      )
+    ) {
+      consoleErrorCount += bootstrapProvisionConsoleEntries.length;
+      consoleDiagnosticEntries.push(
+        ...bootstrapProvisionConsoleEntries.slice(
+          0,
+          MAX_CONSOLE_DIAGNOSTIC_ENTRIES - consoleDiagnosticEntries.length,
+        ),
+      );
+    }
     if (authRoutePreflightOnly === '1') {
       for (let attempt = 0; attempt < 100 && viewerApiStatus === null; attempt += 1) {
         await page.waitForTimeout(100);
