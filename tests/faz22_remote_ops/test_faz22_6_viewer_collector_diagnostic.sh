@@ -353,6 +353,7 @@ const {
   deriveViewerAckUrl,
   drainAckSnapshots,
   installViewerEvidenceObserver,
+  isExpectedBootstrapProvisionConsoleError,
   runReplayProbe,
 } = await import(pathToFileURL(browserScript));
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
@@ -380,6 +381,41 @@ assert.equal(
       text: 'private-message-must-not-appear',
     }),
   ).includes('private-message-must-not-appear'),
+  false,
+);
+const expectedProvisionConsole = {
+  authBootstrapComplete: false,
+  kind: 'console-error',
+  text: 'Failed to load resource: the server responded with a status of 403 ()',
+  url: 'https://testai.acik.com/api/v1/users/me/profile',
+};
+assert.equal(isExpectedBootstrapProvisionConsoleError(expectedProvisionConsole), true);
+assert.equal(
+  isExpectedBootstrapProvisionConsoleError({
+    ...expectedProvisionConsole,
+    authBootstrapComplete: true,
+  }),
+  false,
+);
+assert.equal(
+  isExpectedBootstrapProvisionConsoleError({
+    ...expectedProvisionConsole,
+    text: 'Failed to load resource: the server responded with a status of 401 ()',
+  }),
+  false,
+);
+assert.equal(
+  isExpectedBootstrapProvisionConsoleError({
+    ...expectedProvisionConsole,
+    url: 'https://testai.acik.com/api/v1/endpoint-admin/devices',
+  }),
+  false,
+);
+assert.equal(
+  isExpectedBootstrapProvisionConsoleError({
+    ...expectedProvisionConsole,
+    kind: 'page-error',
+  }),
   false,
 );
 assert.equal(classifyPreflightApiStatus(null), 'browser-preflight-api-response-missing');
