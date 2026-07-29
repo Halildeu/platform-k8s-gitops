@@ -83,7 +83,7 @@ class TranscriptDirectSttActivationTest(unittest.TestCase):
         )
         annotations = deployment["spec"]["template"]["metadata"]["annotations"]
         self.assertEqual(
-            "2026-07-17-2568-v2",
+            "2026-07-29-2610-v6-transport-epoch",
             annotations["transcript-service.acik.com/direct-stt-result-consumer-rev"],
         )
 

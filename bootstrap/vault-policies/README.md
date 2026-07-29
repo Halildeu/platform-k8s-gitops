@@ -211,12 +211,12 @@ vault write auth/approle/role/vault-config-reconciler \
 # secret_id_ttl=168h (7g) — Codex 019f1150: ttl=0 (süresiz) host-local dosya
 # sızarsa süresiz config-admin demek. Haftalık rotasyon (owner cron / re-run):
 #   vault write -f -field=secret_id auth/approle/role/vault-config-reconciler/secret-id \
-#     > /home/halil/.vault/reconciler-secret-id ; chmod 600 ...
+#     > "$HOME/.vault/reconciler-secret-id" ; chmod 600 ...
 # İdeal (gelecek): per-run response-wrapped single-use secret_id + bound_cidrs.
-umask 077; mkdir -p /home/halil/.vault
-vault read  -field=role_id   auth/approle/role/vault-config-reconciler/role-id   > /home/halil/.vault/reconciler-role-id
-vault write -f -field=secret_id auth/approle/role/vault-config-reconciler/secret-id > /home/halil/.vault/reconciler-secret-id
-chmod 600 /home/halil/.vault/reconciler-role-id /home/halil/.vault/reconciler-secret-id
+umask 077; mkdir -p "$HOME/.vault"
+vault read  -field=role_id   auth/approle/role/vault-config-reconciler/role-id   > "$HOME/.vault/reconciler-role-id"
+vault write -f -field=secret_id auth/approle/role/vault-config-reconciler/secret-id > "$HOME/.vault/reconciler-secret-id"
+chmod 600 "$HOME/.vault/reconciler-role-id" "$HOME/.vault/reconciler-secret-id"
 ```
 
 **Bundan sonra (agent, root yok — her policy değişiminde):**

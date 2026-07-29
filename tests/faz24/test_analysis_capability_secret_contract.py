@@ -198,6 +198,24 @@ class AnalysisCapabilitySecretContractTests(unittest.TestCase):
             reconciler_policy,
         )
 
+    def test_reconciler_runtime_location_tracks_live_aiserver_user_home(self) -> None:
+        reconciler = (
+            ROOT / "scripts/ops/vault-policy-reconcile.sh"
+        ).read_text(encoding="utf-8")
+        runbook = (
+            ROOT / "docs/runbooks/RB-faz24-analysis-capability-secret-test.md"
+        ).read_text(encoding="utf-8")
+        policy_readme = (
+            ROOT / "bootstrap/vault-policies/README.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('${HOME:-/home/aiadmin}/.vault', reconciler)
+        self.assertNotIn("/home/halil/.vault", reconciler)
+        self.assertIn("canonical `main` checkout on `aiserver`", runbook)
+        self.assertIn("does not carry the Vault container", runbook)
+        self.assertNotIn("checkout on `staging-sw`", runbook)
+        self.assertNotIn("/home/halil/.vault", policy_readme)
+
     def run_writer(
         self,
         *,
@@ -321,9 +339,9 @@ class AnalysisCapabilitySecretContractTests(unittest.TestCase):
                 str(WRAPPER),
                 "--service",
                 "meeting-analysis-capability",
-            "--field-from-stdin",
-            "unexpected_property",
-            "--create-only",
+                "--field-from-stdin",
+                "unexpected_property",
+                "--create-only",
             ],
             input="synthetic\n",
             text=True,

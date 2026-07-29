@@ -10,9 +10,9 @@
 # Auth (no root): role-id/secret-id of the reconciler AppRole, provisioned ONCE by
 # the owner (README §6.6) into host-local 0600 files (or env). Token self-revoked.
 #
-# Usage (on staging-sw, where platform-vault-test :8201 is reachable):
-#   VAULT_RECONCILER_ROLE_ID_FILE=/home/halil/.vault/reconciler-role-id \
-#   VAULT_RECONCILER_SECRET_ID_FILE=/home/halil/.vault/reconciler-secret-id \
+# Usage (on aiserver, where platform-vault-test :8201 is reachable):
+#   VAULT_RECONCILER_ROLE_ID_FILE="$HOME/.vault/reconciler-role-id" \
+#   VAULT_RECONCILER_SECRET_ID_FILE="$HOME/.vault/reconciler-secret-id" \
 #   scripts/ops/vault-policy-reconcile.sh [--dry-run] [--emit-seed-secret-id <approle>]
 #
 # Scope: TEST Vault only. Applies common/*.hcl + test/*.hcl. NEVER prod/*.
@@ -106,8 +106,9 @@ EMITTABLE_APPROLES=(
 )
 
 # ── reconciler AppRole auth ──────────────────────────────────────────────────
-ROLE_ID="${VAULT_RECONCILER_ROLE_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_ROLE_ID_FILE:-/home/halil/.vault/reconciler-role-id}" 2>/dev/null)}"
-SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_SECRET_ID_FILE:-/home/halil/.vault/reconciler-secret-id}" 2>/dev/null)}"
+RECONCILER_CREDENTIAL_DIR="${VAULT_RECONCILER_CREDENTIAL_DIR:-${HOME:-/home/aiadmin}/.vault}"
+ROLE_ID="${VAULT_RECONCILER_ROLE_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_ROLE_ID_FILE:-$RECONCILER_CREDENTIAL_DIR/reconciler-role-id}" 2>/dev/null)}"
+SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_SECRET_ID_FILE:-$RECONCILER_CREDENTIAL_DIR/reconciler-secret-id}" 2>/dev/null)}"
 [[ -n "$ROLE_ID" && -n "$SECRET_ID" ]] || { echo "ERROR: reconciler role-id/secret-id missing (owner provision — README §6.6)" >&2; exit 2; }
 
 api() { # api METHOD PATH [JSON]

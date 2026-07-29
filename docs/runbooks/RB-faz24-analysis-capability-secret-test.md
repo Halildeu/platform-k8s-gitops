@@ -26,10 +26,13 @@ another Vault path, passed in argv, printed, committed, or attached to evidence.
 
 1. The GitOps PR containing the exact Vault policies, ExternalSecrets, rollout
    markers, and static guards is merged to `main`.
-2. Run from the canonical `main` checkout on `staging-sw`, where TEST Vault is
-   reachable at `http://127.0.0.1:8201`.
+2. Run from the canonical `main` checkout on `aiserver`, where TEST Vault is
+   reachable at `http://127.0.0.1:8201`. The retired `.53` `staging-sw` host
+   does not carry the Vault container.
 3. The reconciler role-id and secret-id owner files described by
-   `scripts/ops/vault-policy-reconcile.sh` are present with mode `0600`.
+   `scripts/ops/vault-policy-reconcile.sh` are present under the executing
+   user's `$HOME/.vault` directory with mode `0600`. The canonical host runner
+   is currently `aiadmin`.
 4. The owner-gated `vault-config-reconciler` policy has been refreshed once
    from `bootstrap/vault-policies/test/vault-config-reconciler.hcl` so the
    reconciler can manage the exact
