@@ -43,7 +43,7 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:a3b64ccab6fc60e363821749a93ce5112df87628109ef09b69905f86103ac318
+    digest: sha256:ce8d9a29ffe406a0551e24c6ea0f09e5eef81787a5b83c480e2ec16c3f3c940e
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -98,6 +98,15 @@ patches:
       - op: add
         path: /data/ETHICS_NOTIFICATION_RETRY_MAX_DELAY
         value: "15m"
+      # ES-301 (#882) — SLA erken uyarısı (SLA_APPROACHING) için iş günü penceresi.
+      # Yasal son tarihe DOKUNMAZ (BusinessCalendarTest bunu kaynaktan doğrular);
+      # yalnız "son tarihe <=N iş günü kaldı" sinyalinin eşiği. Owner-supplied:
+      # bu değer test hücresinin tercihi, prod'da sahibin kararıyla ayrı verilir.
+      # Env adı Spring relaxed binding'in kebab->ENV katlamasıyla eşleşir:
+      # ethics.sla.calendar.warn-business-days -> ETHICS_SLA_CALENDAR_WARNBUSINESSDAYS.
+      - op: add
+        path: /data/ETHICS_SLA_CALENDAR_WARNBUSINESSDAYS
+        value: "10"
       # Faz 35 — CANLI/TEST adres ayrımı (owner kararı 2026-07-23).
       #   etik.acik.com     = CANLI  -> default org ...0001 (gerçek çalışan ihbarları)
       #   speakup.acik.com  = TEST   -> org ...0003 (sentetik doğrulama)
