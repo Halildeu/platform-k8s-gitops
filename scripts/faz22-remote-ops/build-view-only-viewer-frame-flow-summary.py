@@ -13,7 +13,8 @@ from pathlib import Path
 LINE = re.compile(
     r"view-only frame: session=(?P<session>\S+) stream=(?P<stream>\S+) "
     r"seq=(?P<seq>[0-9]+) bytes=(?P<bytes>[0-9]+) type=(?P<content>\S+) "
-    r"disposition=(?P<disposition>[A-Z_-]+) ts=(?P<timestamp>\S+)"
+    r"disposition=(?P<disposition>[A-Z_-]+) "
+    r'ts=(?P<timestamp>[0-9]+)(?=$|[\s"}])'
 )
 ALLOWED = {"DELIVERED", "DROPPED_NO_VIEWER"}
 

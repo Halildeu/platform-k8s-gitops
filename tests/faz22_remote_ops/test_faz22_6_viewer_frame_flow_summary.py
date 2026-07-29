@@ -66,6 +66,15 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not monotonic"):
             MODULE.build(raw, "s-safe", browser())
 
+    def test_accepts_json_wrapped_broker_log_message(self):
+        raw = b"\n".join(
+            b'{"log":"' + line + b'"}'
+            for line in logs().splitlines()
+        ) + b"\n"
+        result = MODULE.build(raw, "s-safe", browser())
+        self.assertEqual(100, result["brokerReceivedDistinctCount"])
+        self.assertEqual(1783987500099, result["lastObservedAtEpochMillis"])
+
 
 if __name__ == "__main__":
     unittest.main()
