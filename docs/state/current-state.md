@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Desired-State Delta — Faz 24 durable compute-audit evidence and TEST image pin (2026-07-29, live read-back pending)
+## Live Delta — Faz 24 durable compute-audit evidence and TEST image pin (2026-07-29)
 
 Issue `#2610` altındaki bu TEST-only değişiklik, `platform-backend#999`
 canonical main merge'i `94d89465e0a0b02817a523f80f65ef888a36a9e8` üzerinden
@@ -46,13 +46,26 @@ biçimiyle karşılaştırdığı için timeout'a kadar fail-closed kaldı. Pars
 `t/true/1` ile `f/false/0` biçimlerini canonical `t/f` değerlerine normalize
 eder; tanınmayan boolean biçimi kabul edilmez.
 
-Bu blok desired-state'i kaydeder. ArgoCD exact merge revision ile
-`Synced/Healthy`, audio-gateway `imageID` exact digest, ExternalSecret
-`Ready=True`, gerçek Türkçe PCM16 run sonucu ve aynı session/chunk/correlation
-için kalıcı hash-zincirli audit satırı yeniden okunmadan runtime acceptance
-söylenmez. Attended Windows mikrofon + loopback capture, stop, transcript
-görünümü ve reopen persistence ayrı son kullanıcı kapısıdır; imzasız installer
-açık kullanıcı onayı olmadan çalıştırılmaz.
+Üçüncü run
+[`30418607494`](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/30418607494),
+exact GitOps merge `0cec14a8a8434c14ddd384afe2e1229bd10f1b55` ve aynı
+immutable audio-gateway digest'i üzerinde gerçek Türkçe PCM16 girdisini
+işledi. Meeting create `201`; chunk upload, finish ve transcribe `200`; mTLS
+health `200`; result stream kaydı ve 41-karakter transcript projection'ı
+bulundu. Privacy-safe artifact doğrulayıcısı `74/74` kontrolü geçti. Durable
+audit projection'ı exact session/chunk/correlation eşleşmesini ve timestamp,
+entry hash, prev hash varlığını `SHA-256`/sürüm `1` ile gösterdi; aynı audit
+satırının bağımsız salt-okunur PostgreSQL read-back'i bu metadata'yı yeniden
+doğruladı. Artifact ve loglar raw transcript, audio, token, credential veya
+hash-zinciri değerlerini taşımaz.
+
+ArgoCD `platform-test` aynı exact merge revision'da
+`Synced/Healthy/Succeeded`; audio-gateway `1/1`, restart `0`, canlı `imageID`
+exact digest ve ExternalSecret `Ready=True` / `SecretSynced` okundu. Bu kanıt
+Direct-STT compute hattı ve kalıcı audit zinciri içindir. Attended Windows
+mikrofon + loopback capture, stop, transcript/analysis görünümü ve reopen
+persistence ayrı son kullanıcı kapısıdır; imzasız installer açık kullanıcı
+onayı olmadan çalıştırılmaz.
 
 ## Desired-State Delta — Faz 24 TEST direct-STT fallback latency and projection handling (2026-07-29, live read-back pending)
 
