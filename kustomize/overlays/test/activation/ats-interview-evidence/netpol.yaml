@@ -20,15 +20,11 @@ spec:
               kubernetes.io/metadata.name: ingress-nginx
       ports:
         - port: 8080
-    # UI pod'u kendi nginx'inden /api/v1/ isteklerini buraya proxy'ler.
-    # Bu kural olmadan ekran açılır ama her API çağrısı sessizce zaman aşımına
-    # uğrardı — NetworkPolicy reddi RST değil, düşürmedir.
-    - from:
-        - podSelector:
-            matchLabels:
-              app: ats-interview-evidence-ui
-      ports:
-        - port: 8080
+    # ats#238: standalone UI pod'u için açılan proxy izni KALDIRILDI — o pod
+    # artık bu overlay'de yok. Kanonik kabuk MFE'si API'ye tarayıcıdan, paylaşılan
+    # /api/ats/v1 ingress'i üzerinden gider; yani ingress-nginx kuralı yeterlidir.
+    # Boş seçiciyle duran bir izin, ileride aynı etiketi alan HERHANGİ bir pod'a
+    # sessizce API erişimi verirdi.
   egress:
     # DNS — YALNIZ cluster DNS (kube-system CoreDNS; Codex 019f50b7 P1:
     # namespaceSelector:{} tüm namespace'lerde :53'ü açıyordu)
