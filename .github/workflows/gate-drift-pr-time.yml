@@ -12,6 +12,9 @@ on:
       - 'bootstrap/vault-policies/test/etik-speak-eso.hcl'
       - 'bootstrap/openfga/faz35-etik-speak/**'
       - 'tests/deploy/test_faz35_etikspeak_provisioning_contract.py'
+      # ES-008 completeness gate: the registry and the test that enforces it.
+      - 'tests/deploy/test_faz35_relation_registry_completeness.py'
+      - 'docs/contracts/faz35-authorization-relation-registry.v1.json'
       - 'tests/deploy/test_faz35_market_entry_contract.py'
       - 'tests/deploy/test_faz35_first_customer_contract.py'
       - 'tests/deploy/test_faz35_privacy_no_collect_contract.py'
@@ -126,6 +129,7 @@ jobs:
           python3 -m pytest -q \
             scripts/drift_detection/tests/test_catalog_runtime_contracts.py \
             tests/deploy/test_faz35_etikspeak_provisioning_contract.py \
+            tests/deploy/test_faz35_relation_registry_completeness.py \
             tests/deploy/test_faz35_market_entry_contract.py \
             tests/deploy/test_faz35_first_customer_contract.py \
             tests/deploy/test_faz35_privacy_no_collect_contract.py \
