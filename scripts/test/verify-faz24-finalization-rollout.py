@@ -423,7 +423,7 @@ def main() -> None:
         transcript_deploy,
         "transcript-service",
         "ghcr.io/halildeu/platform-backend-transcript-service@"
-        "sha256:a6a7dc01268055ca50ecf5296c955fe72d5ff18350e1fad883a90f131373d019",
+        "sha256:5fa1f15b532108d2ba70e238d0331be9b19eff65205b0f571ab2038d1bafad0d",
     )
     container_image(
         audio_deploy,
@@ -439,7 +439,7 @@ def main() -> None:
     pod_annotation(
         transcript_deploy,
         "transcript-service.acik.com/direct-stt-result-consumer-rev",
-        "2026-07-29-2610-v4-finalization",
+        "2026-07-29-2610-v5-utterance-projection",
     )
     reject_prod_leakage(prod_docs, prod_eso_docs)
 
