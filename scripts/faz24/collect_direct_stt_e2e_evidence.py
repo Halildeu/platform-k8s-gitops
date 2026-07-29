@@ -64,6 +64,9 @@ class CommandResult:
 
 
 CommandRunner = Callable[[list[str], int], CommandResult]
+RedisRecordFetcher = Callable[
+    [], tuple[dict[str, list[tuple[str, dict[str, str]]]], list[str]]
+]
 
 
 def utc_now() -> str:
@@ -824,6 +827,46 @@ def find_record(
     return None
 
 
+def wait_for_direct_stt_records(
+    fetch_records: RedisRecordFetcher,
+    *,
+    session_id: str,
+    chunk_seq: int,
+    correlation_id: str,
+    timeout_seconds: float,
+    poll_interval_seconds: float = 2.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[dict[str, list[tuple[str, dict[str, str]]]], list[str]]:
+    deadline = monotonic() + max(0.0, timeout_seconds)
+    latest_records: dict[str, list[tuple[str, dict[str, str]]]] = {}
+    latest_errors: list[str] = []
+
+    while True:
+        latest_records, latest_errors = fetch_records()
+        result_record = find_record(
+            latest_records.get(EXPECTED_RESULT_STREAM, []),
+            session_id=session_id,
+            chunk_seq=chunk_seq,
+            correlation_id=correlation_id,
+            event_type=EXPECTED_RESULT_EVENT,
+        )
+        audit_record = find_record(
+            latest_records.get(EXPECTED_AUDIT_STREAM, []),
+            session_id=session_id,
+            chunk_seq=chunk_seq,
+            correlation_id=correlation_id,
+            event_type=EXPECTED_AUDIT_EVENT,
+        )
+        if result_record and audit_record:
+            return latest_records, latest_errors
+
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return latest_records, latest_errors
+        sleep(min(poll_interval_seconds, remaining))
+
+
 def find_audio_chunk_record(
     *,
     records_by_stream: dict[str, list[tuple[str, dict[str, str]]]],
@@ -971,6 +1014,29 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     transcript_hash = ""
     transcript_chars = 0
     transcript_text = ""
+    result_wait_timeout = float(getattr(args, "result_wait_timeout", 60))
+    result_wait_interval = float(getattr(args, "result_wait_interval", 2))
+    waited_records, wait_errors = wait_for_direct_stt_records(
+        lambda: redis_stream_records(
+            runner,
+            container=args.redis_container,
+            streams=[EXPECTED_RESULT_STREAM, EXPECTED_AUDIT_STREAM],
+            count=args.redis_count,
+            context=args.context,
+            namespace=args.namespace,
+            service=redis_service,
+            secret=redis_secret,
+            secret_key=redis_secret_key,
+            image=redis_cli_image,
+            exec_pod=pod_name,
+            exec_container=args.deployment,
+        ),
+        session_id=session_id,
+        chunk_seq=chunk_seq,
+        correlation_id=correlation_id,
+        timeout_seconds=result_wait_timeout,
+        poll_interval_seconds=result_wait_interval,
+    )
     redis_streams = [EXPECTED_RESULT_STREAM, EXPECTED_AUDIT_STREAM]
     redis_streams.extend(f"audio:chunks:p{idx:02d}" for idx in range(32))
     redis_records_by_stream, redis_errors = redis_stream_records(
@@ -987,6 +1053,10 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         exec_pod=pod_name,
         exec_container=args.deployment,
     )
+    for stream, records in waited_records.items():
+        redis_records_by_stream.setdefault(stream, records)
+    if wait_errors and not waited_records:
+        redis_errors.extend(wait_errors)
     if redis_errors:
         failures.extend(redis_errors[:3])
 
@@ -1160,6 +1230,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--gitops-commit")
     parser.add_argument("--probe-timeout", type=int, default=40)
     parser.add_argument("--redis-count", type=int, default=1000)
+    parser.add_argument("--result-wait-timeout", type=int, default=60)
+    parser.add_argument("--result-wait-interval", type=float, default=2)
     return parser.parse_args(argv)
 
 
