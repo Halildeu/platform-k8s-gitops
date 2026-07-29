@@ -77,12 +77,19 @@ def valid_e2e() -> dict:
         },
         "audit": {
             "streamKey": "audit:events",
+            "evidenceSource": "durable-db",
             "eventType": "CHUNK_FORWARDED_TO_COMPUTE_PLANE",
             "eventFound": True,
+            "durableEventFound": True,
             "recordId": "1782471276846-0",
             "sessionIdMatches": True,
             "chunkSeqMatches": True,
             "correlationIdMatches": True,
+            "eventTimestampPresent": True,
+            "entryHashPresent": True,
+            "prevHashPresent": True,
+            "entryHashAlgorithm": "SHA-256",
+            "entryHashVersion": "1",
         },
         "persistence": {
             "redisAudioChunkMetadataOnly": True,
@@ -215,6 +222,30 @@ class DirectSttE2eEvidenceVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("token_not_included", result.stdout)
+
+    def test_transient_stream_only_audit_evidence_fails(self):
+        data = valid_e2e()
+        data["audit"]["evidenceSource"] = "redis-stream"
+        data["audit"]["durableEventFound"] = False
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("audit_evidence_source", result.stdout)
+        self.assertIn("audit_durable_event_found", result.stdout)
+
+    def test_durable_audit_hash_chain_metadata_is_required(self):
+        data = valid_e2e()
+        data["audit"]["eventTimestampPresent"] = False
+        data["audit"]["entryHashPresent"] = False
+        data["audit"]["prevHashPresent"] = False
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("audit_timestamp_present", result.stdout)
+        self.assertIn("audit_entry_hash_present", result.stdout)
+        self.assertIn("audit_prev_hash_present", result.stdout)
 
 
 if __name__ == "__main__":

@@ -234,7 +234,7 @@ def test_redis_stream_records_keeps_kube_exec_partial_successes():
     assert "audit:events:command-exit-124" in errors[0]
 
 
-def test_wait_for_direct_stt_records_polls_until_matching_result_and_audit():
+def test_wait_for_direct_stt_result_polls_until_matching_result():
     collector = _load_collector()
     now = [0.0]
     fetch_count = [0]
@@ -254,13 +254,10 @@ def test_wait_for_direct_stt_records_polls_until_matching_result_and_audit():
         return {
             collector.EXPECTED_RESULT_STREAM: [
                 ("1-0", {**fields, "eventType": collector.EXPECTED_RESULT_EVENT})
-            ],
-            collector.EXPECTED_AUDIT_STREAM: [
-                ("2-0", {**fields, "eventType": collector.EXPECTED_AUDIT_EVENT})
-            ],
+            ]
         }, []
 
-    records, errors = collector.wait_for_direct_stt_records(
+    records, errors = collector.wait_for_direct_stt_result(
         fetch_records,
         session_id="SES-test",
         chunk_seq=0,
@@ -275,7 +272,85 @@ def test_wait_for_direct_stt_records_polls_until_matching_result_and_audit():
     assert fetch_count[0] == 2
     assert now[0] == 2
     assert records[collector.EXPECTED_RESULT_STREAM][0][0] == "1-0"
-    assert records[collector.EXPECTED_AUDIT_STREAM][0][0] == "2-0"
+
+
+def test_durable_audit_record_via_postgres_returns_metadata_only_projection():
+    collector = _load_collector()
+    calls = []
+
+    def fake_runner(argv, _timeout):
+        calls.append(argv)
+        return collector.CommandResult(
+            0,
+            "\t".join(
+                [
+                    "1782471276846-0",
+                    collector.EXPECTED_AUDIT_EVENT,
+                    "SES-test",
+                    "0",
+                    "faz24-test",
+                    "t",
+                    "t",
+                    "t",
+                    "SHA-256",
+                    "1",
+                ]
+            )
+            + "\n",
+            "",
+        )
+
+    record, error = collector.durable_audit_record_via_postgres(
+        fake_runner,
+        container="platform-pg-test",
+        user="platform",
+        database="audit_event",
+        session_id="SES-test",
+        chunk_seq=0,
+        correlation_id="faz24-test",
+    )
+
+    assert error is None
+    assert record == {
+        "recordId": "1782471276846-0",
+        "eventType": collector.EXPECTED_AUDIT_EVENT,
+        "sessionId": "SES-test",
+        "chunkSeq": "0",
+        "correlationId": "faz24-test",
+        "eventTimestampPresent": "t",
+        "entryHashPresent": "t",
+        "prevHashPresent": "t",
+        "entryHashAlgorithm": "SHA-256",
+        "entryHashVersion": "1",
+    }
+    assert calls[0][:4] == ["docker", "exec", "platform-pg-test", "psql"]
+    assert "entry_hash" in calls[0][-1]
+    assert "prev_hash" in calls[0][-1]
+
+
+def test_wait_for_durable_audit_record_polls_until_row_exists():
+    collector = _load_collector()
+    now = [0.0]
+    fetch_count = [0]
+
+    def fetch_record():
+        fetch_count[0] += 1
+        if fetch_count[0] == 1:
+            return None, None
+        return {"recordId": "2-0"}, None
+
+    record, error = collector.wait_for_durable_audit_record(
+        fetch_record,
+        timeout_seconds=60,
+        poll_interval_seconds=2,
+        monotonic=lambda: now[0],
+        sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    assert error is None
+    assert record == {"recordId": "2-0"}
+    assert fetch_count[0] == 2
+    assert now[0] == 2
 
 
 def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
@@ -285,6 +360,9 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "collect_direct_stt_e2e_evidence.py" in workflow
     assert "verify_direct_stt_e2e_evidence.py" in workflow
+    assert "--audit-db-container platform-pg-test" in workflow
+    assert "--audit-db-name audit_event" in workflow
+    assert "successfully consumed Redis audit entries are ACK+DEL" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert 'CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"' in workflow
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
@@ -445,6 +523,26 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
             return collector.CommandResult(0, "200 67\n", "")
         if argv[:3] == ["kubectl", "--context", "k3d-test"] and "logs" in argv:
             return collector.CommandResult(0, "Direct-STT transcript received textLen=12\n", "")
+        if argv[:4] == ["docker", "exec", "platform-pg-test", "psql"]:
+            return collector.CommandResult(
+                0,
+                "\t".join(
+                    [
+                        "1782471276846-0",
+                        "CHUNK_FORWARDED_TO_COMPUTE_PLANE",
+                        "SES-31a15790-57eb-4cbe-b923-954c8f6578ac",
+                        "0",
+                        "faz24-direct-stt-test",
+                        "t",
+                        "t",
+                        "t",
+                        "SHA-256",
+                        "1",
+                    ]
+                )
+                + "\n",
+                "",
+            )
         if argv[:2] == ["docker", "exec"]:
             stream = argv[-2]
             if stream == "transcript:direct-stt-results":
@@ -465,28 +563,6 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
                                     "faz24-direct-stt-test",
                                     "textDraft",
                                     "Merhaba dunya",
-                                ],
-                            ]
-                        ]
-                    ),
-                    "",
-                )
-            if stream == "audit:events":
-                return collector.CommandResult(
-                    0,
-                    json.dumps(
-                        [
-                            [
-                                "1782471276846-0",
-                                [
-                                    "eventType",
-                                    "CHUNK_FORWARDED_TO_COMPUTE_PLANE",
-                                    "sessionId",
-                                    "SES-31a15790-57eb-4cbe-b923-954c8f6578ac",
-                                    "chunkSeq",
-                                    "0",
-                                    "correlationId",
-                                    "faz24-direct-stt-test",
                                 ],
                             ]
                         ]
@@ -542,5 +618,8 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
     assert evidence["flow"]["sessionId"].startswith("SES-")
     assert evidence["flow"]["transcriptCharCount"] == len("Merhaba dunya")
     assert evidence["audit"]["chunkSeqMatches"] is True
+    assert evidence["audit"]["evidenceSource"] == "durable-db"
+    assert evidence["audit"]["entryHashPresent"] is True
+    assert evidence["audit"]["prevHashPresent"] is True
     assert "Merhaba dunya" not in rendered
     assert "textDraft" not in rendered

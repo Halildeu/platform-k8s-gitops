@@ -4,7 +4,9 @@ name: Faz 24 Direct-STT E2E Collect
 # aiserver runner. Boundary: platform-test only; temporary Keycloak user and
 # token files are cleaned up by the token chain; uploaded artifacts are
 # metadata-only and must not contain tokens, PEM material, raw audio, raw
-# transcript text, destination URLs, or raw command output.
+# transcript text, destination URLs, or raw command output. The collector uses
+# a bounded SELECT against the TEST audit database for durable hash-chain
+# metadata because successfully consumed Redis audit entries are ACK+DEL.
 
 on:
   workflow_dispatch:
@@ -278,6 +280,9 @@ jobs:
             --namespace "${{ inputs.namespace }}" \
             --deployment "${{ inputs.deployment }}" \
             --redis-container "${{ inputs.redis_container }}" \
+            --audit-db-container platform-pg-test \
+            --audit-db-user platform \
+            --audit-db-name audit_event \
             --gitops-commit "${GITHUB_SHA}" \
             --probe-timeout "${{ inputs.probe_timeout }}" \
             > "${EVIDENCE_DIR}/collector.stdout" \
