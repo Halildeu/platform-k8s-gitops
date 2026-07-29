@@ -98,68 +98,90 @@ psql_q() { docker exec "$PG_CONTAINER" psql -U postgres -d "$DB_NAME" -t -A -c "
 printf '\nEtik Speak WORM defteri — degistirilemezlik zemini (%s)\n\n' "$MODE"
 
 # ── Ölçüm ────────────────────────────────────────────────────────────────────────────
-# Reported before anything is changed, so --apply and --check tell the same story about
-# where things stood.
-schema_owner=$(psql_q "select pg_get_userbyid(nspowner) from pg_namespace where nspname='$DB_SCHEMA'")
-if [ "$schema_owner" = "$MIGRATOR_ROLE" ]; then
-  ok "sema sahibi" "$schema_owner"
-else
-  gap "sema sahibi" "$schema_owner (calisma zamani rolu)"
-fi
-
-for table in $APPEND_ONLY_TABLES; do
-  table_owner=$(psql_q "select tableowner from pg_tables where schemaname='$DB_SCHEMA' and tablename='$table'")
-  [ -n "$table_owner" ] || {
-    echo "FATAL: $DB_SCHEMA.$table bulunamadi" >&2
-    exit 2
-  }
-  if [ "$table_owner" = "$MIGRATOR_ROLE" ]; then
-    ok "$table sahibi" "$table_owner"
+# A function rather than a straight-line block, because --apply has to measure twice: the
+# first run reported the state it *started* from and then exited non-zero after having
+# fixed everything, which reads as a failed run.
+measure() {
+  gaps=0
+  # Reported before anything is changed, so --apply and --check tell the same story about
+  # where things stood.
+  schema_owner=$(psql_q "select pg_get_userbyid(nspowner) from pg_namespace where nspname='$DB_SCHEMA'")
+  if [ "$schema_owner" = "$MIGRATOR_ROLE" ]; then
+    ok "sema sahibi" "$schema_owner"
   else
-    gap "$table sahibi" "$table_owner — tetikleyicisini kapatabilir"
+    gap "sema sahibi" "$schema_owner (calisma zamani rolu)"
   fi
 
-  # Owner rights are implicit and do not show up here; this is the *explicit* grant
-  # surface, which is a separate lock and is worth closing on its own.
-  writable=$(psql_q "
-    select coalesce(string_agg(privilege_type, ','), '') from information_schema.table_privileges
-     where table_schema='$DB_SCHEMA' and table_name='$table' and grantee='$RUNTIME_ROLE'
-       and privilege_type in ('UPDATE','DELETE','TRUNCATE')")
-  if [ -z "$writable" ]; then
-    ok "$table yikici yetki" "yok"
+  for table in $APPEND_ONLY_TABLES; do
+    table_owner=$(psql_q "select tableowner from pg_tables where schemaname='$DB_SCHEMA' and tablename='$table'")
+    [ -n "$table_owner" ] || {
+      echo "FATAL: $DB_SCHEMA.$table bulunamadi" >&2
+      exit 2
+    }
+    if [ "$table_owner" = "$MIGRATOR_ROLE" ]; then
+      ok "$table sahibi" "$table_owner"
+    else
+      gap "$table sahibi" "$table_owner — tetikleyicisini kapatabilir"
+    fi
+
+    # Owner rights are implicit and do not show up here; this is the *explicit* grant
+    # surface, which is a separate lock and is worth closing on its own.
+    writable=$(psql_q "
+      select coalesce(string_agg(privilege_type, ','), '') from information_schema.table_privileges
+       where table_schema='$DB_SCHEMA' and table_name='$table' and grantee='$RUNTIME_ROLE'
+         and privilege_type in ('UPDATE','DELETE','TRUNCATE')")
+    if [ -z "$writable" ]; then
+      ok "$table yikici yetki" "yok"
+    else
+      gap "$table yikici yetki" "$writable"
+    fi
+
+    # 'O' fires on origin only — a replica would replay changes with the invariant off.
+    trigger_state=$(psql_q "
+      select tgenabled from pg_trigger
+       where tgrelid='$DB_SCHEMA.$table'::regclass and not tgisinternal limit 1")
+    case "$trigger_state" in
+      A) ok "$table tetikleyici" "ENABLE ALWAYS" ;;
+      O) gap "$table tetikleyici" "ORIGIN — replica'da calismaz" ;;
+      "") gap "$table tetikleyici" "YOK" ;;
+      *) gap "$table tetikleyici" "$trigger_state" ;;
+    esac
+  done
+
+  # Hardening that locks the application out of its own database is not hardening. This
+  # is the failure this script actually produced once: grants were made before the
+  # ownership transfer, the transfer dropped them, and every query started failing with
+  # "permission denied for schema". Nothing else here would have noticed.
+  runtime_access=$(psql_q "
+    select has_schema_privilege('$RUNTIME_ROLE', '$DB_SCHEMA', 'USAGE')::text || ',' ||
+           has_table_privilege('$RUNTIME_ROLE', '$DB_SCHEMA.ethics_worm_audit', 'SELECT')::text || ',' ||
+           has_table_privilege('$RUNTIME_ROLE', '$DB_SCHEMA.ethics_worm_audit', 'INSERT')::text")
+  if [ "$runtime_access" = "true,true,true" ]; then
+    ok "calisma zamani erisimi" "sema USAGE + defter SELECT/INSERT"
   else
-    gap "$table yikici yetki" "$writable"
+    gap "calisma zamani erisimi" "$runtime_access (USAGE,SELECT,INSERT)"
+    note "Uygulama kendi veritabanindan kilitlenmis olabilir — bu bir sertlestirme degil, kesintidir."
   fi
 
-  # 'O' fires on origin only — a replica would replay changes with the invariant off.
-  trigger_state=$(psql_q "
-    select tgenabled from pg_trigger
-     where tgrelid='$DB_SCHEMA.$table'::regclass and not tgisinternal limit 1")
-  case "$trigger_state" in
-    A) ok "$table tetikleyici" "ENABLE ALWAYS" ;;
-    O) gap "$table tetikleyici" "ORIGIN — replica'da calismaz" ;;
-    "") gap "$table tetikleyici" "YOK" ;;
-    *) gap "$table tetikleyici" "$trigger_state" ;;
-  esac
-done
+  if [ -n "$(psql_q "select 1 from pg_roles where rolname='$MIGRATOR_ROLE'")" ]; then
+    ok "$MIGRATOR_ROLE rolu" "var"
+  else
+    gap "$MIGRATOR_ROLE rolu" "yok"
+  fi
 
-if [ -n "$(psql_q "select 1 from pg_roles where rolname='$MIGRATOR_ROLE'")" ]; then
-  ok "$MIGRATOR_ROLE rolu" "var"
-else
-  gap "$MIGRATOR_ROLE rolu" "yok"
-fi
+  # Flyway must be able to alter the ledger after ownership moves, so the deployment has to
+  # be carrying the migrator credential before ownership is transferred. Key names only —
+  # values are never read.
+  flyway_wired=$(kubectl --context "$KUBE_CTX" -n "$KUBE_NS" get secret ethics-service-secrets \
+    -o jsonpath='{.data}' 2>/dev/null | tr ',' '\n' | grep -c 'SPRING_FLYWAY_USER' || true)
+  if [ "${flyway_wired:-0}" -ge 1 ]; then
+    ok "SPRING_FLYWAY_USER kosuluyor" "secret'ta var"
+  else
+    gap "SPRING_FLYWAY_USER kosuluyor" "yok — once ExternalSecret senkronu"
+  fi
+}
 
-# Flyway must be able to alter the ledger after ownership moves, so the deployment has to
-# be carrying the migrator credential before ownership is transferred. Key names only —
-# values are never read.
-flyway_wired=$(kubectl --context "$KUBE_CTX" -n "$KUBE_NS" get secret ethics-service-secrets \
-  -o jsonpath='{.data}' 2>/dev/null | tr ',' '\n' | grep -c 'SPRING_FLYWAY_USER' || true)
-if [ "${flyway_wired:-0}" -ge 1 ]; then
-  ok "SPRING_FLYWAY_USER kosuluyor" "secret'ta var"
-else
-  gap "SPRING_FLYWAY_USER kosuluyor" "yok — once ExternalSecret senkronu"
-fi
-
+measure
 if [ "$MODE" = "--check" ]; then
   printf '\n'
   [ "$gaps" -eq 0 ] && { printf 'Sonuc: zemin saglam.\n\n'; exit 0; }
@@ -290,14 +312,13 @@ if [ "${flyway_wired:-0}" -lt 1 ]; then
   exit 1
 fi
 
-# 4. Grants before ownership: changing the owner does not carry the old owner's implicit
-#    rights over as explicit ones, so the runtime role must already hold what it needs or
-#    it loses access the moment ownership moves.
+# 4. Ownership first, grants second — and the order is not cosmetic. Granting to the
+#    runtime role while it is still the owner records a self-grant, and
+#    `ALTER SCHEMA ... OWNER TO` then drops it along with the old owner's ACL entry. Doing
+#    it that way round took the service down here: the schema ACL came back as
+#    `{ethics_migrator=UC/ethics_migrator}` with no entry for the application at all, and
+#    every query failed with "permission denied for schema ethics_service".
 docker exec -i "$PG_CONTAINER" psql -U postgres -d "$DB_NAME" -v ON_ERROR_STOP=1 >/dev/null <<SQL
-GRANT USAGE ON SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
-
 ALTER SCHEMA $DB_SCHEMA OWNER TO $MIGRATOR_ROLE;
 
 DO \$\$
@@ -319,6 +340,12 @@ BEGIN
   END LOOP;
 END
 \$\$;
+
+-- Now that the migrator owns everything, the runtime role's access has to be granted
+-- explicitly: it no longer has any of it implicitly.
+GRANT USAGE ON SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA $DB_SCHEMA TO $RUNTIME_ROLE;
 
 -- Objects a future migration creates must reach the runtime role too, or the next
 -- feature ships a table the application cannot read.
@@ -349,6 +376,9 @@ ALTER TABLE $DB_SCHEMA.$table ENABLE ALWAYS TRIGGER $trigger_name;
 SQL
   echo "  $table: yikici yetki alindi + $trigger_name ENABLE ALWAYS"
 done
+
+printf '\n  --- degisiklik sonrasi olcum ---\n'
+measure
 
 # ── Negatif kanıt ────────────────────────────────────────────────────────────────────
 # The only honest acceptance is the attack failing. Each attempt runs inside a
