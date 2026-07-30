@@ -39,7 +39,8 @@ def browser():
 def frame_flow():
     return {
         "binding": browser()["binding"],
-        "firstObservedAtEpochMillis": millis("2026-07-14T00:01:01Z"),
+        "firstObservedAtEpochMillis": millis("2026-07-14T00:00:59Z"),
+        "firstDeliveredAtEpochMillis": millis("2026-07-14T00:01:01Z"),
         "lastObservedAtEpochMillis": millis("2026-07-14T00:05:59Z"),
     }
 
@@ -130,6 +131,15 @@ class ViewerAuditSummaryTest(unittest.TestCase):
             MODULE.build(
                 raw_chain(), f"{SESSION}\t1\tPOLICY_EVENT\t{{}}\n".encode(),
                 SESSION, STREAM, invalid_browser, frame_flow(),
+            )
+
+    def test_rejects_view_start_after_first_viewer_delivery(self):
+        invalid_flow = frame_flow()
+        invalid_flow["firstDeliveredAtEpochMillis"] = millis("2026-07-14T00:00:59Z")
+        with self.assertRaisesRegex(ValueError, "before first broker delivery"):
+            MODULE.build(
+                raw_chain(), f"{SESSION}\t1\tPOLICY_EVENT\t{{}}\n".encode(),
+                SESSION, STREAM, browser(), invalid_flow,
             )
 
 

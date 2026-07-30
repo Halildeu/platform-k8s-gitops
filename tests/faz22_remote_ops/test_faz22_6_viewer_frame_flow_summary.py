@@ -46,6 +46,7 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
         self.assertEqual(100, result["producedSequenceCount"])
         self.assertEqual(100, result["brokerReceivedDistinctCount"])
         self.assertEqual(1783987500000, result["firstObservedAtEpochMillis"])
+        self.assertEqual(1783987500001, result["firstDeliveredAtEpochMillis"])
         self.assertEqual(1783987500099, result["lastObservedAtEpochMillis"])
         self.assertNotIn("s-safe", str(result))
 
@@ -64,6 +65,11 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
     def test_rejects_nonmonotonic_broker_timestamps(self):
         raw = logs().replace(b"ts=1783987500050", b"ts=1783987500001")
         with self.assertRaisesRegex(ValueError, "not monotonic"):
+            MODULE.build(raw, "s-safe", browser())
+
+    def test_rejects_flow_without_a_viewer_delivery(self):
+        raw = logs().replace(b"disposition=DELIVERED", b"disposition=DROPPED_NO_VIEWER")
+        with self.assertRaisesRegex(ValueError, "did not deliver"):
             MODULE.build(raw, "s-safe", browser())
 
     def test_accepts_json_wrapped_broker_log_message(self):

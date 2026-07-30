@@ -98,7 +98,8 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
     frame_raw = files["snapshots/frame-flow-summary.json"]
     frame = load_strict(frame_raw, "frame-flow-summary.json", {
         "schemaVersion", "observedAt", "binding", "firstSeq", "lastSeq",
-        "firstObservedAtEpochMillis", "lastObservedAtEpochMillis",
+        "firstObservedAtEpochMillis", "firstDeliveredAtEpochMillis",
+        "lastObservedAtEpochMillis",
         "producedSequenceCount", "brokerReceivedDistinctCount", "sequenceGapCount",
         "dispositions", "rawLogSha256",
     })
@@ -122,16 +123,16 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
     ):
         if audit[field] is not True:
             raise common.VERIFIER.EvidenceError(f"audit proof failed: {field}")
-    if audit["firstFrameObservedAtEpochMillis"] != frame["firstObservedAtEpochMillis"]:
-        raise common.VERIFIER.EvidenceError("audit/broker first-frame timestamp mismatch")
+    if audit["firstFrameObservedAtEpochMillis"] != frame["firstDeliveredAtEpochMillis"]:
+        raise common.VERIFIER.EvidenceError("audit/broker first-delivered timestamp mismatch")
     start_millis = int(common.VERIFIER.parse_utc(
         audit["viewStartOccurredAt"], "audit VIEW_START occurredAt",
     ).timestamp() * 1000)
     stop_millis = int(common.VERIFIER.parse_utc(
         audit["viewStopOccurredAt"], "audit VIEW_STOP occurredAt",
     ).timestamp() * 1000)
-    if start_millis > frame["firstObservedAtEpochMillis"]:
-        raise common.VERIFIER.EvidenceError("audit VIEW_START follows first broker frame")
+    if start_millis > frame["firstDeliveredAtEpochMillis"]:
+        raise common.VERIFIER.EvidenceError("audit VIEW_START follows first broker delivery")
     if stop_millis < frame["lastObservedAtEpochMillis"]:
         raise common.VERIFIER.EvidenceError("audit VIEW_STOP precedes last broker frame")
 

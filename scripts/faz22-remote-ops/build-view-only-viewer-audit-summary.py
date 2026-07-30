@@ -165,10 +165,10 @@ def build(chain_raw: bytes, recording_raw: bytes, session_id: str, stream_id: st
         raise ValueError("browser binding is invalid")
     if frame_flow.get("binding") != binding:
         raise ValueError("frame-flow binding mismatch")
-    first_frame_millis = frame_flow.get("firstObservedAtEpochMillis")
+    first_frame_millis = frame_flow.get("firstDeliveredAtEpochMillis")
     last_frame_millis = frame_flow.get("lastObservedAtEpochMillis")
     if not isinstance(first_frame_millis, int) or not isinstance(last_frame_millis, int):
-        raise ValueError("frame-flow timestamps are invalid")
+        raise ValueError("frame-flow delivered timestamps are invalid")
     if first_frame_millis <= 0 or last_frame_millis < first_frame_millis:
         raise ValueError("frame-flow timestamp order is invalid")
 
