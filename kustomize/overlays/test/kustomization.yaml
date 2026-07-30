@@ -895,7 +895,28 @@ images:
     # A promotion step that reads the tag name but never asserts source
     # ancestry cannot see this; the gate is tracked in gitops#3023.
     # Digest read back from a real pull into this cluster (digest-probe pod).
-    digest: sha256:5544d438ca9ee62e10e0593ccd9565d56588ac2eca2096e4b22a627521d4ab67
+    #
+    # 2026-07-30 bump: sha-f27d0b0 — platform-backend#1023. `/admin/users` on
+    # this cell answers 500: the request blocks on permission-service
+    # `/authz/me` (measured mean 1.533s, MAX 5.029s while everything is idle —
+    # the principal lookup calls BACK into user-service), and the outbound
+    # WebClient response timeout was hardcoded at 5s. The 29ms overshoot
+    # surfaced as `Kullanıcı verileri alınamadı`. #1023 raises the default to
+    # 30s and makes both timeouts properties; a mutation-checked test pins the
+    # default so a silent revert to 5s fails CI. Not a fix for the nested hop
+    # itself — that is tracked separately.
+    # Ancestry: `git merge-base --is-ancestor 84f7c831 f27d0b0` -> true
+    # (48 commits forward; no #3023-class backward promotion).
+    # Pull-ability: the package is PRIVATE and this cluster's node CANNOT pull
+    # it (anonymous token 401 — same class as gitops#2885, measured before
+    # pinning; a blind bump would have wedged in ImagePullBackOff under
+    # ArgoCD selfHeal). The image was therefore pulled on the host with the
+    # Vault `kv/gitops/ghcr-token` credential, imported into the node's
+    # containerd (k8s.io ns) and tagged with this exact digest reference;
+    # `crictl inspecti <name>@<digest>` resolves it and imagePullPolicy is
+    # IfNotPresent, so the rollout starts from the local store. The durable
+    # fix (package visibility or a scoped pull secret) stays tracked in #2885.
+    digest: sha256:164e3cc40ed15df40429348bb5c72416b118c51094f4346b00f1f8e99267dbe6
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
