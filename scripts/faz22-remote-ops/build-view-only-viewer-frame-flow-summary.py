@@ -44,11 +44,16 @@ def build(raw_log: bytes, session_id: str, browser: dict) -> dict:
         raise ValueError("fewer than 100 distinct broker-received VIEW_ONLY frames")
     ordered = sorted(sequences.items())
     prior_timestamp = 0
+    delivered_timestamps: list[int] = []
     for _, (disposition, timestamp) in ordered:
         if timestamp < prior_timestamp:
             raise ValueError("broker VIEW_ONLY frame timestamps are not monotonic by sequence")
         prior_timestamp = timestamp
         disposition_counts[disposition] += 1
+        if disposition == "DELIVERED":
+            delivered_timestamps.append(timestamp)
+    if not delivered_timestamps:
+        raise ValueError("broker did not deliver a VIEW_ONLY frame to the viewer")
     first_seq, last_seq = min(sequences), max(sequences)
     if first_seq != 0:
         raise ValueError("VIEW_ONLY frame sequence did not start at zero")
@@ -67,6 +72,7 @@ def build(raw_log: bytes, session_id: str, browser: dict) -> dict:
         "firstSeq": first_seq,
         "lastSeq": last_seq,
         "firstObservedAtEpochMillis": sequences[first_seq][1],
+        "firstDeliveredAtEpochMillis": delivered_timestamps[0],
         "lastObservedAtEpochMillis": sequences[last_seq][1],
         "producedSequenceCount": produced_sequence_count,
         "brokerReceivedDistinctCount": len(sequences),

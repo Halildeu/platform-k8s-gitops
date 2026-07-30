@@ -22,7 +22,7 @@ RUNTIME_ARTIFACT_ID = 700002
 
 
 def runtime_files(data_frames=105, rejected=1, binding=None, process_start_after="1.783987E9",
-                  audit_overrides=None):
+                  frame_overrides=None, audit_overrides=None):
     binding = binding or fixtures.binding()
     before = """process_start_time_seconds 1.783987E9
 remote_access_bridge_viewer_ended_total 0.0
@@ -47,6 +47,7 @@ remote_access_bridge_viewer_started_total 1.0
         "firstSeq": 0,
         "lastSeq": 104,
         "firstObservedAtEpochMillis": 1783987500000,
+        "firstDeliveredAtEpochMillis": 1783987500000,
         "lastObservedAtEpochMillis": 1783987500104,
         "producedSequenceCount": 105,
         "brokerReceivedDistinctCount": 105,
@@ -54,6 +55,7 @@ remote_access_bridge_viewer_started_total 1.0
         "dispositions": {"DELIVERED": 105, "DROPPED_NO_VIEWER": 0},
         "rawLogSha256": "sha256:" + "9" * 64,
     }
+    frame.update(frame_overrides or {})
     audit = {
         "schemaVersion": "faz22.6-viewer-audit-raw-v1",
         "observedAt": "2026-07-14T00:05:00Z",
@@ -145,6 +147,22 @@ class ViewerBrokerEvidenceProducerTest(unittest.TestCase):
                 RuntimeClient(rejected=0), fixtures.VERIFIER.EXPECTED_REPOSITORY,
                 fixtures.SOURCE_RUN_IDS["browser"], fixtures.HEAD_SHA,
             )
+
+    def test_accepts_pre_subscription_frame_dropped_before_view_start(self):
+        child = PRODUCER.produce(
+            RuntimeClient(
+                frame_overrides={
+                    "firstObservedAtEpochMillis": 1783987259000,
+                    "firstDeliveredAtEpochMillis": 1783987500000,
+                    "dispositions": {"DELIVERED": 104, "DROPPED_NO_VIEWER": 1},
+                },
+            ),
+            fixtures.VERIFIER.EXPECTED_REPOSITORY,
+            fixtures.SOURCE_RUN_IDS["browser"],
+            fixtures.HEAD_SHA,
+        )
+        self.assertEqual(105, child["payload"]["states"]["brokerReceived"])
+        self.assertEqual(100, child["payload"]["states"]["viewerRendered"])
 
     def test_rejects_broker_restart_during_pilot(self):
         with self.assertRaisesRegex(PRODUCER.common.VERIFIER.EvidenceError, "process restarted"):
