@@ -18,11 +18,27 @@
 # ve optimistic-lock aşama geçişlerini birlikte taşır. Numerik UID
 # (10001:10001) ve deployment securityContext tutarlıdır; digest AUTHORITY,
 # tag yalnız provenance alias'ıdır:
-#   source  ats@1ba4344 (ats#241 + #243 + #244 — tarih biçimi sunucuda zorlanıyor)
-#   önceki  ats@9445c60 (ats#236 / #235 dilim 1 — aday e-posta + kod girişi)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-1ba4344
-#   digest  sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
-#   build   ats image-push @ 1ba4344 (completed/success)
+#   source  ats@18820aa (#242 C+D tarih kanonikleşmesi + toplu hesap; #214 askerlik;
+#           #230 migrator sahiplik devri)
+#   önceki  ats@1ba4344 (ats#241 + #243 + #244 — tarih biçimi sunucuda zorlanıyor)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-18820aa
+#   digest  sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e
+#   build   ats image-push @ 18820aa (completed/success)
+#
+# BU PİN NE GETİRİYOR (#242 C+D):
+#   * Tarihler KANONİK: "Eyl 2022" -> 2022-09; süregelenlik ("Devam ediyor")
+#     tarih alanından çıkıp `ongoing` bayrağına taşınıyor. Canlıda ölçülen 9
+#     serbest-metin değerinin 5'i aslında "iş hâlâ sürüyor" işaretiydi ve
+#     hesaba GİREMİYORDU.
+#   * V21 migration miras satırları tek seferlik normalize eder; çevrilemeyen
+#     ham kalır ve ham hâl aynı girdide `<alan>Legacy` olarak durur (ayrı yedek
+#     tablosu YOK — silme yüzeyini büyütmemek ve #230 sahiplik değişmezini
+#     bozmamak için).
+#   * Yeni uç: GET /api/v1/recruiter/applications/experience-coverage — toplu
+#     deneyim hesabı KAPSAM sayıları olmadan sonuç döndürmez.
+#   * #214: askerlik durumu CV'den forma artık ÖNERİLMEZ (iki korumalı
+#     kategoriye vekil).
+#   * #230: Flyway göç koşucusu yönetilen tabloların sahibi kalmaz.
 #
 # #244 CANLI BİR KUSURU KAPATIYOR: #241 yalnız YYYY-AA kabul ediyordu, ama
 # ayrıştırıcı yıl-only CV satırından "2019" üretiyor ve sunucu reddediyordu —
@@ -163,7 +179,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:fe8ca9bc7ed5df1634dc998dda75bb58aef57c9ef4aaef4c1c1d9ae6c8b8d1c7
+    digest: sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
