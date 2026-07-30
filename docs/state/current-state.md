@@ -87,6 +87,37 @@ sınıflandırması `FAIL` kaldı. Frontend Deployment, exact digest ve hedef
 browser yolculuğu geçti; genel application sağlığı kabul edilmiş sayılmaz.
 `platform-web#1046`, `#3007` ve parent `#3005` açık / In Progress tutulur.
 
+## Live Delta — Faz 24 Gateway context-v1 ve Windows paket adayı (2026-07-30)
+
+Zeynep'in 2026-07-30 tarihli gerçek Windows TEST denemesinde recorder consent
+ve session oluşturma `201`, Gateway `/stream` yükseltmesi `101` döndü; ancak
+live-stt upstream bağlantısı handshake sırasında kapandığı için kayıt başlamadı.
+Canlı ready frame'i `eof,source-ranges-v1,context-v1` yeteneklerini ilan ederken
+önceki Gateway image'ı yalnız iki yetenekli kontratı kabul ediyor ve masaüstü
+başlık bağlamını authenticated Gateway yoluna iletmiyordu.
+
+`platform-backend#1026` canonical main merge'i
+`04728e31d33c026b16d1e733d65e43c8042f2b22`, bounded ve loglanmayan
+`context-v1` kontrol frame'ini Gateway yoluna ekler; güncel üç yetenekli ready
+frame'ini kabul eder ve legacy EOF sınırını korur. Image-build run
+`30539520899` tarafından üretilen
+`sha256:e06f757ffa5ed279358f319d113e7975ebacdfacfc1255d8bec4f3a92a789602`
+OCI manifesti, `gitops#2876` açıkken ortak Vault kimliğini değiştirmeden
+TEST-only local registry'ye `--preserve-digests` ile kopyalandı. Kaynak GHCR ve
+yerel registry manifest HEAD digest'leri aynıdır; production manifesti
+değişmez.
+
+`platform-desktop#103` canonical main merge'i
+`9ba69ca127c1a1ff70470c61870ae6a507a332c4`, kullanıcı başlığını renderer'dan
+Gateway context frame'ine taşır, başlık girişini görünür kılar ve başarılı
+login sırasında eski logout durum metnini temizler. Windows package-evidence
+run `30539607722` exact head üzerinde geçti. Üretilen `0.1.4` installer
+`unsigned-dev-smoke` adayıdır; artifact SHA-256 yerel indirme sonrası yeniden
+hesaplandı. Bu kaynak, image ve package kanıtları henüz gerçek Windows
+mikrofonundan kayıt/transkript sonucunu kanıtlamaz. İlk açık kapı GitOps
+rollout sonrası exact package ile attended mikrofon izni, tek aktif session ve
+aynı toplantıda görünür canlı transkript kanıtıdır (`gitops#3194`).
+
 ## Live Delta — Faz 24 durable compute-audit evidence and TEST image pin (2026-07-29)
 
 Issue `#2610` altındaki bu TEST-only değişiklik, `platform-backend#999`
