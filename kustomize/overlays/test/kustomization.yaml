@@ -1401,8 +1401,13 @@ images:
     # now reads the invoice header currency instead of the row pricing
     # currency; W3/MSSQL remains SELECT-only. Signed main build run
     # 30555053340, report-service job 90913258211.
-    newTag: sha-ccec327
-    digest: sha256:1eb5eee3ef55aeb1745401b8b76b1a89d8950e85c6ee49b6c99d5c1dcd32f6ca
+    # 2026-07-30 W3 invoice-direction cost classification: platform-backend
+    # PR #1030, merge 6544f40746a036a9b049a3e3937d391bbb277a31. The provider
+    # classifies invoice rows from INVOICE.PURCHASE_SALES, with legacy
+    # category fallback; W3/MSSQL remains SELECT-only. Signed main build run
+    # 30574126578, report-service job 90977992722.
+    newTag: sha-6544f40
+    digest: sha256:de22b05451c46f300d530850c4f6ce830fe88bd978cfe8bf66b9af325d36ece6
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
