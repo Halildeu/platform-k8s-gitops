@@ -293,7 +293,16 @@ images:
     # pushed to the TEST-only local registry with revision label read-back.
     # Registry manifest HEAD returned the immutable digest below. This fixes
     # audit-consumer validation without changing production or GHCR credentials.
-    digest: sha256:20e0b573c31774b2eb8f870ba3e304c0bd9035a66c8f58f533da58fc28012030
+    # 2026-07-30 update: platform-backend#1026 adds the bounded context-v1
+    # client control frame to the authenticated Gateway live stream and accepts
+    # the current live-stt ready capability set without weakening legacy EOF
+    # handling. Canonical main merge
+    # 04728e31d33c026b16d1e733d65e43c8042f2b22; image-build run
+    # 30539520899. While gitops#2876 remains open, the exact OCI manifest was
+    # copied to the TEST-only local registry with --preserve-digests; source
+    # GHCR and local-registry manifest HEAD both returned the digest below.
+    # Production manifests and shared Vault credentials are unchanged.
+    digest: sha256:e06f757ffa5ed279358f319d113e7975ebacdfacfc1255d8bec4f3a92a789602
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
