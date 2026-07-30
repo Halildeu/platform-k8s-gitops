@@ -253,6 +253,19 @@ if grep -Fq 'get secret endpoint-admin-remote-bridge-secrets \' "$SCRIPT"; then
   echo "attended smoke must not read the removed legacy broker secret" >&2
   exit 1
 fi
+# Persona token validation must consume the exact immutable ID file produced by
+# ensure_persona. Deriving a different filename from the username silently
+# rejects otherwise-valid JWT subjects before the attended approval gate.
+grep -Fq 'local username="$1" user_id_file="$2" token_file="$3" claims_file="$4"' "$SCRIPT"
+grep -Fq 'expected_subject_sha="sha256:$(sha256_text "$(cat "$user_id_file")")"' "$SCRIPT"
+grep -Fq 'mint_persona_token "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id"' "$SCRIPT"
+grep -Fq 'mint_persona_token "$APPROVER_USERNAME" "${TMP_DIR}/approver.id"' "$SCRIPT"
+grep -Fq 'mint_persona_token "$matrix_wrong_role_user" "${TMP_DIR}/matrix-wrong-role.id"' "$SCRIPT"
+grep -Fq 'mint_persona_token "$matrix_wrong_tenant_user" "${TMP_DIR}/matrix-wrong-tenant.id"' "$SCRIPT"
+if grep -Fq 'cat "${TMP_DIR}/${username}.id"' "$SCRIPT"; then
+  echo "persona token validation must not derive an unrelated user ID filename" >&2
+  exit 1
+fi
 grep -q '! -name workflow-smoke.log' "$SCRIPT"
 grep -q 'lib-remote-bridge-digest.sh' "$SCRIPT"
 grep -q 'rbd_expected_digest' "$SCRIPT"

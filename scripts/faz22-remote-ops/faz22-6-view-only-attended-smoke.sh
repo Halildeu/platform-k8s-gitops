@@ -674,11 +674,13 @@ PY
 }
 
 mint_persona_token() {
-  local username="$1" token_file="$2" claims_file="$3"
-  local expected_role="${4:-true}" expected_tenant="${5:-$TENANT_ID}"
+  local username="$1" user_id_file="$2" token_file="$3" claims_file="$4"
+  local expected_role="${5:-true}" expected_tenant="${6:-$TENANT_ID}"
   local pass_file="${TMP_DIR}/${username}.password"
   local client response token expected_subject_sha expected_tenant_sha
-  expected_subject_sha="sha256:$(sha256_text "$(cat "${TMP_DIR}/${username}.id")")"
+  [[ -s "$user_id_file" ]] \
+    || fail_smoke "keycloak-persona-id-missing:${username}"
+  expected_subject_sha="sha256:$(sha256_text "$(cat "$user_id_file")")"
   expected_tenant_sha="sha256:$(sha256_text "$expected_tenant")"
   for client in $TOKEN_CLIENT_CANDIDATES; do
     response="$(curl -sS -X POST \
@@ -1411,7 +1413,7 @@ main() {
     mint_admin_token
     ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id" \
       "$TENANT_ID" present 0 "$OPERATOR_SUBJECT_ID"
-    mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" \
+    mint_persona_token "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id" "$OPERATOR_TOKEN_FILE" \
       "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
     before_side_effect_count="$(preflight_side_effect_count)" \
       || fail_smoke "browser-auth-route-preflight-side-effect-query-failed"
@@ -1472,8 +1474,10 @@ main() {
     "$TENANT_ID" present 0 "$OPERATOR_SUBJECT_ID"
   ensure_persona "$APPROVER_USERNAME" "${TMP_DIR}/approver.id" \
     "$TENANT_ID" present 0 "$APPROVER_SUBJECT_ID"
-  mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
-  mint_persona_token "$APPROVER_USERNAME" "$APPROVER_TOKEN_FILE" "${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
+  mint_persona_token "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id" \
+    "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
+  mint_persona_token "$APPROVER_USERNAME" "${TMP_DIR}/approver.id" \
+    "$APPROVER_TOKEN_FILE" "${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
   if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
     local matrix_suffix matrix_wrong_role_user matrix_wrong_tenant_user
     matrix_suffix="${GITHUB_RUN_ID:-manual-$(date -u +%Y%m%d%H%M%S)}"
@@ -1483,9 +1487,11 @@ main() {
       "$TENANT_ID" absent 1
     ensure_persona "$matrix_wrong_tenant_user" "${TMP_DIR}/matrix-wrong-tenant.id" \
       "$MATRIX_WRONG_TENANT_ID" present 1
-    mint_persona_token "$matrix_wrong_role_user" "$MATRIX_WRONG_ROLE_TOKEN_FILE" \
+    mint_persona_token "$matrix_wrong_role_user" "${TMP_DIR}/matrix-wrong-role.id" \
+      "$MATRIX_WRONG_ROLE_TOKEN_FILE" \
       "$MATRIX_WRONG_ROLE_CLAIMS_FILE" false "$TENANT_ID"
-    mint_persona_token "$matrix_wrong_tenant_user" "$MATRIX_WRONG_TENANT_TOKEN_FILE" \
+    mint_persona_token "$matrix_wrong_tenant_user" "${TMP_DIR}/matrix-wrong-tenant.id" \
+      "$MATRIX_WRONG_TENANT_TOKEN_FILE" \
       "$MATRIX_WRONG_TENANT_CLAIMS_FILE" true "$MATRIX_WRONG_TENANT_ID"
   fi
   export_step_up_public_key
