@@ -1850,7 +1850,32 @@ images:
     #          are preserved (previously all runtime exceptions collapsed to 503 — an
     #          artefact of the Codex 019dddb7 iter-42 pattern).
     #
-    digest: sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
+    # 2026-07-30 bump: sha-77f6e8f — platform-backend#1028 "release DB connections
+    # during authz projection". The running pod predates it and shows the exact
+    # signature that PR's regression test encodes: /authz/me holds a Hikari
+    # connection across the user-service identity callback and the OpenFGA
+    # projection. Measured on this cell during a live hang: BOTH Hikari pools
+    # sat at active=3 for ~14s (pending 0 — a single admin does not exhaust the
+    # 5-connection pool, concurrency would), and the outbound
+    # /api/users/by-email client histogram recorded count=1 sum=30.041s
+    # exception=ResourceAccessException while user-service's server-side mean
+    # for the same URI is 0.049s. The admin-facing symptom is /admin/users
+    # answering 503 ERR_AUTHZ_REVISION_UNAVAILABLE after the caller's 30s
+    # ceiling. This bump removes the tx-held-connection half; the unbounded
+    # lookup RestClient (no pool/lease/total budget) is the remaining half and
+    # is tracked as a follow-up in platform-backend.
+    # Ancestry: 096ed22f's source (#943 era) precedes 77f6e8f3 on main —
+    # forward promotion. Image digest 264901f4 carries tags sha-77f6e8f,
+    # sha-ccec327, sha-f27d0b0, sha-6544f40 (identical content — the three
+    # later commits do not touch permission-service).
+    # Pull-ability: package PRIVATE, node anonymous 401 (gitops#2885 class,
+    # measured BEFORE pinning). Image pulled on the host with the Vault
+    # kv/gitops/ghcr-token credential, imported into the node containerd and
+    # tagged with this exact digest reference; `crictl inspecti` resolves it;
+    # imagePullPolicy IfNotPresent. Durable fix stays tracked in #2885.
+    # Cross-AI: Codex thread 019fb47c — M4/M2 mechanism ruling; #1028 rollout
+    # named as the first, lowest-risk unblock.
+    digest: sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
