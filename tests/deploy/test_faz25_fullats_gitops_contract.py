@@ -762,7 +762,7 @@ fi
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
             "ats": "sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e",
-            "permission": "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4",
+            "permission": "sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02",
             "frontend": self.frontend_pin["digest"],
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
@@ -992,7 +992,7 @@ fi
         self.assertIn("changed-file set escaped two-file contract", self.rollback_script)
         for digest in (
             "sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e",
-            "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4",
+            "sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02",
             "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
         ):
@@ -1115,7 +1115,7 @@ fi
         # shape unchanged, runtime behaviour unchanged for RESOLVED path today.
         # Faz 25 ATS promotion state remains invariant (no ATS DTO / catalog /
         # recruiter-scope contract touched).
-        current_permission = "sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4"
+        current_permission = "sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02"
         promoted = {
             "frontend": self.frontend_pin["digest"],
             "tag": self.frontend_pin["tag"],
