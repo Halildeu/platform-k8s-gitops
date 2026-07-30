@@ -32,6 +32,61 @@ helper aynı AppRole yolunda tekrar geçti. Mevcut `aiadmin` geniş
 R17 bütünüyle mitigated değildir; değişiklik routine helper root-token
 tüketimini ve yanlışlıkla geniş credential kullanımını daraltır.
 
+## Live Delta — Budget actuals shared Reporting grid accepted in TEST (2026-07-30)
+
+Bu follow-up, 2026-07-28'de kabul edilen şirket `35` / proje `44200`
+gerçekleşen maliyet yolculuğunu platformun ortak Reporting grid şablonuna
+taşır. Production'a promotion yapılmadı. W3/MSSQL/SMB kaynakları salt okunur
+kaldı; bu doğrulamada `ERP’den yenile` çağrılmadı ve ERP kaynağına yazma
+yapılmadı.
+
+Exact artifact ve GitOps kanıtı:
+
+- `platform-web` PR `#1087` ortak `EntityGridTemplate` entegrasyonunu, PR
+  `#1088` standart tam-kontrast görünümü taşıdı. Exact main kaynağı
+  `6664b3a9c8a7f3bae1202f1b98b7395a5eb07d15`, TEST image digest'i
+  `sha256:d6ddbeead2bf1a58951495133ba1df822a16eef10c603ee058ab82533abe75a1`;
+- image build run
+  [`30533252683`](https://github.com/Halildeu/platform-web/actions/runs/30533252683)
+  exact kaynağı checkout etti, immutable TEST image'ını ve provenance
+  kaydını üretti;
+- GitOps PR
+  [`#3192`](https://github.com/Halildeu/platform-k8s-gitops/pull/3192)
+  yalnız TEST frontend `sourceRevision`, tag ve digest alanlarını değiştirdi.
+  Merge revision `ac1457af85decf57c4fd1896725b70e22b295cfc`;
+- rollout run
+  [`30533724383`](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/30533724383)
+  `Deployment/frontend` rollout'unu ve tek hazır podun exact image digest'ini
+  doğruladı. Public `build-info.json` aynı full source SHA ve
+  `sha-6664b3a` image kimliğini döndürdü.
+
+Hedef persona ile canlı TEST browser kanıtı:
+
+- şirket ve proje seçicileri alfabetik kaldı; `Serban Construction` ve `IDC1`
+  yeniden seçilip kayıtlı PostgreSQL snapshot'ı yüklendi;
+- ortak Reporting grid'i stable `reports.budget-project-actuals` kimliğiyle
+  hızlı arama, gruplama, gelişmiş filtre, filtre sıfırlama, kaydedilebilir
+  varyant, tam ekran, Excel/CSV ve ortak sayfalamayı sundu;
+- grid erişim durumu `full`; grid kökü, hızlı arama ve standart toolbar
+  kontrollerinin computed opacity değeri `1` olarak okundu. Önceki
+  presentation-only `readonly` solukluğu kaldırıldı; kolonlar yine editör
+  taşımadığı için grid veri yazma yüzeyi değildir;
+- hesap koduyla hızlı arama `2.000` görünür satırı `246` eşleşmeye indirdi;
+  filtre sıfırlama tekrar `2.000` satırı gösterdi;
+- bir satırın çekmecesinde Muhasebe, Maliyet sınıflandırması ve Kaynak belge
+  izi bölümleri açıldı. Ham belge numarası, taraf bilgisi veya işlem kimliği
+  canonical kanıta alınmadı;
+- sayfa yenileme sonrasında aynı şirket/proje seçimi `7.842` toplam,
+  `7.839` aktif ve en güncel `2.000` görünür satırlı aynı PostgreSQL
+  snapshot'ını yeni bir ERP senkronu olmadan geri getirdi.
+
+İlk başarısız kalan kapı grid dışındadır: ArgoCD application exact merge
+revision'ı gözlemlese de `meeting-service` Degraded ve `transcript-service`
+OutOfSync olduğu için genel durum `OutOfSync / Degraded` ve rollout
+sınıflandırması `FAIL` kaldı. Frontend Deployment, exact digest ve hedef
+browser yolculuğu geçti; genel application sağlığı kabul edilmiş sayılmaz.
+`platform-web#1046`, `#3007` ve parent `#3005` açık / In Progress tutulur.
+
 ## Live Delta — Faz 24 durable compute-audit evidence and TEST image pin (2026-07-29)
 
 Issue `#2610` altındaki bu TEST-only değişiklik, `platform-backend#999`
