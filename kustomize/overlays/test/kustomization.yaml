@@ -1375,8 +1375,13 @@ images:
     # SELECT-only; source lines are persisted only by budget-service in its
     # PostgreSQL store. Signed main build run 30546648067, report-service job
     # 90884385083.
-    newTag: sha-7b0e429
-    digest: sha256:e2aae5d249cdddcd57ba432586da9a5fbe40617e738442821c107f4ffc734d10
+    # 2026-07-30 invoice document-currency correction: platform-backend PR
+    # #1029, merge ccec327f774f5fd01723521b4c2a67c3848be890. The provider
+    # now reads the invoice header currency instead of the row pricing
+    # currency; W3/MSSQL remains SELECT-only. Signed main build run
+    # 30555053340, report-service job 90913258211.
+    newTag: sha-ccec327
+    digest: sha256:1eb5eee3ef55aeb1745401b8b76b1a89d8950e85c6ee49b6c99d5c1dcd32f6ca
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
