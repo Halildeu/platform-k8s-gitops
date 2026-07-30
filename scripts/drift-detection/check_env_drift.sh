@@ -284,6 +284,61 @@ if [[ "$ARGOCD_OPERATION_PHASE" == "Failed" || "$ARGOCD_OPERATION_PHASE" == "Err
     "ArgoCD platform-${ENV} operation ${ARGOCD_OPERATION_PHASE} at revision ${ARGOCD_OPERATION_REVISION:-unknown}" \
     "$ARGOCD_OPERATION_DETAILS"
   mark_p1
+
+  if echo "$ARGOCD_OPERATION_RESOURCES" \
+    | jq -e 'any(.name == "meeting-service" and .hookPhase == "Failed")' >/dev/null; then
+    MEETING_DEPLOYMENT_JSON=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" \
+      get deployment meeting-service -o json 2>/dev/null || echo '{}')
+    MEETING_REPLICASETS_JSON=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" \
+      get replicasets -l app.kubernetes.io/name=meeting-service -o json 2>/dev/null \
+      || echo '{"items":[]}')
+    MEETING_ROLLOUT_DETAILS=$(jq -nc \
+      --argjson deployment "$MEETING_DEPLOYMENT_JSON" \
+      --argjson replicasets "$MEETING_REPLICASETS_JSON" '
+      {
+        deployment: {
+          generation: ($deployment.metadata.generation // 0),
+          observedGeneration: ($deployment.status.observedGeneration // 0),
+          replicas: ($deployment.status.replicas // 0),
+          updatedReplicas: ($deployment.status.updatedReplicas // 0),
+          readyReplicas: ($deployment.status.readyReplicas // 0),
+          availableReplicas: ($deployment.status.availableReplicas // 0),
+          unavailableReplicas: ($deployment.status.unavailableReplicas // 0),
+          conditions: [
+            $deployment.status.conditions[]?
+            | {
+                type: (.type // ""),
+                status: (.status // ""),
+                reason: (.reason // ""),
+                message: ((.message // "")[0:500])
+              }
+          ]
+        },
+        replicaSets: [
+          $replicasets.items[]?
+          | {
+              name: (.metadata.name // ""),
+              createdAt: (.metadata.creationTimestamp // ""),
+              specReplicas: (.spec.replicas // 0),
+              replicas: (.status.replicas // 0),
+              readyReplicas: (.status.readyReplicas // 0),
+              availableReplicas: (.status.availableReplicas // 0),
+              conditions: [
+                .status.conditions[]?
+                | {
+                    type: (.type // ""),
+                    status: (.status // ""),
+                    reason: (.reason // ""),
+                    message: ((.message // "")[0:500])
+                  }
+              ]
+            }
+        ]
+      }')
+    add_finding P1 meeting_rollout_diagnostic \
+      "meeting-service rollout status and ReplicaSet conditions" \
+      "$MEETING_ROLLOUT_DETAILS"
+  fi
 fi
 
 if [[ $ARGOCD_QUERY_FAIL -eq 1 ]]; then
