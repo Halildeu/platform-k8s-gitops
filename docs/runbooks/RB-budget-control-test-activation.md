@@ -50,17 +50,32 @@ rendered policy is not proof of CNI enforcement.
 | `budget-service` | `platform-backend@a7f03762f22c214ff9ce3f7535c10e32520c7c0e` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:5b992fb8a30cb44085d4da3de5fc33222bbf8efd8e5f92870b3d40c2375cccdc` |
 | `report-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-report-service@sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b` |
 | `api-gateway` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-api-gateway@sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599` |
-| `frontend` | `platform-web@cadc6ad00a9061bf93d716962b63be9abb6100e3` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:b1beb38912d595619b944fd08fccd6af05dcaf6a1342687b474d32dcee4e8fe4` |
+| `frontend` | `platform-web@6664b3a9c8a7f3bae1202f1b98b7395a5eb07d15` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:d6ddbeead2bf1a58951495133ba1df822a16eef10c603ee058ab82533abe75a1` |
 
 All four listed digests must be pulled successfully by the target TEST node before
 promotion. A successful CI push alone is insufficient.
 
-Latest accepted TEST rollout:
+Latest accepted full-stack TEST baseline:
 
 - GitOps merge: `9a5387615068863fe07b13e98a348c6f73babe33`;
 - ArgoCD read-back: `Synced`, `Healthy`, operation `Succeeded`;
-- all four Deployments above: `1/1 Ready`;
-- each live pod `imageID`: exact corresponding digest from this table.
+- the budget, report and gateway Deployments: `1/1 Ready`;
+- each live backend pod `imageID`: exact corresponding backend digest from
+  this table.
+
+Latest accepted frontend grid follow-up:
+
+- source: `platform-web@6664b3a9c8a7f3bae1202f1b98b7395a5eb07d15`;
+- GitOps merge: `ac1457af85decf57c4fd1896725b70e22b295cfc`;
+- `Deployment/frontend`: rollout complete, `1/1 Ready`, pod `imageID` exact
+  frontend digest from this table;
+- public `build-info.json`: exact full source SHA and image tag
+  `sha-6664b3a`;
+- browser acceptance: company `35`, project `44200`, stored PostgreSQL
+  snapshot, shared Reporting grid and source-trace drawer passed;
+- application-wide Argo status remains `OutOfSync / Degraded` because
+  `meeting-service` is Degraded and `transcript-service` is OutOfSync. This
+  unrelated residual is not a green full-application acceptance claim.
 
 ## TEST OAuth activation
 
@@ -219,6 +234,45 @@ This evidence accepts the actuals snapshot and source-trace slice. It does not
 accept cost-rule classification, AI coding, plan budget, maker-checker approval
 or production rollout. At this observation all `7,839` active rows remained in
 the review bucket with zero classified cost.
+
+## Accepted TEST follow-up — shared Reporting grid
+
+The 2026-07-30 browser follow-up reused the stored company `35` / project
+`44200` PostgreSQL snapshot and did not invoke an ERP refresh.
+
+1. The actuals table uses the shared `EntityGridTemplate` with stable grid id
+   `reports.budget-project-actuals`.
+2. The standard quick search, grouping, advanced filter, filter reset, saved
+   variants, fullscreen, Excel/CSV export and shared pagination controls were
+   present.
+3. The grid resolved to `data-access-state=full`; the grid root, quick search
+   and standard toolbar controls all had computed opacity `1`.
+4. Quick search reduced the bounded `2,000`-row view to `246` matching rows;
+   filter reset restored the `2,000`-row view.
+5. A row opened the Accounting, Cost classification and Source document trace
+   sections. Raw document numbers, counterparties and transaction identifiers
+   were excluded from recorded evidence.
+6. A browser reload and repeat company/project selection returned the same
+   `7,842` total and `7,839` active-row snapshot without a new sync request.
+7. The standard grid is not an edit surface: no editable column or cell editor
+   is configured. Removing the presentation-only `readonly` opacity state does
+   not grant a backend, ERP or authorization write capability.
+
+Artifact and acceptance references:
+
+| Evidence | Result |
+|---|---|
+| platform-web PRs | `#1087`, `#1088` |
+| frontend source and TEST digest | `6664b3a9c8a7f3bae1202f1b98b7395a5eb07d15` / `sha256:d6ddbeead2bf1a58951495133ba1df822a16eef10c603ee058ab82533abe75a1` |
+| image build | platform-web run `30533252683` |
+| TEST desired state | GitOps PR `#3192`, merge `ac1457af85decf57c4fd1896725b70e22b295cfc` |
+| exact frontend runtime | rollout run `30533724383`: Deployment and pod digest pass |
+| browser journey | shared grid, search/reset, source drawer and reload persistence pass |
+| first residual gate | overall Argo application `OutOfSync / Degraded` on non-frontend `meeting-service` and `transcript-service` |
+
+`platform-web#1046`, `#3007` and parent `#3005` remain open / In Progress until
+their broader acceptance is deliberately reconciled. No production promotion
+is implied by this TEST follow-up.
 
 Before rollout, read the live `platform-quota` again. The 2026-07-27
 preflight showed `limits.cpu=13350m/16`, `requests.memory=6960Mi/12Gi`,
