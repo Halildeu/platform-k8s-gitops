@@ -18,10 +18,10 @@ EXPECTED = {
     "schema-service": "16",
     "endpoint-admin-service": "17",
     "audio-gateway": "18",
-    "meeting-service": "19",
-    "transcript-service": "20",
-    "audit-event-consumer-service": "21",
-    "budget-service": "22",
+    "budget-service": "19",
+    "meeting-service": "20",
+    "transcript-service": "21",
+    "audit-event-consumer-service": "22",
     "api-gateway": "23",
 }
 

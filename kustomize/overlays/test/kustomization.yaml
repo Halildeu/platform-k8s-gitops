@@ -7019,6 +7019,11 @@ patches:
 
   # Budget Control is a separate product service. TEST opts into one replica;
   # the base remains fail-closed at zero and PROD is unchanged.
+  # #3007: budget-service is independent from the Faz 24 meeting and
+  # transcript chain. Keep it after report/schema/endpoint services, but
+  # before the owner-gated meeting-service wave (#3144), so a missing Meeting
+  # Intelligence capability Secret cannot indefinitely block this customer
+  # product cell from reconciling.
   - target:
       kind: Deployment
       name: budget-service
@@ -8019,7 +8024,7 @@ patches:
       metadata:
         name: meeting-service
         annotations:
-          argocd.argoproj.io/sync-wave: "19"
+          argocd.argoproj.io/sync-wave: "20"
   - target:
       kind: Deployment
       name: transcript-service
@@ -8029,7 +8034,7 @@ patches:
       metadata:
         name: transcript-service
         annotations:
-          argocd.argoproj.io/sync-wave: "20"
+          argocd.argoproj.io/sync-wave: "21"
   - target:
       kind: Deployment
       name: audit-event-consumer-service
@@ -8039,7 +8044,7 @@ patches:
       metadata:
         name: audit-event-consumer-service
         annotations:
-          argocd.argoproj.io/sync-wave: "21"
+          argocd.argoproj.io/sync-wave: "22"
   - target:
       kind: Deployment
       name: budget-service
@@ -8049,7 +8054,7 @@ patches:
       metadata:
         name: budget-service
         annotations:
-          argocd.argoproj.io/sync-wave: "22"
+          argocd.argoproj.io/sync-wave: "19"
   - target:
       kind: Deployment
       name: api-gateway
