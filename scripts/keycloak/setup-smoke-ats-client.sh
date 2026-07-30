@@ -107,6 +107,19 @@ desired_shape_args() {
 # assert ettigi icin sessizce degil, GURULTULU sekilde duser. 2026-07-27'de once
 # eksik birakildi, canli token karsilastirmasi (frontend vs smoke-ats-v1) yakaladi.
 # `frontend`'de bu scope default; burada da default olmalı.
+# `ats.*` client-scope'ları da ZORUNLU (2026-07-30 ölçümü):
+# SecurityConfig authority'leri "İSTENEN scope ∩ ATANMIŞ resource_access rolleri"
+# kesişiminden türetir (39d-2b: scope istemek != permission). Bu client'ta roller
+# explicit scope-mapping ile DOĞRU geliyordu (ölçüldü: reader 3, reviewer 9,
+# operator 15 rol) ama token'ın `scope` claim'inde ats.* SIFIR olduğu için
+# kesişim BOŞ kalıyor ve her yetkili çağrı 403 dönüyordu.
+# #2746'nın "Opsiyon A tek başına resource_access ÜRETMEZ" tespiti doğruydu;
+# eksik olan şey Opsiyon A'nın kesişimin DİĞER yarısını sağladığını görmekti.
+# Scope adları ÇALIŞMA ANINDA keşfedilir — rol keşfiyle aynı disiplin, hardcode yok.
+ats_scope_names() {
+  K get client-scopes -r "$REALM" --fields name --format csv --noquotes 2>/dev/null \
+    | tr -d '\r' | grep -E '^ats\.' | sort
+}
 DESIRED_DEFAULT_SCOPES="ats-api-audience"
 
 ats_client_uuid() {
@@ -156,6 +169,8 @@ mapfile -t WANT_ROLES < <(ats_role_names "$AID")
 [ "${#WANT_ROLES[@]}" -gt 0 ] || { echo "ERROR: '$ATS_CLIENT' client rolü YOK — eşlenecek rol bulunamadı (fail-closed)" >&2; exit 1; }
 echo "  $ATS_CLIENT rolleri (çalışma anında keşif): ${#WANT_ROLES[@]}"
 
+# Keşfedilen ats.* scope'ları desired listeye eklenir (login sonrası; K hazır).
+DESIRED_DEFAULT_SCOPES="$DESIRED_DEFAULT_SCOPES $(ats_scope_names | tr '\n' ' ')"
 CID="$(client_uuid)"
 
 case "$MODE" in
@@ -181,7 +196,11 @@ case "$MODE" in
            | tr -d '\r' | grep -qx "$want"; then
         echo "  $want: var"
       else
-        echo "  $want: EKSIK (tenant claim'i bos gelir)"; SCOPE_MISSING=$((SCOPE_MISSING+1))
+        case "$want" in
+          ats-api-audience) echo "  $want: EKSIK (tenant claim'i bos gelir)";;
+          *) echo "  $want: EKSIK (scope claim'inde yok -> authority kesisimi BOS -> 403)";;
+        esac
+        SCOPE_MISSING=$((SCOPE_MISSING+1))
       fi
     done
     echo "  secret fingerprint (sha256[0:12]): $(secret_fp "$CID")"

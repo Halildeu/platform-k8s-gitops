@@ -9,7 +9,7 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init
 KCTOK="$EDGE/realms/platform-test/protocol/openid-connect/token"
 API="$EDGE/api/ats/v1/interviews/iv-smoke-1"
 T=$(mktemp -d); chmod 700 "$T"; umask 077
-trap 'rm -rf "$T"; unset ROOT SMOKE READER REVIEWER OPERATOR ROLELESS RT' EXIT
+trap 'rm -rf "$T"; unset ROOT SCS SMOKE READER REVIEWER OPERATOR ROLELESS RT' EXIT
 # Beklenen imaj digest'i — default aktivasyon kustomization pin'i ile senkron
 # tutulur (pin bump PR'ı bu default'u da günceller); ad-hoc koşum için env
 # override: ATS_EXPECTED_DIGEST=sha256:... ./d29-smoke.sh
@@ -22,15 +22,25 @@ ROOT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["root_toke
 SMOKE=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
   -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/ats-smoke)
+# A2c sonrasi: persona ROPC'si `frontend` yerine confidential `smoke-ats-v1`.
+# Secret argv'ye ve environment'a GIRMEZ — Faz 35 kanonik STDIN idiomu.
+SCS=$(printf '%s\n' "$ROOT" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    exec vault kv get -field=client_secret "$1"
+  ' sh kv/platform/keycloak/smoke-ats)
 unset ROOT
 pw(){ printf '%s' "$SMOKE" | python3 -c "import json,sys;print(json.load(sys.stdin)['data']['data']['$1'])"; }
 
-tok(){ # $1=client $2=user $3=pwkey -> access_token (bos = fail)
+tok(){ # $1=client $2=user $3=pwkey [$4=client_secret] -> access_token (bos = fail)
   local p
   p=$(pw "$3")
   {
     printf '%s\n' 'data-urlencode = "grant_type=password"'
     printf 'data-urlencode = "client_id=%s"\n' "$1"
+    [ -n "${4:-}" ] && printf 'data-urlencode = "client_secret=%s"\n' "$4"
     printf 'data-urlencode = "username=%s"\n' "$2"
     printf 'data-urlencode = "password=%s"\n' "$p"
   } | curl -sS --max-time 15 --config - "$KCTOK" \
@@ -82,11 +92,17 @@ C=$(code GET "$EDGE/api/ats/healthz"); [ "$C" != "200" ] && ok "healthz DISARI k
 RT=$(tok admin-cli ats-reader-persona READER_PW)
 if [ -n "$RT" ]; then C=$(code GET "$API/transcripts" "$RT"); [ "$C" = "401" ] && ok "audience'siz (admin-cli) token -> 401" || bad "audience'siz -> $C"; else echo "SKIP: admin-cli token alinamadi"; fi
 
-echo "== Persona tokenlari (frontend client) =="
-READER=$(tok frontend ats-reader-persona READER_PW)
-REVIEWER=$(tok frontend ats-reviewer-persona REVIEWER_PW)
-OPERATOR=$(tok frontend ats-operator-persona OPERATOR_PW)
-ROLELESS=$(tok frontend ats-roleless-persona ROLELESS_PW)
+# A2c (Faz 22 Sec KC hardening #2476): `frontend` client'inda direct-access-grant
+# KAPATILDI. Bu script o migrasyonu almamisti ve dort personanin HEPSI token
+# asamasinda dusuyordu; sonraki 9 FAIL bos token'in SONUCUYDU, gercek bir
+# regresyon degil (olculdu 2026-07-30: PASS=6 FAIL=13). Ayni turda `admin-cli`
+# ROPC'si CALISIYORDU -> persona/parola degil, client'in kendisi kapaliydi.
+[ -n "$SCS" ] || bad "smoke-ats client_secret Vault'tan alinamadi (kv/platform/keycloak/smoke-ats) — persona kontrolleri kosamaz"
+echo "== Persona tokenlari (smoke-ats-v1, confidential ROPC) =="
+READER=$(tok smoke-ats-v1 ats-reader-persona READER_PW "$SCS")
+REVIEWER=$(tok smoke-ats-v1 ats-reviewer-persona REVIEWER_PW "$SCS")
+OPERATOR=$(tok smoke-ats-v1 ats-operator-persona OPERATOR_PW "$SCS")
+ROLELESS=$(tok smoke-ats-v1 ats-roleless-persona ROLELESS_PW "$SCS")
 for n in READER REVIEWER OPERATOR ROLELESS; do
   v=$(eval "printf '%s' \"\$$n\"")
   [ -n "$v" ] && { echo "$n token OK:"; claims "$v"; } || bad "$n token alinamadi"
@@ -203,9 +219,13 @@ else
   echo "NOT: screening smoke kapali (backend #168 + KC #2441 pin sonrasi ATS_SCREENING_EXPECTED=1)"
 fi
 
+# DSAR govdesi SOZLESMEYE gore: reason_code KAPALI enum (DATA_SUBJECT_ERASURE),
+# subject_ref prefixli opak ref. Eski govde ("r-kvkk") 400 aliyordu ve bu, yetki
+# matrisinin gercek sonucunu gizliyordu (403 beklerken 400 gormek gibi).
+DSAR_BODY='{"subjectRef":"subject-11111111-2222-4333-8444-555555555555","reasonCode":"DATA_SUBJECT_ERASURE"}'
 echo "== Operator allow / reviewer deny (DSAR) =="
-C=$(code POST "$API/dsar" "$REVIEWER" '{"subjectRef":"sub-smoke-1","reasonCode":"r-kvkk"}'); [ "$C" = "403" ] && ok "reviewer dsar -> 403" || bad "reviewer dsar -> $C"
-C=$(code POST "$API/dsar" "$OPERATOR" '{"subjectRef":"sub-smoke-1","reasonCode":"r-kvkk"}'); [ "${C:0:1}" = "2" ] && ok "operator dsar intake -> $C" || bad "operator dsar -> $C ($(head -c 160 "$T/last.json" 2>/dev/null))"
+C=$(code POST "$API/dsar" "$REVIEWER" "$DSAR_BODY"); [ "$C" = "403" ] && ok "reviewer dsar -> 403" || bad "reviewer dsar -> $C"
+C=$(code POST "$API/dsar" "$OPERATOR" "$DSAR_BODY"); [ "${C:0:1}" = "2" ] && ok "operator dsar intake -> $C" || bad "operator dsar -> $C ($(head -c 160 "$T/last.json" 2>/dev/null))"
 
 echo; echo "SONUC: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
