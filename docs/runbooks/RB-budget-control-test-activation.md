@@ -47,10 +47,10 @@ rendered policy is not proof of CNI enforcement.
 
 | Workload | Source commit | Immutable image |
 |---|---|---|
-| `budget-service` | `platform-backend@a7f03762f22c214ff9ce3f7535c10e32520c7c0e` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:5b992fb8a30cb44085d4da3de5fc33222bbf8efd8e5f92870b3d40c2375cccdc` |
-| `report-service` | `platform-backend@3de6e35998f0bfe46413886447c7284ae2c34093` | `ghcr.io/halildeu/platform-backend-report-service@sha256:ba5621b79cfe899353101018691d66a4b5992a8ea0c2c775c199119bec8c166b` |
+| `budget-service` | `platform-backend@7b0e429ed5815b1283b666dec9926783d01350d6` | `ghcr.io/halildeu/platform-backend-budget-service@sha256:45221bd4adac3cfb75df680ab15fe9447259b89b8eef8555960a34b15266a840` |
+| `report-service` | `platform-backend@ccec327f774f5fd01723521b4c2a67c3848be890` | `ghcr.io/halildeu/platform-backend-report-service@sha256:1eb5eee3ef55aeb1745401b8b76b1a89d8950e85c6ee49b6c99d5c1dcd32f6ca` |
 | `api-gateway` | `platform-backend@91520bca5775588f897227b90354c72cc0173512` | `ghcr.io/halildeu/platform-backend-api-gateway@sha256:244fff32b9e244dc6018c9db4b77cc3bca212216604675898074b9034a904599` |
-| `frontend` | `platform-web@6664b3a9c8a7f3bae1202f1b98b7395a5eb07d15` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:d6ddbeead2bf1a58951495133ba1df822a16eef10c603ee058ab82533abe75a1` |
+| `frontend` | `platform-web@8aec199d5758bb23e5bedc4248aa5d2d37970456` | `ghcr.io/halildeu/platform-web-frontend-testai@sha256:a255265813da8f77ee67d9ba3189482aeb171ee6b656c19191a0d62811777b78` |
 
 All four listed digests must be pulled successfully by the target TEST node before
 promotion. A successful CI push alone is insufficient.
@@ -76,6 +76,26 @@ Latest accepted frontend grid follow-up:
 - application-wide Argo status remains `OutOfSync / Degraded` because
   `meeting-service` is Degraded and `transcript-service` is OutOfSync. This
   unrelated residual is not a green full-application acceptance claim.
+
+Latest accepted operational source-line follow-up:
+
+- backend fix: `platform-backend#1029`, merge
+  `ccec327f774f5fd01723521b4c2a67c3848be890`;
+- signed image build: run `30555053340`, `report-service` job
+  `90913258211`;
+- TEST desired state: GitOps PR `#3202`, merge
+  `5303689df2b1aea0781249131cfbc1ab6769e56d`;
+- live `report-service`: rollout complete, pod `Ready`, restart count `0`,
+  pod `imageID` exact report digest from this table;
+- browser acceptance: company `35`, project `44200`, `1,962` operational
+  source lines, `505` documents and a `832,521.90 TRY` stored PostgreSQL
+  snapshot; a six-line invoice exposed net/tax/gross detail and accounting
+  distribution;
+- reload persistence: `Gerçekleşeni göster` returned the same source-line
+  count, document count, total and last-sync timestamp without a new ERP sync;
+- application-wide Argo status remains `OutOfSync / Degraded` on the separate
+  owner-gated `meeting-service` secret residual. The `report-service`
+  Deployment itself is `Synced / Healthy`.
 
 ## TEST OAuth activation
 
@@ -273,6 +293,56 @@ Artifact and acceptance references:
 `platform-web#1046`, `#3007` and parent `#3005` remain open / In Progress until
 their broader acceptance is deliberately reconciled. No production promotion
 is implied by this TEST follow-up.
+
+## Accepted TEST follow-up — operational invoice source lines
+
+The 2026-07-30 attended TEST journey used the Platform Admin planner persona,
+company `35`, project `44200` and reporting window
+`2026-01-01`–`2026-07-30`.
+
+The first refresh failed closed because a document had row-level pricing
+currencies that differed from one another while its header had one canonical
+document currency. Read-only W3 schema and MSSQL diagnostics confirmed that
+the provider was projecting `INVOICE_ROW.OTHER_MONEY`. Backend PR `#1029`
+changed the projection to the invoice-header `INVOICE.OTHER_MONEY` field and
+added the differing-row-currency fixture to the MSSQL Testcontainers CI job.
+
+Observed customer journey after the exact report digest reached TEST:
+
+1. `ERP’den yenile` read `7,930` provider rows, updated `7,930` snapshot rows
+   and marked `25` prior rows cancelled. The source remained read-only; the
+   only persistent write was the Budget PostgreSQL snapshot.
+2. The stored snapshot exposed `1,962` operational source lines and `505`
+   source documents. Realized and source-line cost were both
+   `832,521.90 TRY`; the period reconciliation difference was `0.00 TRY`.
+3. Advanced filter selected one six-line invoice. The source-document drawer
+   displayed all six quantities and net/tax/gross values, document-total
+   reconciliation and eight accounting distribution rows. Counter-account
+   and tax rows were visibly excluded from duplicate cost consumption.
+4. The browser was fully reloaded. Re-selecting the same company, project and
+   dates and using only `Gerçekleşeni göster` returned the same `1,962`
+   source lines, `505` documents, `832,521.90 TRY` total and last successful
+   sync timestamp without a new ERP refresh.
+5. The grid was left filtered to the six-line document with the
+   source-document drawer open for attended review.
+
+Record only counts, statuses, totals and relationship classifications in
+canonical evidence. Do not record the live document number, counterparty,
+line descriptions or other accounting PII.
+
+This acceptance does not mean cost coding is complete. The selected document
+remained `İncelenecek` with `0.00 TRY` cost basis, and `361` rows remained in
+the review population. Expense, inventory-consumption, depreciation and other
+source adapters; AI suggestions; human approval; plan budget; and production
+rollout remain separate slices.
+
+The first failed/unverified aggregate gate is application-wide Argo health:
+the exact GitOps revision is observed and `report-service` is
+`Synced / Healthy`, but the separate owner-gated `meeting-service` secret
+residual keeps `platform-test` `OutOfSync / Degraded`. Do not treat this as a
+failed report-service rollout or as a green full-application acceptance.
+`platform-backend#967`, `platform-web#1046`, `platform-web#1089`, `#3007` and
+parent `#3005` remain open / In Progress.
 
 Before rollout, read the live `platform-quota` again. The 2026-07-27
 preflight showed `limits.cpu=13350m/16`, `requests.memory=6960Mi/12Gi`,

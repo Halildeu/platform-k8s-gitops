@@ -32,6 +32,80 @@ helper aynı AppRole yolunda tekrar geçti. Mevcut `aiadmin` geniş
 R17 bütünüyle mitigated değildir; değişiklik routine helper root-token
 tüketimini ve yanlışlıkla geniş credential kullanımını daraltır.
 
+## Live Delta — Budget operational source-line actuals accepted in TEST (2026-07-30)
+
+Bu delta yalnız TEST ortamındaki şirket `35` / proje `44200` (`IDC1`)
+gerçekleşen maliyet yolculuğunu günceller. W3/MSSQL canlı kaynağı salt okunur
+kaldı; kalıcı yazma yalnız Budget PostgreSQL snapshot'ına yapıldı. ERP SMB
+belge gövdesi okunmadı, production promotion veya ERP yazma yetkisi verilmedi.
+
+İlk canlı yenileme fail-closed doğrulamada tek bir faturanın satır fiyatlama
+para birimlerinin farklı olmasına rağmen belge başlığının tek para birimi
+taşıdığını gösterdi. Salt-okunur şema ve MSSQL incelemesi, provider'ın belge
+para birimi için satırdaki `INVOICE_ROW.OTHER_MONEY` alanını kullanmasını kök
+neden olarak doğruladı. `platform-backend#1029`, belge para birimini
+`INVOICE.OTHER_MONEY` başlık alanından okuyacak şekilde düzeltildi ve farklı
+satır fiyatlama para birimlerine sahip tek belge fixture'ı MSSQL Testcontainers
+kapısına eklendi. Exact PR head'indeki `23/23` kontrol ve ilgili MSSQL
+entegrasyon işi geçti; merge revision
+`ccec327f774f5fd01723521b4c2a67c3848be890` oldu.
+
+Exact artifact ve GitOps kanıtı:
+
+- backend image run
+  [`30555053340`](https://github.com/Halildeu/platform-backend/actions/runs/30555053340)
+  içindeki `report-service` job `90913258211`, source revision
+  `ccec327f774f5fd01723521b4c2a67c3848be890` için imzalı
+  `sha256:1eb5eee3ef55aeb1745401b8b76b1a89d8950e85c6ee49b6c99d5c1dcd32f6ca`
+  digest'ini üretti. Provenance source digest ve `refs/heads/main` bağı
+  doğrulandı;
+- GitOps PR
+  [`#3202`](https://github.com/Halildeu/platform-k8s-gitops/pull/3202)
+  yalnız TEST `report-service` tag/digest pinini değiştirdi; merge revision
+  `5303689df2b1aea0781249131cfbc1ab6769e56d`;
+- canlı `report-service` Deployment rollout'u geçti. Tek pod `Ready`, restart
+  sayısı `0` ve pod `imageID` değeri exact
+  `sha256:1eb5eee3ef55aeb1745401b8b76b1a89d8950e85c6ee49b6c99d5c1dcd32f6ca`
+  oldu.
+
+Platform Admin ile canlı TEST browser kanıtı:
+
+- alfabetik şirket/proje seçicilerinden `Serban Construction` ve `IDC1`
+  seçildi; `2026-01-01`–`2026-07-30` penceresinde `ERP’den yenile` yalnız
+  salt-okunur provider çağrısı ve Budget PostgreSQL snapshot yazımı yaptı;
+- UI `7.930` provider satırının okunduğunu ve güncellendiğini, `25` eski
+  satırın iptal işaretlendiğini bildirdi. Snapshot `1.962` operasyonel kaynak
+  satırı ve `505` kaynak belge taşıdı;
+- gerçekleşen ve kaynak-satırı maliyeti `832.521,90 TRY`, kaynak satırı
+  bekleyen tutar `0,00 TRY`, aktif muhasebe kontrol kapsamı `7.927` satır ve
+  dönem farkı `0,00 TRY` gösterildi. `361` satır halen sınıflama/eşleşme
+  incelemesindedir;
+- gelişmiş filtreyle altı satırlı bir fatura seçildi. Belge çekmecesi altı
+  operasyonel satırın miktar, net, KDV ve brüt tutarlarını; belge toplamı
+  mutabakatını ve sekiz muhasebe dağıtım satırını birlikte gösterdi. Karşı
+  hesap ve KDV satırlarının maliyete ikinci kez eklenmediği görünür kaldı.
+  Ham belge numarası, taraf bilgisi ve satır açıklamaları canonical kanıta
+  alınmadı;
+- tam sayfa reload sonrasında aynı şirket/proje/tarih seçilip yalnız
+  `Gerçekleşeni göster` kullanıldı. Yeni ERP senkronu olmadan aynı `1.962`
+  kaynak satırı, `505` belge, `832.521,90 TRY` toplam ve aynı son başarılı
+  senkron zamanı geri geldi; PostgreSQL snapshot kalıcılığı kullanıcı
+  yüzeyinde doğrulandı.
+
+Bu kabul operasyonel fatura satırı adapter'ını, kaynak belge detayını ve
+snapshot kalıcılığını kapsar. Örnek belgenin maliyet satırları halen
+`İncelenecek` durumunda ve maliyet esası `0,00 TRY` olduğundan maliyet kuralı
+sınıflaması, masraf/sarf/amortisman adapter'ları, AI kod önerisi, insan onayı,
+plan bütçe ve production rollout kabul edilmiş değildir.
+
+ArgoCD `platform-test`, exact `5303689d...` revision'ını gözlemliyor;
+`report-service` Deployment `Synced / Healthy` durumundadır. Ayrı
+`meeting-service` owner-secret eksikliği nedeniyle application toplamı
+`OutOfSync / Degraded` kaldı; bu residual rapor servisi veya browser
+yolculuğu için yeşil aggregate iddiasına dönüştürülmez. `platform-backend#967`,
+`platform-web#1046`, `platform-web#1089`, `#3007` ve parent `#3005` açık /
+In Progress tutulur.
+
 ## Live Delta — Budget actuals shared Reporting grid accepted in TEST (2026-07-30)
 
 Bu follow-up, 2026-07-28'de kabul edilen şirket `35` / proje `44200`
