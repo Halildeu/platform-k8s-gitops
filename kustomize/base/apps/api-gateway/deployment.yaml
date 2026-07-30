@@ -50,7 +50,7 @@ spec:
               value: "k8s"
             - name: JAVA_TOOL_OPTIONS
               # Gateway biraz daha heap (route cache + reactive pool)
-              value: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+              value: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=8"
           envFrom:
             - configMapRef:
                 name: api-gateway-config

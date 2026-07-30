@@ -52,7 +52,7 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=8"
           envFrom:
             - configMapRef:
                 name: user-service-config
