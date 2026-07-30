@@ -1824,7 +1824,18 @@ images:
     #          are preserved (previously all runtime exceptions collapsed to 503 — an
     #          artefact of the Codex 019dddb7 iter-42 pattern).
     #
-    digest: sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
+    # 2026-07-30 update: sha-77f6e8f — board #3198 users-list authz pool starvation fix.
+    # Source : platform-backend PR #1028 squash 77f6e8f30686dd582fb421677a4df1c34ccfe073.
+    #          /authz/me no longer holds one permission-service DB connection while
+    #          identity-directory and OpenFGA network calls are in flight; scope-summary
+    #          reads explicitly suspend inherited transactions. Fail-closed authority and
+    #          response semantics are unchanged.
+    # Tests  : permission-service 446/0/0/2 local; PR CI permission-service Testcontainers,
+    #          full reactor, contract, OpenFGA and security gates pass.
+    # Tag    : ci-image-push.yml -> sha-77f6e8f (run 30554989594, job 90913042370 success).
+    # Digest : sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02.
+    # Scope  : test-only promotion; production remains unchanged.
+    digest: sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
