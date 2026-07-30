@@ -4661,7 +4661,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: 6664b3a9c8a7f3bae1202f1b98b7395a5eb07d15
+    # sourceRevision: 8f750b4853bd86bc21156bfc0f6fcb810ef89bdf
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -4679,8 +4679,8 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-6664b3a
-    digest: sha256:d6ddbeead2bf1a58951495133ba1df822a16eef10c603ee058ab82533abe75a1
+    newTag: sha-8f750b4
+    digest: sha256:94ae8ff22af5856ea7105b381c600e4d6afe12d66d96dceae19ca99246302bce
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
