@@ -4652,7 +4652,11 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: cc4fc720fbc19d0d9761508fb718e5b82c6f48ce
+    # sourceRevision: 8f5dbc87bf3fef1270b1e9ad7c32916a73d79aab
+    # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
+    # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
+    # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
+    # doğrulanamadı"nın kökü buydu. PR #1085: x-charts perf kapıları best-of-5.
     # 2026-07-30 Etik Speak kabuk içinde: platform-web PR #1083 —
     # sidebar'daki Etik Speak artık /admin/ethics kabuk-içi rotasına gider
     # (Meetings ile simetrik); ikinci uygulamaya tam sayfa atlama yok.
@@ -4666,8 +4670,8 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-cc4fc72
-    digest: sha256:f6315a79b5061a65b8f87e06285203eb8c162152bc9e7c4cc0729003547a6132
+    newTag: sha-8f5dbc8
+    digest: sha256:7613f91b360e9571cb5f6e1e7c84d6bdce6e4a87bc257e989a55f110750c7e3d
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
