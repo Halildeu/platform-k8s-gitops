@@ -6807,7 +6807,7 @@ patches:
         value: 1
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
-        value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+        value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=8"
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
@@ -6850,7 +6850,7 @@ patches:
         value: 1
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
-        value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+        value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=8"
       # #3007: the long-lived gateway pod retained a stale path to the newly
       # introduced budget-service endpoint. Roll it through desired state after
       # the exact TCP/8101 NetworkPolicies are present; no imperative workload
