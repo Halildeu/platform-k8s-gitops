@@ -206,6 +206,10 @@ rm -f "$ARGOCD_STDERR_FILE"
 ARGOCD_STATE="ERR"
 ARGOCD_CONDITION_BLOB="[]"
 ARGOCD_QUERY_FAIL=0
+ARGOCD_OPERATION_PHASE=""
+ARGOCD_OPERATION_REVISION=""
+ARGOCD_OPERATION_MESSAGE=""
+ARGOCD_OPERATION_RESOURCES="[]"
 
 if [[ $ARGOCD_RC -ne 0 ]]; then
   # Distinguish a genuine Application-object NotFound from any other failure
@@ -237,10 +241,49 @@ elif [[ -n "$APP_JSON" ]] && echo "$APP_JSON" | jq -e '.status' >/dev/null 2>&1;
   ARGOCD_STATE=$(echo "$APP_JSON" | jq -r \
     '"\(.status.sync.status // "Unknown")/\(.status.health.status // "Unknown")/\(.status.sync.revision // "")"')
   ARGOCD_CONDITION_BLOB=$(echo "$APP_JSON" | jq -c '.status.conditions // []')
+  ARGOCD_OPERATION_PHASE=$(echo "$APP_JSON" | jq -r '.status.operationState.phase // ""')
+  ARGOCD_OPERATION_REVISION=$(echo "$APP_JSON" | jq -r \
+    '.status.operationState.syncResult.revision // ""')
+  ARGOCD_OPERATION_MESSAGE=$(echo "$APP_JSON" | jq -r \
+    '(.status.operationState.message // "")[0:500]')
+  # Operation result messages are restricted to the three non-sensitive
+  # Deployments implicated in the current TEST convergence failure. This keeps
+  # the report useful for exact root-cause diagnosis without exporting Secret,
+  # ConfigMap, Job, hook, manifest or environment-value payloads.
+  ARGOCD_OPERATION_RESOURCES=$(echo "$APP_JSON" | jq -c '[
+    .status.operationState.syncResult.resources[]?
+    | .name as $name
+    | select(
+        .kind == "Deployment"
+        and (["budget-service", "transcript-service", "meeting-service"] | index($name))
+      )
+    | {
+        group: (.group // ""),
+        kind: (.kind // ""),
+        namespace: (.namespace // ""),
+        name: $name,
+        status: (.status // ""),
+        hookPhase: (.hookPhase // ""),
+        message: ((.message // "")[0:500])
+      }
+  ]')
 else
   # Object exists but .status missing — treat as Unknown/Unknown rather than
   # collapsing to "missing" (Codex 019e44c8 must_fix #1 tail clause).
   ARGOCD_STATE="Unknown/Unknown/"
+fi
+
+if [[ "$ARGOCD_OPERATION_PHASE" == "Failed" || "$ARGOCD_OPERATION_PHASE" == "Error" ]]; then
+  ARGOCD_OPERATION_DETAILS=$(jq -nc \
+    --arg phase "$ARGOCD_OPERATION_PHASE" \
+    --arg revision "$ARGOCD_OPERATION_REVISION" \
+    --arg message "$ARGOCD_OPERATION_MESSAGE" \
+    --argjson resources "$ARGOCD_OPERATION_RESOURCES" \
+    '{phase:$phase, revision:$revision, message:$message, resources:$resources}')
+  add_finding P1 argocd_operation_failed \
+    "ArgoCD platform-${ENV} operation ${ARGOCD_OPERATION_PHASE} at revision ${ARGOCD_OPERATION_REVISION:-unknown}" \
+    "$ARGOCD_OPERATION_DETAILS"
+  mark_p1
 fi
 
 if [[ $ARGOCD_QUERY_FAIL -eq 1 ]]; then
