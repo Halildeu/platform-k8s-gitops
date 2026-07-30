@@ -13,6 +13,7 @@ VIEWER_PRODUCT_VERIFY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer
 VIEWER_PRODUCT_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 VIEWER_BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
 VIEWER_BROWSER_EVIDENCE="$ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
+VIEWER_ATTENDED_SMOKE="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh"
 VIEWER_OPERATOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-operator-evidence.yml"
 VIEWER_OPERATOR_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py"
 VIEWER_D30_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-d30-evidence.yml"
@@ -210,7 +211,18 @@ for config in "$VIEWER_LEGACY_CONFIG" "$VIEWER_DEVICE_KEY_CONFIG"; do
     echo "VIEW_ONLY operator audit identity must remain bound to the immutable JWT sub: $config" >&2
     exit 1
   fi
+  require_grep '"154fdd4f-3e9f-4dfd-9bdf-873bd3b67163": "154fdd4f-3e9f-4dfd-9bdf-873bd3b67163"' "$config"
+  require_grep '"ef3cfda1-9a40-496c-b153-0326a4e44605": "ef3cfda1-9a40-496c-b153-0326a4e44605"' "$config"
+  require_grep '"154fdd4f-3e9f-4dfd-9bdf-873bd3b67163": ["00000000-0000-0000-0000-000000000001"]' "$config"
+  require_grep '"ef3cfda1-9a40-496c-b153-0326a4e44605": ["00000000-0000-0000-0000-000000000001"]' "$config"
+  if grep -Eq '"rb-(operator|approver)-denetim"[[:space:]]*:' "$config"; then
+    echo "VIEW_ONLY approval maps must key immutable JWT sub, not mutable usernames: $config" >&2
+    exit 1
+  fi
 done
+require_grep 'OPERATOR_SUBJECT_ID="${OPERATOR_SUBJECT_ID:-154fdd4f-3e9f-4dfd-9bdf-873bd3b67163}"' "$VIEWER_ATTENDED_SMOKE"
+require_grep 'APPROVER_SUBJECT_ID="${APPROVER_SUBJECT_ID:-ef3cfda1-9a40-496c-b153-0326a4e44605}"' "$VIEWER_ATTENDED_SMOKE"
+require_grep 'fail_smoke "keycloak immutable subject mismatch for $username"' "$VIEWER_ATTENDED_SMOKE"
 python3 - "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH" <<'PY'
 import pathlib
 import re

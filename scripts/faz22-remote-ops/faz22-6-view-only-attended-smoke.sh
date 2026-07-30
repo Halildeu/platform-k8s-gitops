@@ -44,6 +44,11 @@ KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 OPERATOR_USERNAME="${OPERATOR_USERNAME:-rb-operator-denetim}"
 APPROVER_USERNAME="${APPROVER_USERNAME:-rb-approver-denetim}"
+# These fixed TEST IDs are also the approval-map keys in both activation
+# overlays. Keeping the username and immutable JWT sub as separate fields
+# prevents audit identity hardening from silently breaking maker-checker authz.
+OPERATOR_SUBJECT_ID="${OPERATOR_SUBJECT_ID:-154fdd4f-3e9f-4dfd-9bdf-873bd3b67163}"
+APPROVER_SUBJECT_ID="${APPROVER_SUBJECT_ID:-ef3cfda1-9a40-496c-b153-0326a4e44605}"
 TENANT_ID="${TENANT_ID:-00000000-0000-0000-0000-000000000001}"
 TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-remote-bridge-operator-api frontend}"
 
@@ -547,7 +552,7 @@ admin_curl() {
 
 ensure_persona() {
   local username="$1" user_id_file="$2" tenant="${3:-$TENANT_ID}"
-  local role_mode="${4:-present}" temporary="${5:-0}"
+  local role_mode="${4:-present}" temporary="${5:-0}" expected_uid="${6:-}"
   local lookup="${TMP_DIR}/${username}-lookup.json" code uid
   code="$(admin_curl GET "/users?username=${username}&exact=true" "$lookup")"
   assert_http "$code" 200 "keycloak lookup $username" "$lookup"
@@ -557,12 +562,14 @@ ensure_persona() {
     local create_body create_out
     create_out="${TMP_DIR}/${username}-create.json"
     create_body="$(jq -nc \
+      --arg id "$expected_uid" \
       --arg username "$username" \
       --arg email "${username}@testai.acik.com" \
       --arg tenant "$tenant" \
       '{username:$username, enabled:true, emailVerified:true, email:$email,
         firstName:"RemoteBridge", lastName:$username,
-        attributes:{tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}}')"
+        attributes:{tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}}
+        + (if $id == "" then {} else {id:$id} end)')"
     code="$(admin_curl POST /users "$create_out" "$create_body")"
     [[ "$code" == "201" || "$code" == "204" ]] || fail_smoke "keycloak create $username returned $code"
     code="$(admin_curl GET "/users?username=${username}&exact=true" "$lookup")"
@@ -570,6 +577,9 @@ ensure_persona() {
     uid="$(jq -r '.[0].id // empty' "$lookup")"
   fi
   [[ -n "$uid" ]] || fail_smoke "keycloak user id missing for $username"
+  if [[ -n "$expected_uid" && "$uid" != "$expected_uid" ]]; then
+    fail_smoke "keycloak immutable subject mismatch for $username"
+  fi
   printf '%s' "$uid" > "$user_id_file"
   [[ "$temporary" == "1" ]] && TEMP_PERSONA_IDS+=("$uid")
 
@@ -667,7 +677,8 @@ mint_persona_token() {
   local username="$1" token_file="$2" claims_file="$3"
   local expected_role="${4:-true}" expected_tenant="${5:-$TENANT_ID}"
   local pass_file="${TMP_DIR}/${username}.password"
-  local client response token expected_tenant_sha
+  local client response token expected_subject_sha expected_tenant_sha
+  expected_subject_sha="sha256:$(sha256_text "$(cat "${TMP_DIR}/${username}.id")")"
   expected_tenant_sha="sha256:$(sha256_text "$expected_tenant")"
   for client in $TOKEN_CLIENT_CANDIDATES; do
     response="$(curl -sS -X POST \
@@ -682,10 +693,13 @@ mint_persona_token() {
       chmod 0600 "$token_file"
       mask_file_value "$token_file"
       decode_jwt_claims "$token_file" "$claims_file"
-      if jq -e --argjson expectedRole "$expected_role" --arg tenant "$expected_tenant_sha" '
+      if jq -e --argjson expectedRole "$expected_role" \
+        --arg tenant "$expected_tenant_sha" \
+        --arg subject "$expected_subject_sha" '
         .realmRolesContainRemoteBridgeOperator == $expectedRole
         and .tenant_id_present == true
         and .tenantSha256 == $tenant
+        and .subjectSha256 == $subject
         and .audContainsRemoteBridgeOperatorApi == true
       ' "$claims_file" >/dev/null; then
         return
@@ -1395,7 +1409,8 @@ main() {
     local before_side_effect_count after_side_effect_count browser_sha256
     read_keycloak_admin_password
     mint_admin_token
-    ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id"
+    ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id" \
+      "$TENANT_ID" present 0 "$OPERATOR_SUBJECT_ID"
     mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" \
       "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
     before_side_effect_count="$(preflight_side_effect_count)" \
@@ -1453,8 +1468,10 @@ main() {
   start_port_forward
   read_keycloak_admin_password
   mint_admin_token
-  ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id"
-  ensure_persona "$APPROVER_USERNAME" "${TMP_DIR}/approver.id"
+  ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id" \
+    "$TENANT_ID" present 0 "$OPERATOR_SUBJECT_ID"
+  ensure_persona "$APPROVER_USERNAME" "${TMP_DIR}/approver.id" \
+    "$TENANT_ID" present 0 "$APPROVER_SUBJECT_ID"
   mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
   mint_persona_token "$APPROVER_USERNAME" "$APPROVER_TOKEN_FILE" "${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
   if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then

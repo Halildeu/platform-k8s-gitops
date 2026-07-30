@@ -261,20 +261,22 @@ data:
   REMOTE_BRIDGE_APPROVAL_GRANT_TTL_MILLIS: "300000"
   REMOTE_BRIDGE_APPROVAL_FATIGUE_MAX_PER_WINDOW: "5"
   REMOTE_BRIDGE_APPROVAL_FATIGUE_WINDOW_MILLIS: "3600000"
+  # Immutable Keycloak sub IDs for the two fixed TEST personas. The attended
+  # collector seeds and verifies these IDs before it mints either bearer token.
   SPRING_APPLICATION_JSON: |
     {
       "remote-bridge": {
         "approval": {
           "canonical-identity": {
-            "rb-operator-denetim": "rb-operator-denetim",
-            "rb-approver-denetim": "rb-approver-denetim"
+            "154fdd4f-3e9f-4dfd-9bdf-873bd3b67163": "154fdd4f-3e9f-4dfd-9bdf-873bd3b67163",
+            "ef3cfda1-9a40-496c-b153-0326a4e44605": "ef3cfda1-9a40-496c-b153-0326a4e44605"
           },
           "grants": {
             "can-request": {
-              "rb-operator-denetim": ["00000000-0000-0000-0000-000000000001"]
+              "154fdd4f-3e9f-4dfd-9bdf-873bd3b67163": ["00000000-0000-0000-0000-000000000001"]
             },
             "can-approve": {
-              "rb-approver-denetim": ["00000000-0000-0000-0000-000000000001"]
+              "ef3cfda1-9a40-496c-b153-0326a4e44605": ["00000000-0000-0000-0000-000000000001"]
             }
           }
         }
