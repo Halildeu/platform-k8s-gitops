@@ -292,9 +292,17 @@ if [[ "$ARGOCD_OPERATION_PHASE" == "Failed" || "$ARGOCD_OPERATION_PHASE" == "Err
     MEETING_REPLICASETS_JSON=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" \
       get replicasets -l app.kubernetes.io/name=meeting-service -o json 2>/dev/null \
       || echo '{"items":[]}')
+    MEETING_PODS_JSON=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" \
+      get pods -l app.kubernetes.io/name=meeting-service -o json 2>/dev/null \
+      || echo '{"items":[]}')
+    MEETING_EVENTS_JSON=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" \
+      get events --field-selector involvedObject.kind=Pod -o json 2>/dev/null \
+      || echo '{"items":[]}')
     MEETING_ROLLOUT_DETAILS=$(jq -nc \
       --argjson deployment "$MEETING_DEPLOYMENT_JSON" \
-      --argjson replicasets "$MEETING_REPLICASETS_JSON" '
+      --argjson replicasets "$MEETING_REPLICASETS_JSON" \
+      --argjson pods "$MEETING_PODS_JSON" \
+      --argjson events "$MEETING_EVENTS_JSON" '
       {
         deployment: {
           generation: ($deployment.metadata.generation // 0),
@@ -333,7 +341,57 @@ if [[ "$ARGOCD_OPERATION_PHASE" == "Failed" || "$ARGOCD_OPERATION_PHASE" == "Err
                   }
               ]
             }
-        ]
+        ],
+        pods: [
+          $pods.items[]?
+          | {
+              name: (.metadata.name // ""),
+              createdAt: (.metadata.creationTimestamp // ""),
+              templateHash: (.metadata.labels["pod-template-hash"] // ""),
+              phase: (.status.phase // ""),
+              conditions: [
+                .status.conditions[]?
+                | {
+                    type: (.type // ""),
+                    status: (.status // ""),
+                    reason: (.reason // ""),
+                    message: ((.message // "")[0:500])
+                  }
+              ],
+              containers: [
+                .status.containerStatuses[]?
+                | {
+                    name: (.name // ""),
+                    ready: (.ready // false),
+                    restartCount: (.restartCount // 0),
+                    state: (.state // {}),
+                    lastState: (.lastState // {})
+                  }
+              ]
+            }
+        ],
+        events: [
+          $events.items[]?
+          | select(
+              (.involvedObject.name // "") as $name
+              | $name == "meeting-service"
+                or ($name | startswith("meeting-service-"))
+            )
+          | {
+              involvedKind: (.involvedObject.kind // ""),
+              involvedName: (.involvedObject.name // ""),
+              type: (.type // ""),
+              reason: (.reason // ""),
+              message: ((.message // "")[0:500]),
+              count: (.count // 0),
+              lastTimestamp: (
+                .eventTime
+                // .lastTimestamp
+                // .series.lastObservedTime
+                // ""
+              )
+            }
+        ][-20:]
       }')
     add_finding P1 meeting_rollout_diagnostic \
       "meeting-service rollout status and ReplicaSet conditions" \
