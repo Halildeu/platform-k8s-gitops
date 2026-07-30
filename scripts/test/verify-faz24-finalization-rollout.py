@@ -371,8 +371,8 @@ def main() -> None:
         "2026-07-29-3144-v1",
     )
     sync_wave(auth_deploy, "10")
-    sync_wave(meeting_deploy, "19")
-    sync_wave(transcript_deploy, "20")
+    sync_wave(meeting_deploy, "20")
+    sync_wave(transcript_deploy, "21")
     sync_wave(auth_transcript, "0")
     sync_wave(meeting_eso, "0")
     sync_wave(meeting_capability_eso, "0")
