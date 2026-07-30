@@ -24,9 +24,9 @@ jobs:
     timeout-minutes: 90
     env:
       EXPECTED_ATS_DIGEST: sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e
-      EXPECTED_PERMISSION_DIGEST: sha256:096ed22f8e488cbffc9f528f6d417a027fc29c294d8abc3df391a1008c2a63d4
+      EXPECTED_PERMISSION_DIGEST: sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02
       ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29788943515
-      PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29806437506
+      PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/30516555877
     steps:
       - name: Validate test-only dispatch boundary
         id: preflight
