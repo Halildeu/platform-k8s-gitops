@@ -83,6 +83,7 @@ resources:
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
   - auth-service-transcript-service-externalsecret.yaml  # gitops#2568: transcript-service servis client secret (ayni izolasyon gerekcesi)
   - auth-service-ethics-externalsecret.yaml  # Faz 35 #2856: isolated service identity; missing key cannot stall core auth secret rotation
+  - user-service-mfa-admin-externalsecret.yaml  # gitops#3211: panel MFA proxy KC client secret; blank keeps the surface 503 fail-closed
   - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
   - netpol-meeting-ai-private-ingress.yaml  # ingress-nginx -> auth:8088 + meeting:8097 only
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
@@ -6727,6 +6728,22 @@ patches:
           metadata:
             annotations:
               user-service.acik.com/local-kc-provision-rev: "2533-1"
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      # gitops#3211: panel MFA section proxy — KC admin client credential.
+      # optional:true keeps user-service booting before the ExternalSecret
+      # syncs; the surface itself answers 503 while the secret is blank.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: KEYCLOAK_ADMIN_API_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: user-service-mfa-admin-secret
+              key: KEYCLOAK_ADMIN_API_CLIENT_SECRET
+              optional: true
   - target:
       kind: ConfigMap
       name: meeting-service-config
