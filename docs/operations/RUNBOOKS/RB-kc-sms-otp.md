@@ -1,0 +1,107 @@
+# RB-kc-sms-otp — SMS OTP MFA şeridi (Keycloak SPI → notify → NetGSM)
+
+> Faz 22 Sec, gitops#3212. TOTP varsayılan ve daha güçlü ikinci faktör olarak
+> kalır; SMS **opt-in alternatiftir** ("Try another way"). SIM-swap maruziyeti
+> owner kararıyla bilinçli kabul edilmiştir. **Agent kimseye kendiliğinden SMS
+> atmaz** — gerçek teslim testi yalnız owner'ın verdiği numarayla yapılır.
+
+## Zincir (tümü ölçülmüş)
+
+```
+KC SPI (sms-otp, providers/ JAR)
+  → auth-service POST /oauth2/token           (Basic keycloak-sms-otp:secret,
+     grant_type=client_credentials, audience=notification-orchestrator,
+     permissions=notify:intents:system)       → access_token
+  → notify POST /api/v1/internal/notify/intents (Bearer; recipients
+     [{type: external, phone: E.164}], template auth.sms-otp, channels [sms])
+  → NetGSM (test ESO'da kimlikler ekili; JetSMS PR-5 cutover bekliyor)
+```
+
+KC→cluster erişimi: `platform-test-net` üzerinde NodePort şeridi —
+`http://k3d-test-server-0:31088` (auth) + `:31089` (notify),
+`externalTrafficPolicy: Local` + NetPol ipBlock `172.19.0.7/32`
+(`kustomize/overlays/test/activation/keycloak-sms-otp/`).
+
+## Bileşen envanteri
+
+| Parça | Yer |
+|---|---|
+| SPI kaynak + testler | platform-backend `keycloak-sms-otp-authenticator/` |
+| auth-service istemci kaydı | platform-backend `auth-service application-k8s.yml` (`keycloak-sms-otp`, #1031) |
+| SMS şablonu | platform-backend notify `V25__seed_auth_sms_otp_template.sql` (`auth.sms-otp`, tr/en) |
+| Secret — auth tarafı | Vault `kv/platform/auth-service` `service_client_keycloak_sms_otp_secret` → ESO `auth-service-sms-otp-secret` |
+| Secret — KC tarafı | `host-compose/keycloak/test/secrets/sms_otp_client_secret.txt` → docker secret → wrapper env `SMS_OTP_SERVICE_CLIENT_SECRET` |
+| NodePort + NetPol + ESO | `kustomize/overlays/test/activation/keycloak-sms-otp/` |
+| Flow | `scripts/keycloak/setup-privileged-mfa.sh` (`privileged-2fa-methods`, capability-gated) |
+
+## Deploy (test) — sıra önemli
+
+1. **JAR üret** (platform-backend main'inden):
+   `./mvnw -q -f keycloak-sms-otp-authenticator/pom.xml package`
+   → `target/keycloak-sms-otp-authenticator-1.0.0.jar`
+2. **Host'a koy**: `/srv/platform/stateful/test/keycloak-providers/` (dizin yoksa oluştur; compose ro-mount eder).
+3. **Overlay slice apply** (selective):
+   `kubectl --context k3d-test -n platform-test apply -k kustomize/overlays/test/activation/keycloak-sms-otp/`
+   Beklenen: ExternalSecret `SecretSynced/Ready=True`, 2 svc, 2 netpol.
+4. **auth-service env**: overlay auth-service patch'i `SERVICE_CLIENT_KEYCLOAK_SMS_OTP_SECRET`i bağlar (auth-service rollout'unda etkinleşir; #1031 image'ı gerekir).
+5. **KC restart** (providers pickup — `start` her açılışta yeniden augment eder, ~10s):
+   `cd /srv/platform/gitops/platform-k8s-gitops/host-compose/keycloak/test && docker compose --profile manual up -d --force-recreate keycloak`
+6. **Provider doğrula**:
+   `curl -s -H "$AUTH" http://127.0.0.1:8082/admin/realms/platform-test/authentication/authenticator-providers | jq '.[]|select(.id=="sms-otp")'`
+7. **Flow**: `REALM=platform-test bash scripts/keycloak/setup-privileged-mfa.sh --apply` → `--check` CONVERGED. (Aktivasyon zaten owner-gated `--activate`; flow bound ise 4b restrüktürü canlıya anında yansır.)
+
+## Doğrulama katmanları (D29 disiplini)
+
+- **Up**: KC healthy + provider listede.
+- **Functional**: `requires-mfa` taşıyan test persona ile browser login →
+  "Try another way" SMS seçeneği görünür; seçince auth-service log'unda mint
+  200, notify log'unda intent 202 + delivery row `provider=netgsm`.
+- **Gerçek teslim (owner-gated)**: owner'ın numarası KC `phoneNumber`
+  attribute'una yazılır → login → telefona kod gelir → kod girilir → giriş.
+  Yanlış kod ×3 → oturum reddi; resend ×2 sınırı.
+
+## Rotasyon (iki taraf birlikte!)
+
+`FORCE_ROTATE=1` ile seed script'i (session scratchpad `seed-sms-otp-secret.sh`
+kalıbı) her iki tarafı aynı değerle günceller; ardından:
+ESO refresh (annotate force-sync) + auth-service rollout restart + KC restart.
+Tek tarafı döndürmek mint'i 401'e düşürür — belirti: SMS seçildiğinde
+"kod gönderilemedi" formu, auth-service log'da `invalid_client`.
+
+## Rollback
+
+- **Anında durdurma (stop-gap)**: `--deactivate` → `browserFlow=browser` (her
+  zaman güvenli; SMS dahil tüm privileged-MFA zorunluluğu düşer). Gerekirse
+  SPI JAR'ını kaldır + KC restart → provider kaybolur.
+- **Tam geri çekilme (kalıcı, GitOps-doğru)**: `kubectl delete -k ...` TEK
+  BAŞINA YETMEZ — parent overlay (`kustomize/overlays/test/kustomization.yaml`)
+  `activation/keycloak-sms-otp` girdisini koşulsuz içerdiğinden ArgoCD
+  (app `platform-test`, k3d-prod/argocd ns, selfHeal=true) bir sonraki
+  reconciliation'da 5 kaynağı yeniden yaratır. Kalıcı yol:
+  1. Overlay'den `- activation/keycloak-sms-otp` satırını (ve auth-service
+     env patch'indeki `SERVICE_CLIENT_KEYCLOAK_SMS_OTP_SECRET` bloğunu)
+     kaldıran PR'ı merge et;
+  2. ArgoCD sync sonrası beş exact kaynağın YOKLUĞUNU fail-closed doğrula
+     (isim-grep YETMEZ — NodePort adlarında "sms-otp" geçmez; context'siz
+     komut yanlış cluster'ı sorgulayabilir, hata da "boş çıktı" gibi okunur):
+     ```
+     kubectl --context k3d-test -n platform-test get \
+       externalsecret/auth-service-sms-otp-secret \
+       service/auth-service-nodeport \
+       service/notification-orchestrator-nodeport \
+       networkpolicy/allow-keycloak-sms-otp-to-auth-service \
+       networkpolicy/allow-keycloak-sms-otp-to-notification-orchestrator \
+       --ignore-not-found -o name
+     ```
+     Komut exit 0 VE çıktı tamamen boş olmalı; herhangi bir satır = o kaynak
+     hâlâ canlı (reconcile bekle ya da overlay revert'i doğrula);
+  3. Compose'dan providers mount/secret satırlarını revert + JAR sil +
+     `docker compose --profile manual up -d --force-recreate keycloak`.
+  Acil pencerede stop-gap + kalıcı PR birlikte yürütülür; yalnız delete ile
+  bırakmak reconcile'da sessizce geri gelir.
+
+## Bilinen sınırlar
+
+- Prod: SPI/secret/flow **yok** — owner-gated promosyon (D30 sonrası ayrı iş).
+- Telefon kaynağı KC `phoneNumber` attribute'u; panelden yönetimi gitops#3211.
+- NodePort şeridi yalnız docker-network içi; LAN'a hiçbir port yayınlanmaz.
