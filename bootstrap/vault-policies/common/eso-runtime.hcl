@@ -266,6 +266,23 @@ path "kv/data/platform/audit-archive-exporter" {
   capabilities = ["read"]
 }
 
+# --- Faz 24 analysis capability (gitops#3144) ---
+# Two ExternalSecrets — meeting-service-analysis-capability and
+# transcript-service-analysis-capability — both read the SAME path, because
+# the capability is an HMAC shared between the issuer and the verifier: one
+# value, two readers, by design.
+#
+# Missing here, both landed as `SecretSyncedError: permission denied` (403)
+# and both Deployments sat in CreateContainerConfigError — meeting-service
+# for 40 hours, silently, because its previous pod kept the old spec. The
+# writer policy (meeting-analysis-capability-writer) was added with the
+# feature; the *reader* grant was not. This is the third time that split has
+# bitten us (see the audit-archive-exporter note above), so: whoever adds an
+# ExternalSecret adds the read grant in the same change.
+path "kv/data/platform/meeting-analysis-capability" {
+  capabilities = ["read"]
+}
+
 # --- Metadata read (versioned KV v2 list/describe) ---
 path "kv/metadata/platform/*" {
   capabilities = ["list"]
