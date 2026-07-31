@@ -203,8 +203,15 @@ subflow_ready() {
       && echo "$ex" | jq -e --arg s "$SMS_DISPLAY" \
         '[.[]|select(.displayName==$s and .level==3 and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
       && echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2)]|length==0' >/dev/null 2>&1 \
-      && { local sid; sid=$(echo "$ex" | jq -r --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==3)][0].id'); \
-           q "$API/authentication/executions/$sid" | jq -e '.authenticatorConfig' >/dev/null 2>&1; }
+      && { local sid cid cfg; sid=$(echo "$ex" | jq -r --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==3)][0].id'); \
+           cid=$(q "$API/authentication/executions/$sid" | jq -r '.authenticatorConfig // empty'); \
+           [ -n "$cid" ] || return 1; \
+           cfg=$(q "$API/authentication/config/$cid"); \
+           # Presence is not convergence: stale URLs would pass a bare
+           # existence check while the SPI kept calling the old endpoints
+           # (Codex 019fb687 P1). Exact-value match required.
+           [ "$(echo "$cfg" | jq -r '.config["auth-token-url"] // empty')" = "$SMS_AUTH_TOKEN_URL" ] \
+             && [ "$(echo "$cfg" | jq -r '.config["notify-intent-url"] // empty')" = "$SMS_NOTIFY_INTENT_URL" ]; }
   else
     echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2 and .requirement=="REQUIRED")]|length>=1' >/dev/null 2>&1 \
       && echo "$ex" | jq -e --arg m "$METHODS_ALIAS" '[.[]|select(.displayName==$m)]|length==0' >/dev/null 2>&1
@@ -366,9 +373,23 @@ apply_all() {
     done
     # SPI config: only the deployment-specific URLs; every other knob keeps
     # its contract default inside the authenticator (fewer drift surfaces).
-    q "$API/authentication/executions/$SMS3" | jq -e '.authenticatorConfig' >/dev/null 2>&1 || \
+    # CONVERGE, not just create: an existing config with stale URLs must be
+    # updated in place, otherwise --apply would skip it and --check would
+    # bless endpoints the SPI no longer should call (Codex 019fb687 P1).
+    local SMSCID SMSCFG
+    SMSCID=$(q "$API/authentication/executions/$SMS3" | jq -r '.authenticatorConfig // empty')
+    if [ -z "$SMSCID" ]; then
       q -X POST "$API/authentication/executions/$SMS3/config" -H "$CT" \
         -d "{\"alias\":\"$SMS_CONFIG_ALIAS\",\"config\":{\"auth-token-url\":\"$SMS_AUTH_TOKEN_URL\",\"notify-intent-url\":\"$SMS_NOTIFY_INTENT_URL\"}}" >/dev/null
+    else
+      SMSCFG=$(q "$API/authentication/config/$SMSCID")
+      if [ "$(echo "$SMSCFG" | jq -r '.config["auth-token-url"] // empty')" != "$SMS_AUTH_TOKEN_URL" ] \
+         || [ "$(echo "$SMSCFG" | jq -r '.config["notify-intent-url"] // empty')" != "$SMS_NOTIFY_INTENT_URL" ]; then
+        q -X PUT "$API/authentication/config/$SMSCID" -H "$CT" \
+          -d "{\"id\":\"$SMSCID\",\"alias\":\"$SMS_CONFIG_ALIAS\",\"config\":{\"auth-token-url\":\"$SMS_AUTH_TOKEN_URL\",\"notify-intent-url\":\"$SMS_NOTIFY_INTENT_URL\"}}" >/dev/null
+        echo "  sms lane: SPI config URL'leri desired değerlere converge edildi"
+      fi
+    fi
   else
     OTP=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==2)][-1].id')
     q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$OTP\",\"requirement\":\"REQUIRED\"}" >/dev/null

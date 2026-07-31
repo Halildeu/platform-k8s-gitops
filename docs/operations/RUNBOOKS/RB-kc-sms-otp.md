@@ -70,12 +70,23 @@ Tek tarafı döndürmek mint'i 401'e düşürür — belirti: SMS seçildiğinde
 
 ## Rollback
 
-- **Flow şekli**: SPI JAR'ı `/srv/platform/stateful/test/keycloak-providers/`den
-  kaldır + KC restart → provider kaybolur; `--apply` legacy inline-OTP şeklini
-  yeniden kurmaz (4b bloğu no-op olur) — hızlı yol: `--deactivate` ile
-  `browserFlow=browser` (her zaman güvenli), sonra şekli elle/`--apply` düzelt.
-- **Tam geri çekilme**: activation slice `kubectl delete -k ...` + compose'dan
-  providers mount/secret satırlarını revert + JAR sil + KC restart.
+- **Anında durdurma (stop-gap)**: `--deactivate` → `browserFlow=browser` (her
+  zaman güvenli; SMS dahil tüm privileged-MFA zorunluluğu düşer). Gerekirse
+  SPI JAR'ını kaldır + KC restart → provider kaybolur.
+- **Tam geri çekilme (kalıcı, GitOps-doğru)**: `kubectl delete -k ...` TEK
+  BAŞINA YETMEZ — parent overlay (`kustomize/overlays/test/kustomization.yaml`)
+  `activation/keycloak-sms-otp` girdisini koşulsuz içerdiğinden ArgoCD
+  (app `platform-test`, k3d-prod/argocd ns, selfHeal=true) bir sonraki
+  reconciliation'da 5 kaynağı yeniden yaratır. Kalıcı yol:
+  1. Overlay'den `- activation/keycloak-sms-otp` satırını (ve auth-service
+     env patch'indeki `SERVICE_CLIENT_KEYCLOAK_SMS_OTP_SECRET` bloğunu)
+     kaldıran PR'ı merge et;
+  2. ArgoCD sync sonrası doğrula: `kubectl get externalsecret,svc,netpol
+     -n platform-test | grep sms-otp` → boş dönmeli;
+  3. Compose'dan providers mount/secret satırlarını revert + JAR sil +
+     `docker compose --profile manual up -d --force-recreate keycloak`.
+  Acil pencerede stop-gap + kalıcı PR birlikte yürütülür; yalnız delete ile
+  bırakmak reconcile'da sessizce geri gelir.
 
 ## Bilinen sınırlar
 

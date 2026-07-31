@@ -111,8 +111,11 @@ services:
       # gitops#3212: user-provider JARs (keycloak-sms-otp-authenticator).
       # /opt/keycloak/providers is empty in the stock image, so the mount
       # hides nothing. `command: start` re-augments on every boot (~10s,
-      # accepted for test — see the --optimized note above), so JAR drop +
-      # `docker compose restart keycloak` is the whole deploy.
+      # accepted for test — see the --optimized note above). FIRST activation
+      # of this block needs container RECREATION (`docker compose --profile
+      # manual up -d --force-recreate keycloak`) — a plain restart does not
+      # pick up new mounts/secrets/env. After that, JAR swaps inside the
+      # mounted dir only need a restart.
       - /srv/platform/stateful/test/keycloak-providers:/opt/keycloak/providers:ro
     secrets:
       - kc_db_password
