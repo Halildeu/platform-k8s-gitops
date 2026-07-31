@@ -85,6 +85,12 @@ printf '%s' "$UPDATED" | q -X PUT "$API/users/profile" -H "$CT" -d @- >/dev/null
 # Post-condition 1: the declaration is readable.
 BACK=$(q "$API/users/profile" | jq --arg n "$ATTR" '[.attributes[] | select(.name == $n)][0] // empty')
 [ -n "$BACK" ] || { echo "ERROR: attribute PUT sonrası okunamadı" >&2; exit 3; }
+# Presence is not convergence: the admin-only permissions and the E.164
+# validator are the two security properties this script exists to install,
+# so the stored declaration must match DESIRED exactly, not merely exist.
+[ "$(echo "$BACK" | jq -S -c .)" = "$(echo "$DESIRED" | jq -S -c .)" ] \
+  || { echo "ERROR: stored declaration DESIRED ile birebir değil" >&2
+       echo "$BACK" | jq -S -c . >&2; exit 3; }
 
 # Post-condition 2 (the one that actually matters): a real write must
 # SURVIVE a read-back. The whole reason this script exists is that the
@@ -95,8 +101,12 @@ PROBE="userprofile-phone-probe-$$@synthetic.local"
 PROBE_PHONE="+905000000001"
 q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"]}}" >/dev/null
 PUID=$(q "$API/users?username=$PROBE&exact=true" | jq -r '.[0].id // empty')
+# Cleanup must survive a mid-probe failure: without the trap, a fail-closed
+# GET between create and delete would leave a synthetic user in the realm.
+trap 'curl -s -X DELETE -H "$AUTH" "$API/users/$PUID" >/dev/null 2>&1 || true' EXIT
 STORED=$(q "$API/users/$PUID" | jq -r --arg n "$ATTR" '.attributes[$n][0] // empty')
 q -X DELETE "$API/users/$PUID" >/dev/null
+trap - EXIT
 [ "$STORED" = "$PROBE_PHONE" ] \
   || { echo "ERROR: round-trip FAILED — yazılan '$PROBE_PHONE', okunan '$STORED'" >&2; exit 3; }
 

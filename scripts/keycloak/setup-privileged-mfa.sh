@@ -359,6 +359,13 @@ apply_all() {
       q -X DELETE "$API/authentication/executions/$oid" >/dev/null
       echo "  sms lane: provider yok — artık SMS execution kaldırıldı"
     done
+    # Removing the old nested subflow also removed the OTP Form it contained,
+    # so the legacy shape must be re-established here — otherwise the
+    # requirement PUT below would run with a null id (Codex 019fb687 P2-1).
+    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
+    echo "$EX" | jq -e '.[]?|select(.displayName=="OTP Form" and .level==2)' >/dev/null 2>&1 || \
+      { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
+        echo "  sms lane: legacy OTP Form yeniden eklendi (nested migration sonrası)"; }
   fi
 
   # requirement + config (idempotent — her apply'da set)
@@ -366,7 +373,8 @@ apply_all() {
   J=$(q "$API/authentication/flows/$NEW_FLOW/executions")
   SUB=$(echo "$J" | jq -r --arg s "$SUB_ALIAS" '.[]|select(.displayName==$s).id')
   ROLE=$(echo "$J" | jq -r '.[]|select(.displayName=="Condition - user role" and .level==2).id')
-  OTP=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==2)][0].id')
+  OTP=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==2)][0].id // empty')
+  [ -n "$OTP" ] || { echo "ERROR: privileged-force-otp içinde OTP Form yok — apply yarım kaldı" >&2; exit 3; }
   for pair in "$SUB:CONDITIONAL" "$ROLE:REQUIRED"; do
     q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"${pair%%:*}\",\"requirement\":\"${pair##*:}\"}" >/dev/null
   done
