@@ -8340,6 +8340,47 @@ patches:
   # 503. These 8 are internal/behind-gateway (APIs, exporters, a consumer,
   # audio ingest, the test-only artifact host) where a brief single-replica
   # gap is acceptable — same contract the 8 core backends already carry above.
+  # 2026-07-31 (gitops#3212 S8): the same contract for the three remaining
+  # heavyweights that never had it. clamav and ethics-evidence-worker declare
+  # no strategy at all (so they inherit the 25%/25% default, which for one
+  # replica means maxSurge=1), and ethics-service renders 1/0 from its base.
+  # At 1000m/1000m/750m limits they are the largest surge requests in the
+  # namespace — with 550m free they cannot roll at all. All three are
+  # internal (an antivirus daemon, a worker, a gateway-fronted API), so the
+  # public-503 reasoning that exempts the frontends does not apply.
+  - target:
+      kind: Deployment
+      name: clamav
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: ethics-evidence-worker
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: ethics-service
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
   - target:
       kind: Deployment
       name: endpoint-admin-service
@@ -8439,21 +8480,43 @@ patches:
             maxSurge: 0
             maxUnavailable: 1
 
-  # Faz 24 customer-critical chain exception to the historical test-cluster
-  # terminate-first policy. Live preflight on 2026-07-17 proved node pod
-  # capacity 50/80 and namespace pod quota 26/30, with enough CPU/memory for
-  # the three dependency-ordered surge pods. If headroom later disappears,
-  # these rollouts stall boundedly while the old Ready pod keeps serving.
+  # 2026-07-31 (gitops#3212 S8): the 2026-07-17 Faz 24 surge-first exception is
+  # RETIRED for these three. It was explicitly conditional — "live preflight
+  # proved ... enough CPU/memory for the three surge pods. If headroom later
+  # disappears, these rollouts stall boundedly" — and that is exactly what
+  # happened. Measured today while pinning auth-service to sha-cd44d86:
+  #
+  #   node k3d-test-server-0 allocatable CPU  8
+  #   platform-quota limits.cpu               15450m / 16   (96.5%, 550m free)
+  #   auth-service pod limits.cpu             750m   -> FailedCreate
+  #
+  #   Error creating: pods "auth-service-f668f4546-…" is forbidden: exceeded
+  #   quota: platform-quota, requested: limits.cpu=750m, used: 15450m,
+  #   limited: 16
+  #
+  # The stall behaved as designed (old pod kept serving) but the rollout could
+  # not complete at all, and the ReplicaSet's FailedCreate backoff then delayed
+  # recovery once room was made. The premise is gone: the namespace budget is
+  # 2x an 8-core node and nearly full, so every future bump of a >=550m service
+  # would hit the same wall. Terminate-first needs no headroom, which is why
+  # the other 15 application Deployments here already carry it.
+  #
+  # Cost: a single-replica gap of one pod start (~40-90 s) per rollout. These
+  # three sit behind the gateway; the public entrypoints (frontend, the two
+  # etik-speak apps) keep surge-first — see #2299, where terminate-first on the
+  # only serving frontend pod returned a public 503. progressDeadlineSeconds
+  # stays: it still bounds a rollout that stalls for any other reason.
+  # Invariant enforced by tests/deploy/test_test_overlay_rollout_fits_quota.py.
   - target:
       kind: Deployment
       name: auth-service
     patch: |-
       - op: replace
         path: /spec/strategy/rollingUpdate/maxSurge
-        value: 1
+        value: 0
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
-        value: 0
+        value: 1
       - op: add
         path: /spec/progressDeadlineSeconds
         value: 300
@@ -8463,10 +8526,10 @@ patches:
     patch: |-
       - op: replace
         path: /spec/strategy/rollingUpdate/maxSurge
-        value: 1
+        value: 0
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
-        value: 0
+        value: 1
       - op: add
         path: /spec/progressDeadlineSeconds
         value: 300
@@ -8476,10 +8539,10 @@ patches:
     patch: |-
       - op: replace
         path: /spec/strategy/rollingUpdate/maxSurge
-        value: 1
+        value: 0
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
-        value: 0
+        value: 1
       - op: add
         path: /spec/progressDeadlineSeconds
         value: 300
