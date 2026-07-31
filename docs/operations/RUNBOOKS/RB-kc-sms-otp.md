@@ -12,7 +12,9 @@ KC SPI (sms-otp, providers/ JAR)
   → auth-service POST /oauth2/token           (Basic keycloak-sms-otp:secret,
      grant_type=client_credentials, audience=notification-orchestrator,
      permissions=notify:intents:system)       → access_token
-  → notify POST /api/v1/internal/notify/intents (Bearer; recipients
+  → auth-service POST /oauth2/mfa-delivery-grant (Basic; subject, recipient,
+     channel, topic, template, auth_session_id) → tek kullanımlık grant JWT
+  → notify POST /api/v1/internal/notify/intents (Bearer + X-Mfa-Delivery-Grant; recipients
      [{type: external, phone: E.164}], template auth.sms-otp, channels [sms])
   → NetGSM (test ESO'da kimlikler ekili; JetSMS PR-5 cutover bekliyor)
 ```
@@ -76,6 +78,35 @@ değerde de 1 döner. Uzunluğu ölçün.
 6. **Provider doğrula**:
    `curl -s -H "$AUTH" http://127.0.0.1:8082/admin/realms/platform-test/authentication/authenticator-providers | jq '.[]|select(.id=="sms-otp")'`
 7. **Flow**: `REALM=platform-test bash scripts/keycloak/setup-privileged-mfa.sh --apply` → `--check` CONVERGED. (Aktivasyon zaten owner-gated `--activate`; flow bound ise 4b restrüktürü canlıya anında yansır.)
+
+## MFA teslim yetkisi (grant) — neden ve nasıl
+
+notify'ın Layer-2 OpenFGA katmanı her dış alıcı için `can_receive` ilişkisi
+arar; tek seferlik bir MFA telefonu için böyle bir ilişki yoktur ve **olmamalıdır**
+(telefon başına tuple ne ölçeklenir ne de numara değişimine dayanır). Ölçülen
+sonuç: `status=BLOCKED_BY_AUTHZ policy=authz_deny`.
+
+Kalıcı çözüm (Codex 019fb825 tasarımı): auth-service, SMS niyetiyle birlikte
+**tek kullanımlık, kısa ömürlü, imzalı bir teslim yetkisi** verir. notify bunu
+**submit anında** — yani güven sınırında — doğrular ve yalnız **türetilmiş
+kanıtı** kaydeder (`delivery_class`, `grant_jti`, `grant_subject`,
+`grant_recipient_hash`, `grant_deliver_before`; V26). Asenkron dispatch
+worker'ı JWT'yi hiç görmez; yalnız bu sunucu-yazımlı alanlar teslimatla
+**birebir** eşleşiyor ve pencere açıksa **sadece alıcı-tuple kontrolünü**
+atlar. Şablon çözümü, dış-alıcı politikası, tercih, oran sınırı, idempotency
+ve denetim aynen işler.
+
+Neden istemci-yazılabilir `metadata` değil: yetki kararı submit'te verilir ama
+çok sonra worker'da uygulanır; kararı submit edenin de yazabildiği bir alanda
+tutmak, şablonu yanlış etiketlemeyi bypass'a çevirirdi.
+
+Kontroller (hepsi test-pinli): imza + `exp`, `iss=auth-service`,
+`purpose=mfa_otp`, `jti` (tekrar koruması — DB'de unique), ve intent ile exact
+eşleşme (topic, template, kanal, alıcı). Herhangi biri tutmazsa yetki **yok
+sayılır** ve teslimat normal yoldan yetki kontrolüne girer.
+
+Yapılandırma yoksa (JWK-set URI boş) doğrulayıcı **kapalıdır** ve her şey
+normal yoldan gider — eksik yapılandırma hiçbir şeyi gevşetmez.
 
 ## Doğrulama katmanları (D29 disiplini)
 
