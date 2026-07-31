@@ -949,7 +949,15 @@ images:
     # Also carries #1037: the authz response timeout back down to 8s.
     # Digest read back from a real host-lane pull (RepoDigests) +
     # node-imported with the digest ref.
-    digest: sha256:f16a6acf721da733eac4135d9aa69ecffbdf2a1517f1f747fbdd1dea238343a7
+    #
+    # 2026-08-01 bump: sha-dfd457f — platform-backend#1038 (gitops#3228) adds
+    # PUT /api/v1/users/{id}/mfa/required. The second-factor requirement is a
+    # realm-role membership the privileged login flow gates on, not a column,
+    # so the endpoint assigns/removes `requires-mfa`. The role representation
+    # comes from the user-scoped role-mapping lists, never a realm-wide role
+    # read — the service account stays at view-users + manage-users.
+    # Digest read back from a real host-lane pull + node-imported.
+    digest: sha256:ddb00064a0b84ed0e0f4da436ef7d7d8c8ae1dfb7946aecb4d21dae1e1449112
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -4761,7 +4769,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: c9abae3d0dc9be8f7ca3772a4493a84b5aea3b59
+    # sourceRevision: 313ecd3536024b62bd0a6e91c9c8090e0be6b8dc
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -4779,7 +4787,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-c9abae3
+    newTag: sha-313ecd3
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -4788,7 +4796,12 @@ images:
     # 503 and the section degrades to one line, leaving the rest of the drawer
     # untouched. Digest read back from a real host-lane pull (RepoDigests) +
     # node-imported with the digest ref.
-    digest: sha256:ca250b053652fe63e98f2cc8d817e98a38e556145459230926f60b16ad19c97b
+    # 2026-08-01 bump: sha-313ecd3 — platform-web#1096 (gitops#3228). The MFA
+    # section's requirement line becomes a switch wired to the endpoint above;
+    # it is its own write rather than part of the drawer's autosaved draft,
+    # because the requirement does not live on the user record.
+    # Digest read back from a real host-lane pull + node-imported.
+    digest: sha256:f8890ef262e14f4f222f6dbc8d802dbce8383b12416760fc8e4ad47a2d13d4f4
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
