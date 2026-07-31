@@ -113,6 +113,13 @@ EXPIRES_AT="${EXPIRES_AT:-}"
 VIEWER_PATH_DECISION="${VIEWER_PATH_DECISION:-owner-deferred}"
 
 TMP_DIR="$(mktemp -d)"
+# Armed here, immediately after the temp dir exists: the cleanup function is
+# defined further below, but a trap body is resolved when it FIRES, not when
+# it is installed. Registering it dozens of lines later left the KC admin
+# password and admin JWT on disk whenever the script died in between
+# (measured 2026-07-31: three such directories still present on the test
+# host, dated 27-30 July).
+trap cleanup EXIT
 PORT_FORWARD_PID=""
 MANAGEMENT_PORT_FORWARD_PID=""
 SUMMARY_FILE="${EVIDENCE_DIR}/summary.json"
@@ -215,7 +222,6 @@ stop_management_port_forward() {
     MANAGEMENT_PORT_FORWARD_PID=""
   fi
 }
-trap cleanup EXIT
 
 stop_port_forward() {
   if [[ -n "$PORT_FORWARD_PID" ]] && kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1; then

@@ -42,6 +42,13 @@ EXPECTED_ROLLOUT_ANNOTATION="${EXPECTED_ROLLOUT_ANNOTATION:-2026-06-17-676}"
 CONTRACT="${CONTRACT:-agent-198:max-permit-ttl-15m,mtls-only,no-raw-shell,credential-ref-only}"
 
 TMP_DIR="$(mktemp -d)"
+# Armed here, immediately after the temp dir exists: the cleanup function is
+# defined further below, but a trap body is resolved when it FIRES, not when
+# it is installed. Registering it dozens of lines later left the KC admin
+# password and admin JWT on disk whenever the script died in between
+# (measured 2026-07-31: three such directories still present on the test
+# host, dated 27-30 July).
+trap cleanup EXIT
 RUNTIME_FILE="$TMP_DIR/runtime.json"
 JWT_CLAIMS_FILE="$TMP_DIR/jwt-claims.json"
 API_RESPONSE_FILE="$TMP_DIR/domain-ops-response.json"
@@ -160,7 +167,6 @@ cleanup() {
   KC_ADMIN_TOKEN=""
   rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT
 
 fail() {
   local reason="$1"
