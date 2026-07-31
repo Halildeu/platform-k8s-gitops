@@ -1,0 +1,11 @@
+# gitops#3212 — SMS OTP lane activation (TEST): the auth-service credential
+# secret (ESO), the KC->cluster NodePort lane and its narrow NetworkPolicy
+# admits. The KC compose side (providers mount + docker secret) lives in
+# host-compose/keycloak/test; the flow wiring in
+# scripts/keycloak/setup-privileged-mfa.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - externalsecret.yaml
+  - nodeport-services.yaml
+  - netpol.yaml

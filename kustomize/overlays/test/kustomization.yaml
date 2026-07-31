@@ -47,6 +47,11 @@ resources:
   # authenticated manager workflow. Provisioning IDs and immutable artifacts
   # are pinned in the same activation commit; production remains untouched.
   - activation/etik-speak
+  # Faz 22 Sec gitops#3212: SMS OTP lane — auth-service client secret (ESO),
+  # KC->cluster NodePort lane (externalTrafficPolicy Local) + narrow NetPol
+  # admits for the pinned KC address. Compose/providers side lives in
+  # host-compose/keycloak/test; flow wiring in setup-privileged-mfa.sh.
+  - activation/keycloak-sms-otp
   # Faz 22.6 #2502 Phase 1: receive-only GitHub webhook observer. No evaluator
   # App key, callback client, Kubernetes token or egress; Environment custom
   # rule remains disabled until replay/negative-matrix acceptance.
@@ -6841,6 +6846,17 @@ patches:
               name: auth-service-ethics-secret
               key: SERVICE_CLIENT_ETHICS_SERVICE_SECRET
               optional: true  # core auth stays available; ethics client remains fail-closed
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_KEYCLOAK_SMS_OTP_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-sms-otp-secret
+              key: SERVICE_CLIENT_KEYCLOAK_SMS_OTP_SECRET
+              # gitops#3212: blank/absent keeps the keycloak-sms-otp client
+              # disabled in auth-service (fail-closed); core auth unaffected.
+              optional: true
   - target:
       kind: Deployment
       name: api-gateway

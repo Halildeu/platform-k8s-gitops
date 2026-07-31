@@ -1,0 +1,53 @@
+# gitops#3212 — narrow ingress admits for the SMS OTP lane. Both targets sit
+# behind the namespace default-deny with per-source allow policies (the
+# allow-ethics-service-to-* family); without these two, NodePort traffic from
+# the KC container is silently DROPPED (measured 2026-07-31: TCP connect to
+# 31088 timed out with endpoints present — the policy layer, not the port).
+#
+# ipBlock 172.19.0.7/32 is the compose-pinned static address of
+# platform-kc-test (sister-pin comment in host-compose/keycloak/test).
+# It only matches because the NodePort services set externalTrafficPolicy
+# Local (source preserved); Cluster mode would SNAT and these policies would
+# go dark — see nodeport-services.yaml.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak-sms-otp-to-auth-service
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 172.19.0.7/32
+      ports:
+        - protocol: TCP
+          port: 8088
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak-sms-otp-to-notification-orchestrator
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 172.19.0.7/32
+      ports:
+        - protocol: TCP
+          port: 8089

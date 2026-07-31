@@ -44,6 +44,12 @@
 #   4. Kopyanın `forms` subflow'una `privileged-force-otp` (CONDITIONAL) subflow:
 #        Condition - user role (config condUserRole=requires-mfa, negate=false) REQUIRED
 #        OTP Form REQUIRED   ← OTP'si yoksa CONFIGURE_TOTP required-action tetikler
+#   4b. (gitops#3212) `sms-otp` provider JAR'ı deploy edilmişse ikinci faktör
+#       `privileged-2fa-methods` (REQUIRED) alt-subflow'una taşınır:
+#         OTP Form ALTERNATIVE (varsayılan, daha güçlü)
+#         SMS OTP  ALTERNATIVE ("Try another way" ile opt-in; config yalnız
+#                               iki URL — auth-token-url + notify-intent-url)
+#       Eski inline OTP Form silinir; provider yoksa blok no-op (prod bugün).
 #   5. (--activate) realm browserFlow → browser-privileged-mfa.
 #
 # ── Modes ──
@@ -101,6 +107,33 @@ AUTOMATION_MARKERS="${AUTOMATION_MARKERS:-persona -test smoke canary ag0 c5perso
 MFA_ROLE="requires-mfa"
 NEW_FLOW="browser-privileged-mfa"
 SUB_ALIAS="privileged-force-otp"
+# ── gitops#3212 SMS lane ──
+# When the keycloak-sms-otp-authenticator providers JAR is deployed, the
+# second factor becomes a nested REQUIRED subflow with TWO ALTERNATIVES:
+#   privileged-force-otp (CONDITIONAL)
+#     ├─ Condition - user role (REQUIRED)
+#     └─ privileged-2fa-methods (REQUIRED)
+#          ├─ OTP Form (ALTERNATIVE)   ← default, stronger
+#          └─ SMS OTP  (ALTERNATIVE)   ← opt-in via "Try another way"
+# Capability-gated: everything below keys off the sms-otp provider being
+# REGISTERED in this KC instance. Without the JAR (prod today) the legacy
+# direct-OTP shape stays converged and the script remains inert for SMS —
+# no half-built flow can strand a login.
+METHODS_ALIAS="privileged-2fa-methods"
+SMS_PROVIDER_ID="sms-otp"
+SMS_DISPLAY="SMS OTP (notify pipeline)"
+SMS_CONFIG_ALIAS="sms-otp-notify-lane"
+# Deployment-specific SPI config (only the two URLs — every other knob has a
+# contract default inside the SPI). Test defaults point at the NodePort lane
+# (activation/keycloak-sms-otp); any other realm must provide both via env
+# or the SMS wiring is skipped with a warning.
+if [ "$REALM" = "platform-test" ]; then
+  SMS_AUTH_TOKEN_URL="${SMS_AUTH_TOKEN_URL:-http://k3d-test-server-0:31088/oauth2/token}"
+  SMS_NOTIFY_INTENT_URL="${SMS_NOTIFY_INTENT_URL:-http://k3d-test-server-0:31089/api/v1/internal/notify/intents}"
+else
+  SMS_AUTH_TOKEN_URL="${SMS_AUTH_TOKEN_URL:-}"
+  SMS_NOTIFY_INTENT_URL="${SMS_NOTIFY_INTENT_URL:-}"
+fi
 API="http://127.0.0.1:${KC_PORT}/admin/realms/${REALM}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' host'ta yok" >&2; exit 1; }; }
@@ -145,12 +178,37 @@ user_has_direct_mfa() {
 }
 composite_has_mfa() { q "$API/roles/$1/composites" | jq -e --arg m "$MFA_ROLE" '.[]?|select(.name==$m)' >/dev/null 2>&1; }
 flow_exists() { q "$API/authentication/flows" | jq -e --arg f "$NEW_FLOW" '.[]?|select(.alias==$f)' >/dev/null 2>&1; }
+sms_provider_available() {
+  q "$API/authentication/authenticator-providers" \
+    | jq -e --arg p "$SMS_PROVIDER_ID" '.[]?|select(.id==$p)' >/dev/null 2>&1
+}
+sms_urls_provided() { [ -n "$SMS_AUTH_TOKEN_URL" ] && [ -n "$SMS_NOTIFY_INTENT_URL" ]; }
 subflow_ready() {
-  # privileged-force-otp CONDITIONAL + Condition-user-role REQUIRED + OTP Form REQUIRED
+  # Two accepted, mutually exclusive shapes under privileged-force-otp
+  # (CONDITIONAL) + Condition-user-role (REQUIRED):
+  #   legacy (sms provider NOT deployed): OTP Form directly, REQUIRED, level 2
+  #   target (sms provider deployed):     privileged-2fa-methods REQUIRED at
+  #     level 2 holding OTP Form + SMS OTP as level-3 ALTERNATIVEs, with the
+  #     SMS execution carrying its sms-otp-notify-lane config.
+  # Whichever shape the capability demands, the OTHER shape's remnant counts
+  # as drift — a login must never see both an inline OTP and the subflow.
   local ex; ex=$(q "$API/authentication/flows/$NEW_FLOW/executions")
   echo "$ex" | jq -e '[.[]|select(.displayName=="privileged-force-otp" and .requirement=="CONDITIONAL")]|length==1' >/dev/null 2>&1 \
     && echo "$ex" | jq -e '[.[]|select(.displayName=="Condition - user role" and .level==2 and .requirement=="REQUIRED")]|length>=1' >/dev/null 2>&1 \
-    && echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2 and .requirement=="REQUIRED")]|length>=1' >/dev/null 2>&1
+    || return 1
+  if sms_provider_available && sms_urls_provided; then
+    echo "$ex" | jq -e --arg m "$METHODS_ALIAS" \
+        '[.[]|select(.displayName==$m and .level==2 and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 \
+      && echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==3 and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
+      && echo "$ex" | jq -e --arg s "$SMS_DISPLAY" \
+        '[.[]|select(.displayName==$s and .level==3 and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
+      && echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2)]|length==0' >/dev/null 2>&1 \
+      && { local sid; sid=$(echo "$ex" | jq -r --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==3)][0].id'); \
+           q "$API/authentication/executions/$sid" | jq -e '.authenticatorConfig' >/dev/null 2>&1; }
+  else
+    echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2 and .requirement=="REQUIRED")]|length>=1' >/dev/null 2>&1 \
+      && echo "$ex" | jq -e --arg m "$METHODS_ALIAS" '[.[]|select(.displayName==$m)]|length==0' >/dev/null 2>&1
+  fi
 }
 
 report() {  # DRIFT counter
@@ -167,8 +225,14 @@ report() {  # DRIFT counter
     else echo "  role $r: absent (skip)"; fi
   done
   flow_exists && echo "  flow $NEW_FLOW: OK" || { echo "  flow $NEW_FLOW: MISSING"; d=$((d+1)); }
+  if sms_provider_available; then
+    if sms_urls_provided; then echo "  sms lane: provider kayıtlı + URL'ler set (hedef: OTP|SMS alternatif çifti)"
+    else echo "  sms lane: provider kayıtlı ama SMS_AUTH_TOKEN_URL/SMS_NOTIFY_INTENT_URL boş — wiring atlanır (bu realm için env ver)"; fi
+  else
+    echo "  sms lane: sms-otp provider yok (providers JAR deploy edilmemiş) — legacy inline-OTP şekli geçerli"
+  fi
   if flow_exists; then
-    subflow_ready && echo "  subflow $SUB_ALIAS (CONDITIONAL+role+OTP): OK" || { echo "  subflow $SUB_ALIAS: INCOMPLETE"; d=$((d+1)); }
+    subflow_ready && echo "  subflow $SUB_ALIAS (CONDITIONAL+role+2FA şekli): OK" || { echo "  subflow $SUB_ALIAS: INCOMPLETE"; d=$((d+1)); }
   fi
   local bf; bf=$(q "$API" | jq -r '.browserFlow')
   echo "  realm browserFlow: $bf $([ "$bf" = "$NEW_FLOW" ] && echo '(ACTIVE)' || echo '(inert — --activate ile owner flip)')"
@@ -256,15 +320,59 @@ apply_all() {
     q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"conditional-user-role"}' >/dev/null
     q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
   fi
+  # 4b) gitops#3212 — SMS lane restructure, capability-gated. Only when the
+  # sms-otp provider is REGISTERED (JAR deployed) and both URLs are known:
+  # move the second factor into privileged-2fa-methods (REQUIRED) holding
+  # OTP Form + SMS OTP as ALTERNATIVEs, and remove the old inline OTP so a
+  # login can never meet both. Without the provider this whole block is a
+  # no-op and the legacy shape stays converged (prod today).
+  local EX
+  if sms_provider_available && sms_urls_provided; then
+    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
+    if ! echo "$EX" | jq -e --arg m "$METHODS_ALIAS" '.[]?|select(.displayName==$m)' >/dev/null 2>&1; then
+      q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/flow" -H "$CT" \
+        -d "{\"alias\":\"$METHODS_ALIAS\",\"type\":\"basic-flow\"}" >/dev/null
+      echo "  sms lane: $METHODS_ALIAS subflow oluşturuldu"
+    fi
+    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
+    echo "$EX" | jq -e '.[]?|select(.displayName=="OTP Form" and .level==3)' >/dev/null 2>&1 || \
+      q -X POST "$API/authentication/flows/${METHODS_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
+    echo "$EX" | jq -e --arg s "$SMS_DISPLAY" '.[]?|select(.displayName==$s and .level==3)' >/dev/null 2>&1 || \
+      q -X POST "$API/authentication/flows/${METHODS_ALIAS}/executions/execution" -H "$CT" -d "{\"provider\":\"$SMS_PROVIDER_ID\"}" >/dev/null
+    # old inline OTP(s) at level 2 must go — refresh first, they may predate this run
+    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
+    local oid
+    for oid in $(echo "$EX" | jq -r '.[]|select(.displayName=="OTP Form" and .level==2).id'); do
+      q -X DELETE "$API/authentication/executions/$oid" >/dev/null
+      echo "  sms lane: eski inline OTP Form kaldırıldı ($oid)"
+    done
+  elif sms_provider_available; then
+    echo "  UYARI: sms-otp provider kayıtlı ama SMS URL'leri boş — SMS lane wiring atlandı"
+  fi
   # requirement + config (idempotent — her apply'da set)
-  local J SUB ROLE OTP
+  local J SUB ROLE OTP METH OTP3 SMS3
   J=$(q "$API/authentication/flows/$NEW_FLOW/executions")
   SUB=$(echo "$J" | jq -r --arg s "$SUB_ALIAS" '.[]|select(.displayName==$s).id')
   ROLE=$(echo "$J" | jq -r '.[]|select(.displayName=="Condition - user role" and .level==2).id')
-  OTP=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==2)][-1].id')
-  for pair in "$SUB:CONDITIONAL" "$ROLE:REQUIRED" "$OTP:REQUIRED"; do
+  for pair in "$SUB:CONDITIONAL" "$ROLE:REQUIRED"; do
     q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"${pair%%:*}\",\"requirement\":\"${pair##*:}\"}" >/dev/null
   done
+  if sms_provider_available && sms_urls_provided; then
+    METH=$(echo "$J" | jq -r --arg m "$METHODS_ALIAS" '[.[]|select(.displayName==$m and .level==2)][0].id')
+    OTP3=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==3)][0].id')
+    SMS3=$(echo "$J" | jq -r --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==3)][0].id')
+    for pair in "$METH:REQUIRED" "$OTP3:ALTERNATIVE" "$SMS3:ALTERNATIVE"; do
+      q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"${pair%%:*}\",\"requirement\":\"${pair##*:}\"}" >/dev/null
+    done
+    # SPI config: only the deployment-specific URLs; every other knob keeps
+    # its contract default inside the authenticator (fewer drift surfaces).
+    q "$API/authentication/executions/$SMS3" | jq -e '.authenticatorConfig' >/dev/null 2>&1 || \
+      q -X POST "$API/authentication/executions/$SMS3/config" -H "$CT" \
+        -d "{\"alias\":\"$SMS_CONFIG_ALIAS\",\"config\":{\"auth-token-url\":\"$SMS_AUTH_TOKEN_URL\",\"notify-intent-url\":\"$SMS_NOTIFY_INTENT_URL\"}}" >/dev/null
+  else
+    OTP=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==2)][-1].id')
+    q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$OTP\",\"requirement\":\"REQUIRED\"}" >/dev/null
+  fi
   q "$API/authentication/executions/$ROLE" | jq -e '.authenticatorConfig' >/dev/null 2>&1 || \
     q -X POST "$API/authentication/executions/$ROLE/config" -H "$CT" \
       -d "{\"alias\":\"privileged-role-requires-mfa\",\"config\":{\"condUserRole\":\"$MFA_ROLE\",\"negate\":\"false\"}}" >/dev/null

@@ -33,6 +33,7 @@ services:
       - |
         [ -n "$$KC_DB_PASSWORD_FILE" ] && [ -f "$$KC_DB_PASSWORD_FILE" ] && export KC_DB_PASSWORD="$$(cat $$KC_DB_PASSWORD_FILE)"
         [ -n "$$KEYCLOAK_ADMIN_PASSWORD_FILE" ] && [ -f "$$KEYCLOAK_ADMIN_PASSWORD_FILE" ] && export KEYCLOAK_ADMIN_PASSWORD="$$(cat $$KEYCLOAK_ADMIN_PASSWORD_FILE)"
+        [ -n "$$SMS_OTP_SERVICE_CLIENT_SECRET_FILE" ] && [ -f "$$SMS_OTP_SERVICE_CLIENT_SECRET_FILE" ] && export SMS_OTP_SERVICE_CLIENT_SECRET="$$(cat $$SMS_OTP_SERVICE_CLIENT_SECRET_FILE)"
         exec /opt/keycloak/bin/kc.sh "$$@"
       - --
     command: ["start"]
@@ -83,6 +84,13 @@ services:
       # admin-fine-grained-authz:v1 explicit (KC 26 default v2; v1 endpoint shape
       # broker token-exchange policy attach script'i için lazım).
       KC_FEATURES: "token-exchange,admin-fine-grained-authz:v1,authorization"
+      # gitops#3212 SMS OTP SPI: the keycloak-sms-otp client secret, env-only
+      # (KC persists authenticator config plaintext in its DB, so the SPI
+      # refuses to read the secret from config). File -> env via the
+      # entrypoint wrapper above, same pattern as the KC passwords. The other
+      # half of this credential is Vault kv/platform/auth-service (ESO ->
+      # auth-service); rotation updates BOTH — RB-kc-sms-otp.md.
+      SMS_OTP_SERVICE_CLIENT_SECRET_FILE: /run/secrets/sms_otp_client_secret
       JAVA_OPTS: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100"   # Test daha dar
     ports:
       # 2026-05-11 hardening (Codex 019e142d follow-up): drop the
@@ -100,9 +108,16 @@ services:
       - "127.0.0.1:8082:8080"
     volumes:
       - /srv/platform/stateful/test/keycloak:/opt/keycloak/data
+      # gitops#3212: user-provider JARs (keycloak-sms-otp-authenticator).
+      # /opt/keycloak/providers is empty in the stock image, so the mount
+      # hides nothing. `command: start` re-augments on every boot (~10s,
+      # accepted for test — see the --optimized note above), so JAR drop +
+      # `docker compose restart keycloak` is the whole deploy.
+      - /srv/platform/stateful/test/keycloak-providers:/opt/keycloak/providers:ro
     secrets:
       - kc_db_password
       - kc_admin_password
+      - sms_otp_client_secret
     # Sister-pin to prod. Test KC drifted from overlay .5 to live .7 on
     # a past compose recreate; the same class of failure vault-prod hit
     # on 2026-05-20 would apply on the next docker recreate. Pin to the
@@ -137,3 +152,7 @@ secrets:
     file: ./secrets/kc_db_password.txt
   kc_admin_password:
     file: ./secrets/kc_admin_password.txt
+  # gitops#3212 — seeded 2026-07-31, sha256[:12]=5a493ce8da7c, cross-side
+  # match with Vault kv/platform/auth-service service_client_keycloak_sms_otp_secret.
+  sms_otp_client_secret:
+    file: ./secrets/sms_otp_client_secret.txt
