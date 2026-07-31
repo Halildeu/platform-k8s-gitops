@@ -463,8 +463,11 @@ def main() -> None:
     container_image(
         auth_deploy,
         "auth-service",
+        # 2026-07-31 (gitops#3212/#3215): sha-5a63d63 — adds the
+        # keycloak-sms-otp service client (platform-backend#1031); the Faz 24
+        # mint surface this verifier pins is unchanged by it.
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:3e6f9a6ab570c6c4df506586eae092db1da60fe403f10be51d5c64410999079f",
+        "sha256:dbef3c27f6988bf135985d78a334ae834ecfb6fcb70599312e538c0df3fd965f",
     )
     container_image(
         meeting_deploy,
