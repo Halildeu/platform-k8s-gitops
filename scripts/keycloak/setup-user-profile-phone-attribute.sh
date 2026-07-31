@@ -51,7 +51,7 @@ need curl; need jq
 #   * the bearer header lives in a mode-0600 curl config file consumed with
 #     `--config`, so it never appears as a `-H` argument either.
 HDR_FILE="$(mktemp)"; chmod 600 "$HDR_FILE"
-cleanup_hdr() { rm -f "$HDR_FILE"; }
+cleanup_hdr() { rm -f -- "$HDR_FILE"; }
 trap cleanup_hdr EXIT
 
 ADMIN_USER=$(sudo docker exec "$KC" sh -lc 'printf %s "$KEYCLOAK_ADMIN"')
@@ -125,10 +125,17 @@ PROBE_PHONE="+905000000001"
 # a failure anywhere between create and delete — including a lookup that
 # returns an empty list — still removes the probe user (Codex P2).
 cleanup_probe() {
-  local pid
-  pid=$(curl -s --config "$HDR_FILE" "$API/users?username=$PROBE&exact=true" 2>/dev/null | jq -r '.[0].id // empty')
-  [ -n "$pid" ] && curl -s -X DELETE --config "$HDR_FILE" "$API/users/$pid" >/dev/null 2>&1
-  cleanup_hdr
+  # Fail-safe by construction: errexit is off inside the trap and every
+  # step is guarded, because the LAST thing this function does — deleting
+  # the file holding the realm-admin bearer token — must run even when the
+  # probe-user cleanup itself fails (Codex 019fb687).
+  set +e
+  local pid=""
+  pid=$(curl -s --config "$HDR_FILE" "$API/users?username=$PROBE&exact=true" 2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null)
+  if [ -n "$pid" ]; then
+    curl -s -X DELETE --config "$HDR_FILE" "$API/users/$pid" >/dev/null 2>&1 || true
+  fi
+  rm -f -- "$HDR_FILE"
 }
 trap cleanup_probe EXIT
 q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"]}}" >/dev/null
