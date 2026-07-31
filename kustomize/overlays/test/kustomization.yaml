@@ -6559,7 +6559,15 @@ images:
     # only intent endpoint that could not say which field it disliked. It now
     # reports the failing field like every other one. Digest read back from a
     # real pull into the target cluster.
-    digest: sha256:b5eccc18f387332ca8beb035cd8082128c5613ae04968786838f776e5b4c1b4d
+    #
+    # 2026-07-31 bump: sha-4f22ab0 — platform-backend#1032 (Faz 22 Sec /
+    # gitops#3212). Flyway V25 seeds the auth.sms-otp SMS MFA template
+    # (language-only tr/en locales for the resolver fallback chain,
+    # external_allowed=TRUE for the {type: external, phone} recipient the
+    # Keycloak SPI submits, dollar-brace kept out of the raw script text —
+    # Flyway scans comments too). Digest read back from a real host-lane
+    # pull (RepoDigests) + node-imported with the digest ref.
+    digest: sha256:358346f30359fd152c7c68206e4ceec52190b3de2169422ea38ede76b09fd2e0
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.27:
