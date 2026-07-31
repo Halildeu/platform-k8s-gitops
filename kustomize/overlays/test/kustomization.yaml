@@ -576,7 +576,16 @@ images:
     # The per-audience map refuses either permission against the other
     # audience; three mint tests pin all three outcomes.
     # Digest read back from a real pull into this cluster (digest-probe pod).
-    digest: sha256:3e6f9a6ab570c6c4df506586eae092db1da60fe403f10be51d5c64410999079f
+    #
+    # 2026-07-31 bump: sha-5a63d63 — platform-backend#1031 (Faz 22 Sec /
+    # gitops#3212). New `keycloak-sms-otp` service client: the SMS-OTP
+    # authenticator SPI mints against it (single audience
+    # notification-orchestrator, single permission notify:intents:system,
+    # require-explicit-permissions). Secret arrives via the
+    # auth-service-sms-otp-secret ExternalSecret (activation/keycloak-sms-otp);
+    # blank keeps the client fail-closed disabled. Digest read back from a
+    # real host-lane pull (docker pull on aiserver, RepoDigests).
+    digest: sha256:dbef3c27f6988bf135985d78a334ae834ecfb6fcb70599312e538c0df3fd965f
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
