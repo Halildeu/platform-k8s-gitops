@@ -109,15 +109,35 @@ def required_secret_env(
         )
 
 
-def zero_downtime_rollout(manifest: dict[str, Any], name: str) -> None:
+def bounded_rollout(manifest: dict[str, Any], name: str) -> None:
+    """The Faz 24 chain must roll terminate-first, within a bounded deadline.
+
+    This asserted surge=1/unavailable=0 until 2026-07-31. That came from the
+    2026-07-17 exception, which was explicitly conditional on a live preflight
+    showing room for the surge pods. On 2026-07-31 the room was gone —
+    platform-quota limits.cpu 15450m/16000m against a 750m pod — and the
+    auth-service rollout could not create a pod at all:
+
+        Error creating: pods "auth-service-…" is forbidden: exceeded quota:
+        platform-quota, requested: limits.cpu=750m, used: 15450m, limited: 16
+
+    So the guard now pins the opposite, and for the same underlying reason it
+    was written: a rollout of this chain must be able to *complete*. Surge-first
+    only completes while spare budget happens to exist; terminate-first needs
+    none. The deadline stays — it still bounds a stall from any other cause.
+
+    The namespace-wide form of this invariant (every Deployment at or above
+    400m limits.cpu renders maxSurge 0) lives in
+    tests/deploy/test_test_overlay_rollout_fits_quota.py.
+    """
     spec = manifest.get("spec", {})
     rolling = spec.get("strategy", {}).get("rollingUpdate", {})
     if (
-        rolling.get("maxSurge") != 1
-        or rolling.get("maxUnavailable") != 0
+        rolling.get("maxSurge") != 0
+        or rolling.get("maxUnavailable") != 1
         or spec.get("progressDeadlineSeconds") != 300
     ):
-        fail(f"{name} must render surge=1, unavailable=0, deadline=300")
+        fail(f"{name} must render surge=0, unavailable=1, deadline=300")
 
 
 def sync_wave(manifest: dict[str, Any], expected: str) -> None:
@@ -357,9 +377,9 @@ def main() -> None:
         fail("Service/redis-streams must expose port 6379")
     if not any(port.get("port") == 6379 for port in endpoint_ports):
         fail("Endpoints/redis-streams must resolve port 6379")
-    zero_downtime_rollout(auth_deploy, "auth-service")
-    zero_downtime_rollout(meeting_deploy, "meeting-service")
-    zero_downtime_rollout(transcript_deploy, "transcript-service")
+    bounded_rollout(auth_deploy, "auth-service")
+    bounded_rollout(meeting_deploy, "meeting-service")
+    bounded_rollout(transcript_deploy, "transcript-service")
     pod_annotation(
         meeting_deploy,
         "meeting-service.acik.com/analysis-capability-rev",
