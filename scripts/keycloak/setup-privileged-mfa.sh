@@ -182,39 +182,99 @@ user_has_direct_mfa() {
 }
 composite_has_mfa() { q "$API/roles/$1/composites" | jq -e --arg m "$MFA_ROLE" '.[]?|select(.name==$m)' >/dev/null 2>&1; }
 flow_exists() { q "$API/authentication/flows" | jq -e --arg f "$NEW_FLOW" '.[]?|select(.alias==$f)' >/dev/null 2>&1; }
+# ── Parent-aware execution helpers (gitops#3212, measured 2026-07-31) ──
+# The executions endpoint returns a FLAT, ORDERED list with a `level` field
+# and no parent id. Selecting by displayName+level therefore also matches
+# same-named executions in OTHER subflows — the stock
+# "Browser - Conditional 2FA" subflow holds its own "OTP Form" at level 2,
+# and editing that one instead of ours is exactly how earlier runs produced
+# a flow that looked right and still died. These helpers slice the children
+# of a named subflow: the rows after it, until the next row at its level or
+# shallower.
+sub_children() {  # $1 = subflow displayName
+  # The slice must STOP at the first row back at the subflow's own level or
+  # shallower. Merely filtering `.level > lvl` keeps scanning past the end of
+  # the subflow and picks up the NEXT subflow's children too — measured
+  # 2026-07-31: it returned the stock "Browser - Conditional 2FA" children
+  # (Condition - user configured, WebAuthn ...) alongside ours, so every
+  # id resolved from it could belong to the wrong subflow.
+  q "$API/authentication/flows/$NEW_FLOW/executions" | jq -c --arg s "$1" '
+    . as $all
+    | (([range(0; length)] | map(select($all[.].displayName == $s)))[0]) as $i
+    | if $i == null then [] else
+        $all[$i].level as $lvl
+        | ($all[($i+1):]) as $rest
+        | (([range(0; ($rest|length))] | map(select($rest[.].level <= $lvl)))[0]) as $stop
+        | if $stop == null then $rest else $rest[0:$stop] end
+      end'
+}
+child_id()  { sub_children "$1" | jq -r --arg d "$2" '[.[]|select(.displayName==$d)][0].id // empty'; }
+child_pos() { sub_children "$1" | jq -r --arg d "$2" '[.[]|.displayName] | index($d) // -1'; }
+
+# Drive an execution to the FIRST position among its siblings. Keycloak
+# appends new executions with a priority that does not reliably land after
+# existing ones, so desired order must be enforced, not assumed.
+raise_to_front() {  # $1 = subflow displayName, $2 = child displayName
+  local id pos i
+  id=$(child_id "$1" "$2"); [ -n "$id" ] || return 0
+  for i in 1 2 3 4 5 6 7 8; do
+    pos=$(child_pos "$1" "$2")
+    [ "$pos" = "0" ] && return 0
+    [ "$pos" = "-1" ] && return 1
+    q -X POST "$API/authentication/executions/$id/raise-priority" >/dev/null
+  done
+  return 1
+}
+
 sms_provider_available() {
   q "$API/authentication/authenticator-providers" \
     | jq -e --arg p "$SMS_PROVIDER_ID" '.[]?|select(.id==$p)' >/dev/null 2>&1
 }
 sms_urls_provided() { [ -n "$SMS_AUTH_TOKEN_URL" ] && [ -n "$SMS_NOTIFY_INTENT_URL" ]; }
 subflow_ready() {
-  # Two accepted, mutually exclusive shapes under privileged-force-otp
-  # (CONDITIONAL), both FLAT — condition and the second-factor executions are
-  # SIBLINGS, exactly like Keycloak's own "Browser - Conditional 2FA" subflow.
-  # A nested REQUIRED sub-subflow holding the ALTERNATIVEs was measured to
-  # never reach the authenticator at all (2026-07-31).
-  #   legacy (sms provider NOT deployed): Condition REQUIRED + OTP Form REQUIRED
-  #   target (sms provider deployed):     Condition REQUIRED + OTP Form
-  #     ALTERNATIVE + SMS OTP ALTERNATIVE, the SMS execution carrying its
-  #     sms-otp-notify-lane config with the exact desired URLs.
-  local ex; ex=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-  echo "$ex" | jq -e '[.[]|select(.displayName=="privileged-force-otp" and .requirement=="CONDITIONAL")]|length==1' >/dev/null 2>&1 \
-    && echo "$ex" | jq -e '[.[]|select(.displayName=="Condition - user role" and .level==2 and .requirement=="REQUIRED")]|length>=1' >/dev/null 2>&1 \
-    || return 1
-  # A nested methods subflow is drift in BOTH shapes.
+  # Parent-aware, order-aware. Two accepted shapes under privileged-force-otp
+  # (CONDITIONAL), both FLAT — condition and the factors are SIBLINGS, like
+  # Keycloak's own "Browser - Conditional 2FA":
+  #   legacy (no sms provider): Condition REQUIRED, OTP Form REQUIRED
+  #   target (sms provider):    Condition REQUIRED, OTP Form ALTERNATIVE,
+  #                             SMS OTP ALTERNATIVE (+ its URL config)
+  # Enforced beyond membership: the condition must be the FIRST child (a
+  # condition evaluated after a factor is meaningless), and at the forms
+  # level Username Password Form must precede the conditional subflow (with
+  # no user yet, the role condition cannot evaluate and the whole login dies
+  # with AuthenticationFlowException).
+  local ex kids
+  ex=$(q "$API/authentication/flows/$NEW_FLOW/executions")
+  echo "$ex" | jq -e --arg s "$SUB_ALIAS" '[.[]|select(.displayName==$s and .requirement=="CONDITIONAL")]|length==1' >/dev/null 2>&1 || return 1
+  # forms-level order: Username Password Form before the conditional subflow
+  echo "$ex" | jq -e --arg s "$SUB_ALIAS" '
+    ([.[]|select(.displayName=="Username Password Form" and .level==1)][0].index) as $u
+    | ([.[]|select(.displayName==$s and .level==1)][0].index) as $c
+    | ($u != null and $c != null and $u < $c)' >/dev/null 2>&1 || return 1
+  # a nested methods subflow is drift in BOTH shapes
   echo "$ex" | jq -e --arg m "$METHODS_ALIAS" '[.[]|select(.displayName==$m)]|length==0' >/dev/null 2>&1 || return 1
+
+  kids=$(sub_children "$SUB_ALIAS")
+  # Membership + requirement are enforced; ORDER among these siblings is not
+  # (KC's priority swap is a no-op for them and conditional executions are
+  # evaluated first anyway). The forms-level order above IS enforced, because
+  # there a factor placed before Username Password Form genuinely kills the
+  # login: the role condition cannot evaluate without a user.
+  echo "$kids" | jq -e '[.[]|select(.displayName=="Condition - user role" and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 || return 1
+
   if sms_provider_available && sms_urls_provided; then
-    echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2 and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
-      && echo "$ex" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==2 and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
-      && { local sid cid cfg; sid=$(echo "$ex" | jq -r --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==2)][0].id'); \
-           cid=$(q "$API/authentication/executions/$sid" | jq -r '.authenticatorConfig // empty'); \
-           [ -n "$cid" ] || return 1; \
-           cfg=$(q "$API/authentication/config/$cid"); \
+    echo "$kids" | jq -e '[.[]|select(.displayName=="OTP Form" and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
+      && echo "$kids" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
+      && { local sid cid cfg
+           sid=$(child_id "$SUB_ALIAS" "$SMS_DISPLAY")
+           cid=$(q "$API/authentication/executions/$sid" | jq -r '.authenticatorConfig // empty')
+           [ -n "$cid" ] || return 1
+           cfg=$(q "$API/authentication/config/$cid")
            [ "$(echo "$cfg" | jq -r '.config["auth-token-url"] // empty')" = "$SMS_AUTH_TOKEN_URL" ] \
              && [ "$(echo "$cfg" | jq -r '.config["notify-intent-url"] // empty')" = "$SMS_NOTIFY_INTENT_URL" ]; }
   else
-    echo "$ex" | jq -e '[.[]|select(.displayName=="OTP Form" and .level==2 and .requirement=="REQUIRED")]|length>=1' >/dev/null 2>&1 \
-      && echo "$ex" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s)]|length==0' >/dev/null 2>&1
+    echo "$kids" | jq -e '[.[]|select(.displayName=="OTP Form" and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 \
+      && echo "$kids" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s)]|length==0' >/dev/null 2>&1
   fi
 }
 
@@ -327,67 +387,51 @@ apply_all() {
     q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"conditional-user-role"}' >/dev/null
     q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
   fi
-  # 4b) gitops#3212 — SMS lane, capability-gated and FLAT. Only when the
-  # sms-otp provider is REGISTERED (JAR deployed) and both URLs are known:
-  # add the SMS authenticator BESIDE the condition and the OTP Form (same
-  # level), and remove the earlier nested methods subflow if a previous run
-  # created one — that nesting was measured (2026-07-31) to never reach the
-  # authenticator, failing the whole login with AuthenticationFlowException.
-  # Without the provider this block is a no-op and the legacy shape stays
-  # converged (prod today).
-  local EX oid mid
-  EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-  mid=$(echo "$EX" | jq -r --arg m "$METHODS_ALIAS" '[.[]|select(.displayName==$m)][0].id // empty')
+  # 4b) gitops#3212 — SMS lane, capability-gated, FLAT, and PARENT-AWARE.
+  # Every lookup below goes through sub_children so it can only ever touch
+  # executions inside privileged-force-otp; selecting by displayName+level
+  # would also match the stock "Browser - Conditional 2FA" siblings.
+  local mid
+  mid=$(q "$API/authentication/flows/$NEW_FLOW/executions" \
+        | jq -r --arg m "$METHODS_ALIAS" '[.[]|select(.displayName==$m)][0].id // empty')
   if [ -n "$mid" ]; then
     q -X DELETE "$API/authentication/executions/$mid" >/dev/null
     echo "  sms lane: nested $METHODS_ALIAS subflow kaldırıldı (düz şekle geçiş)"
   fi
+
+  # OTP Form is required in BOTH shapes; the nested migration above may have
+  # taken it with the subflow, so ensure it exists inside OUR subflow.
+  [ -n "$(child_id "$SUB_ALIAS" "OTP Form")" ] || \
+    { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
+      echo "  mfa: OTP Form eklendi"; }
+
   if sms_provider_available && sms_urls_provided; then
-    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-    echo "$EX" | jq -e '.[]?|select(.displayName=="OTP Form" and .level==2)' >/dev/null 2>&1 || \
-      q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
-    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-    echo "$EX" | jq -e --arg s "$SMS_DISPLAY" '.[]?|select(.displayName==$s and .level==2)' >/dev/null 2>&1 || \
+    [ -n "$(child_id "$SUB_ALIAS" "$SMS_DISPLAY")" ] || \
       { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d "{\"provider\":\"$SMS_PROVIDER_ID\"}" >/dev/null
         echo "  sms lane: SMS OTP alternatifi eklendi"; }
   elif sms_provider_available; then
     echo "  UYARI: sms-otp provider kayıtlı ama SMS URL'leri boş — SMS lane wiring atlandı"
   else
-    # No provider: a leftover SMS execution from a previous deployment must go.
-    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-    for oid in $(echo "$EX" | jq -r --arg s "$SMS_DISPLAY" '.[]|select(.displayName==$s).id'); do
-      q -X DELETE "$API/authentication/executions/$oid" >/dev/null
-      echo "  sms lane: provider yok — artık SMS execution kaldırıldı"
-    done
-    # Removing the old nested subflow also removed the OTP Form it contained,
-    # so the legacy shape must be re-established here — otherwise the
-    # requirement PUT below would run with a null id (Codex 019fb687 P2-1).
-    EX=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-    echo "$EX" | jq -e '.[]?|select(.displayName=="OTP Form" and .level==2)' >/dev/null 2>&1 || \
-      { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
-        echo "  sms lane: legacy OTP Form yeniden eklendi (nested migration sonrası)"; }
+    local sid_stale
+    sid_stale=$(child_id "$SUB_ALIAS" "$SMS_DISPLAY")
+    [ -z "$sid_stale" ] || { q -X DELETE "$API/authentication/executions/$sid_stale" >/dev/null
+                             echo "  sms lane: provider yok — artık SMS execution kaldırıldı"; }
   fi
 
-  # requirement + config (idempotent — her apply'da set)
-  local J SUB ROLE OTP SMS2
-  J=$(q "$API/authentication/flows/$NEW_FLOW/executions")
-  SUB=$(echo "$J" | jq -r --arg s "$SUB_ALIAS" '.[]|select(.displayName==$s).id')
-  ROLE=$(echo "$J" | jq -r '.[]|select(.displayName=="Condition - user role" and .level==2).id')
-  OTP=$(echo "$J" | jq -r '[.[]|select(.displayName=="OTP Form" and .level==2)][0].id // empty')
-  [ -n "$OTP" ] || { echo "ERROR: privileged-force-otp içinde OTP Form yok — apply yarım kaldı" >&2; exit 3; }
-  for pair in "$SUB:CONDITIONAL" "$ROLE:REQUIRED"; do
-    q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"${pair%%:*}\",\"requirement\":\"${pair##*:}\"}" >/dev/null
-  done
+  # requirement + ORDER + config (idempotent — her apply'da set)
+  local SUB ROLE OTP SMS2
+  SUB=$(q "$API/authentication/flows/$NEW_FLOW/executions" | jq -r --arg s "$SUB_ALIAS" '[.[]|select(.displayName==$s)][0].id')
+  ROLE=$(child_id "$SUB_ALIAS" "Condition - user role")
+  OTP=$(child_id "$SUB_ALIAS" "OTP Form")
+  [ -n "$ROLE" ] && [ -n "$OTP" ] || { echo "ERROR: privileged-force-otp içinde condition/OTP yok — apply yarım kaldı" >&2; exit 3; }
+  q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$SUB\",\"requirement\":\"CONDITIONAL\"}" >/dev/null
+  q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$ROLE\",\"requirement\":\"REQUIRED\"}" >/dev/null
+
   if sms_provider_available && sms_urls_provided; then
-    SMS2=$(echo "$J" | jq -r --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .level==2)][0].id')
-    for pair in "$OTP:ALTERNATIVE" "$SMS2:ALTERNATIVE"; do
-      q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"${pair%%:*}\",\"requirement\":\"${pair##*:}\"}" >/dev/null
-    done
-    # SPI config: only the deployment-specific URLs; every other knob keeps
-    # its contract default inside the authenticator (fewer drift surfaces).
-    # CONVERGE, not just create: an existing config with stale URLs must be
-    # updated in place, otherwise --apply would skip it and --check would
-    # bless endpoints the SPI no longer should call (Codex 019fb687 P1).
+    SMS2=$(child_id "$SUB_ALIAS" "$SMS_DISPLAY")
+    [ -n "$SMS2" ] || { echo "ERROR: SMS execution bulunamadı" >&2; exit 3; }
+    q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$OTP\",\"requirement\":\"ALTERNATIVE\"}" >/dev/null
+    q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$SMS2\",\"requirement\":\"ALTERNATIVE\"}" >/dev/null
     local SMSCID SMSCFG
     SMSCID=$(q "$API/authentication/executions/$SMS2" | jq -r '.authenticatorConfig // empty')
     if [ -z "$SMSCID" ]; then
@@ -405,6 +449,27 @@ apply_all() {
   else
     q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$OTP\",\"requirement\":\"REQUIRED\"}" >/dev/null
   fi
+
+  # ORDER, enforced not assumed (measured: KC appends with a priority that
+  # can land BEFORE existing siblings).
+  # Best-effort only: measured 2026-07-31 on KC 26.5.5, raise-priority and
+  # lower-priority are BOTH no-ops for these three siblings (they share a
+  # priority value, so the swap changes nothing). Keycloak evaluates the
+  # conditional executions of a CONDITIONAL subflow before its factors
+  # regardless of listed order, so this is cosmetic — it must not fail the
+  # apply.
+  raise_to_front "$SUB_ALIAS" "Condition - user role" || \
+    echo "  not: condition ilk sırada değil (KC priority takası bu kardeşlerde etkisiz; conditional değerlendirme sıradan bağımsız)"
+  local i upf_idx sub_idx upf_id
+  upf_id=$(q "$API/authentication/flows/$NEW_FLOW/executions" | jq -r '[.[]|select(.displayName=="Username Password Form" and .level==1)][0].id // empty')
+  for i in 1 2 3 4 5 6 7 8; do
+    upf_idx=$(q "$API/authentication/flows/$NEW_FLOW/executions" | jq -r '[.[]|select(.displayName=="Username Password Form" and .level==1)][0].index // empty')
+    sub_idx=$(q "$API/authentication/flows/$NEW_FLOW/executions" | jq -r --arg s "$SUB_ALIAS" '[.[]|select(.displayName==$s and .level==1)][0].index // empty')
+    [ -n "$upf_idx" ] && [ -n "$sub_idx" ] || break
+    [ "$upf_idx" -lt "$sub_idx" ] && break
+    q -X POST "$API/authentication/executions/$upf_id/raise-priority" >/dev/null
+  done
+
   q "$API/authentication/executions/$ROLE" | jq -e '.authenticatorConfig' >/dev/null 2>&1 || \
     q -X POST "$API/authentication/executions/$ROLE/config" -H "$CT" \
       -d "{\"alias\":\"privileged-role-requires-mfa\",\"config\":{\"condUserRole\":\"$MFA_ROLE\",\"negate\":\"false\"}}" >/dev/null
