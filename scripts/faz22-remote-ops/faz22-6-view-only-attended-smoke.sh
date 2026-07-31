@@ -113,6 +113,14 @@ EXPIRES_AT="${EXPIRES_AT:-}"
 VIEWER_PATH_DECISION="${VIEWER_PATH_DECISION:-owner-deferred}"
 
 TMP_DIR="$(mktemp -d)"
+# Armed here, immediately after the temp dir exists, because a trap installed
+# dozens of lines later leaves the KC admin password and admin JWT on disk
+# whenever the script dies in between (measured 2026-07-31: three such
+# directories were still present on the test host, dated 27-30 July).
+# The body dispatches at FIRE time: once the full `cleanup` is defined it
+# runs; before that — an early --help or validation exit — it still removes
+# the temp dir instead of dying with "cleanup: command not found".
+trap 'if declare -F cleanup >/dev/null 2>&1; then cleanup; else rm -rf "${TMP_DIR:-}"; fi' EXIT
 PORT_FORWARD_PID=""
 MANAGEMENT_PORT_FORWARD_PID=""
 SUMMARY_FILE="${EVIDENCE_DIR}/summary.json"
@@ -215,7 +223,6 @@ stop_management_port_forward() {
     MANAGEMENT_PORT_FORWARD_PID=""
   fi
 }
-trap cleanup EXIT
 
 stop_port_forward() {
   if [[ -n "$PORT_FORWARD_PID" ]] && kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1; then

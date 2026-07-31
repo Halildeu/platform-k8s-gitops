@@ -42,6 +42,14 @@ MAX_BYTES="${MAX_BYTES:-$EXPECTED_AGENT_MAX_BYTES}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-update-agent-${RELEASE_ID}-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 TMP_DIR="$(mktemp -d)"
+# Armed here, immediately after the temp dir exists, because a trap installed
+# dozens of lines later leaves the KC admin password and admin JWT on disk
+# whenever the script dies in between (measured 2026-07-31: three such
+# directories were still present on the test host, dated 27-30 July).
+# The body dispatches at FIRE time: once the full `cleanup` is defined it
+# runs; before that — an early --help or validation exit — it still removes
+# the temp dir instead of dying with "cleanup: command not found".
+trap 'if declare -F cleanup >/dev/null 2>&1; then cleanup; else rm -rf "${TMP_DIR:-}"; fi' EXIT
 KC_ADMIN_PASS_FILE="${TMP_DIR}/kc-admin-password.txt"
 KC_ADMIN_TOKEN_FILE="${TMP_DIR}/kc-admin.jwt"
 CREATOR_PASS_FILE="${TMP_DIR}/creator-password.txt"
@@ -76,7 +84,6 @@ cleanup() {
   fi
   rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT
 
 read_keycloak_admin_password() {
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
