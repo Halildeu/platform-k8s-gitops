@@ -463,11 +463,12 @@ def main() -> None:
     container_image(
         auth_deploy,
         "auth-service",
-        # 2026-07-31 (gitops#3212/#3215): sha-5a63d63 — adds the
-        # keycloak-sms-otp service client (platform-backend#1031); the Faz 24
-        # mint surface this verifier pins is unchanged by it.
+        # 2026-07-31 (gitops#3212 S8): sha-cd44d86 — adds the one-shot MFA
+        # delivery grant endpoint (platform-backend#1036) on top of the
+        # keycloak-sms-otp service client; the Faz 24 mint surface this
+        # verifier pins is unchanged by both.
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:dbef3c27f6988bf135985d78a334ae834ecfb6fcb70599312e538c0df3fd965f",
+        "sha256:b92d7878d30f7462bd636efd2ef7275a3a5ccabdbe1f593cea15dcfd70539f6f",
     )
     container_image(
         meeting_deploy,

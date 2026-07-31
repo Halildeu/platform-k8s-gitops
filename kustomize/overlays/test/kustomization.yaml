@@ -586,7 +586,14 @@ images:
     # auth-service-sms-otp-secret ExternalSecret (activation/keycloak-sms-otp);
     # blank keeps the client fail-closed disabled. Digest read back from a
     # real host-lane pull (docker pull on aiserver, RepoDigests).
-    digest: sha256:dbef3c27f6988bf135985d78a334ae834ecfb6fcb70599312e538c0df3fd965f
+    # 2026-07-31 bump: sha-cd44d86 — platform-backend#1036 (gitops#3212 S8).
+    # auth-service now issues the one-shot MFA delivery grant the SPI needs:
+    # POST /oauth2/mfa-delivery-grant, allow-listed to keycloak-sms-otp on
+    # test only (empty allow-list = endpoint 404s, so no other environment
+    # gains a surface). Without it notify blocks the OTP at its Layer-2
+    # can_receive check and the SMS never leaves. Digest read back from a
+    # real host-lane pull (RepoDigests) + node-imported with the digest ref.
+    digest: sha256:b92d7878d30f7462bd636efd2ef7275a3a5ccabdbe1f593cea15dcfd70539f6f
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -6567,7 +6574,17 @@ images:
     # Keycloak SPI submits, dollar-brace kept out of the raw script text —
     # Flyway scans comments too). Digest read back from a real host-lane
     # pull (RepoDigests) + node-imported with the digest ref.
-    digest: sha256:358346f30359fd152c7c68206e4ceec52190b3de2169422ea38ede76b09fd2e0
+    #
+    # 2026-07-31 bump: sha-cd44d86 — platform-backend#1036 (gitops#3212 S8).
+    # The submit path verifies the grant at the trust boundary and persists
+    # only derived, server-controlled evidence (V26: delivery_class, grant_jti
+    # unique, grant_subject, grant_recipient_hash, grant_deliver_before). The
+    # async worker never sees the JWT: it skips ONLY the recipient-tuple check
+    # and only when the evidence matches the delivery exactly and the window
+    # is open. Verifier is disabled when its JWK-set URI is blank, so a
+    # missing configuration loosens nothing. Digest read back from a real
+    # host-lane pull (RepoDigests) + node-imported with the digest ref.
+    digest: sha256:c0cd2373eb23789c8f1bb14dda527e4c8609f0d4d81309de59219ea51bfc503a
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.27:
