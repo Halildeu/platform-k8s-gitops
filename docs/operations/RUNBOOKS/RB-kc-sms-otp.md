@@ -65,9 +65,22 @@ değerde de 1 döner. Uzunluğu ölçün.
 
 ## Deploy (test) — sıra önemli
 
-1. **JAR üret** (platform-backend main'inden):
-   `./mvnw -q -f keycloak-sms-otp-authenticator/pom.xml package`
-   → `target/keycloak-sms-otp-authenticator-1.0.0.jar`
+1. **JAR üret** (platform-backend main'inden). **Bu adım cluster digest
+   bump'ıyla BİRLİKTE yapılmalı**: SPI bir host dosyasıdır, ArgoCD'nin
+   görmediği tek parçadır ve digest'ler yenilenirken sessizce eski kalır.
+   2026-07-31'de tam bu oldu — auth-service + notify grant'i konuşuyordu ama
+   KC hâlâ grant istemeyen eski JAR'ı çalıştırdığı için teslimat yine
+   `BLOCKED_BY_AUTHZ` döndü ve hiçbir hata satırı bunu söylemedi.
+
+   Hostta java yok; Maven container'la derlenir:
+   ```bash
+   docker run --rm -v /srv/platform/build/platform-backend:/w \
+     -v /srv/platform/build/.m2:/root/.m2 -w /w maven:3.9-eclipse-temurin-21 \
+     mvn -q -B -f keycloak-sms-otp-authenticator/pom.xml package -DskipTests
+   ```
+   → `target/keycloak-sms-otp-authenticator-1.0.0.jar`.
+   Kurduktan sonra **sha256'yı karşılaştır** (dosya adı sürüm taşımaz, yani
+   aynı isim yeni içerik demek olabilir de olmayabilir de).
 2. **Host'a koy**: `/srv/platform/stateful/test/keycloak-providers/` (dizin yoksa oluştur; compose ro-mount eder).
 3. **Overlay slice apply** (selective):
    `kubectl --context k3d-test -n platform-test apply -k kustomize/overlays/test/activation/keycloak-sms-otp/`
@@ -107,6 +120,27 @@ sayılır** ve teslimat normal yoldan yetki kontrolüne girer.
 
 Yapılandırma yoksa (JWK-set URI boş) doğrulayıcı **kapalıdır** ve her şey
 normal yoldan gider — eksik yapılandırma hiçbir şeyi gevşetmez.
+
+## Canlı kabul kaydı (2026-07-31, test)
+
+`notify.notification_delivery` üç satırda önce/sonrayı gösteriyor:
+
+| saat | durum | sebep |
+|---|---|---|
+| 12:26 | `BLOCKED_BY_AUTHZ` | `authz_deny: no_tuple` |
+| 14:03 | `BLOCKED_BY_AUTHZ` | `authz_deny: no_tuple` — imajlar yeni, **JAR eski** |
+| 14:07 | sağlayıcıya ulaştı | `dlr jetsms code=3` |
+
+14:03 satırı kuralın kendisini kanıtlıyor: grant istenmediğinde teslimat
+olağan yetki yolundan gider ve reddedilir — eksik yapılandırma hiçbir şeyi
+gevşetmez. 14:07'de `intent` satırında `delivery_class=AUTHENTICATION_CHALLENGE`
+ve dört kanıt kolonu da dolu (`grant_recipient_hash` 64 hane, pencere
+`created_at`'in ilerisinde); `uq_notification_intent_grant_jti` tekrar
+oynatmayı engelliyor.
+
+`dlr code=3` beklenen: kanarya numarası **Ofcom'un +447700900xxx kurmaca
+aralığında** — hiçbir aboneye tahsis edilmez. Platform tarafı kanıtlanmıştır;
+ahize tarafı bilinçli olarak denenmemiştir (owner-gated).
 
 ## Doğrulama katmanları (D29 disiplini)
 
