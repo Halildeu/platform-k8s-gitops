@@ -63,6 +63,7 @@ desired_shape() {
   "clientId": "$CLIENT_ID",
   "protocol": "openid-connect",
   "enabled": true,
+  "clientAuthenticatorType": "client-secret",
   "publicClient": false,
   "serviceAccountsEnabled": true,
   "standardFlowEnabled": false,
@@ -88,6 +89,7 @@ fi
 # Post-condition on the LIVE representation; refuse to seed on deviation.
 LIVE=$(q "$API/clients/$CID")
 for check in \
+    '.clientAuthenticatorType == "client-secret"' \
     '.publicClient == false' \
     '.serviceAccountsEnabled == true' \
     '.standardFlowEnabled == false' \
