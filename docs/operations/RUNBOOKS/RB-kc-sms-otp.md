@@ -30,9 +30,36 @@ KC→cluster erişimi: `platform-test-net` üzerinde NodePort şeridi —
 | auth-service istemci kaydı | platform-backend `auth-service application-k8s.yml` (`keycloak-sms-otp`, #1031) |
 | SMS şablonu | platform-backend notify `V25__seed_auth_sms_otp_template.sql` (`auth.sms-otp`, tr/en) |
 | Secret — auth tarafı | Vault `kv/platform/auth-service` `service_client_keycloak_sms_otp_secret` → ESO `auth-service-sms-otp-secret` |
-| Secret — KC tarafı | `host-compose/keycloak/test/secrets/sms_otp_client_secret.txt` → docker secret → wrapper env `SMS_OTP_SERVICE_CLIENT_SECRET` |
+| Secret — KC tarafı | `host-compose/keycloak/test/secrets/sms_otp_client_secret.txt` → docker secret → wrapper env `SMS_OTP_SERVICE_CLIENT_SECRET`. **Dosya sahipliği `1000:1000`, mod `400` olmalı** — aşağıdaki tuzağa bakın. |
 | NodePort + NetPol + ESO | `kustomize/overlays/test/activation/keycloak-sms-otp/` |
 | Flow | `scripts/keycloak/setup-privileged-mfa.sh` (`privileged-2fa-methods`, capability-gated) |
+
+## ⚠️ Secret dosyası sahipliği — sessiz boş env tuzağı (2026-07-31 ölçümü)
+
+Docker `secrets: file:` mount'u host dosyasının **sahipliğini ve modunu aynen
+taşır**. `sms_otp_client_secret.txt` `aiadmin:aiadmin` + `600` ile yazılmıştı;
+container'da `1001:1001 -rw-------` göründü ve KC (`keycloak`, uid **1000**)
+onu okuyamadı. Entrypoint wrapper'ındaki `export X="$(cat $X_FILE)"` bu durumda
+**hata vermez** — `cat` boş döner, env değişkeni **var ama boş** olur.
+
+Belirti zinciri: SPI `secret=blank` görür → `attempted()` → ALTERNATIVE grubunda
+kullanılabilir yöntem kalmaz → `AuthenticationFlowException` → giriş sayfasında
+yanıltıcı **"Invalid username or password"**. Parola doğrudur.
+
+Doğru durum ve doğrulama (kardeş secret'larla aynı):
+
+```bash
+sudo chown 1000:1000 host-compose/keycloak/test/secrets/sms_otp_client_secret.txt
+sudo chmod 400       host-compose/keycloak/test/secrets/sms_otp_client_secret.txt
+# recreate şart (restart secret sahipliğini yenilemez):
+docker compose --profile manual up -d --force-recreate keycloak
+# kanıt — uzunluk sıfırdan büyük olmalı:
+docker exec platform-kc-test sh -lc 'V=$(tr "\0" "\n" < /proc/1/environ \
+  | grep "^SMS_OTP_SERVICE_CLIENT_SECRET=" | cut -d= -f2-); echo bytes=${#V}'
+```
+
+`grep -c "^SMS_OTP_SERVICE_CLIENT_SECRET="` **yeterli kanıt değildir**: boş
+değerde de 1 döner. Uzunluğu ölçün.
 
 ## Deploy (test) — sıra önemli
 

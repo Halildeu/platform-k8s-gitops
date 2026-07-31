@@ -71,7 +71,12 @@ DESIRED=$(jq -n --arg n "$ATTR" '{
   name: $n,
   displayName: "Telefon (E.164)",
   multivalued: false,
-  permissions: { view: ["admin"], edit: ["admin"] },
+  # view includes "user": the SMS authenticator reads the phone in the USER
+  # context during login, and an admin-only VIEW makes getFirstAttribute
+  # return nothing there — the factor then reports "not configured" and the
+  # ALTERNATIVE group dies (measured 2026-07-31). EDIT stays admin-only:
+  # that is the SIM-swap self-service hole, and it stays shut.
+  permissions: { view: ["admin", "user"], edit: ["admin"] },
   validations: {
     pattern: {
       # jq string escape: "\\+" yields a single backslash + plus, i.e. the
