@@ -127,6 +127,12 @@ METHODS_ALIAS="privileged-2fa-methods"
 SMS_PROVIDER_ID="sms-otp"
 SMS_DISPLAY="SMS OTP (notify pipeline)"
 SMS_CONFIG_ALIAS="sms-otp-notify-lane"
+# gitops#3230 — the third factor. Same SPI, same URLs; only the channel (and
+# the topic/template that follow from it) differ, so it needs no new
+# deployment knob of its own.
+EMAIL_PROVIDER_ID="email-otp"
+EMAIL_DISPLAY="E-mail OTP"
+EMAIL_CONFIG_ALIAS="email-otp-notify-lane"
 # Deployment-specific SPI config (only the two URLs — every other knob has a
 # contract default inside the SPI). Test defaults point at the NodePort lane
 # (activation/keycloak-sms-otp); any other realm must provide both via env
@@ -230,6 +236,12 @@ sms_provider_available() {
   q "$API/authentication/authenticator-providers" \
     | jq -e --arg p "$SMS_PROVIDER_ID" '.[]?|select(.id==$p)' >/dev/null 2>&1
 }
+email_provider_available() {
+  q "$API/authentication/authenticator-providers" \
+    | jq -e --arg p "$EMAIL_PROVIDER_ID" '.[]?|select(.id==$p)' >/dev/null 2>&1
+}
+# The e-mail lane rides the SMS lane's URLs: same auth-service, same notify.
+email_lane_wanted() { email_provider_available && sms_urls_provided; }
 sms_urls_provided() { [ -n "$SMS_AUTH_TOKEN_URL" ] && [ -n "$SMS_NOTIFY_INTENT_URL" ]; }
 subflow_ready() {
   # Parent-aware, order-aware. Two accepted shapes under privileged-force-otp
@@ -275,7 +287,27 @@ subflow_ready() {
   else
     echo "$kids" | jq -e '[.[]|select(.displayName=="OTP Form" and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 \
       && echo "$kids" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s)]|length==0' >/dev/null 2>&1
+  fi || return 1
+
+  # gitops#3230 — the e-mail factor is checked the same way in both
+  # directions. Only asserting it when present would let a vanished provider
+  # leave a dead alternative behind and still report CONVERGED.
+  if email_lane_wanted; then
+    echo "$kids" | jq -e --arg s "$EMAIL_DISPLAY" '[.[]|select(.displayName==$s and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 || return 1
+    local eid ecid ecfg
+    eid=$(child_id "$SUB_ALIAS" "$EMAIL_DISPLAY")
+    ecid=$(q "$API/authentication/executions/$eid" | jq -r '.authenticatorConfig // empty')
+    [ -n "$ecid" ] || return 1
+    ecfg=$(q "$API/authentication/config/$ecid")
+    [ "$(echo "$ecfg" | jq -r '.config["auth-token-url"] // empty')" = "$SMS_AUTH_TOKEN_URL" ] || return 1
+    [ "$(echo "$ecfg" | jq -r '.config["notify-intent-url"] // empty')" = "$SMS_NOTIFY_INTENT_URL" ] || return 1
+    # The channel IS the factor. A config that lost it would silently deliver
+    # the "e-mail" code over SMS to a phone number that is not there.
+    [ "$(echo "$ecfg" | jq -r '.config["delivery-channel"] // empty')" = "email" ] || return 1
+  else
+    echo "$kids" | jq -e --arg s "$EMAIL_DISPLAY" '[.[]|select(.displayName==$s)]|length==0' >/dev/null 2>&1 || return 1
   fi
+  return 0
 }
 
 report() {  # DRIFT counter
@@ -297,6 +329,12 @@ report() {  # DRIFT counter
     else echo "  sms lane: provider kayıtlı ama SMS_AUTH_TOKEN_URL/SMS_NOTIFY_INTENT_URL boş — wiring atlanır (bu realm için env ver)"; fi
   else
     echo "  sms lane: sms-otp provider yok (providers JAR deploy edilmemiş) — legacy inline-OTP şekli geçerli"
+  fi
+  if email_provider_available; then
+    if sms_urls_provided; then echo "  email lane: provider kayıtlı + URL'ler set (hedef: üçüncü ALTERNATIVE, delivery-channel=email)"
+    else echo "  email lane: provider kayıtlı ama URL'ler boş — wiring atlanır"; fi
+  else
+    echo "  email lane: email-otp provider yok (JAR eski ya da deploy edilmemiş)"
   fi
   if flow_exists; then
     subflow_ready && echo "  subflow $SUB_ALIAS (CONDITIONAL+role+2FA şekli): OK" || { echo "  subflow $SUB_ALIAS: INCOMPLETE"; d=$((d+1)); }
@@ -418,6 +456,23 @@ apply_all() {
                              echo "  sms lane: provider yok — artık SMS execution kaldırıldı"; }
   fi
 
+  # gitops#3230 — same treatment for the e-mail factor: add it when its
+  # provider is deployed, remove a stale execution when it is not. A factor
+  # whose provider vanished would otherwise sit in the flow as a dead
+  # alternative the user can pick and never complete.
+  if email_lane_wanted; then
+    [ -n "$(child_id "$SUB_ALIAS" "$EMAIL_DISPLAY")" ] || \
+      { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d "{\"provider\":\"$EMAIL_PROVIDER_ID\"}" >/dev/null
+        echo "  email lane: E-mail OTP alternatifi eklendi"; }
+  elif email_provider_available; then
+    echo "  UYARI: email-otp provider kayıtlı ama URL'ler boş — e-posta lane wiring atlandı"
+  else
+    local eid_stale
+    eid_stale=$(child_id "$SUB_ALIAS" "$EMAIL_DISPLAY")
+    [ -z "$eid_stale" ] || { q -X DELETE "$API/authentication/executions/$eid_stale" >/dev/null
+                             echo "  email lane: provider yok — artık E-mail execution kaldırıldı"; }
+  fi
+
   # requirement + ORDER + config (idempotent — her apply'da set)
   local SUB ROLE OTP SMS2
   SUB=$(q "$API/authentication/flows/$NEW_FLOW/executions" | jq -r --arg s "$SUB_ALIAS" '[.[]|select(.displayName==$s)][0].id')
@@ -448,6 +503,36 @@ apply_all() {
     fi
   else
     q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$OTP\",\"requirement\":\"REQUIRED\"}" >/dev/null
+  fi
+
+  # E-mail lane: ALTERNATIVE + its own config. The channel is what makes it
+  # the e-mail factor — the SPI derives the topic and template from it, so
+  # naming the channel here is enough and there is no second pair of URLs to
+  # keep in sync.
+  if email_lane_wanted; then
+    local EML EMLCID EMLCFG EMLDESIRED
+    EML=$(child_id "$SUB_ALIAS" "$EMAIL_DISPLAY")
+    [ -n "$EML" ] || { echo "ERROR: E-mail execution bulunamadı" >&2; exit 3; }
+    q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$EML\",\"requirement\":\"ALTERNATIVE\"}" >/dev/null
+    # OTP Form must be ALTERNATIVE too once any sibling factor exists; the SMS
+    # branch above already does that when SMS is wired, but e-mail may be the
+    # only extra factor in a realm without the SMS URLs.
+    q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$OTP\",\"requirement\":\"ALTERNATIVE\"}" >/dev/null
+    EMLDESIRED="{\"auth-token-url\":\"$SMS_AUTH_TOKEN_URL\",\"notify-intent-url\":\"$SMS_NOTIFY_INTENT_URL\",\"delivery-channel\":\"email\"}"
+    EMLCID=$(q "$API/authentication/executions/$EML" | jq -r '.authenticatorConfig // empty')
+    if [ -z "$EMLCID" ]; then
+      q -X POST "$API/authentication/executions/$EML/config" -H "$CT" \
+        -d "{\"alias\":\"$EMAIL_CONFIG_ALIAS\",\"config\":$EMLDESIRED}" >/dev/null
+    else
+      EMLCFG=$(q "$API/authentication/config/$EMLCID")
+      if [ "$(echo "$EMLCFG" | jq -r '.config["auth-token-url"] // empty')" != "$SMS_AUTH_TOKEN_URL" ] \
+         || [ "$(echo "$EMLCFG" | jq -r '.config["notify-intent-url"] // empty')" != "$SMS_NOTIFY_INTENT_URL" ] \
+         || [ "$(echo "$EMLCFG" | jq -r '.config["delivery-channel"] // empty')" != "email" ]; then
+        q -X PUT "$API/authentication/config/$EMLCID" -H "$CT" \
+          -d "{\"id\":\"$EMLCID\",\"alias\":\"$EMAIL_CONFIG_ALIAS\",\"config\":$EMLDESIRED}" >/dev/null
+        echo "  email lane: SPI config desired değerlere converge edildi"
+      fi
+    fi
   fi
 
   # ORDER, enforced not assumed (measured: KC appends with a priority that
