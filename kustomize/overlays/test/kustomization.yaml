@@ -938,7 +938,18 @@ images:
     # `crictl inspecti <name>@<digest>` resolves it and imagePullPolicy is
     # IfNotPresent, so the rollout starts from the local store. The durable
     # fix (package visibility or a scoped pull secret) stays tracked in #2885.
-    digest: sha256:164e3cc40ed15df40429348bb5c72416b118c51094f4346b00f1f8e99267dbe6
+    #
+    # 2026-07-31 bump: sha-cd44d86 — platform-backend#1034 (gitops#3211) adds
+    # the panel's MFA surface: GET /api/v1/users/{id}/mfa plus DELETE .../totp
+    # and PUT .../phone. The second factor is a Keycloak credential, so the
+    # panel could neither show nor manage it; user-service now proxies a
+    # narrow, admin-guarded view of it (same permission gate as every other
+    # user write, USER_UPDATE with company scope) and answers 503 — never a
+    # half-truth — where the Keycloak admin client is not provisioned.
+    # Also carries #1037: the authz response timeout back down to 8s.
+    # Digest read back from a real host-lane pull (RepoDigests) +
+    # node-imported with the digest ref.
+    digest: sha256:f16a6acf721da733eac4135d9aa69ecffbdf2a1517f1f747fbdd1dea238343a7
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
