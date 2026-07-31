@@ -33,19 +33,39 @@ esac
 ATTR="${PHONE_ATTRIBUTE:-phoneNumber}"
 API="http://127.0.0.1:${KC_PORT}/admin/realms/${REALM}"
 MODE="${1:---apply}"
+case "$MODE" in
+  --apply|--check) ;;
+  *) echo "ERROR: bilinmeyen mod '$MODE' (--apply|--check)" >&2; exit 1 ;;
+esac
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' yok" >&2; exit 1; }; }
 need curl; need jq
 
-sudo docker exec "$KC" /opt/keycloak/bin/kcadm.sh config credentials \
-  --server http://localhost:8080 --realm master \
-  --user "$(sudo docker exec "$KC" sh -lc 'printf %s "$KEYCLOAK_ADMIN"')" \
-  --password "$(sudo docker exec "$KC" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"')" >/dev/null 2>&1
-TOKEN=$(sudo docker exec "$KC" sh -lc 'cat ~/.keycloak/kcadm.config 2>/dev/null || cat /opt/keycloak/.keycloak/kcadm.config' \
-  | jq -r '.endpoints[]|.[].token // empty' | head -1)
+# ── Credential-safe admin channel (Codex 019fb687 P1) ──────────────────
+# Neither the admin password nor the bearer token may appear in host argv:
+# a local process reading /proc/<pid>/cmdline would otherwise see them.
+#   * the password is streamed straight out of the container's secret file
+#     into curl's STDIN (`--data @-`) — it never lands in a shell variable
+#     and never crosses an argv boundary (the KC image has no curl of its
+#     own, so the request is made host-side over the loopback port);
+#   * the bearer header lives in a mode-0600 curl config file consumed with
+#     `--config`, so it never appears as a `-H` argument either.
+HDR_FILE="$(mktemp)"; chmod 600 "$HDR_FILE"
+cleanup_hdr() { rm -f "$HDR_FILE"; }
+trap cleanup_hdr EXIT
+
+ADMIN_USER=$(sudo docker exec "$KC" sh -lc 'printf %s "$KEYCLOAK_ADMIN"')
+TOKEN=$( { printf 'grant_type=password&client_id=admin-cli&username=%s&password=' \
+             "$(printf %s "$ADMIN_USER" | jq -sRr @uri)"
+           sudo docker exec "$KC" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"' \
+             | tr -d '\n' | jq -sRr @uri
+         } | curl -sS --data @- "http://127.0.0.1:${KC_PORT}/realms/master/protocol/openid-connect/token" \
+           | jq -r '.access_token // empty')
 [ -n "$TOKEN" ] || { echo "ERROR: admin token alınamadı" >&2; exit 1; }
-AUTH="Authorization: Bearer $TOKEN"; CT="Content-Type: application/json"
-q() { curl -sS --fail-with-body -H "$AUTH" "$@"; }
+printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$HDR_FILE"
+unset TOKEN
+CT="Content-Type: application/json"
+q() { curl -sS --fail-with-body --config "$HDR_FILE" "$@"; }
 
 DESIRED=$(jq -n --arg n "$ATTR" '{
   name: $n,
@@ -61,8 +81,10 @@ DESIRED=$(jq -n --arg n "$ATTR" '{
       "error-message": "Telefon E.164 biçiminde olmalı (+ ve 8-15 rakam)"
     }
   },
-  annotations: {},
-  required: null
+  annotations: {}
+  # `required` is deliberately absent: the attribute is optional, and
+  # Keycloak omits the key entirely in its response — sending `required:
+  # null` would make every exact comparison below report false drift.
 }')
 
 PROFILE=$(q "$API/users/profile")
@@ -99,14 +121,22 @@ BACK=$(q "$API/users/profile" | jq --arg n "$ATTR" '[.attributes[] | select(.nam
 # probe user, deleted immediately afterwards.
 PROBE="userprofile-phone-probe-$$@synthetic.local"
 PROBE_PHONE="+905000000001"
+# The trap is armed BEFORE the user exists and resolves the id itself, so
+# a failure anywhere between create and delete — including a lookup that
+# returns an empty list — still removes the probe user (Codex P2).
+cleanup_probe() {
+  local pid
+  pid=$(curl -s --config "$HDR_FILE" "$API/users?username=$PROBE&exact=true" 2>/dev/null | jq -r '.[0].id // empty')
+  [ -n "$pid" ] && curl -s -X DELETE --config "$HDR_FILE" "$API/users/$pid" >/dev/null 2>&1
+  cleanup_hdr
+}
+trap cleanup_probe EXIT
 q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"]}}" >/dev/null
 PUID=$(q "$API/users?username=$PROBE&exact=true" | jq -r '.[0].id // empty')
-# Cleanup must survive a mid-probe failure: without the trap, a fail-closed
-# GET between create and delete would leave a synthetic user in the realm.
-trap 'curl -s -X DELETE -H "$AUTH" "$API/users/$PUID" >/dev/null 2>&1 || true' EXIT
+[ -n "$PUID" ] || { echo "ERROR: probe kullanıcı id'si çözülemedi" >&2; exit 3; }
 STORED=$(q "$API/users/$PUID" | jq -r --arg n "$ATTR" '.attributes[$n][0] // empty')
 q -X DELETE "$API/users/$PUID" >/dev/null
-trap - EXIT
+trap cleanup_hdr EXIT
 [ "$STORED" = "$PROBE_PHONE" ] \
   || { echo "ERROR: round-trip FAILED — yazılan '$PROBE_PHONE', okunan '$STORED'" >&2; exit 3; }
 

@@ -44,18 +44,31 @@ API="http://127.0.0.1:${KC_PORT}/admin/realms/${REALM}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' yok" >&2; exit 1; }; }
 need curl; need jq
 
-get_token() {
-  sudo docker exec "$KC" /opt/keycloak/bin/kcadm.sh config credentials \
-    --server http://localhost:8080 --realm master \
-    --user "$(sudo docker exec "$KC" sh -lc 'printf %s "$KEYCLOAK_ADMIN"')" \
-    --password "$(sudo docker exec "$KC" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"')" \
-    >/dev/null 2>&1
-  sudo docker exec "$KC" sh -lc 'cat ~/.keycloak/kcadm.config 2>/dev/null || cat /opt/keycloak/.keycloak/kcadm.config 2>/dev/null' \
-    | jq -r '.endpoints[]|.[].token // empty' | head -1
-}
-TOKEN="$(get_token)"; AUTH="Authorization: Bearer $TOKEN"; CT="Content-Type: application/json"
+# ── Credential-safe admin channel (Codex 019fb687 P1) ──────────────────
+# Neither the admin password nor the bearer token may appear in host argv:
+# a local process reading /proc/<pid>/cmdline would otherwise see them.
+#   * the password is streamed straight out of the container's secret file
+#     into curl's STDIN (`--data @-`) — it never lands in a shell variable
+#     and never crosses an argv boundary (the KC image has no curl of its
+#     own, so the request is made host-side over the loopback port);
+#   * the bearer header lives in a mode-0600 curl config file consumed with
+#     `--config`, so it never appears as a `-H` argument either.
+HDR_FILE="$(mktemp)"; chmod 600 "$HDR_FILE"
+trap 'rm -f "$HDR_FILE"' EXIT
+
+ADMIN_USER=$(sudo docker exec "$KC" sh -lc 'printf %s "$KEYCLOAK_ADMIN"')
+TOKEN=$( { printf 'grant_type=password&client_id=admin-cli&username=%s&password=' \
+             "$(printf %s "$ADMIN_USER" | jq -sRr @uri)"
+           sudo docker exec "$KC" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"' \
+             | tr -d '\n' | jq -sRr @uri
+         } | curl -sS --data @- "http://127.0.0.1:${KC_PORT}/realms/master/protocol/openid-connect/token" \
+           | jq -r '.access_token // empty')
+[ -n "$TOKEN" ] || { echo "ERROR: admin token alınamadı" >&2; exit 1; }
+printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$HDR_FILE"
+unset TOKEN
+CT="Content-Type: application/json"
 # Fail-closed REST: any 4xx/5xx aborts under set -e (Codex 019fb687 P1-3).
-q() { curl -sS --fail-with-body -H "$AUTH" "$@"; }
+q() { curl -sS --fail-with-body --config "$HDR_FILE" "$@"; }
 
 desired_shape() {
   cat <<JSON
