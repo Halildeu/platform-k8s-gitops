@@ -81,8 +81,20 @@ Tek tarafı döndürmek mint'i 401'e düşürür — belirti: SMS seçildiğinde
   1. Overlay'den `- activation/keycloak-sms-otp` satırını (ve auth-service
      env patch'indeki `SERVICE_CLIENT_KEYCLOAK_SMS_OTP_SECRET` bloğunu)
      kaldıran PR'ı merge et;
-  2. ArgoCD sync sonrası doğrula: `kubectl get externalsecret,svc,netpol
-     -n platform-test | grep sms-otp` → boş dönmeli;
+  2. ArgoCD sync sonrası beş exact kaynağın YOKLUĞUNU fail-closed doğrula
+     (isim-grep YETMEZ — NodePort adlarında "sms-otp" geçmez; context'siz
+     komut yanlış cluster'ı sorgulayabilir, hata da "boş çıktı" gibi okunur):
+     ```
+     kubectl --context k3d-test -n platform-test get \
+       externalsecret/auth-service-sms-otp-secret \
+       service/auth-service-nodeport \
+       service/notification-orchestrator-nodeport \
+       networkpolicy/allow-keycloak-sms-otp-to-auth-service \
+       networkpolicy/allow-keycloak-sms-otp-to-notification-orchestrator \
+       --ignore-not-found -o name
+     ```
+     Komut exit 0 VE çıktı tamamen boş olmalı; herhangi bir satır = o kaynak
+     hâlâ canlı (reconcile bekle ya da overlay revert'i doğrula);
   3. Compose'dan providers mount/secret satırlarını revert + JAR sil +
      `docker compose --profile manual up -d --force-recreate keycloak`.
   Acil pencerede stop-gap + kalıcı PR birlikte yürütülür; yalnız delete ile
