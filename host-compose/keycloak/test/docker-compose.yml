@@ -157,5 +157,12 @@ secrets:
     file: ./secrets/kc_admin_password.txt
   # gitops#3212 — seeded 2026-07-31, sha256[:12]=5a493ce8da7c, cross-side
   # match with Vault kv/platform/auth-service service_client_keycloak_sms_otp_secret.
+  #
+  # The file MUST be owned 1000:1000 mode 400 (same as its two siblings):
+  # docker carries the host ownership into the container verbatim, and a file
+  # the keycloak user (uid 1000) cannot read makes the entrypoint's
+  # `export X="$(cat ...)"` produce an EMPTY variable with no error — the SMS
+  # factor then reports itself unusable and the login dies with a misleading
+  # "Invalid username or password". See RB-kc-sms-otp.md.
   sms_otp_client_secret:
     file: ./secrets/sms_otp_client_secret.txt
