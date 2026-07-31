@@ -6891,6 +6891,15 @@ patches:
               # gitops#3212: blank/absent keeps the keycloak-sms-otp client
               # disabled in auth-service (fail-closed); core auth unaffected.
               optional: true
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          # gitops#3212: which service clients may request a one-shot MFA
+          # delivery grant. Empty (the default, and prod today) means the
+          # endpoint does not exist at all — being able to submit intents
+          # never implies being able to authorise a delivery to a number.
+          name: SECURITY_MFA_DELIVERY_GRANT_ALLOWED_CLIENTS
+          value: "keycloak-sms-otp"
   - target:
       kind: Deployment
       name: api-gateway
