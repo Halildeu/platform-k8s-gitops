@@ -189,11 +189,18 @@
           "type": "array", "minItems": 2, "maxItems": 2,
           "items": {
             "type": "object", "additionalProperties": false,
-            "required": ["component", "desiredDigest", "liveImageIdDigest"],
+            "required": ["component", "desiredDigest", "liveImageIdDigest", "verificationMode", "runtimeContentId"],
             "properties": {
               "component": {"enum": ["backend", "web"]},
               "desiredDigest": {"$ref": "#/$defs/sha256"},
-              "liveImageIdDigest": {"$ref": "#/$defs/sha256"}
+              "liveImageIdDigest": {"$ref": "#/$defs/sha256"},
+              "verificationMode": {"enum": ["direct-imageid-digest-v1", "cri-repo-digest-alias-v1"]},
+              "runtimeContentId": {
+                "oneOf": [
+                  {"type": "null"},
+                  {"$ref": "#/$defs/sha256"}
+                ]
+              }
             }
           }
         },

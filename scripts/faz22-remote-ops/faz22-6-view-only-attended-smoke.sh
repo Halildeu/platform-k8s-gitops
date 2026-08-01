@@ -27,6 +27,8 @@ K8S_CONTEXT="${K8S_CONTEXT:-k3d-test}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-platform-test}"
 REMOTE_BRIDGE_DEPLOYMENT="${REMOTE_BRIDGE_DEPLOYMENT:-endpoint-admin-remote-bridge}"
 FRONTEND_DEPLOYMENT="${FRONTEND_DEPLOYMENT:-frontend}"
+FRONTEND_REPOSITORY="${FRONTEND_REPOSITORY:-ghcr.io/halildeu/platform-web-frontend-testai}"
+FRONTEND_CRI_NODE_CONTAINER="${FRONTEND_CRI_NODE_CONTAINER:-k3d-test-server-0}"
 REMOTE_BRIDGE_LOCAL_PORT="${REMOTE_BRIDGE_LOCAL_PORT:-18096}"
 REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT="${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT:-18097}"
 EXPECTED_DIGEST="${EXPECTED_DIGEST:-}"
@@ -807,8 +809,9 @@ wait_for_viewer_end_metric() {
 
 capture_d30_snapshot() {
   local output="${EVIDENCE_DIR}/d30-snapshot.json" component deployment desired live
+  local runtime_binding="null" actual_ref expected_ref cri_images alias_result
   jq -n --arg capturedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{schemaVersion:"faz22.6-viewer-d30-raw-v1",capturedAt:$capturedAt,images:[]}' > "$output"
+    '{schemaVersion:"faz22.6-viewer-d30-raw-v2",capturedAt:$capturedAt,images:[]}' > "$output"
   for component in backend web; do
     case "$component" in
       backend) deployment="$REMOTE_BRIDGE_DEPLOYMENT" ;;
@@ -825,11 +828,48 @@ capture_d30_snapshot() {
       || fail_smoke "d30-${component}-desired-digest-missing"
     printf '%s' "$live" | grep -Eq '@sha256:[a-f0-9]{64}$' \
       || fail_smoke "d30-${component}-live-imageid-digest-missing-or-nonunique"
-    [[ "${desired##*@}" == "${live##*@}" ]] || fail_smoke "d30-${component}-digest-mismatch"
+
+    runtime_binding="null"
+    if [[ "${desired##*@}" != "${live##*@}" ]]; then
+      [[ "$component" == "web" ]] || fail_smoke "d30-${component}-digest-mismatch"
+      [[ "$desired" == "${FRONTEND_REPOSITORY}:"*"@${desired##*@}" ]] \
+        || fail_smoke "d30-web-desired-repository-mismatch"
+      command -v docker >/dev/null 2>&1 \
+        || fail_smoke "d30-web-cri-alias-docker-unavailable"
+      actual_ref="${live#docker-pullable://}"
+      expected_ref="${FRONTEND_REPOSITORY}@${desired##*@}"
+      cri_images="$(docker exec "$FRONTEND_CRI_NODE_CONTAINER" crictl images -o json)" \
+        || fail_smoke "d30-web-cri-image-inventory-unavailable"
+      alias_result="$(jq -c --arg actual "$actual_ref" --arg expected "$expected_ref" '
+        [
+          .images[]
+          | select((.repoDigests // []) | type == "array")
+          | select((.repoDigests // []) | index($actual) != null)
+          | select((.repoDigests // []) | index($expected) != null)
+        ] as $matches
+        | {
+            matchCount: ($matches | length),
+            contentId: (if ($matches | length) == 1 then $matches[0].id else null end)
+          }
+      ' <<<"$cri_images")" || fail_smoke "d30-web-cri-alias-query-failed"
+      [[ "$(jq -r '.matchCount' <<<"$alias_result")" == "1" ]] \
+        || fail_smoke "d30-web-cri-alias-not-unique"
+      jq -er '.contentId | select(test("^sha256:[a-f0-9]{64}$"))' \
+        <<<"$alias_result" >/dev/null \
+        || fail_smoke "d30-web-cri-alias-content-id-invalid"
+      runtime_binding="$(jq -c -n \
+        --arg expectedRepoDigest "$expected_ref" \
+        --arg observedRepoDigest "$actual_ref" \
+        --arg contentId "$(jq -r '.contentId' <<<"$alias_result")" \
+        '{kind:"cri-repo-digest-alias-v1", expectedRepoDigest:$expectedRepoDigest,
+          observedRepoDigest:$observedRepoDigest, contentId:$contentId}')"
+    fi
     jq --arg component "$component" --arg deployment "$deployment" \
       --arg desiredImage "$desired" --arg liveImageId "$live" \
+      --argjson runtimeBinding "$runtime_binding" \
       '.images += [{component:$component,deployment:$deployment,
-        desiredImage:$desiredImage,liveImageId:$liveImageId}]' \
+        desiredImage:$desiredImage,liveImageId:$liveImageId,
+        runtimeBinding:$runtimeBinding}]' \
       "$output" > "${output}.tmp"
     mv "${output}.tmp" "$output"
   done

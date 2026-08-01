@@ -188,6 +188,17 @@ fi
 # workflow inputs cannot provide an alternate origin, path, or query key.
 grep -Fq 'VIEWER_PRODUCT_BASE_URL: https://testai.acik.com' <<<"$browser_workflow_text"
 grep -Fq 'VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}"' "$SCRIPT"
+# A k3d import can expose a local imageID digest while the same CRI content
+# record also carries the canonical GHCR repository digest. The attended D30
+# gate may accept that case only for the fixed frontend repository, after a
+# unique same-record binding; every missing or ambiguous proof stays fatal.
+grep -Fq 'faz22.6-viewer-d30-raw-v2' "$SCRIPT"
+grep -Fq '[[ "$component" == "web" ]] || fail_smoke "d30-${component}-digest-mismatch"' "$SCRIPT"
+grep -Fq 'FRONTEND_REPOSITORY:-ghcr.io/halildeu/platform-web-frontend-testai' "$SCRIPT"
+grep -Fq 'select((.repoDigests // []) | index($actual) != null)' "$SCRIPT"
+grep -Fq 'select((.repoDigests // []) | index($expected) != null)' "$SCRIPT"
+grep -Fq 'd30-web-cri-alias-not-unique' "$SCRIPT"
+grep -Fq 'd30-web-cri-alias-content-id-invalid' "$SCRIPT"
 # shellcheck disable=SC2016 # Assert the workflow expression literally.
 if [[ "$(grep -A3 'name: Stage redacted collector diagnostic' "$BROWSER_WORKFLOW" \
     | grep -Fc 'if: ${{ always() }}')" != "1" ]]; then

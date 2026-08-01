@@ -995,8 +995,21 @@ def validate_d30(payload: dict[str, Any]) -> None:
     components = [image["component"] for image in images]
     if sorted(components) != ["backend", "web"]:
         raise EvidenceError("D30 evidence must contain exactly one backend and one web image")
-    if any(image["desiredDigest"] != image["liveImageIdDigest"] for image in images):
-        raise EvidenceError("D30 desired digest does not equal live imageID digest")
+    for image in images:
+        direct_match = image["desiredDigest"] == image["liveImageIdDigest"]
+        if image["verificationMode"] == "direct-imageid-digest-v1":
+            if not direct_match or image["runtimeContentId"] is not None:
+                raise EvidenceError("D30 direct imageID digest binding is invalid")
+            continue
+        if image["verificationMode"] != "cri-repo-digest-alias-v1":
+            raise EvidenceError("D30 verification mode is invalid")
+        if (
+            image["component"] != "web"
+            or direct_match
+            or not isinstance(image["runtimeContentId"], str)
+            or not SHA256.fullmatch(image["runtimeContentId"])
+        ):
+            raise EvidenceError("D30 CRI repository digest alias binding is invalid")
 
 
 def verify_sha256sums(files: dict[str, bytes], expected_names: set[str]) -> None:
