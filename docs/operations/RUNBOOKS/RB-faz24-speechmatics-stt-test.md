@@ -48,18 +48,19 @@ Activation is a separate GitOps commit after the backend image containing
 commit:
 
 1. Add `netpol-audio-gateway-speechmatics.yaml` to the TEST overlay resources.
-2. Patch `audio-gateway-config`:
-   - `AUDIO_GATEWAY_DIRECT_STT_PROVIDER=speechmatics`
-   - `AUDIO_GATEWAY_DIRECT_STT_TLS_ENABLED=false`
-   - `AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED=false`
-   - `AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL=`
-3. Keep `AUDIO_GATEWAY_SPEECHMATICS_ALLOW_INSECURE=false` and the endpoint
+2. Patch `audio-gateway-config` with
+   `AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS=internal,speechmatics`.
+   Keep `AUDIO_GATEWAY_DIRECT_STT_PROVIDER=internal` and do not change the
+   internal TLS or streaming settings. Speechmatics sessions use the bounded
+   REST chunk path; the server rejects their internal WebSocket attempt.
+3. Keep `AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_ALLOW_INSECURE=false` and the endpoint
    `wss://eu2.rt.speechmatics.com/v2`.
 4. Bump `audio-gateway.acik.com/direct-stt-enable-rev` so the pod re-reads both
    ConfigMap and Secret.
 
-Provider flip before key presence or image support is deliberately invalid.
-The application must fail startup; it must never fall back silently.
+Widening the selectable set before key presence or image support is
+deliberately invalid. The application must fail startup; it must never fall
+back silently.
 
 ## 4. Synthetic acceptance
 
@@ -80,9 +81,11 @@ CI, image build or deployment alone.
 
 ## 5. Rollback
 
-In GitOps, restore `AUDIO_GATEWAY_DIRECT_STT_PROVIDER=internal`, restore the
-internal TLS/streaming values, remove the Speechmatics egress policy from the
-TEST resources and bump the rollout annotation. Re-read the live pod env with
-secret values excluded, verify the internal mTLS target, and run the internal
-synthetic transcript smoke. Do not delete or rotate the provider key as part
-of application rollback; key lifecycle is a separate owner operation.
+In GitOps, restore
+`AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS=internal`, remove the
+Speechmatics egress policy from the TEST resources and bump the rollout
+annotation. The internal default, TLS and streaming settings do not change in
+this rollback. Re-read the live pod env with secret values excluded, verify the
+internal mTLS target, and run the internal synthetic transcript smoke. Do not
+delete or rotate the provider key as part of application rollback; key
+lifecycle is a separate owner operation.

@@ -79,7 +79,7 @@ spec:
             # Separate failure domain from Redis and direct-STT mTLS. The key is
             # optional while provider=internal; backend validation fails closed
             # if provider=speechmatics is selected before ESO has materialized it.
-            - name: AUDIO_GATEWAY_SPEECHMATICS_API_KEY
+            - name: AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: audio-gateway-speechmatics
