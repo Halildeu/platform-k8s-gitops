@@ -216,8 +216,8 @@ WITH ready AS (
       AND finalization.analysis_run_id::text = ready.doc->>'analysisRunId'), false)
       AS compatible,
     ready.tenant_id::text || '|' || ready.meeting_id::text || '|'
-      || ready.aggregate_id::text || '|' || ready.doc->>'finalizationVersion' || '|'
-      || ready.doc->>'analysisRunId' AS binding
+      || ready.aggregate_id::text || '|' || (ready.doc->>'finalizationVersion') || '|'
+      || (ready.doc->>'analysisRunId') AS binding
   FROM ready
   LEFT JOIN {schema}.transcript_finalizations AS finalization
     ON finalization.tenant_id = ready.tenant_id

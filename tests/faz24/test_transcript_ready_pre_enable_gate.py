@@ -243,7 +243,7 @@ def evidence(policy_path: Path, generated_at: str) -> dict:
             "gpuHost": {
                 "collected": True,
                 "observedAt": "2026-07-18T12:00:00Z",
-                "computerName": "DENETIM-PC",
+                "computerName": "SRB-AIDENETIMPC",
                 "platformAiCommit": AI_COMMIT,
                 "repoHeadCommit": AI_COMMIT,
                 "deploymentStateMatch": True,
@@ -618,6 +618,8 @@ class GateTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, sql)
+        self.assertIn("|| (ready.doc->>'finalizationVersion') || '|'", sql)
+        self.assertIn("|| (ready.doc->>'analysisRunId') AS binding", sql)
         for fragment in (
             "lower_uuid(decoded['analysisRunId'])",
             "lower_uuid(decoded['tenantId'])",
