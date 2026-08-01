@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,14 @@ CANONICAL_TARGET = "denetim-pc"
 CANONICAL_REPO_ROOT = r"C:\platform-ai"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
+
+
+class RemoteEvidenceUnavailable(ValueError):
+    """Metadata-safe remote transport failure without retaining raw output."""
+
+    def __init__(self, transport: dict[str, Any]) -> None:
+        super().__init__("remote evidence is unavailable")
+        self.transport = transport
 
 
 REMOTE_SCRIPT = r"""
@@ -576,6 +585,38 @@ def parse_evidence(stdout: str) -> dict[str, Any]:
     return evidence
 
 
+def classify_remote_stderr(stderr: str) -> str:
+    normalized = stderr.lower()
+    if not normalized:
+        return "none"
+    if "parsererror" in normalized or "fullyqualifiederrorid" in normalized:
+        return "powershell-parser-error"
+    if "connection timed out" in normalized or "connection refused" in normalized:
+        return "ssh-connect-failed"
+    if "connection to " in normalized and "closed" in normalized:
+        return "ssh-connection-closed"
+    if "nativecommanderror" in normalized:
+        return "powershell-native-command-error"
+    if "#< clixml" in normalized:
+        return "powershell-clixml"
+    return "unclassified"
+
+
+def transport_metadata(process: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    stdout = process.stdout or ""
+    stderr = process.stderr or ""
+    return {
+        "returnCode": int(process.returncode),
+        "evidenceMarkerCount": sum(
+            1 for line in stdout.splitlines() if line.startswith(EVIDENCE_MARKER)
+        ),
+        "stdoutBytes": len(stdout.encode("utf-8")),
+        "stderrBytes": len(stderr.encode("utf-8")),
+        "stderrClass": classify_remote_stderr(stderr),
+        "stderrSha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+    }
+
+
 def ssh_command(ssh_config: Path, known_hosts: Path) -> list[str]:
     return [
         "ssh",
@@ -633,7 +674,10 @@ def run_rollout(
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("remote rollout timed out") from exc
-    evidence = parse_evidence(process.stdout)
+    try:
+        evidence = parse_evidence(process.stdout)
+    except ValueError as exc:
+        raise RemoteEvidenceUnavailable(transport_metadata(process)) from exc
     return process.returncode, evidence
 
 
@@ -646,8 +690,13 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def failure_evidence(target_commit: str, failure_class: str) -> dict[str, Any]:
-    return {
+def failure_evidence(
+    target_commit: str,
+    failure_class: str,
+    *,
+    transport: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    evidence = {
         "schemaVersion": SCHEMA_VERSION,
         "status": "no-go",
         "targetCommit": target_commit,
@@ -680,6 +729,9 @@ def failure_evidence(target_commit: str, failure_class: str) -> dict[str, Any]:
             "secretMaterialIncluded": False,
         },
     }
+    if transport is not None:
+        evidence["transport"] = transport
+    return evidence
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -709,6 +761,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except RuntimeError:
         exit_code = 1
         evidence = failure_evidence(target_commit, "remote-rollout-timeout")
+    except RemoteEvidenceUnavailable as exc:
+        exit_code = 1
+        evidence = failure_evidence(
+            target_commit,
+            "remote-evidence-unavailable",
+            transport=exc.transport,
+        )
     except (OSError, ValueError):
         exit_code = 1
         evidence = failure_evidence(target_commit, "remote-evidence-unavailable")
