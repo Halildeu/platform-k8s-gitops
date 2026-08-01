@@ -1,0 +1,23 @@
+{
+  "schema_version": "faz35-deanonymization-surfaces-v1",
+  "note": "Redacted by construction: booleans, medians and counts only. No receipt, case or subject value appears here.",
+  "public_host": "etik.acik.com",
+  "existence_oracle": {
+    "status_indistinguishable": true,
+    "error_code_indistinguishable": true,
+    "timing": {
+      "samples_per_arm": 6,
+      "present_median_ms": 282.8,
+      "absent_median_ms": 282.3,
+      "median_delta_ms": 0.5,
+      "tolerance_ms": 40.0,
+      "within_tolerance": true
+    }
+  },
+  "metrics": {
+    "series_read": 17,
+    "identity_shaped_label_values": 0
+  },
+  "backup_identity_plaintext": "no_artifact_in_scope",
+  "accepted": true
+}
