@@ -66,8 +66,12 @@ grep -Fq "mv -Tf -- \"\${TLS_DIR}/current.new\" \"\${TLS_DIR}/current\"" \
   "${GW}/rotate-server-cert.sh" || fail "atomic cert/key activation missing"
 grep -Fq 'gateway reload failed; certificate pointer rolled back' \
   "${GW}/rotate-server-cert.sh" || fail "certificate reload rollback missing"
-grep -Fq 'vault token renew -format=json -increment=24h -self' \
+grep -Fq 'vault token renew -format=json -increment=24h' \
   "${GW}/rotate-server-cert.sh" || fail "scoped Vault token renewal missing"
+if grep -Fq 'vault token renew -format=json -increment=24h -self' \
+  "${GW}/rotate-server-cert.sh"; then
+  fail "unsupported Vault CLI -self flag present"
+fi
 # shellcheck disable=SC2016
 grep -Fq 'readonly VAULT_TRANSPORT="${VAULT_TRANSPORT:-https}"' \
   "${GW}/rotate-server-cert.sh" || fail "Vault transport selector missing"
