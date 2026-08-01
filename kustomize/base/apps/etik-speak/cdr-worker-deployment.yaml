@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ethics-cdr-worker
+  labels:
+    app.kubernetes.io/name: ethics-cdr-worker
+automountServiceAccountToken: false
+---
+# ES-104J (#2929) — the PDF lane's dedicated CDR worker.
+#
+# A third role for the same image, NOT more capacity for the same queue: this
+# deployment drains ONLY rows declared application/pdf, and the core evidence
+# worker drains only the rest. The point of the split is crash containment —
+# a hostile PDF that exhausts this pod leaves text reports, the mailbox and
+# the TXT/JPEG/PNG custody lane untouched, which is an explicit acceptance
+# criterion. Merging the lanes back into one worker undoes that isolation no
+# matter how generous its limits are.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ethics-cdr-worker
+  labels:
+    app.kubernetes.io/name: ethics-cdr-worker
+    app.kubernetes.io/component: worker
+spec:
+  # Overlay-activated, like every other Etik Speak workload.
+  replicas: 0
+  strategy:
+    # Same lease-contention reasoning as the core worker.
+    type: Recreate
+  selector:
+    matchLabels: {app.kubernetes.io/name: ethics-cdr-worker}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ethics-cdr-worker
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: etik-speak
+    spec:
+      serviceAccountName: ethics-cdr-worker
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: ethics-cdr-worker
+          image: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: management, containerPort: 8081, protocol: TCP}
+          envFrom:
+            # Order is the mechanism: the worker overrides land last and win.
+            - configMapRef: {name: ethics-service-config}
+            - configMapRef: {name: ethics-cdr-worker-config}
+            - secretRef: {name: ethics-service-secrets, optional: false}
+            # Same custody identity as the core worker: read quarantine, seal
+            # originals, publish derivatives — and never read a derivative back.
+            - secretRef: {name: ethics-evidence-worker-secrets, optional: false}
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70"
+          resources:
+            # Peak budget, bounded by config rather than hope: 25 MiB input +
+            # one rendered page raster (12M-pixel cap ≈ 48 MiB) + the growing
+            # flattened output + Spring baseline. The batch size is 3 and pages
+            # render one at a time, so 1536Mi holds the worst admitted case —
+            # the same OOM-livelock arithmetic that set the core worker's limit.
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: 1000m, memory: 1536Mi}
+          startupProbe:
+            httpGet: {path: /actuator/health, port: management}
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: management}
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: management}
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 512Mi}
+      terminationGracePeriodSeconds: 60

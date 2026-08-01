@@ -16,8 +16,11 @@ spec:
     # clamd dominates the memory line: it loads the whole signature database
     # into RSS, and a ceiling that merely looks generous gets it OOM-killed
     # during startup — which presents as a crash-loop with no scan ever run.
-    requests.cpu: "700m"
-    requests.memory: 3Gi
-    limits.cpu: "4500m"
-    limits.memory: 6Gi
-    pods: "10"
+    # ES-104J (#2929) budu: CDR iscisi +100m/+512Mi request, +1000m/+1536Mi
+    # limit, +1 pod (Recreate: surge yok). Olcumsuz buyutme degil — degerler
+    # cdr-worker-deployment.yaml'daki butcenin kendisi.
+    requests.cpu: "800m"
+    requests.memory: 3584Mi
+    limits.cpu: "5500m"
+    limits.memory: 7680Mi
+    pods: "11"

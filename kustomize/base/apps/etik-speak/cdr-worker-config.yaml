@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ethics-cdr-worker-config
+  labels:
+    app.kubernetes.io/name: ethics-cdr-worker
+data:
+  # ES-104J (#2929). Loaded AFTER ethics-service-config, exactly like the
+  # clamav-reference worker: these keys override the request-facing values and
+  # everything else (database, issuer, tenant, OpenFGA) stays identical.
+  # One image, three roles now — API, core-lane worker, PDF CDR worker.
+  ETHICS_EVIDENCE_PIPELINE_ENABLED: "true"
+  # The PDF lane, and only the PDF lane. Disjoint from the core worker's lane
+  # so a hostile PDF exhausts this deployment and nothing else — the #2860 OOM
+  # took the whole line down precisely because there was one lane.
+  ETHICS_EVIDENCE_PIPELINE_LANE: "pdf"
+  ETHICS_EVIDENCE_PROCESSOR_MODE: "pdf-cdr"
+  ETHICS_EVIDENCE_CLAMAV_HOST: "clamav"
+  ETHICS_EVIDENCE_CLAMAV_PORT: "3310"
+  ETHICS_EVIDENCE_PROCESSOR_TIMEOUT: "20s"
+  # CDR bomb ceilings. The pixel cap is per rendered page and is deliberately
+  # LOWER than the image lane's 40M: a 12M-pixel page raster is ~48 MiB, which
+  # bounds the peak alongside the 25 MiB input and the growing output document.
+  ETHICS_EVIDENCE_MAX_IMAGE_PIXELS: "12000000"
+  ETHICS_EVIDENCE_MAX_PDF_PAGES: "100"
+  ETHICS_EVIDENCE_PDF_RENDER_DPI: "150"
+  # Pinned tool identity, same discipline as the clamav-reference worker.
+  # Scanner = the clamav image deployed alongside (unchanged). Sanitizer and
+  # parser = the ethics-service image that carries the CDR renderer and its
+  # pinned PDFBox — the digest of the image THIS deployment runs, read back
+  # from the target cluster at promotion time. Human-readable labels are not
+  # accepted here (#2860): the processor refuses to run without sha256 values,
+  # so an unpinned deployment fails safe with EVIDENCE_TOOL_PROVENANCE_UNVERIFIED
+  # instead of producing derivatives with unverifiable provenance.
+  ETHICS_EVIDENCE_SCANNER_DIGEST: "sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
+  ETHICS_EVIDENCE_SANITIZER_DIGEST: "OVERLAY_MUST_OVERRIDE"
+  ETHICS_EVIDENCE_PARSER_DIGEST: "OVERLAY_MUST_OVERRIDE"
+  # Byte-for-byte clamd VERSION reply, same as the core worker — see the
+  # comment there for why a friendly label fails every scan.
+  ETHICS_EVIDENCE_RULES_VERSION: "ClamAV 1.4.3/27927/Sun Mar  1 07:24:39 2026"
+  ETHICS_EVIDENCE_TRANSFORM_PROFILE: "faz35-pdf-cdr-v1"
+  ETHICS_EVIDENCE_POLL_DELAY: "5s"
+  # PDFs are heavier per item than text/images; smaller batches keep the lease
+  # window honest under the render cost.
+  ETHICS_EVIDENCE_BATCH_SIZE: "3"
+  ETHICS_EVIDENCE_LEASE_DURATION: "4m"
+  ETHICS_EVIDENCE_RETRY_DELAY: "1m"
+  ETHICS_EVIDENCE_MAX_ATTEMPTS: "8"
+  # No traffic served; management port only, scraped by Prometheus.
+  SERVER_PORT: "8099"
+  MANAGEMENT_SERVER_PORT: "8081"
+  # Same division of labour as the core worker: delivery loops and Flyway
+  # belong to the request-facing deployment.
+  ETHICS_AUDIT_DELIVERY_ENABLED: "false"
+  ETHICS_NOTIFICATION_DELIVERY_ENABLED: "false"
+  SPRING_FLYWAY_ENABLED: "false"

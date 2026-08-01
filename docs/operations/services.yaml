@@ -218,11 +218,28 @@ services:
       test: enabled
       prod: deferred
 
+  - name: ethics-cdr-worker
+    repo: platform-backend
+    description: >-
+      Faz 35 ES-104J PDF CDR worker: renders quarantined PDFs to page rasters
+      and rebuilds them from scratch, recording disarmed active content in the
+      audit ledger. Same image as ethics-service on the pdf lane only, so a
+      hostile PDF exhausts this deployment and never the text/image lane.
+    jwt_validates: false   # serves no requests; no Service, no Ingress
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    environments:
+      test: enabled
+      prod: deferred
+
   - name: clamav
     repo: platform-k8s-gitops
     description: >-
       Malware gate for the evidence pipeline. Digest-pinned with definition
-      updates disabled, reachable only by ethics-evidence-worker.
+      updates disabled, reachable only by the two custody workers
+      (ethics-evidence-worker and ethics-cdr-worker).
     jwt_validates: false
     route_external: false
     workload_kind: Deployment

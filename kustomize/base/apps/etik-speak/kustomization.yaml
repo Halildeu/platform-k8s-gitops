@@ -7,6 +7,8 @@ resources:
   - ethics-service.yaml
   - evidence-worker-config.yaml
   - evidence-worker-deployment.yaml
+  - cdr-worker-config.yaml
+  - cdr-worker-deployment.yaml
   - clamav.yaml
   - public-service-account.yaml
   - public-deployment.yaml
