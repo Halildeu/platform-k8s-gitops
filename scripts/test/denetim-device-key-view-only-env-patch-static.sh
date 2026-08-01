@@ -677,7 +677,11 @@ grep -Fq 'trap rollback_on_failure EXIT' "$orchestrator" || {
   exit 1
 }
 grep -Fq 'CONSENT_TRUST_REFRESHED:cert=true,attestation=true' "$orchestrator" || {
-  echo "migration orchestrator must require session-bound broker attestation proof" >&2
+  echo "migration orchestrator must require session-bound consent cert/attestation proof" >&2
+  exit 1
+}
+grep -Fq 'DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified' "$orchestrator" || {
+  echo "migration orchestrator must separately require session-bound hardware-key device trust" >&2
   exit 1
 }
 # shellcheck disable=SC2016
@@ -807,13 +811,41 @@ JSON
 {"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"abc123","producer":{"kind":"browser-harness","toolVersion":"v3-ack-drain"},"binding":{"sessionSha256":"$session_sha"},"payload":{"pilotEndedAt":"2026-07-18T00:00:00Z","ackDrainCompleted":true,"ackDrainCutoffAt":"2026-07-18T00:00:00Z","ackDrainNonceSha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ackDrainClosureKind":"none","renderAckAcceptedCount":100,"renderAckAttemptedCount":100,"renderAckRejectedCount":0,"renderAckPendingCount":0}}
 JSON
   printf '\''session="%s" granted=true\n'\'' "$sid" >"$d/endpoint-agent-relevant.log"
-  printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n'\'' "$sid" >"$d/broker-relevant.log"
+  write_valid_broker_proof() {
+    local session_id="$1"
+    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n'\'' "$session_id" >"$d/broker-relevant.log"
+    printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n'\'' "$session_id" >>"$d/broker-relevant.log"
+  }
+  write_valid_broker_proof "$sid"
   validate_product_evidence "$d" "$sid" "$marker" >/dev/null
+  printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n'\'' "$sid" >"$d/broker-relevant.log"
+  if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
+    echo "orchestrator accepted broker evidence without consent cert/attestation refresh" >&2; exit 1
+  fi
+  for invalid_consent_refresh in \
+    "cert=false,attestation=true,device=false" \
+    "cert=true,attestation=false,device=false"; do
+    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:%s\n'\'' "$sid" "$invalid_consent_refresh" >"$d/broker-relevant.log"
+    printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n'\'' "$sid" >>"$d/broker-relevant.log"
+    if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
+      echo "orchestrator accepted invalid consent trust refresh: $invalid_consent_refresh" >&2; exit 1
+    fi
+  done
   printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n'\'' "$sid" >"$d/broker-relevant.log"
   if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
-    echo "orchestrator accepted broker evidence without real device-key verification" >&2; exit 1
+    echo "orchestrator accepted broker evidence without a hardware-key decision" >&2; exit 1
   fi
-  printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n'\'' "$sid" >"$d/broker-relevant.log"
+  for invalid_device_decision in \
+    "trusted=false,basis=NONE,effective_trusted=false,effective_basis=NONE,identity=true,reason=device-untrusted" \
+    "trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=false,effective_basis=NONE,identity=true,reason=hardware-key-attestation-verified" \
+    "trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=false,reason=hardware-key-attestation-verified"; do
+    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n'\'' "$sid" >"$d/broker-relevant.log"
+    printf '\''session=%s type=DEVICE_TRUST_DECISION:%s\n'\'' "$sid" "$invalid_device_decision" >>"$d/broker-relevant.log"
+    if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
+      echo "orchestrator accepted invalid hardware-key decision: $invalid_device_decision" >&2; exit 1
+    fi
+  done
+  write_valid_broker_proof "$sid"
   stale_marker="$d/stale-check-start"
   : >"$stale_marker"
   if validate_product_evidence "$d" "$sid" "$stale_marker" >/dev/null 2>&1; then
@@ -823,11 +855,11 @@ JSON
   if validate_product_evidence "$d" "rb-viewonly-attended-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$marker" >/dev/null 2>&1; then
     echo "orchestrator accepted wrong product session" >&2; exit 1
   fi
-  printf '\''session=rb-viewonly-attended-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n'\'' >"$d/broker-relevant.log"
+  write_valid_broker_proof "rb-viewonly-attended-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
     echo "orchestrator accepted wrong broker session" >&2; exit 1
   fi
-  printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n'\'' "$sid" >"$d/broker-relevant.log"
+  write_valid_broker_proof "$sid"
   jq '\''.payload.renderAckAcceptedCount = 99 | .payload.renderAckAttemptedCount = 100'\'' "$d/browser.json" >"$d/browser.tmp"
   mv "$d/browser.tmp" "$d/browser.json"
   if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
@@ -1025,7 +1057,8 @@ cat >"$EVIDENCE_DIR/browser.json" <<JSON
 {"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"$SOURCE_REVISION","producer":{"kind":"browser-harness","toolVersion":"v3-ack-drain"},"binding":{"sessionSha256":"$SESSION_SHA256"},"payload":{"pilotEndedAt":"2026-07-18T00:00:00Z","ackDrainCompleted":true,"ackDrainCutoffAt":"2026-07-18T00:00:00Z","ackDrainNonceSha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ackDrainClosureKind":"none","renderAckAcceptedCount":100,"renderAckAttemptedCount":100,"renderAckRejectedCount":0,"renderAckPendingCount":0}}
 JSON
 printf 'session="%s" granted=true\n' "$SESSION_ID" >"$EVIDENCE_DIR/endpoint-agent-relevant.log"
-printf 'session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n' "$SESSION_ID" >"$EVIDENCE_DIR/broker-relevant.log"
+printf 'session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n' "$SESSION_ID" >"$EVIDENCE_DIR/broker-relevant.log"
+printf 'session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n' "$SESSION_ID" >>"$EVIDENCE_DIR/broker-relevant.log"
 SH
 chmod +x "$orchestrator_harness/bin/product-proof"
 mkdir -p "$orchestrator_harness/product-evidence"
@@ -1040,8 +1073,8 @@ grep -Fq 'status=transaction-bound-product-attestation-verified' "$orchestrator_
   cat "$orchestrator_harness/success.out" >&2
   echo "orchestrator did not accept valid transaction-bound product proof" >&2; exit 1;
 }
-grep -Eq '^brokerProofLineSha256=[a-f0-9]{64}$' "$orchestrator_harness/success.out" || {
-  echo "orchestrator did not emit a non-empty broker proof-line digest" >&2; exit 1;
+grep -Eq '^brokerProofBundleSha256=[a-f0-9]{64}$' "$orchestrator_harness/success.out" || {
+  echo "orchestrator did not emit a non-empty composite broker proof digest" >&2; exit 1;
 }
 grep -Eq '^transactionBrokerProofSha256=[a-f0-9]{64}$' "$orchestrator_harness/success.out" || {
   echo "orchestrator did not bind the broker proof digest to the transaction" >&2; exit 1;
