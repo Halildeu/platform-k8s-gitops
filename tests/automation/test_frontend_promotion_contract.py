@@ -31,6 +31,9 @@ class FrontendPromotionContractTests(unittest.TestCase):
         cls.runtime_verifier = (
             ROOT / "scripts/deploy/verify-testai-frontend-runtime.sh"
         ).read_text()
+        cls.pod_digest_verifier = (
+            ROOT / "scripts/deploy/verify-pod-digest.sh"
+        ).read_text()
         cls.overlay_inspector = (
             ROOT / "scripts/automation/test-overlay-frontend-image.py"
         ).read_text()
@@ -98,6 +101,18 @@ class FrontendPromotionContractTests(unittest.TestCase):
             self.runtime_verifier,
         )
         self.assertIn("--connect-timeout 10 --max-time 30", self.runtime_verifier)
+
+    def test_frontend_cri_digest_alias_requires_unique_same_record_binding(self):
+        self.assertIn(
+            'FRONTEND_REPOSITORY="ghcr.io/halildeu/platform-web-frontend-testai"',
+            self.runtime_verifier,
+        )
+        self.assertIn("--expected-repository", self.runtime_verifier)
+        self.assertIn("--cri-node-container", self.runtime_verifier)
+        self.assertIn('actualMatches: ($matches | length)', self.pod_digest_verifier)
+        self.assertIn('"${actual_matches}" != "1"', self.pod_digest_verifier)
+        self.assertIn('"${expected_matches}" != "1"', self.pod_digest_verifier)
+        self.assertNotIn("--expected-repository", self.verify)
 
     def test_live_quota_preflight_runs_immediately_before_argocd(self):
         preflight = "bash scripts/deploy/preflight-testai-frontend-rollout.sh"

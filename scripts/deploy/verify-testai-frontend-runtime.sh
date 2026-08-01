@@ -6,6 +6,8 @@ K8S_NAMESPACE="platform-test"
 K8S_DEPLOYMENT="frontend"
 K8S_SELECTOR="app.kubernetes.io/name=frontend"
 TESTAI_URL="https://testai.acik.com"
+FRONTEND_REPOSITORY="ghcr.io/halildeu/platform-web-frontend-testai"
+CRI_NODE_CONTAINER="${FRONTEND_CRI_NODE_CONTAINER:-k3d-test-server-0}"
 EXPECTED_DIGEST=""
 EXPECTED_SHA=""
 EXPECTED_SHORT_SHA=""
@@ -63,7 +65,9 @@ if [[ "$RUN_CLUSTER" == "true" ]]; then
     --context "$K8S_CONTEXT" \
     --namespace "$K8S_NAMESPACE" \
     --selector "$K8S_SELECTOR" \
-    --expected-digest "$EXPECTED_DIGEST"
+    --expected-digest "$EXPECTED_DIGEST" \
+    --expected-repository "$FRONTEND_REPOSITORY" \
+    --cri-node-container "$CRI_NODE_CONTAINER"
 fi
 
 if [[ "$RUN_PUBLIC" == "true" ]]; then
