@@ -405,6 +405,17 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             report["status"] = "fail"
             return 1, report
 
+        start_session_body = {
+            "meetingId": meeting_id,
+            "deviceId": args.device_id,
+            "language": args.language,
+            "audioFormat": args.audio_format,
+            "sampleRateHz": args.sample_rate_hz,
+            "channels": args.channels,
+        }
+        if args.stt_provider:
+            start_session_body["sttProvider"] = args.stt_provider
+
         ok, step, response = _http_request(
             base_url=args.base_url,
             token=token,
@@ -412,14 +423,7 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             path="/api/v1/audio-gateway/sessions",
             expected_statuses={200, 201},
             timeout_seconds=args.timeout_seconds,
-            json_body={
-                "meetingId": meeting_id,
-                "deviceId": args.device_id,
-                "language": args.language,
-                "audioFormat": args.audio_format,
-                "sampleRateHz": args.sample_rate_hz,
-                "channels": args.channels,
-            },
+            json_body=start_session_body,
             headers={"Idempotency-Key": _idempotency("faz24-start")},
         )
         step["name"] = "start_session"
@@ -519,6 +523,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--capture-id")
     parser.add_argument("--device-id", default="codex-faz24-smoke")
     parser.add_argument("--language", default="tr")
+    parser.add_argument("--stt-provider", choices=("internal", "speechmatics"))
     parser.add_argument("--audio-format", default="WAV")
     parser.add_argument("--sample-rate-hz", type=int, default=16000)
     parser.add_argument("--channels", type=int, default=1)

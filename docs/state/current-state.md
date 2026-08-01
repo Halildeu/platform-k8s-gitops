@@ -117,6 +117,31 @@ TEST seçilebilir kümesini `internal,speechmatics` yapar. Bu flip exact pod
 rollout'u ve sentetik Türkçe transkript read-back'i görülmeden işlevsel kabul
 sayılmaz.
 
+`gitops#3270` merge commit'i
+`57a1207cbb525b982f49bc5e3b38557a658628db` sonrasında `platform-test` exact
+revision'da `Synced/Healthy/Succeeded` oldu. Audio-gateway `v8` rollout'u tek
+podda `Ready=true`, restart `0`, actuator `UP` ve immutable
+`sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe`
+imageID read-back'i verdi. Canlı ConfigMap varsayılanı `internal` tutarken
+seçilebilir kümeyi `internal,speechmatics` gösterdi; ExternalSecret yine
+`Ready=True/SecretSynced` ve hedef Secret yalnız `api-key` anahtar adıyla
+mevcuttu.
+
+Exact `4663ccade81650128846f2a4f307895157449de7` smoke helper adayıyla üretilen
+6.588 saniyelik sentetik, mono 16 kHz PCM16 Türkçe kayıt; public TEST yolunda
+meeting `201`, consent `201`, `sttProvider=speechmatics` session `201`, chunk
+`200`, finish `200` ve terminal status `FINISHED` verdi. Aynı session için
+canonical Redis stream'de `speechmatics-realtime-v2` / `speechmatics-saas`,
+Türkçe iki `DRAFT` ve iki `UTTERANCE` event'i okundu; beklenen sentetik toplantı
+gündemi ve test aksiyonu metni mevcuttu. Keycloak direct grants eski `false`
+değerine döndü, geçici kullanıcı silindi ve token dosyası kaldırıldı. Bu kanıt
+Vault/ESO, provider seçimi ve Speechmatics transkripsiyon kapılarını geçirir.
+İlk doğrulanmamış ürün kapısı meeting-service recording-lifecycle eşlemesidir:
+transcript-service aynı meeting/session için `PENDING` association oluşturdu,
+DLQ eşleşmesi `0` kaldı, fakat canonical session id henüz çözülmediği için
+kalıcı transcript segmenti oluşmadı. Karar/aksiyon tüketimi ve exact masaüstü
+paketi bu eşleme geçmeden kabul edilmez.
+
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
 Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.

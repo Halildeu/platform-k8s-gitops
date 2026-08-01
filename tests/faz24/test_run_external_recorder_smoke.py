@@ -49,6 +49,7 @@ def _valid_token() -> str:
 class _SmokeHandler(BaseHTTPRequestHandler):
     calls = []
     bearer_seen = False
+    session_stt_provider = None
 
     def log_message(self, *_args):  # pragma: no cover - keeps test output clean.
         return
@@ -103,6 +104,7 @@ class _SmokeHandler(BaseHTTPRequestHandler):
         if self.path == "/api/v1/audio-gateway/sessions":
             body = self._read_json()
             assert body["meetingId"] == "22222222-2222-4222-8222-222222222222"
+            type(self).session_stt_provider = body.get("sttProvider")
             assert self.headers["Idempotency-Key"].startswith("faz24-start-")
             self._write(
                 201,
@@ -249,6 +251,7 @@ class _UnsafeSessionIdHandler(_SmokeHandler):
 def _serve(handler_cls):
     handler_cls.calls = []
     handler_cls.bearer_seen = False
+    handler_cls.session_stt_provider = None
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -299,6 +302,7 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
     assert report["boundaries"]["directClientToStt"] is False
     assert report["boundaries"]["computePlaneAuditProven"] is False
     assert _SmokeHandler.bearer_seen is True
+    assert _SmokeHandler.session_stt_provider is None
     assert _SmokeHandler.calls == [
         ("POST", "/api/v1/admin/meetings"),
         ("POST", "/api/v1/audio-gateway/consents"),
@@ -307,6 +311,38 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
         ("POST", "/api/v1/audio-gateway/sessions/SES-test-1/finish"),
         ("GET", "/api/v1/audio-gateway/sessions/SES-test-1/status"),
     ]
+
+
+def test_external_recorder_smoke_carries_explicit_speechmatics_provider(tmp_path):
+    token_file = tmp_path / "token.jwt"
+    token_file.write_text(_valid_token(), encoding="utf-8")
+    server = _serve(_SmokeHandler)
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--token-file",
+                str(token_file),
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--timeout-seconds",
+                "3",
+                "--stt-provider",
+                "speechmatics",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    finally:
+        server.shutdown()
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode == 0
+    assert report["status"] == "pass"
+    assert _SmokeHandler.session_stt_provider == "speechmatics"
 
 
 def test_output_file_is_written_with_owner_only_permissions(tmp_path):

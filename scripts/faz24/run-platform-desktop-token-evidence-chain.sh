@@ -31,6 +31,7 @@ SESSION_EXPIRY_METRICS_BASE_URL="${SESSION_EXPIRY_METRICS_BASE_URL:-}"
 SESSION_EXPIRY_EXPECTED_IMAGE="${SESSION_EXPIRY_EXPECTED_IMAGE:-}"
 SESSION_EXPIRY_POD_UID="${SESSION_EXPIRY_POD_UID:-}"
 SMOKE_CHUNK_FILE="${SMOKE_CHUNK_FILE:-}"
+SMOKE_STT_PROVIDER="${SMOKE_STT_PROVIDER:-}"
 SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
 SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
 SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
@@ -63,6 +64,12 @@ fi
 
 if [[ "${KC_REALM}" != "platform-test" ]]; then
   echo "ERROR: KC_REALM must be platform-test for this test-only evidence chain" >&2
+  exit 2
+fi
+if [[ -n "${SMOKE_STT_PROVIDER}" \
+    && "${SMOKE_STT_PROVIDER}" != "internal" \
+    && "${SMOKE_STT_PROVIDER}" != "speechmatics" ]]; then
+  echo "ERROR: SMOKE_STT_PROVIDER must be internal or speechmatics" >&2
   exit 2
 fi
 if [[ "${KC_ADMIN_TRANSPORT}" != "rest" ]]; then
@@ -1141,6 +1148,9 @@ run_token_contract_and_smoke() {
     )
     if [[ -n "${SMOKE_CHUNK_FILE}" ]]; then
       smoke_args+=(--chunk-file "${SMOKE_CHUNK_FILE}")
+    fi
+    if [[ -n "${SMOKE_STT_PROVIDER}" ]]; then
+      smoke_args+=(--stt-provider "${SMOKE_STT_PROVIDER}")
     fi
 
     set +e
