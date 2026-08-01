@@ -514,8 +514,12 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
+        # 2026-08-01 (backend#1047, gitops#3240): this exact image adds the
+        # immutable per-session internal|speechmatics provider contract. The
+        # rendered config below still keeps internal as the default, while
+        # selectable provider validation and missing credentials fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:e06f757ffa5ed279358f319d113e7975ebacdfacfc1255d8bec4f3a92a789602",
+        "sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe",
     )
     pod_annotation(
         meeting_deploy,
