@@ -989,7 +989,26 @@ images:
     # the privileged flow now runs mfa-otp-form, which reads the attribute, so
     # the value is honoured rather than stored as a restriction no code obeys.
     # Digest read back from a real host-lane pull + node-imported.
-    digest: sha256:464dda21a3b84fde67da592dbf9eb1214614775e8ed3869e8b24baf062907b93
+    #
+    # 2026-08-01 bump: sha-6f2dd31 — platform-backend#1055 (gitops#3291). Adds
+    # `username` to the users list payload, so the grid can say which LOGIN a
+    # row belongs to. Until gitops#3245 every username was an e-mail address and
+    # `email` doubled as the login identity by coincidence; renaming the
+    # operator accounts to plain handles turned that into a real gap. V18 caches
+    # it in `users.kc_username`, refreshed from Keycloak on a TTL — fail-open, so
+    # a Keycloak outage costs a stale column rather than a broken grid.
+    # Also adds `sessionTimeoutMinutes` to the sort allow-list, which was
+    # missing: an unlisted field is dropped in silence (rows still return, in the
+    # default order), so that column's sort had never done anything.
+    #
+    # Pullability proven BEFORE pinning, as the 2026-07-24 entry above demands:
+    # a throwaway pod in platform-test carrying the ghcr-pull secret and pinned
+    # to this exact digest reached Succeeded, and reported back
+    #   imageID = ghcr.io/halildeu/platform-backend-user-service@sha256:79ce988e…
+    # so the kubelet resolved it for real. (`ctr` on the node cannot: it
+    # authenticates anonymously and gets 401 from this private package — which is
+    # why a direct node pull is not the right test here.)
+    digest: sha256:79ce988ea2fa597b89a72c4061f20749ca6e4cce756e5d8b0aa60d949d99a3fd
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
