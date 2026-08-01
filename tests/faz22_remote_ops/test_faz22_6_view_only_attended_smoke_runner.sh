@@ -188,6 +188,12 @@ fi
 # workflow inputs cannot provide an alternate origin, path, or query key.
 grep -Fq 'VIEWER_PRODUCT_BASE_URL: https://testai.acik.com' <<<"$browser_workflow_text"
 grep -Fq 'VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}"' "$SCRIPT"
+# The product browser is the only viewer. A post-browser raw SSE probe can
+# observe frames after the durable VIEW_STOP and invalidate the audit order.
+if grep -Fq 'probe_viewer' "$SCRIPT" || grep -Fq 'viewer-sse.body' "$SCRIPT"; then
+  echo "attended smoke must not open a second raw viewer after browser evidence" >&2
+  exit 1
+fi
 # A k3d import can expose a local imageID digest while the same CRI content
 # record also carries the canonical GHCR repository digest. The attended D30
 # gate may accept that case only for the fixed frontend repository, after a

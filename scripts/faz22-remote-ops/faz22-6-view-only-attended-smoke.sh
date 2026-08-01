@@ -88,7 +88,6 @@ OPERATOR_REST_READY_INTERVAL_SECONDS="${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}
 # 404 while that verified peer is absent; wait only for that exact state.
 OPEN_SESSION_DEVICE_READY_SECONDS="${OPEN_SESSION_DEVICE_READY_SECONDS:-180}"
 OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS="${OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS:-5}"
-VIEWER_PROBE_SECONDS="${VIEWER_PROBE_SECONDS:-8}"
 BROWSER_EVIDENCE_SCRIPT="${BROWSER_EVIDENCE_SCRIPT:-}"
 AUTH_ROUTE_PREFLIGHT_ONLY="${AUTH_ROUTE_PREFLIGHT_ONLY:-0}"
 VIEWER_PRODUCT_BASE_URL="${VIEWER_PRODUCT_BASE_URL:-https://testai.acik.com}"
@@ -147,7 +146,6 @@ duress_signal_code=""
 operation_code=""
 negative_nonpilot_code=""
 close_code=""
-viewer_code=""
 transport_pushed="false"
 consent_wait="missing"
 session_hash=""
@@ -312,7 +310,6 @@ validate_inputs() {
     || (( OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS < 1 || OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS > 10 )); then
     fail_smoke "open-session-device-ready-interval-invalid"
   fi
-  [[ "$VIEWER_PROBE_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "viewer-probe-seconds-invalid"
   if [[ -n "$BROWSER_EVIDENCE_SCRIPT" ]]; then
     [[ -r "$BROWSER_EVIDENCE_SCRIPT" ]] || fail_smoke "browser-evidence-script-not-readable"
     [[ "$VIEWER_PRODUCT_BASE_URL" == "https://testai.acik.com" ]] \
@@ -1122,26 +1119,6 @@ wait_for_consent() {
   done
 }
 
-probe_viewer() {
-  local operator_base="$1"
-  set +e
-  printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\r\n' < "$OPERATOR_TOKEN_FILE")" \
-    | curl --config - \
-      --silent --show-error --no-buffer --max-time "$VIEWER_PROBE_SECONDS" \
-      --output "${EVIDENCE_DIR}/viewer-sse.body" \
-      --write-out '%{http_code}' \
-      "${operator_base}/sessions/${SESSION_ID}/view" \
-      > "${EVIDENCE_DIR}/viewer-sse.body.code"
-  local rc=$?
-  set -e
-  viewer_code="$(tr -d '\r\n[:space:]' < "${EVIDENCE_DIR}/viewer-sse.body.code" 2>/dev/null || true)"
-  # curl returns 28 when the SSE stream stays open until --max-time; that is
-  # acceptable if the HTTP status was 200 and frame/audit evidence is present.
-  if [[ "$rc" != "0" && "$rc" != "28" ]]; then
-    echo "WARN viewer probe curl exit=${rc}" > "${EVIDENCE_DIR}/viewer-sse.warn"
-  fi
-}
-
 run_browser_evidence() {
   if [[ -z "$BROWSER_EVIDENCE_SCRIPT" ]]; then
     [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" != "1" ]] \
@@ -1354,7 +1331,6 @@ write_summary() {
     --arg consentWait "$consent_wait" \
     --arg operationKind "$operation_kind" \
     --argjson operationDeny "$operation_deny" \
-    --arg viewerCode "$viewer_code" \
     --argjson transportPushed "$transport_pushed" \
     --argjson brokerSignals "$broker_signals" \
     --arg catalog "$([[ -f "${EVIDENCE_DIR}/catalog.body.code" ]] && cat "${EVIDENCE_DIR}/catalog.body.code" || true)" \
@@ -1387,7 +1363,6 @@ write_summary() {
         operation: $operation,
         close: $close,
         "negative-nonpilot": $negativeNonpilot,
-        "viewer-sse": $viewerCode
       },
       duressSignal: {
         source: "operator-session",
@@ -1697,7 +1672,9 @@ main() {
   run_browser_evidence
   wait_for_viewer_end_metric
   sleep "$FRAME_WAIT_SECONDS"
-  probe_viewer "$operator_base"
+  # The product browser is the sole viewer for this attended session. Opening a
+  # second raw SSE probe here can receive a frame after the browser has already
+  # committed VIEW_STOP, making the otherwise valid hash-chain fail closed.
   collect_broker_logs
   build_frame_flow_summary
   collect_endpoint_log || fail_smoke "endpoint-agent-consent-log-missing"
