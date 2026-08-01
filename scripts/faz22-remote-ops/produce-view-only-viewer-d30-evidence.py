@@ -19,7 +19,7 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
     snapshot = common.VERIFIER.load_json_bytes(raw, "d30-snapshot.json")
     if set(snapshot) != {"schemaVersion", "capturedAt", "images"}:
         raise common.VERIFIER.EvidenceError("D30 snapshot field set mismatch")
-    if snapshot["schemaVersion"] != "faz22.6-viewer-d30-raw-v1":
+    if snapshot["schemaVersion"] != "faz22.6-viewer-d30-raw-v2":
         raise common.VERIFIER.EvidenceError("D30 snapshot schema mismatch")
     common.VERIFIER.parse_utc(snapshot["capturedAt"], "D30 capturedAt")
     images = snapshot["images"]
@@ -30,7 +30,7 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
     seen = set()
     for image in images:
         if not isinstance(image, dict) or set(image) != {
-            "component", "deployment", "desiredImage", "liveImageId"
+            "component", "deployment", "desiredImage", "liveImageId", "runtimeBinding"
         }:
             raise common.VERIFIER.EvidenceError("D30 image field set mismatch")
         component = image["component"]
@@ -39,10 +39,41 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
         seen.add(component)
         desired = common.image_digest(image["desiredImage"], f"{component} desired image")
         live = common.image_digest(image["liveImageId"], f"{component} live imageID")
-        if desired != live:
-            raise common.VERIFIER.EvidenceError(f"D30 {component} desired/live digest mismatch")
+        runtime_binding = image["runtimeBinding"]
+        verification_mode = "direct-imageid-digest-v1"
+        runtime_content_id = None
+        if desired == live:
+            if runtime_binding is not None:
+                raise common.VERIFIER.EvidenceError(
+                    f"D30 {component} direct digest match must not carry a runtime binding"
+                )
+        else:
+            if component != "web" or not isinstance(runtime_binding, dict) or set(runtime_binding) != {
+                "kind", "expectedRepoDigest", "observedRepoDigest", "contentId"
+            }:
+                raise common.VERIFIER.EvidenceError(
+                    f"D30 {component} desired/live digest mismatch is not CRI-bound"
+                )
+            expected_ref = f"ghcr.io/halildeu/platform-web-frontend-testai@{desired}"
+            observed_ref = image["liveImageId"].removeprefix("docker-pullable://")
+            if runtime_binding["kind"] != "cri-repo-digest-alias-v1":
+                raise common.VERIFIER.EvidenceError("D30 web runtime binding kind mismatch")
+            if runtime_binding["expectedRepoDigest"] != expected_ref:
+                raise common.VERIFIER.EvidenceError("D30 web expected repository digest mismatch")
+            if runtime_binding["observedRepoDigest"] != observed_ref:
+                raise common.VERIFIER.EvidenceError("D30 web observed repository digest mismatch")
+            runtime_content_id = runtime_binding["contentId"]
+            if not isinstance(runtime_content_id, str) or not common.VERIFIER.SHA256.fullmatch(
+                runtime_content_id
+            ):
+                raise common.VERIFIER.EvidenceError("D30 web runtime content ID is invalid")
+            verification_mode = "cri-repo-digest-alias-v1"
         payload_images.append({
-            "component": component, "desiredDigest": desired, "liveImageIdDigest": live,
+            "component": component,
+            "desiredDigest": desired,
+            "liveImageIdDigest": live,
+            "verificationMode": verification_mode,
+            "runtimeContentId": runtime_content_id,
         })
     if seen != set(expected_deployments):
         raise common.VERIFIER.EvidenceError("D30 component set mismatch")

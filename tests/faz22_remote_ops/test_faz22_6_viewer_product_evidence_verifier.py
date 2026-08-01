@@ -398,8 +398,8 @@ def child_documents():
             "d30-verifier",
             {
                 "images": [
-                    {"component": "backend", "desiredDigest": sha("a"), "liveImageIdDigest": sha("a")},
-                    {"component": "web", "desiredDigest": sha("b"), "liveImageIdDigest": sha("b")},
+                    {"component": "backend", "desiredDigest": sha("a"), "liveImageIdDigest": sha("a"), "verificationMode": "direct-imageid-digest-v1", "runtimeContentId": None},
+                    {"component": "web", "desiredDigest": sha("b"), "liveImageIdDigest": sha("b"), "verificationMode": "direct-imageid-digest-v1", "runtimeContentId": None},
                 ],
                 "snapshotSha256": sha("c"),
             },
@@ -1308,7 +1308,26 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             self.verify(FakeClient(build_archive(children=children)))
         children = child_documents()
         children["d30"]["payload"]["images"][0]["liveImageIdDigest"] = sha("f")
-        with self.assertRaisesRegex(VERIFIER.EvidenceError, "desired digest"):
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "direct imageID"):
+            self.verify(FakeClient(build_archive(children=children)))
+
+    def test_web_cri_alias_requires_mismatch_and_content_identity(self):
+        children = child_documents()
+        web = children["d30"]["payload"]["images"][1]
+        web.update({
+            "liveImageIdDigest": sha("f"),
+            "verificationMode": "cri-repo-digest-alias-v1",
+            "runtimeContentId": sha("e"),
+        })
+        self.verify(FakeClient(build_archive(children=children)))
+
+        children = child_documents()
+        web = children["d30"]["payload"]["images"][1]
+        web.update({
+            "verificationMode": "cri-repo-digest-alias-v1",
+            "runtimeContentId": sha("e"),
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "CRI repository"):
             self.verify(FakeClient(build_archive(children=children)))
 
     def test_secret_or_raw_identifier_shape_fails_hygiene(self):
