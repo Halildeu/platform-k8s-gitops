@@ -10,8 +10,9 @@
 #      is PUT back to this exact shape and the live shape is re-read — a
 #      pre-existing loose client (say with direct-access enabled) must not
 #      inherit the credential.
-#   2. Its service account holds EXACTLY realm-management `view-users` +
-#      `manage-users`. Missing roles are granted, EXTRA roles are REMOVED,
+#   2. Its service account holds EXACTLY realm-management `view-users`,
+#      `manage-users` and `view-events`. Missing roles are granted, EXTRA
+#      roles are REMOVED,
 #      and the final set is re-read and verified before any secret leaves
 #      Keycloak — a leaked secret must not be able to touch clients, realm
 #      config or any other admin surface.
@@ -84,7 +85,7 @@ desired_shape() {
   "directAccessGrantsEnabled": false,
   "redirectUris": [],
   "webOrigins": [],
-  "description": "gitops#3211 panel MFA proxy — realm-management view-users+manage-users ONLY"
+  "description": "gitops#3211 panel MFA proxy — realm-management view-users+manage-users+view-events ONLY"
 }
 JSON
 }
@@ -113,10 +114,23 @@ for check in \
 done
 echo "client shape verified"
 
-# 2) service-account roles — EXACT set {view-users, manage-users} (P1-2)
+# 2) service-account roles — EXACT set (P1-2)
+#
+# `view-events` added 2026-08-01 (gitops#3297). `users.last_login` is fed only
+# by the legacy password login that Keycloak OIDC replaced, so it had never
+# been written for any row; Keycloak's LOGIN events are the remaining source
+# and reading them is 403 without this role.
+#
+# Proportionality, since this set is deliberately exact and prunes extras:
+# `view-events` is READ-ONLY over the realm event log, while this account
+# already holds `manage-users` — it can already reset anyone's credentials and
+# rewrite their attributes. A login timestamp is strictly less than that. The
+# alternative, a second client scoped to events, would add another secret to
+# seed, mirror through ESO and rotate — real cost for isolation that
+# `manage-users` already makes moot.
 SA_UID=$(q "$API/clients/$CID/service-account-user" | jq -r .id)
 RM_CID=$(q "$API/clients?clientId=realm-management" | jq -r '.[0].id')
-for role in view-users manage-users; do
+for role in view-users manage-users view-events; do
   HAS=$(q "$API/users/$SA_UID/role-mappings/clients/$RM_CID" | jq -r --arg r "$role" '.[]?|select(.name==$r).name // empty')
   if [ -z "$HAS" ]; then
     ROLE_JSON=$(q "$API/clients/$RM_CID/roles/$role")
@@ -127,14 +141,14 @@ for role in view-users manage-users; do
   fi
 done
 EXTRA_JSON=$(q "$API/users/$SA_UID/role-mappings/clients/$RM_CID" \
-  | jq '[.[] | select(.name != "view-users" and .name != "manage-users")]')
+  | jq '[.[] | select(.name != "view-users" and .name != "manage-users" and .name != "view-events")]')
 if [ "$(echo "$EXTRA_JSON" | jq length)" != "0" ]; then
   echo "$EXTRA_JSON" | jq -r '.[].name' | sed 's/^/role REMOVING (least-privilege): /'
   printf '%s' "$EXTRA_JSON" | q -X DELETE "$API/users/$SA_UID/role-mappings/clients/$RM_CID" -H "$CT" -d @- >/dev/null
 fi
 # Re-read; the exact final set gates the seed (missing AND extra covered).
 FINAL=$(q "$API/users/$SA_UID/role-mappings/clients/$RM_CID" | jq -r '[.[].name] | sort | join(",")')
-[ "$FINAL" = "manage-users,view-users" ] \
+[ "$FINAL" = "manage-users,view-events,view-users" ] \
   || { echo "ERROR: rol kümesi exact değil ('$FINAL') — secret seed edilmedi" >&2; exit 3; }
 echo "role set exact: $FINAL"
 
