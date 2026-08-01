@@ -41,13 +41,14 @@ remote_access_bridge_viewer_render_ack_rejected_total {rejected}.0
 remote_access_bridge_viewer_started_total 1.0
 """.encode()
     frame = {
-        "schemaVersion": "faz22.6-viewer-frame-flow-raw-v1",
+        "schemaVersion": "faz22.6-viewer-frame-flow-raw-v2",
         "observedAt": "2026-07-14T00:05:00Z",
         "binding": binding,
         "firstSeq": 0,
         "lastSeq": 104,
         "firstObservedAtEpochMillis": 1783987500000,
         "firstDeliveredAtEpochMillis": 1783987500000,
+        "lastDeliveredAtEpochMillis": 1783987500104,
         "lastObservedAtEpochMillis": 1783987500104,
         "producedSequenceCount": 105,
         "brokerReceivedDistinctCount": 105,
@@ -163,6 +164,36 @@ class ViewerBrokerEvidenceProducerTest(unittest.TestCase):
         )
         self.assertEqual(105, child["payload"]["states"]["brokerReceived"])
         self.assertEqual(100, child["payload"]["states"]["viewerRendered"])
+
+    def test_accepts_post_disconnect_frame_dropped_after_view_stop(self):
+        child = PRODUCER.produce(
+            RuntimeClient(
+                frame_overrides={
+                    "lastDeliveredAtEpochMillis": 1783987500103,
+                    "lastObservedAtEpochMillis": 1783987561000,
+                    "dispositions": {"DELIVERED": 104, "DROPPED_NO_VIEWER": 1},
+                },
+            ),
+            fixtures.VERIFIER.EXPECTED_REPOSITORY,
+            fixtures.SOURCE_RUN_IDS["browser"],
+            fixtures.HEAD_SHA,
+        )
+        self.assertEqual(105, child["payload"]["states"]["brokerReceived"])
+
+    def test_rejects_delivery_after_view_stop(self):
+        with self.assertRaisesRegex(
+                PRODUCER.common.VERIFIER.EvidenceError, "last broker-delivered frame"):
+            PRODUCER.produce(
+                RuntimeClient(
+                    frame_overrides={
+                        "lastDeliveredAtEpochMillis": 1783987561000,
+                        "lastObservedAtEpochMillis": 1783987561000,
+                    },
+                ),
+                fixtures.VERIFIER.EXPECTED_REPOSITORY,
+                fixtures.SOURCE_RUN_IDS["browser"],
+                fixtures.HEAD_SHA,
+            )
 
     def test_rejects_broker_restart_during_pilot(self):
         with self.assertRaisesRegex(PRODUCER.common.VERIFIER.EvidenceError, "process restarted"):

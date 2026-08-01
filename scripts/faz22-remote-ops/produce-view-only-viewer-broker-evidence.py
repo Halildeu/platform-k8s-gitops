@@ -99,7 +99,7 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
     frame = load_strict(frame_raw, "frame-flow-summary.json", {
         "schemaVersion", "observedAt", "binding", "firstSeq", "lastSeq",
         "firstObservedAtEpochMillis", "firstDeliveredAtEpochMillis",
-        "lastObservedAtEpochMillis",
+        "lastDeliveredAtEpochMillis", "lastObservedAtEpochMillis",
         "producedSequenceCount", "brokerReceivedDistinctCount", "sequenceGapCount",
         "dispositions", "rawLogSha256",
     })
@@ -111,7 +111,7 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
         "hashChainVerified", "framesDelivered", "framesRenderAcknowledged",
         "recordingMode", "contentPersisted", "contentStorageWrites",
     })
-    if frame["schemaVersion"] != "faz22.6-viewer-frame-flow-raw-v1":
+    if frame["schemaVersion"] != "faz22.6-viewer-frame-flow-raw-v2":
         raise common.VERIFIER.EvidenceError("frame-flow summary schema mismatch")
     if audit["schemaVersion"] != "faz22.6-viewer-audit-raw-v1":
         raise common.VERIFIER.EvidenceError("audit summary schema mismatch")
@@ -133,8 +133,8 @@ def produce(client: object, repository: str, browser_run_id: int, head_sha: str)
     ).timestamp() * 1000)
     if start_millis > frame["firstDeliveredAtEpochMillis"]:
         raise common.VERIFIER.EvidenceError("audit VIEW_START follows first broker delivery")
-    if stop_millis < frame["lastObservedAtEpochMillis"]:
-        raise common.VERIFIER.EvidenceError("audit VIEW_STOP precedes last broker frame")
+    if stop_millis < frame["lastDeliveredAtEpochMillis"]:
+        raise common.VERIFIER.EvidenceError("audit VIEW_STOP precedes last broker-delivered frame")
 
     captured = frame["producedSequenceCount"]
     received = frame["brokerReceivedDistinctCount"]
