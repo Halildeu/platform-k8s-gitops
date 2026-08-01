@@ -6,6 +6,7 @@ set -euo pipefail
 TEST_CONTEXT="${TEST_CONTEXT:-k3d-test}"
 TEST_NAMESPACE="${TEST_NAMESPACE:-platform-test}"
 TESTAI_URL="${TESTAI_URL:-https://testai.acik.com}"
+CRI_NODE_CONTAINER="${BACKEND_CRI_NODE_CONTAINER:-k3d-test-server-0}"
 REVISION="${REVISION:-${GITHUB_SHA:-}}"
 DIGEST_MAP="${DIGEST_MAP:-}"
 REPORT_PATH="${REPORT_PATH:-}"
@@ -165,7 +166,9 @@ for spec in "${SERVICE_SPECS[@]}"; do
     --context "$TEST_CONTEXT" \
     --namespace "$TEST_NAMESPACE" \
     --selector "app.kubernetes.io/name=${selector}" \
-    --expected-digest "$digest"
+    --expected-digest "$digest" \
+    --expected-repository "ghcr.io/halildeu/platform-backend-${service}" \
+    --cri-node-container "$CRI_NODE_CONTAINER"
 done
 
 CURRENT_GATE="public-edge"

@@ -124,6 +124,15 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertNotIn("was superseded by main", self.reconcile)
         self.assertIn("verify-testai-backend-runtime.sh", self.verify)
         self.assertIn("verify-pod-digest.sh", self.runtime)
+        self.assertIn(
+            'CRI_NODE_CONTAINER="${BACKEND_CRI_NODE_CONTAINER:-k3d-test-server-0}"',
+            self.runtime,
+        )
+        self.assertIn(
+            '--expected-repository "ghcr.io/halildeu/platform-backend-${service}"',
+            self.runtime,
+        )
+        self.assertIn('--cri-node-container "$CRI_NODE_CONTAINER"', self.runtime)
 
     def test_runtime_acceptance_uses_protected_p5_persona_and_semantic_map_fence(self):
         self.assertIn("environment: testai-product-acceptance", self.verify)
