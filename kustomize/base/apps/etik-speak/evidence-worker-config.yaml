@@ -25,6 +25,10 @@ data:
   # A decompression-bomb ceiling: a small file can still declare an enormous
   # canvas, and decoding it is what exhausts the worker.
   ETHICS_EVIDENCE_MAX_IMAGE_PIXELS: "40000000"
+  # ES-104K dilim 2 (#2930): HEIC decode'u yapan digest-pinli donusturucu. URL
+  # YALNIZ bu worker'da — API JVM'i ve pdf seridi donusturucuye hic ulasamaz
+  # (orada anahtar yok = fail-closed; NetPol de ayni siniri agda cizer).
+  ETHICS_EVIDENCE_HEIC_CONVERTER_URL: "http://heic-converter:9000"
   # Pinned scanner identity. The digest is the clamav image actually deployed
   # alongside this worker; the rules version is the definition set baked into
   # that image, because freshclam updates are disabled (no internet egress).

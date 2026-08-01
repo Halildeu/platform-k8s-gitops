@@ -49,6 +49,11 @@ images:
     # tuval kapisi. Digest gercek pull ile (smoke-dig-wp).
     # Onceki: sha-866dc21 @ sha256:bda8303d89bfa34b7...
     digest: sha256:ad6e28eb380bf16619b45795d7b396b71c27fc46a11d6861b1422055d30bbeb4
+  # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
+  # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
+  # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
+  - name: docker.io/h2non/imaginary
+    digest: sha256:7facb4221047a5e79b9e902f380247f4e5bf4376400d0badbeb738d3e1c2f654
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -187,6 +192,14 @@ patches:
         path: /data/ETHICS_EVIDENCE_PARSER_DIGEST
         value: sha256:147950e79079926735e21424a65c468f938ed828e08ae31645aea3f81792a0de
   - target: {kind: Deployment, name: clamav}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+  - target: {kind: Deployment, name: heic-converter}
     patch: |-
       - op: replace
         path: /spec/replicas

@@ -234,6 +234,22 @@ services:
       test: enabled
       prod: deferred
 
+  - name: heic-converter
+    repo: platform-k8s-gitops
+    description: >-
+      ES-104K HEIC decode assistance for the evidence pipeline. Third-party
+      (imaginary/libvips), digest-pinned, single purpose; reachable only from
+      the core-lane evidence worker and initiates nothing. Its output is never
+      a derivative — the worker re-encodes in-JVM.
+    jwt_validates: false
+    route_external: false
+    workload_kind: Deployment
+    runtime_class: third-party
+    probe_contract: exempt
+    environments:
+      test: enabled
+      prod: deferred
+
   - name: clamav
     repo: platform-k8s-gitops
     description: >-

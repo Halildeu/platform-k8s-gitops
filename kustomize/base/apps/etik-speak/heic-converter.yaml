@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: heic-converter
+  labels:
+    app.kubernetes.io/name: heic-converter
+automountServiceAccountToken: false
+---
+# ES-104K dilim 2 (#2930) — HEIC decode assistance, the clamav discipline applied
+# to images: a third-party, digest-pinned, single-purpose box the workers hand
+# bytes to. It initiates nothing (egress denied by NetworkPolicy; -enable-url-source
+# is off so it cannot be asked to fetch either), and its answer is never trusted as
+# a derivative — the worker re-encodes it in-JVM. The choice was verified
+# empirically before adoption: imaginary 1.2.4 (libvips 8.10 + libheif) converted a
+# real Apple-encoded HEIC on the target host (HTTP 200, PNG magic) on 2026-08-01.
+apiVersion: v1
+kind: Service
+metadata:
+  name: heic-converter
+  labels:
+    app.kubernetes.io/name: heic-converter
+spec:
+  selector:
+    app.kubernetes.io/name: heic-converter
+  ports:
+    - {name: http, port: 9000, targetPort: 9000, protocol: TCP}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heic-converter
+  labels:
+    app.kubernetes.io/name: heic-converter
+    app.kubernetes.io/component: converter
+spec:
+  # Overlay-activated, like every other Etik Speak workload.
+  replicas: 0
+  strategy:
+    # Stateless and single-replica in the test cell; Recreate keeps the rollout
+    # peak at one pod, which is what the quota arithmetic pins.
+    type: Recreate
+  selector:
+    matchLabels: {app.kubernetes.io/name: heic-converter}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: heic-converter
+        app.kubernetes.io/component: converter
+        app.kubernetes.io/part-of: etik-speak
+    spec:
+      serviceAccountName: heic-converter
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: heic-converter
+          image: docker.io/h2non/imaginary:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          args:
+            # No URL fetching: the converter answers only what is POSTed to it.
+            - -enable-url-source=false
+          ports:
+            - {name: http, containerPort: 9000, protocol: TCP}
+          resources:
+            # A phone photo decodes to tens of megabytes of raster at most; the
+            # worker's own response ceiling (maxBytes*4) bounds what it will read
+            # back, and this budget bounds what a hostile input can spend here.
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 300m, memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 15
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+      terminationGracePeriodSeconds: 15

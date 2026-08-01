@@ -19,8 +19,11 @@ spec:
     # ES-104J (#2929) budu: CDR iscisi +100m/+512Mi request, +1000m/+1536Mi
     # limit, +1 pod (Recreate: surge yok). Olcumsuz buyutme degil — degerler
     # cdr-worker-deployment.yaml'daki butcenin kendisi.
-    requests.cpu: "800m"
-    requests.memory: 3584Mi
-    limits.cpu: "5500m"
-    limits.memory: 7680Mi
-    pods: "11"
+    # ES-104K dilim 2 budu: heic-converter +50m/+64Mi request, +300m/+256Mi
+    # limit, +1 pod (Recreate). Degerler heic-converter.yaml'daki butcenin
+    # kendisi — olcumsuz buyutme degil.
+    requests.cpu: "850m"
+    requests.memory: 3648Mi
+    limits.cpu: "5800m"
+    limits.memory: 7936Mi
+    pods: "12"
