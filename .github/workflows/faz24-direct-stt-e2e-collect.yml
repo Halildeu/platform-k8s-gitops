@@ -50,6 +50,14 @@ on:
         options:
           - "PCM16"
         default: "PCM16"
+      stt_provider:
+        description: "Explicit STT provider exercised by the recorder smoke"
+        required: true
+        type: choice
+        options:
+          - "internal"
+          - "speechmatics"
+        default: "internal"
       sample_rate_hz:
         description: "Sample rate header for the fixture"
         required: true
@@ -96,6 +104,7 @@ jobs:
           REDIS_CONTAINER_INPUT: ${{ inputs.redis_container }}
           CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}
           AUDIO_FORMAT_INPUT: ${{ inputs.audio_format }}
+          STT_PROVIDER_INPUT: ${{ inputs.stt_provider }}
           SAMPLE_RATE_HZ_INPUT: ${{ inputs.sample_rate_hz }}
           CHANNELS_INPUT: ${{ inputs.channels }}
           PROBE_TIMEOUT_INPUT: ${{ inputs.probe_timeout }}
@@ -158,6 +167,7 @@ jobs:
             "redis_container=${REDIS_CONTAINER_INPUT}" \
             "chunk_file=${CHUNK_FILE_INPUT}" \
             "audio_format=${AUDIO_FORMAT_INPUT}" \
+            "stt_provider=${STT_PROVIDER_INPUT}" \
             "sample_rate_hz=${SAMPLE_RATE_HZ_INPUT}" \
             "channels=${CHANNELS_INPUT}" \
             "probe_timeout=${PROBE_TIMEOUT_INPUT}"; do
@@ -173,12 +183,19 @@ jobs:
           require_name redis_container "${REDIS_CONTAINER_INPUT}"
           require_path chunk_file "${CHUNK_FILE_INPUT}"
           test "${AUDIO_FORMAT_INPUT}" = "PCM16"
+          case "${STT_PROVIDER_INPUT}" in
+            internal|speechmatics) ;;
+            *)
+              echo "::error::stt_provider must be internal or speechmatics"
+              exit 1
+              ;;
+          esac
           printf '%s' "${SAMPLE_RATE_HZ_INPUT}" | grep -Eq '^[1-9][0-9]{3,5}$'
           printf '%s' "${CHANNELS_INPUT}" | grep -Eq '^[1-2]$'
           printf '%s' "${PROBE_TIMEOUT_INPUT}" | grep -Eq '^[1-9][0-9]*$'
           test "${PROBE_TIMEOUT_INPUT}" -le 120
 
-          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${KUBE_CONTEXT_INPUT}${NAMESPACE_INPUT}${DEPLOYMENT_INPUT}${REDIS_CONTAINER_INPUT}${CHUNK_FILE_INPUT}${AUDIO_FORMAT_INPUT}${SAMPLE_RATE_HZ_INPUT}${CHANNELS_INPUT}${PROBE_TIMEOUT_INPUT}"
+          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${KUBE_CONTEXT_INPUT}${NAMESPACE_INPUT}${DEPLOYMENT_INPUT}${REDIS_CONTAINER_INPUT}${CHUNK_FILE_INPUT}${AUDIO_FORMAT_INPUT}${STT_PROVIDER_INPUT}${SAMPLE_RATE_HZ_INPUT}${CHANNELS_INPUT}${PROBE_TIMEOUT_INPUT}"
           if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |Authorization:|eyJ[A-Za-z0-9_-]+\.'; then
             echo "::error::inputs must not contain token/private/secret-like material"
             exit 1
@@ -191,6 +208,7 @@ jobs:
         id: prepare_chunk
         env:
           CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}
+          STT_PROVIDER_INPUT: ${{ inputs.stt_provider }}
           SAMPLE_RATE_HZ_INPUT: ${{ inputs.sample_rate_hz }}
           CHANNELS_INPUT: ${{ inputs.channels }}
         run: |
@@ -199,6 +217,9 @@ jobs:
           if [ -r "${CHUNK_FILE_INPUT}" ]; then
             chunk_file="${CHUNK_FILE_INPUT}"
             fixture_source="input"
+          elif [ "${STT_PROVIDER_INPUT}" = "speechmatics" ]; then
+            echo "::error::speechmatics smoke requires a readable privacy-safe speech fixture"
+            exit 1
           else
             chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"
             fixture_source="generated"
@@ -249,6 +270,7 @@ jobs:
           CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"
           SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}
           SMOKE_AUDIO_FORMAT: ${{ inputs.audio_format }}
+          SMOKE_STT_PROVIDER: ${{ inputs.stt_provider }}
           SMOKE_SAMPLE_RATE_HZ: ${{ inputs.sample_rate_hz }}
           SMOKE_CHANNELS: ${{ inputs.channels }}
         run: |
