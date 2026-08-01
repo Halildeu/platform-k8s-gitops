@@ -1008,7 +1008,20 @@ images:
     # so the kubelet resolved it for real. (`ctr` on the node cannot: it
     # authenticates anonymously and gets 401 from this private package — which is
     # why a direct node pull is not the right test here.)
-    digest: sha256:79ce988ea2fa597b89a72c4061f20749ca6e4cce756e5d8b0aa60d949d99a3fd
+    #
+    # 2026-08-01 bump: sha-574f9e4 — platform-backend#1057 (gitops#3297).
+    # `users.last_login` had never been written for ANY row: it is fed only by
+    # `AuthService.login()`, the legacy password endpoint that Keycloak OIDC
+    # replaced, so the panel's "Son Giriş" column has been empty since the
+    # migration. The reconcile now also reads Keycloak LOGIN events. The write
+    # advances only, guarded in SQL — Keycloak forgets events past its 7-day
+    # retention, so an unguarded write would erase a timestamp that is still
+    # true for anyone whose last sign-in has aged out.
+    #
+    # Pullability proven before pinning (2026-07-24 entry above): a throwaway
+    # pod with the ghcr-pull secret pinned to this digest reached Succeeded and
+    # reported imageID = …@sha256:331f7926…
+    digest: sha256:331f79262d49d0374c8e53f6c0d4567b1f88704b16685bfa73eed22790a3a579
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
