@@ -211,6 +211,29 @@ class RunnerContractTests(unittest.TestCase):
         parsed = runner.parse_evidence(f"{runner.EVIDENCE_MARKER}{encoded}\n")
         self.assertEqual(parsed["targetCommit"], COMMIT)
 
+    def test_missing_marker_retains_only_metadata_safe_transport_diagnostics(self) -> None:
+        completed = runner.subprocess.CompletedProcess(
+            args=[],
+            returncode=255,
+            stdout="",
+            stderr="Connection to fixed-host closed by remote host\n",
+        )
+        with patch.object(runner.subprocess, "run", return_value=completed):
+            with self.assertRaises(runner.RemoteEvidenceUnavailable) as raised:
+                runner.run_rollout(
+                    target_commit=COMMIT,
+                    ssh_config=Path("/ssh/config"),
+                    known_hosts=Path("/ssh/known_hosts"),
+                    timeout_seconds=1200,
+                )
+
+        transport = raised.exception.transport
+        self.assertEqual(transport["returnCode"], 255)
+        self.assertEqual(transport["evidenceMarkerCount"], 0)
+        self.assertEqual(transport["stderrClass"], "ssh-connection-closed")
+        self.assertEqual(len(transport["stderrSha256"]), 64)
+        self.assertNotIn("closed by remote host", json.dumps(transport))
+
     def test_multiple_evidence_markers_are_rejected(self) -> None:
         encoded = base64.b64encode(b"{}").decode()
         output = (
@@ -233,6 +256,22 @@ class RunnerContractTests(unittest.TestCase):
         self.assertFalse(evidence["privacy"]["rawAudioIncluded"])
         self.assertFalse(evidence["privacy"]["transcriptTextIncluded"])
         self.assertFalse(evidence["privacy"]["secretMaterialIncluded"])
+
+    def test_failure_evidence_can_include_redacted_transport_metadata(self) -> None:
+        transport = {
+            "returnCode": 1,
+            "evidenceMarkerCount": 0,
+            "stdoutBytes": 0,
+            "stderrBytes": 12,
+            "stderrClass": "powershell-parser-error",
+            "stderrSha256": "a" * 64,
+        }
+        evidence = runner.failure_evidence(
+            COMMIT,
+            "remote-evidence-unavailable",
+            transport=transport,
+        )
+        self.assertEqual(evidence["transport"], transport)
 
 
 class VerifierContractTests(unittest.TestCase):

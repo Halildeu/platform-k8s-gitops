@@ -2,7 +2,7 @@
 
 > **Issue:** `platform-k8s-gitops#2610`
 > **Ortam:** yalnız `k3d-test` + `platform-test` + `denetim-pc`
-> **Durum (2026-07-20):** `tracked-pending`; ready consumer default-off
+> **Durum (2026-08-01):** exact TEST tuple authorized; ready consumer permit'e kadar default-off
 > **Mutation sınırı:** §4-§5 read-only'dir. §6 yalnız TEST Vault'ta owner-gated
 > dedicated Transit key/policy/token oluşturur. §8 imzalama yapar; Kubernetes,
 > backend veya Windows runtime'ını kendi başına değiştirmez.
@@ -25,11 +25,13 @@ imageID allowlist'i + PostgreSQL `NOT NULL` şemasıyla ve consumer'ın evidence
 olmadan açılamayacağını exact platform-ai commit/startup-script allowlist'iyle
 bağlar. Bu bağlardan biri yoksa sayaçlar sıfır olsa bile sonuç `REJECTED` olur.
 
-Bugünkü repo policy'sinde iki allowlist de bilinçli olarak boştur ve
-`currentBoundary.enableAuthorized=false` değerindedir. Mevcut backend fixture'ı
-`analysisRunId:null`, mevcut finalization şemasında `analysis_run_id` yok ve
-Windows startup permit guard'ı bulunmuyor. Bu nedenle bugünkü doğru sonuç
-`tracked-pending`; consumer açılmaz.
+Repo policy'si exact backend commit/image, dört typed evidence artifact'i ve
+exact platform-ai startup guard tuple'ını allowlist'e alır. Live metadata
+read-back'i finalization `analysis_run_id UUID NOT NULL`, sıfır legacy/malformed
+inventory, 55/55 occurrence binding eşleşmesi ve 268/268 tam Redis taraması
+gösterir. `currentBoundary.enableAuthorized=true` yalnız fresh candidate permit
+üretimine izin verir; Vault-imzalı permit, pinned trust root ve startup read-back
+olmadan consumer açılmaz.
 
 ## 2. Kanıt Sınırı
 

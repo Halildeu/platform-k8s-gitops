@@ -420,16 +420,30 @@ class GateTests(unittest.TestCase):
         self.assertEqual(8, verdict["binding"]["evidenceAgeSeconds"])
         self.assertTrue(all(item["remediation"] == "" for item in verdict["checks"]))
 
-    def test_committed_empty_allowlists_keep_gate_closed(self) -> None:
-        blocked = json.loads(
+    def test_committed_authorization_still_fails_closed_on_each_missing_gate(self) -> None:
+        committed = json.loads(
             (
                 ROOT / "config/faz24-transcript-ready-pre-enable-policy.v1.json"
             ).read_text(encoding="utf-8")
         )
-        failed = self.failed_names(policy_value=blocked)
-        self.assertIn("approved_producer_capability", failed)
-        self.assertIn("approved_host_startup_guard", failed)
-        self.assertIn("policy_enable_boundary", failed)
+        self.assertEqual(len(committed["producerCapabilities"]), 1)
+        self.assertEqual(len(committed["hostStartupGuards"]), 1)
+        self.assertIs(committed["currentBoundary"]["enableAuthorized"], True)
+
+        cases = (
+            ("producerCapabilities", [], "approved_producer_capability"),
+            ("hostStartupGuards", [], "approved_host_startup_guard"),
+            (
+                "currentBoundary",
+                {"enableAuthorized": False, "reason": "test-rejection"},
+                "policy_enable_boundary",
+            ),
+        )
+        for field, replacement, expected_check in cases:
+            with self.subTest(field=field):
+                blocked = copy.deepcopy(self.policy)
+                blocked[field] = replacement
+                self.assertIn(expected_check, self.failed_names(policy_value=blocked))
 
     def test_missing_or_nullable_analysis_run_column_fails(self) -> None:
         for key in (
@@ -630,6 +644,11 @@ class GateTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, collector.REDIS_LUA)
+
+    def test_schema_contract_normalizes_postgres_server_address_to_host(self) -> None:
+        sql = collector.schema_sql("public")
+        self.assertIn("COALESCE(host(inet_server_addr()), '')", sql)
+        self.assertNotIn("inet_server_addr()::text", sql)
 
     def test_postgres_ready_classification_must_be_exhaustive(self) -> None:
         value = copy.deepcopy(self.evidence)
