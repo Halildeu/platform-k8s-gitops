@@ -148,15 +148,13 @@ class FrontendImagePinTests(unittest.TestCase):
         path = Path(tmp.name) / "kustomization.yaml"
         path.write_text(fixture(), encoding="utf-8")
         inspected = MODULE.inspect_contract_file(path)
+        self.assertEqual("1", inspected["rollout"]["replicas"])
+        self.assertEqual("1", inspected["rollout"]["max_surge"])
+        self.assertEqual("0", inspected["rollout"]["max_unavailable"])
         self.assertEqual(
-            {
-                "replicas": "1",
-                "max_surge": "1",
-                "max_unavailable": "0",
-                "progress_deadline_seconds": "300",
-            },
-            inspected["rollout"],
+            "300", inspected["rollout"]["progress_deadline_seconds"]
         )
+        self.assertRegex(inspected["rollout"]["patch_sha256"], r"^[a-f0-9]{64}$")
 
     def test_rollout_fingerprint_detects_legacy_strategy(self):
         current = MODULE.inspect_rollout_contract(fixture())
@@ -164,6 +162,22 @@ class FrontendImagePinTests(unittest.TestCase):
             fixture(max_surge=0, max_unavailable=1, progress_deadline=None)
         )
         self.assertNotEqual(current, legacy)
+
+    def test_rollout_fingerprint_detects_annotation_only_change(self):
+        current = MODULE.inspect_rollout_contract(fixture())
+        updated_text = fixture().replace(
+            "      - op: replace\n"
+            "        path: /spec/strategy/rollingUpdate/maxSurge\n",
+            "      - op: add\n"
+            "        path: /spec/template/metadata/annotations\n"
+            "        value:\n"
+            "          faz22.acik.com/d30-cache-reconcile: retry\n"
+            "      - op: replace\n"
+            "        path: /spec/strategy/rollingUpdate/maxSurge\n",
+            1,
+        )
+        updated = MODULE.inspect_rollout_contract(updated_text)
+        self.assertNotEqual(current["patch_sha256"], updated["patch_sha256"])
 
 
 if __name__ == "__main__":

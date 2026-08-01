@@ -31,6 +31,9 @@ class FrontendPromotionContractTests(unittest.TestCase):
         cls.runtime_verifier = (
             ROOT / "scripts/deploy/verify-testai-frontend-runtime.sh"
         ).read_text()
+        cls.overlay_inspector = (
+            ROOT / "scripts/automation/test-overlay-frontend-image.py"
+        ).read_text()
 
     def test_dispatch_path_has_no_direct_workload_mutation(self):
         forbidden = re.compile(r"kubectl\s+(set\s+image|patch|edit)")
@@ -78,6 +81,7 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertIn("--expected-sha", self.verify)
         self.assertIn("sourceRevision", self.verify)
         self.assertIn("frontend image/rollout contract", self.verify)
+        self.assertIn('"patch_sha256"', self.overlay_inspector)
 
     def test_cluster_and_public_verification_keep_explicit_trust_boundaries(self):
         self.assertIn("runs-on: [self-hosted, aiserver, testai-deploy]", self.verify)
