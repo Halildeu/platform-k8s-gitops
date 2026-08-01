@@ -1,0 +1,48 @@
+name: Faz 22.6 refresh TEST device CA CRL
+
+on:
+  schedule:
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-6-refresh-test-device-ca-crl
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh signed public CRL and restart startup-time consumer
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Reconcile TEST device CA CRL
+        env:
+          RECEIPT_PATH: ${{ runner.temp }}/faz22-device-ca-crl-refresh/receipt.json
+        run: bash scripts/faz22-remote-ops/refresh-device-ca-crl-test.sh
+
+      - name: Upload public refresh receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-device-ca-crl-refresh-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-device-ca-crl-refresh/receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish public summary
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/faz22-device-ca-crl-refresh/receipt.json"
+          {
+            echo "## Faz 22.6 TEST device CA CRL"
+            echo
+            echo "- Changed: \`$(jq -r .changed "$receipt")\`"
+            echo "- CRL: \`$(jq -r .publicCrlSha256 "$receipt")\`"
+            echo "- nextUpdate: \`$(jq -r .nextUpdate "$receipt")\`"
+            echo "- Broker: \`$(jq -r .deployment "$receipt")\`"
+          } >> "$GITHUB_STEP_SUMMARY"

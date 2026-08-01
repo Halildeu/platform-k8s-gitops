@@ -964,7 +964,18 @@ images:
     # comes from the user-scoped role-mapping lists, never a realm-wide role
     # read — the service account stays at view-users + manage-users.
     # Digest read back from a real host-lane pull + node-imported.
-    digest: sha256:ddb00064a0b84ed0e0f4da436ef7d7d8c8ae1dfb7946aecb4d21dae1e1449112
+    #
+    # 2026-08-01 bump: sha-5c7421c — platform-backend#1042 (gitops#3232) adds
+    # PUT /api/v1/users/{id}/mfa/methods and returns allowedMethods[] from the
+    # GET. It is what makes the panel's method checkboxes do anything: the
+    # frontend carrying them (sha-162872b) shipped in gitops#3249, and without
+    # this digest those boxes would post to a route the service does not map.
+    # Semantics worth keeping in view: an absent or empty list means
+    # unrestricted, so every existing account keeps every lane it already had,
+    # and an unknown method is refused rather than stored — a typo must not be
+    # able to narrow an allow-list down to nothing anybody recognises.
+    # Digest read back from a real host-lane pull (RepoDigests) + node-imported.
+    digest: sha256:a60f5830776a053935791c23c7265784d46aa0796b6b8a0ac6e7ef41e905c247
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -4776,7 +4787,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: 313ecd3536024b62bd0a6e91c9c8090e0be6b8dc
+    # sourceRevision: 162872b10c622ee6d1ce459a643af54baf36a61f
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -4794,7 +4805,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-313ecd3
+    newTag: sha-162872b
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -4808,7 +4819,18 @@ images:
     # it is its own write rather than part of the drawer's autosaved draft,
     # because the requirement does not live on the user record.
     # Digest read back from a real host-lane pull + node-imported.
-    digest: sha256:f8890ef262e14f4f222f6dbc8d802dbce8383b12416760fc8e4ad47a2d13d4f4
+    # 2026-08-01 bump: sha-162872b — platform-web#1099 (gitops#3232). The MFA
+    # section gains per-user method checkboxes, so "this account uses SMS only"
+    # becomes a decision an operator can state and withdraw from the drawer
+    # instead of something implied by withholding a phone number. Both the
+    # requirement switch and the method boxes are now reachable from the users
+    # page — which is the whole point of the section: the operator has to be
+    # able to turn a lane off again, not only on.
+    # The authenticator app is deliberately not a checkbox: `OTP Form` is stock
+    # Keycloak and does not read our attribute, so a box there would look like a
+    # control and silently do nothing. The section says so instead.
+    # Digest read back from a real host-lane pull (RepoDigests) + node-imported.
+    digest: sha256:8f51c8785089468085785b6e9930c6797c52acfc43c57139df1e1de2302cdb57
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

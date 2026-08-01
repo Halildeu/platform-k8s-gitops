@@ -21,7 +21,8 @@
 #   - Does NOT seed D29 DATA authorization. This formalizes the AUTHENTICATION
 #     credential only. D29 data allow/deny (OpenFGA explicit-scope, e.g.
 #     PROJECT:1204) is a SEPARATE step — see docs/handoff-smoke-client-keycloak.md.
-#   - Does NOT touch admin@example.com (the operator's own login user).
+#   - Does NOT touch the operator's own login user (`halildeu`, formerly
+#     admin@example.com) — see the OPERATOR_LOGINS/OPERATOR_EMAILS guard below.
 #
 # Idempotency: on create, a password is generated → SECRET_OUT. On re-run with
 # the persona already present, only attributes converge — the password is NOT
@@ -56,7 +57,7 @@
 #
 # HARD RULE: the persona password is NEVER written to stdout / logs — only to
 # SECRET_OUT (umask 077). Idempotent — re-run safe. Operator credentials
-# (admin@example.com) untouched.
+# (`halildeu`) untouched.
 #
 set -euo pipefail
 
@@ -81,18 +82,37 @@ ADMIN_PASS_FILE="host-compose/keycloak/${ENV}/secrets/kc_admin_password.txt"
 
 # Guard: never collide with the operator's own login user — username AND
 # email, case-insensitive (Codex 019e4012 review).
+#
+# The lists carry CURRENT and HISTORICAL identities deliberately. The operator's
+# username was renamed admin@example.com → halildeu on 2026-08-01 (the address
+# had already moved to halildeu@gmail.com). A guard pinned to one literal stops
+# guarding the moment the account is renamed, and it fails OPEN: this script
+# would then converge the operator's own login user instead of refusing. Keeping
+# the retired values costs nothing — no persona may legitimately claim them.
+OPERATOR_LOGINS="${OPERATOR_LOGINS:-admin halildeu admin@example.com halildeu@gmail.com}"
+OPERATOR_EMAILS="${OPERATOR_EMAILS:-admin@example.com halildeu@gmail.com}"
+
+is_operator_identity() {  # $1 = lowercased needle; $2.. = candidate list
+  local needle="$1"; shift
+  local item
+  for item in "$@"; do
+    [ "$needle" = "$(printf '%s' "$item" | tr '[:upper:]' '[:lower:]')" ] && return 0
+  done
+  return 1
+}
+
 PERSONA_USERNAME_LC=$(printf '%s' "$PERSONA_USERNAME" | tr '[:upper:]' '[:lower:]')
 PERSONA_EMAIL_LC=$(printf '%s' "$PERSONA_EMAIL" | tr '[:upper:]' '[:lower:]')
-case "$PERSONA_USERNAME_LC" in
-  admin|admin@example.com)
-    echo "ERROR: refusing — PERSONA_USERNAME '$PERSONA_USERNAME' is the operator login user" >&2
-    exit 1 ;;
-esac
-case "$PERSONA_EMAIL_LC" in
-  admin@example.com)
-    echo "ERROR: refusing — PERSONA_EMAIL '$PERSONA_EMAIL' is the operator login email" >&2
-    exit 1 ;;
-esac
+# shellcheck disable=SC2086  # unquoted: the space-separated list IS the contract
+if is_operator_identity "$PERSONA_USERNAME_LC" $OPERATOR_LOGINS; then
+  echo "ERROR: refusing — PERSONA_USERNAME '$PERSONA_USERNAME' is the operator login user" >&2
+  exit 1
+fi
+# shellcheck disable=SC2086
+if is_operator_identity "$PERSONA_EMAIL_LC" $OPERATOR_EMAILS; then
+  echo "ERROR: refusing — PERSONA_EMAIL '$PERSONA_EMAIL' is the operator login email" >&2
+  exit 1
+fi
 
 echo "=== D29 test persona apply — realm=$REALM container=$KC_CONTAINER ==="
 echo "  persona:    $PERSONA_USERNAME <$PERSONA_EMAIL>"

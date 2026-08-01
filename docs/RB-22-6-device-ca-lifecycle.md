@@ -129,6 +129,28 @@ ssh halil@staging-sw "vault kv patch kv/platform/endpoint-admin-service \
 CRL = `UNKNOWN` fail-closed. **Fail sinyali:** REAL_PKI config aktif değilken (default IN_MEMORY)
 CRL hiç okunmaz — revoke etkisiz; ÖNCE config precondition.
 
+### 3.1 TEST otomatik CRL eşitleme ve VIEW_ONLY onay kapısı
+
+TEST cihaz-CA CRL'i public Vault PKI yüzeyinden günlük olarak
+`.github/workflows/faz22-6-refresh-device-ca-crl.yml` ile eşitlenir. İş yalnız imzası
+mevcut public CA ile doğrulanan ve en az 24 saat geçerliliği kalan CRL'i dedicated
+`kv/platform/endpoint-admin-remote-bridge-device-key` yolundaki `device_crl_pem`
+alanına yazar. ESO eşitliği görülmeden ve startup-time consumer olan
+`endpoint-admin-remote-bridge-device-key` yeniden başlatılıp `1/1 Ready` olmadan PASS vermez.
+Ham Vault tokenı, private key veya başka secret receipt/log'a yazılmaz.
+
+VIEW_ONLY browser evidence workflow'u insan Environment onayından **önce** ve onaydan
+**sonra** `scripts/faz22-remote-ops/verify-device-ca-crl-freshness.sh` çalıştırır. Bu kapı:
+
+- public Vault PKI CA/CRL ile Kubernetes Secret CA/CRL eşliğini,
+- CRL imzasını, issuer bağını ve pilot+consent+device-ready süresine yetecek `nextUpdate` headroom'unu,
+- ExternalSecret `Ready/SecretSynced` durumunu,
+- son `force-sync` sonrasında broker rollout restart yapıldığını,
+- broker podunun immutable imageID ile `1/1 Ready` olduğunu
+
+fail-closed doğrular. Bu sayede bayat CRL, insan onayı ve Windows consent alındıktan sonra
+`cert-untrusted` ile uyarısız bir oturuma dönüşmez; protected approval istenmeden durur.
+
 ## 4. Rotation (CA + leaf, periyodik + key-leak sonrası)
 
 | Rotasyon | Tetik | Adım | Broker etkisi |
