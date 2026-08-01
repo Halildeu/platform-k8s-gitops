@@ -43,7 +43,12 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:ce8d9a29ffe406a0551e24c6ea0f09e5eef81787a5b83c480e2ec16c3f3c940e
+    # 2026-08-01 bump: sha-9fd610a — platform-backend#1045 (ES-403 #885).
+    # Dusen abonelik yalniz YENI alimi kapatir: IntakeChannelGate fail-open
+    # (kesinti kanali kapatamaz), yalniz grace-asimi kanitlanmis dusus 403
+    # INTAKE_CHANNEL_INACTIVE dondurur; mailbox/delil/SLA/export acik kalir.
+    # Digest hedef kumeye gercek pull ile okundu (smoke-dig-eth pod).
+    digest: sha256:8ce026e2f26f8c4797385840c6c06c96344365dc8f3bc5b04a1a9f25ace832dd
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -52,10 +57,13 @@ images:
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
     # birden fazla ek eklenebilir, yuklemeler sirali.
-    # Kaynak: 598f79538360bf001d35496893aeea5ee02e2b2e
-    # Etiket: sha-598f79538360bf001d35496893aeea5ee02e2b2e (bu hat TAM sha kullanir).
-    # Digest hedef kumeye gercek pull ile okundu, build log'undan kopyalanmadi.
-    digest: sha256:2a47d483a5ff7119f88e59ef9fc28fab5fd5f549efde21e0a5e20861d1fdea86
+    # 2026-08-01 bump: platform-web#1100 (ES-403 #885 UI yarisi) — kapali kanal
+    # reddi kendi gorunumunde: mevcut bildirimler erisilebilir + dis kanallar.
+    # Kaynak: a0e360c82d73dbff0a75d27673e289f3d171d825
+    # Etiket: sha-a0e360c82d73dbff0a75d27673e289f3d171d825 (bu hat TAM sha kullanir).
+    # Digest hedef kumeye gercek pull ile okundu (smoke-dig-pub pod).
+    # Onceki: 598f7953 (#1016) @ sha256:2a47d483a5ff7119f88e59ef9fc28fab5fd5f549efde21e0a5e20861d1fdea86
+    digest: sha256:55e12e70443612226ca8ee4e9e84bf0b967f83d6decad3c527306c2b1dc5e514
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
