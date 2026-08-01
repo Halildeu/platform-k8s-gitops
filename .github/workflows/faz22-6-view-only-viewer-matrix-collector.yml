@@ -181,11 +181,11 @@ jobs:
           REQUIRE_ACTIVE_GUI: "1"
           # Evidence-management SSH only; the product session remains the outbound,
           # device-key-attested channel. The smoke fail-closed validates this protected
-          # runner alias as denetimpc@10.9.161.202 with an id_denetim identity.
+          # runner alias as denetimpc@10.99.0.2 with an id_denetim identity.
           DENETIM_SSH_TARGET: denetim-pc
           DEFAULT_DENETIM_SSH_CONFIG: /home/aiadmin/.ssh/config
           DENETIM_SSH_OPTS: __SSH_CONFIG__
-          EXPECTED_DENETIM_SSH_HOSTNAME: 10.9.161.202
+          EXPECTED_DENETIM_SSH_HOSTNAME: 10.99.0.2
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-negative-collector
           AUTO_FINALIZE: "0"
           MATRIX_HOOK_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/collect-view-only-viewer-negative-matrix.sh
