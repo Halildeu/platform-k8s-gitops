@@ -37,6 +37,7 @@ def valid_e2e() -> dict:
         },
         "runtime": {
             "directSttEnabled": True,
+            "selectedProvider": "internal",
             "transcribeHost": "live-stt.denetim",
             "transcribePort": 8243,
             "hostAliasIp": "10.99.0.2",
@@ -51,6 +52,8 @@ def valid_e2e() -> dict:
             ],
         },
         "mtlsProbe": {
+            "applicable": True,
+            "provider": "internal",
             "fromRealPod": True,
             "host": "live-stt.denetim",
             "port": 8243,
@@ -59,6 +62,7 @@ def valid_e2e() -> dict:
             "totalMs": 423,
         },
         "flow": {
+            "sttProvider": "internal",
             "sessionId": "SES-31a15790-57eb-4cbe-b923-954c8f6578ac",
             "chunkSeq": 0,
             "correlationId": "faz24-direct-stt-182-test",
@@ -71,6 +75,8 @@ def valid_e2e() -> dict:
             "resultStreamKey": "transcript:direct-stt-results",
             "resultStreamEntryFound": True,
             "resultStreamRecordId": "1782471276845-0",
+            "resultModel": "faster-whisper-medium",
+            "resultDevice": "cuda",
             "transcriptTextIncluded": False,
             "transcriptSha256": "7d793037a0760186574b0282f2f435e7e7e27e7a9b0e3025a67f08cd47a4ad58",
             "transcriptCharCount": 42,
@@ -168,6 +174,46 @@ class DirectSttE2eEvidenceVerifierTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("mtls_probe_host", result.stdout)
         self.assertIn("mtls_probe_port", result.stdout)
+
+    def test_speechmatics_provider_evidence_passes_without_internal_mtls_probe(self):
+        data = valid_e2e()
+        data["runtime"]["selectedProvider"] = "speechmatics"
+        data["mtlsProbe"] = {
+            "applicable": False,
+            "provider": "speechmatics",
+            "fromRealPod": False,
+            "clientCertificateUsed": False,
+            "healthHttpStatus": 0,
+            "totalMs": 0,
+        }
+        data["flow"]["sttProvider"] = "speechmatics"
+        data["flow"]["resultModel"] = "speechmatics-realtime-v2"
+        data["flow"]["resultDevice"] = "speechmatics-saas"
+
+        result = self.run_validator(data)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_speechmatics_result_metadata_mismatch_fails(self):
+        data = valid_e2e()
+        data["runtime"]["selectedProvider"] = "speechmatics"
+        data["mtlsProbe"] = {
+            "applicable": False,
+            "provider": "speechmatics",
+            "fromRealPod": False,
+            "clientCertificateUsed": False,
+            "healthHttpStatus": 0,
+            "totalMs": 0,
+        }
+        data["flow"]["sttProvider"] = "speechmatics"
+        data["flow"]["resultModel"] = "faster-whisper-medium"
+        data["flow"]["resultDevice"] = "cuda"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("flow_speechmatics_model", result.stdout)
+        self.assertIn("flow_speechmatics_device", result.stdout)
 
     def test_direct_client_to_stt_overclaim_fails(self):
         data = valid_e2e()

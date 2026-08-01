@@ -12,6 +12,7 @@ def valid_evidence() -> dict:
     meeting_id = "22222222-2222-4222-8222-222222222222"
     capture_id = "33333333-3333-4333-8333-333333333333"
     session_id = "SES-test-1"
+    canonical_session_id = "44444444-4444-4444-8444-444444444444"
     return {
         "schemaVersion": "faz24.externalRecorderSmoke.v1",
         "status": "pass",
@@ -22,10 +23,12 @@ def valid_evidence() -> dict:
             "meetingId": meeting_id,
             "captureId": capture_id,
             "sessionId": session_id,
+            "canonicalSessionId": canonical_session_id,
         },
         "boundaries": {
             "externalMeetingAdminPathExercised": True,
             "recorderLifecycleExercised": True,
+            "canonicalRecordingLifecycleSynced": True,
             "directSttProven": False,
             "directSttTranscriptProven": False,
             "directClientToStt": False,
@@ -95,6 +98,22 @@ def valid_evidence() -> dict:
                 "response": {"sessionId": session_id},
             },
             {
+                "name": "sync_recording_lifecycle_start",
+                "method": "PUT",
+                "path": f"/api/v1/admin/meetings/{meeting_id}/recording-lifecycle",
+                "expectedStatus": [200],
+                "statusCode": 200,
+                "ok": True,
+                "tokenIncluded": False,
+                "response": {
+                    "meetingId": meeting_id,
+                    "sessionId": canonical_session_id,
+                    "externalSessionId": session_id,
+                    "meetingStatus": "IN_PROGRESS",
+                    "transcriptStatus": "PENDING",
+                },
+            },
+            {
                 "name": "upload_chunk",
                 "method": "POST",
                 "path": f"/api/v1/audio-gateway/sessions/{session_id}/chunks",
@@ -113,6 +132,22 @@ def valid_evidence() -> dict:
                 "ok": True,
                 "tokenIncluded": False,
                 "response": {"sessionId": session_id, "finalState": "FINISHED"},
+            },
+            {
+                "name": "sync_recording_lifecycle_finish",
+                "method": "PUT",
+                "path": f"/api/v1/admin/meetings/{meeting_id}/recording-lifecycle",
+                "expectedStatus": [200],
+                "statusCode": 200,
+                "ok": True,
+                "tokenIncluded": False,
+                "response": {
+                    "meetingId": meeting_id,
+                    "sessionId": canonical_session_id,
+                    "externalSessionId": session_id,
+                    "meetingStatus": "COMPLETED",
+                    "transcriptStatus": "PROCESSING",
+                },
             },
             {
                 "name": "session_status",
@@ -165,7 +200,7 @@ def test_missing_required_step_fails(tmp_path):
 
 def test_wrong_step_order_fails(tmp_path):
     data = valid_evidence()
-    data["steps"][4], data["steps"][5] = data["steps"][5], data["steps"][4]
+    data["steps"][5], data["steps"][6] = data["steps"][6], data["steps"][5]
 
     proc = run_verifier(tmp_path, data)
     report = json.loads(proc.stdout)
@@ -187,7 +222,9 @@ def test_non_finished_status_fails(tmp_path):
 
 def test_finish_without_final_state_fails(tmp_path):
     data = valid_evidence()
-    del data["steps"][-2]["response"]["finalState"]
+    del next(
+        step for step in data["steps"] if step["name"] == "finish_session"
+    )["response"]["finalState"]
 
     proc = run_verifier(tmp_path, data)
     report = json.loads(proc.stdout)

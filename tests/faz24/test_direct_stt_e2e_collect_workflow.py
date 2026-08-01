@@ -5,6 +5,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github/workflows/faz24-direct-stt-e2e-collect.yml"
@@ -422,7 +424,16 @@ def test_workflow_does_not_accept_secret_shaped_inputs():
     assert "must not contain token/private/secret-like material" in validate
 
 
-def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tmp_path):
+@pytest.mark.parametrize(
+    ("provider", "result_model", "result_device", "probe_applicable"),
+    [
+        ("internal", "faster-whisper-medium", "cuda", True),
+        ("speechmatics", "speechmatics-realtime-v2", "speechmatics-saas", False),
+    ],
+)
+def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(
+    tmp_path, provider, result_model, result_device, probe_applicable
+):
     collector = _load_collector()
     smoke_file = tmp_path / "smoke.json"
     sample_sha = "a" * 64
@@ -458,7 +469,13 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
                         "response": {"id": "22222222-2222-4222-8222-222222222222"},
                     },
                     {"name": "record_consent", "statusCode": 201, "ok": True, "tokenIncluded": False},
-                    {"name": "start_session", "statusCode": 201, "ok": True, "tokenIncluded": False},
+                    {
+                        "name": "start_session",
+                        "statusCode": 201,
+                        "ok": True,
+                        "tokenIncluded": False,
+                        "response": {"sttProvider": provider},
+                    },
                     {
                         "name": "upload_chunk",
                         "statusCode": 200,
@@ -586,6 +603,10 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
                                     "faz24-direct-stt-test",
                                     "textDraft",
                                     "Merhaba dunya",
+                                    "model",
+                                    result_model,
+                                    "device",
+                                    result_device,
                                 ],
                             ]
                         ]
@@ -640,6 +661,11 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
     assert evidence["status"] == "pass"
     assert evidence["flow"]["sessionId"].startswith("SES-")
     assert evidence["flow"]["transcriptCharCount"] == len("Merhaba dunya")
+    assert evidence["runtime"]["selectedProvider"] == provider
+    assert evidence["flow"]["sttProvider"] == provider
+    assert evidence["flow"]["resultModel"] == result_model
+    assert evidence["flow"]["resultDevice"] == result_device
+    assert evidence["mtlsProbe"]["applicable"] is probe_applicable
     assert evidence["audit"]["chunkSeqMatches"] is True
     assert evidence["audit"]["evidenceSource"] == "durable-db"
     assert evidence["audit"]["entryHashPresent"] is True

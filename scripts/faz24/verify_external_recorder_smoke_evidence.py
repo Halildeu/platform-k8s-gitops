@@ -28,8 +28,10 @@ EXPECTED_STEPS = [
     "create_meeting",
     "record_consent",
     "start_session",
+    "sync_recording_lifecycle_start",
     "upload_chunk",
     "finish_session",
+    "sync_recording_lifecycle_finish",
     "session_status",
 ]
 
@@ -49,12 +51,20 @@ HTTP_STEP_EXPECTATIONS: dict[str, dict[str, Any]] = {
         "path": "/api/v1/audio-gateway/sessions",
         "statuses": {200, 201},
     },
+    "sync_recording_lifecycle_start": {
+        "method": "PUT",
+        "statuses": {200},
+    },
     "upload_chunk": {
         "method": "POST",
         "statuses": {200},
     },
     "finish_session": {
         "method": "POST",
+        "statuses": {200},
+    },
+    "sync_recording_lifecycle_finish": {
+        "method": "PUT",
         "statuses": {200},
     },
     "session_status": {
@@ -66,6 +76,7 @@ HTTP_STEP_EXPECTATIONS: dict[str, dict[str, Any]] = {
 BOUNDARY_EXPECTATIONS = {
     "externalMeetingAdminPathExercised": True,
     "recorderLifecycleExercised": True,
+    "canonicalRecordingLifecycleSynced": True,
     "directSttProven": False,
     "directSttTranscriptProven": False,
     "directClientToStt": False,
@@ -254,15 +265,16 @@ def _validate_top_level(data: dict[str, Any], checks: list[Check]) -> None:
     )
 
 
-def _validate_ids(data: dict[str, Any], checks: list[Check]) -> tuple[str, str, str]:
+def _validate_ids(data: dict[str, Any], checks: list[Check]) -> tuple[str, str, str, str]:
     ids = data.get("ids")
     if not isinstance(ids, dict):
         _add(checks, "ids_shape", False, "ids must be an object")
-        return "", "", ""
+        return "", "", "", ""
 
     meeting_id = str(ids.get("meetingId") or "")
     capture_id = str(ids.get("captureId") or "")
     session_id = str(ids.get("sessionId") or "")
+    canonical_session_id = str(ids.get("canonicalSessionId") or "")
 
     _add(checks, "meeting_id_uuid", bool(UUID_RE.match(meeting_id)), "ids.meetingId must be UUID-shaped")
     _add(checks, "capture_id_uuid", bool(UUID_RE.match(capture_id)), "ids.captureId must be UUID-shaped")
@@ -272,7 +284,13 @@ def _validate_ids(data: dict[str, Any], checks: list[Check]) -> tuple[str, str, 
         bool(SESSION_ID_RE.match(session_id)),
         "ids.sessionId must start with SES- and contain only safe chars",
     )
-    return meeting_id, capture_id, session_id
+    _add(
+        checks,
+        "canonical_session_id_uuid",
+        bool(UUID_RE.match(canonical_session_id)),
+        "ids.canonicalSessionId must be UUID-shaped",
+    )
+    return meeting_id, capture_id, session_id, canonical_session_id
 
 
 def _validate_boundaries(data: dict[str, Any], checks: list[Check]) -> None:
@@ -305,7 +323,9 @@ def _validate_step_order(data: dict[str, Any], checks: list[Check]) -> list[dict
     return [step for step in steps if isinstance(step, dict)]
 
 
-def _expected_dynamic_path(name: str, session_id: str) -> str | None:
+def _expected_dynamic_path(name: str, meeting_id: str, session_id: str) -> str | None:
+    if name in {"sync_recording_lifecycle_start", "sync_recording_lifecycle_finish"}:
+        return f"/api/v1/admin/meetings/{meeting_id}/recording-lifecycle"
     if name == "upload_chunk":
         return f"/api/v1/audio-gateway/sessions/{session_id}/chunks"
     if name == "finish_session":
@@ -337,6 +357,7 @@ def _validate_http_steps(
     meeting_id: str,
     capture_id: str,
     session_id: str,
+    canonical_session_id: str,
     checks: list[Check],
 ) -> None:
     for name, expectation in HTTP_STEP_EXPECTATIONS.items():
@@ -345,7 +366,9 @@ def _validate_http_steps(
             _add(checks, f"{name}_step", False, f"{name} step is missing")
             continue
 
-        expected_path = expectation.get("path") or _expected_dynamic_path(name, session_id)
+        expected_path = expectation.get("path") or _expected_dynamic_path(
+            name, meeting_id, session_id
+        )
         status_code = step.get("statusCode")
         passed = (
             step.get("ok") is True
@@ -391,6 +414,22 @@ def _validate_http_steps(
         "start_session response.sessionId must match ids.sessionId",
     )
 
+    lifecycle_start = by_name.get("sync_recording_lifecycle_start", {}).get("response")
+    lifecycle_start_ok = (
+        isinstance(lifecycle_start, dict)
+        and str(lifecycle_start.get("meetingId")) == meeting_id
+        and str(lifecycle_start.get("externalSessionId")) == session_id
+        and str(lifecycle_start.get("sessionId")) == canonical_session_id
+        and lifecycle_start.get("meetingStatus") == "IN_PROGRESS"
+        and lifecycle_start.get("transcriptStatus") == "PENDING"
+    )
+    _add(
+        checks,
+        "recording_lifecycle_start_projection",
+        lifecycle_start_ok,
+        "recording lifecycle start must match meeting, external/canonical session, IN_PROGRESS, and PENDING",
+    )
+
     finish_response = by_name.get("finish_session", {}).get("response")
     final_state = finish_response.get("finalState") if isinstance(finish_response, dict) else None
     _add(
@@ -398,6 +437,22 @@ def _validate_http_steps(
         "finish_session_final_state",
         final_state == "FINISHED",
         "finish_session response.finalState must be FINISHED",
+    )
+
+    lifecycle_finish = by_name.get("sync_recording_lifecycle_finish", {}).get("response")
+    lifecycle_finish_ok = (
+        isinstance(lifecycle_finish, dict)
+        and str(lifecycle_finish.get("meetingId")) == meeting_id
+        and str(lifecycle_finish.get("externalSessionId")) == session_id
+        and str(lifecycle_finish.get("sessionId")) == canonical_session_id
+        and lifecycle_finish.get("meetingStatus") == "COMPLETED"
+        and lifecycle_finish.get("transcriptStatus") in {"PROCESSING", "COMPLETED"}
+    )
+    _add(
+        checks,
+        "recording_lifecycle_finish_projection",
+        lifecycle_finish_ok,
+        "recording lifecycle finish must match meeting, external/canonical session, COMPLETED, and PROCESSING/COMPLETED",
     )
 
     status_response = by_name.get("session_status", {}).get("response")
@@ -414,7 +469,7 @@ def validate_evidence(data: dict[str, Any]) -> list[Check]:
     checks: list[Check] = []
     _validate_no_sensitive_content(data, checks)
     _validate_top_level(data, checks)
-    meeting_id, capture_id, session_id = _validate_ids(data, checks)
+    meeting_id, capture_id, session_id, canonical_session_id = _validate_ids(data, checks)
     _validate_boundaries(data, checks)
     steps = _validate_step_order(data, checks)
     by_name = _step_by_name(steps)
@@ -424,6 +479,7 @@ def validate_evidence(data: dict[str, Any]) -> list[Check]:
         meeting_id=meeting_id,
         capture_id=capture_id,
         session_id=session_id,
+        canonical_session_id=canonical_session_id,
         checks=checks,
     )
     return checks
@@ -446,6 +502,7 @@ def _summary(data: dict[str, Any] | None, checks: list[Check], status: str) -> d
             "meetingId": ids.get("meetingId"),
             "captureId": ids.get("captureId"),
             "sessionId": ids.get("sessionId"),
+            "canonicalSessionId": ids.get("canonicalSessionId"),
         }
         boundaries = data.get("boundaries") if isinstance(data.get("boundaries"), dict) else {}
         summary["boundaries"] = {
