@@ -91,11 +91,42 @@ jobs:
             echo "::error::image_digest must match sha256:<64 lowercase hex>"; exit 1;
           }
 
+          SOURCE_IMAGE_DIGEST="$IMAGE_DIGEST"
+          MANIFEST_JSON="$(docker buildx imagetools inspect "${IMAGE}@${SOURCE_IMAGE_DIGEST}" --raw)"
+          MEDIA_TYPE="$(jq -r '.mediaType // empty' <<<"$MANIFEST_JSON")"
+          case "$MEDIA_TYPE" in
+            application/vnd.oci.image.manifest.v1+json|application/vnd.docker.distribution.manifest.v2+json)
+              ;;
+            application/vnd.oci.image.index.v1+json|application/vnd.docker.distribution.manifest.list.v2+json)
+              mapfile -t PLATFORM_DIGESTS < <(
+                jq -r '
+                  .manifests[]
+                  | select(.platform.os == "linux" and .platform.architecture == "amd64")
+                  | .digest
+                ' <<<"$MANIFEST_JSON"
+              )
+              if [[ "${#PLATFORM_DIGESTS[@]}" -ne 1 ]]; then
+                echo "::error::expected exactly one linux/amd64 child manifest, found ${#PLATFORM_DIGESTS[@]}"
+                exit 1
+              fi
+              IMAGE_DIGEST="${PLATFORM_DIGESTS[0]}"
+              ;;
+            *)
+              echo "::error::unsupported frontend manifest mediaType: ${MEDIA_TYPE:-missing}"
+              exit 1
+              ;;
+          esac
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::resolved linux/amd64 digest is invalid"; exit 1;
+          }
+          echo "Resolved ${SOURCE_IMAGE_DIGEST} (${MEDIA_TYPE}) to TEST linux/amd64 ${IMAGE_DIGEST}"
+
           {
             echo "sha=$SHA"
             echo "short_sha=$SHORT_SHA"
             echo "image=$IMAGE"
             echo "image_tag=$IMAGE_TAG"
+            echo "source_image_digest=$SOURCE_IMAGE_DIGEST"
             echo "image_digest=$IMAGE_DIGEST"
           } >> "$GITHUB_OUTPUT"
 
@@ -141,6 +172,7 @@ jobs:
         env:
           SHA: ${{ steps.payload.outputs.sha }}
           IMAGE_TAG: ${{ steps.payload.outputs.image_tag }}
+          SOURCE_IMAGE_DIGEST: ${{ steps.payload.outputs.source_image_digest }}
           IMAGE_DIGEST: ${{ steps.payload.outputs.image_digest }}
         run: |
           {
@@ -148,6 +180,7 @@ jobs:
             echo ""
             echo "- source: \`${SHA:-unresolved}\`"
             echo "- tag: \`${IMAGE_TAG:-unresolved}\`"
+            echo "- published digest: \`${SOURCE_IMAGE_DIGEST:-unresolved}\`"
             echo "- digest: \`${IMAGE_DIGEST:-unresolved}\`"
             echo "- direct Kubernetes workload mutation: **none**"
             echo "- runtime verification: after normal PR review + merge"

@@ -4853,9 +4853,12 @@ images:
     # which read as the opposite of the truth. Ticking the last box clears the
     # attribute rather than storing all three — both mean unrestricted, only one
     # of them freezes the account against a method added later.
-    # Digest read back from a real host-lane pull (RepoDigests), as the tuple
-    # above documents, and node-imported with that ref.
-    digest: sha256:f8142b51831769e06b2e749031cc8f851d87b2b7aed34a9d7808894341ffcfda
+    # Parent OCI index: sha256:f8142b51831769e06b2e749031cc8f851d87b2b7aed34a9d7808894341ffcfda.
+    # TEST is linux/amd64, so pin the registry-verified child manifest. The
+    # promotion workflow now performs this resolution before writing desired
+    # state, preventing a later promotion from reintroducing an index/imageID
+    # mismatch.
+    digest: sha256:b9e6b8ecbcef203ffc1ce0e2221880ea8deda1ce668c929a2cd60c4695597e51
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
