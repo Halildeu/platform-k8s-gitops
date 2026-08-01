@@ -77,15 +77,35 @@ ile hook'tan önce uygulanacaktır; Deployment/StatefulSet scale veya imperative
 workload patch yapılmaz. Bu selective sync, sonrasında full Argo sync ve ESO
 `Ready=True` görülmeden canlı kabul değildir.
 
+`gitops#3267` merge commit'i
+`d7346d72d2f3cf3eccc126ff2e384fdcf8bcad57` ve `gitops#3269` merge commit'i
+`51aff59abe56dad37108aee9ed3f3978a95ecdec` sonrasında TEST
+`ResourceQuota/platform-quota` desired/live read-back'i `limits.cpu=17` ve
+`secrets=45` oldu. Hook kotası ile yeni desired state arasındaki kilitlenme,
+yalnız exact merge edilmiş ResourceQuota değerlerinin dar break-glass patch'i
+ve hemen ardından tam Argo reconciliation ile açıldı; hiçbir Deployment veya
+StatefulSet imperative değiştirilmedi. `openfga-migrate` PreSync Job'u
+`succeeded=1` oldu; `platform-test` exact `51aff59a` revision'ında
+`Synced/Healthy`, `platform-eso-test` aynı revision'da `Synced` okundu.
+`audio-gateway-speechmatics` ExternalSecret koşulu `Ready=True`, nedeni
+`SecretSynced`; hedef Secret yalnız `api-key` anahtar adıyla mevcut. Ham Vault
+ve Kubernetes secret değeri kanıta alınmadı, production Vault'a dokunulmadı.
+Bu kanıt owner-gated Vault/ESO altyapı kapısını geçirir; kullanıcı yolculuğu
+değildir. Sıradaki GitOps flip'i varsayılan `internal` sağlayıcıyı koruyarak
+TEST seçilebilir kümesini `internal,speechmatics` yapar. Bu flip exact pod
+rollout'u ve sentetik Türkçe transkript read-back'i görülmeden işlevsel kabul
+sayılmaz.
+
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
 Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.
 Exact PR head'indeki typecheck, lint, format, `547` test ve build ile GitHub
-kontrolleri geçti. İlk doğrulanmamış kapı GitOps main merge + Argo/ESO rollout
-sonrasında canlı pod `imageID`/Secret Ready read-back'idir; bunu izleyen kapı
-exact masaüstü paketinde sentetik Türkçe ses ile aynı oturumun görünür
-transkript, karar ve aksiyon sonucudur. Bu kapılar geçmeden sağlayıcı seçimi
-TEST kullanıcı yolculuğu olarak kabul edilmez.
+kontrolleri geçti. Vault/ESO altyapı kapısı canlıda geçmiştir; ilk
+doğrulanmamış kapı seçilebilir sağlayıcı flip'inin exact audio-gateway pod'una
+ulaşması ve aynı digest üzerinde sentetik Türkçe Speechmatics transkriptinin
+canonical event olarak okunmasıdır. Bunu izleyen kapı exact masaüstü paketinde
+aynı oturumun görünür transkript, karar ve aksiyon sonucudur. Bu kapılar
+geçmeden sağlayıcı seçimi TEST kullanıcı yolculuğu olarak kabul edilmez.
 
 ## Live Delta — Graph mailbox routine Vault access uses a scoped AppRole (2026-07-30)
 

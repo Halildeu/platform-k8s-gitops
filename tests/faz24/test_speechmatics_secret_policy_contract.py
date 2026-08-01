@@ -70,6 +70,24 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
         self.assertNotIn("vault kv put", script)
         self.assertNotIn("root token", script.lower())
 
+    def test_test_overlay_enables_explicit_speechmatics_selection(self) -> None:
+        overlay = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        selectable_patch = re.search(
+            r"path: /data/AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS\s+"
+            r'value: "(?P<providers>[^"]+)"',
+            overlay,
+        )
+        self.assertIsNotNone(selectable_patch)
+        self.assertEqual(
+            selectable_patch.group("providers"),
+            "internal,speechmatics",
+        )
+        self.assertIn("2026-08-01-3240-v8-speechmatics-enabled", overlay)
+        self.assertNotIn("2026-08-01-3240-v7-credential-failsafe", overlay)
+
 
 if __name__ == "__main__":
     unittest.main()
