@@ -18,7 +18,7 @@
     "redisStream": "meeting:events",
     "redisGroup": "meeting-ai-transcript-ready-v1",
     "gpuHost": "denetim-pc",
-    "gpuHostComputerName": "DENETIM-PC"
+    "gpuHostComputerName": "SRB-AIDENETIMPC"
   },
   "freshnessSeconds": 900,
   "maxCollectionSeconds": 300,

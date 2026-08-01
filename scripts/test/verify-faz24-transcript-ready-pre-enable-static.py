@@ -111,6 +111,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         fail("current permit target must remain explicit appEnv=test")
     if policy.get("environment", {}).get("postgresSchema") != "transcript_service":
         fail("current PostgreSQL evidence target must remain transcript_service")
+    if policy.get("environment", {}).get("gpuHostComputerName") != "SRB-AIDENETIMPC":
+        fail("current GPU host identity must remain SRB-AIDENETIMPC")
     if policy.get("remediationEvidence") != EXPECTED_REMEDIATIONS:
         fail("policy remediation evidence classes drifted")
 

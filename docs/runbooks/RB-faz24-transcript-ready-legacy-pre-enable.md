@@ -128,7 +128,7 @@ Kabul için tüm koşullar birlikte gerekir:
 - exact platform-ai commit + startup script SHA-256, permit zorunlu host guard
   allowlist'iyle eşleşir; host probe byte'ları da query-contract ve ayrı probe
   SHA-256 ile verifier'a bağlıdır ve Windows bilgisayar adı exact
-  `DENETIM-PC` policy identity'siyle eşleşir;
+  `SRB-AIDENETIMPC` policy identity'siyle eşleşir;
 - repo policy `enableAuthorized=true` yönünde ayrıca deliberate değişmiştir.
 
 Bu koşullardan biri eksikse verifier `enableAuthorized=false` döndürür.
