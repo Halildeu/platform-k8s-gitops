@@ -8146,12 +8146,14 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Always
-      # One-time rollout after the migration-created sha-162872b containerd
-      # alias was rebound to the canonical linux/amd64 manifest above.
+      # One-time retry after the migration-created sha-b4fa6d0 containerd
+      # alias was rebound from the stale imported manifest to the canonical
+      # linux/amd64 child manifest above. The value change is GitOps-owned and
+      # starts a fresh pod without an imperative workload patch or deletion.
       - op: add
         path: /spec/template/metadata/annotations
         value:
-          faz22.acik.com/d30-cache-reconcile: "2026-08-01"
+          faz22.acik.com/d30-cache-reconcile: "2026-08-01-platform-child-retry"
       # 2026-07-11 #2299: the former maxSurge=0/maxUnavailable=1
       # setting converted quota pressure into a public 503 by deleting
       # the only ready frontend pod before the replacement was admitted.
