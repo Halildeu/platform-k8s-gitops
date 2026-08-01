@@ -137,6 +137,14 @@ jobs:
       - name: Verify least-privilege VIEW_ONLY audit DB role before approval
         run: bash scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh check
 
+      - name: Verify fresh signed device CA CRL before approval
+        env:
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+        run: |
+          set -euo pipefail
+          CRL_MIN_VALIDITY_SECONDS="$(( PILOT_SECONDS + 240 + 180 + 120 ))" \
+            bash scripts/faz22-remote-ops/verify-device-ca-crl-freshness.sh
+
       - name: Verify live device, trust rows, and attended endpoint hostname
         env:
           DEVICE_ID: ${{ inputs.device_id }}
@@ -265,6 +273,14 @@ jobs:
 
       - name: Re-verify VIEW_ONLY audit DB role after protected approval
         run: bash scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh check
+
+      - name: Re-verify fresh signed device CA CRL after protected approval
+        env:
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+        run: |
+          set -euo pipefail
+          CRL_MIN_VALIDITY_SECONDS="$(( PILOT_SECONDS + 240 + 180 + 120 ))" \
+            bash scripts/faz22-remote-ops/verify-device-ca-crl-freshness.sh
 
       - name: Verify protected activation authorization receipt
         env:

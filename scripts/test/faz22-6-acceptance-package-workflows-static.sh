@@ -12,6 +12,9 @@ VIEWER_PRODUCT_ASSEMBLER="$ROOT/scripts/faz22-remote-ops/assemble-view-only-view
 VIEWER_PRODUCT_VERIFY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence-verify.yml"
 VIEWER_PRODUCT_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 VIEWER_BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
+DEVICE_CA_CRL_VERIFY="$ROOT/scripts/faz22-remote-ops/verify-device-ca-crl-freshness.sh"
+DEVICE_CA_CRL_REFRESH="$ROOT/scripts/faz22-remote-ops/refresh-device-ca-crl-test.sh"
+DEVICE_CA_CRL_REFRESH_WORKFLOW="$ROOT/.github/workflows/faz22-6-refresh-device-ca-crl.yml"
 VIEWER_BROWSER_EVIDENCE="$ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
 VIEWER_ATTENDED_SMOKE="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh"
 VIEWER_OPERATOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-operator-evidence.yml"
@@ -108,6 +111,7 @@ verify_viewer_resource_normalizer() {
 for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" \
   "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_BROWSER_WORKFLOW" \
+  "$DEVICE_CA_CRL_VERIFY" "$DEVICE_CA_CRL_REFRESH" "$DEVICE_CA_CRL_REFRESH_WORKFLOW" \
   "$VIEWER_BROWSER_EVIDENCE" \
   "$VIEWER_OPERATOR_WORKFLOW" "$VIEWER_OPERATOR_PRODUCER" \
   "$VIEWER_D30_WORKFLOW" "$VIEWER_D30_PRODUCER" "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER" \
@@ -128,7 +132,8 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
 done
 
 bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_NEGATIVE_COLLECTOR" \
-  "$VIEWER_TERMINATION_COLLECTOR" "$VIEWER_ROLLBACK_CONFIG"
+  "$VIEWER_TERMINATION_COLLECTOR" "$VIEWER_ROLLBACK_CONFIG" \
+  "$DEVICE_CA_CRL_VERIFY" "$DEVICE_CA_CRL_REFRESH"
 python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_OPERATOR_PRODUCER" "$VIEWER_D30_PRODUCER" \
   "$VIEWER_BROKER_PRODUCER" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
@@ -205,6 +210,18 @@ require_grep 'CONSENT_WAIT_SECONDS: "240"' "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + OPEN_SESSION_DEVICE_READY_SECONDS + 120 ))"' \
   "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'OPEN_SESSION_DEVICE_READY_SECONDS: "180"' "$VIEWER_BROWSER_WORKFLOW"
+require_grep "Verify fresh signed device CA CRL before approval" "$VIEWER_BROWSER_WORKFLOW"
+require_grep "Re-verify fresh signed device CA CRL after protected approval" "$VIEWER_BROWSER_WORKFLOW"
+require_grep 'CRL_MIN_VALIDITY_SECONDS="$(( PILOT_SECONDS + 240 + 180 + 120 ))"' "$VIEWER_BROWSER_WORKFLOW"
+require_grep 'PUBLIC_PKI_BASE_URL="${PUBLIC_PKI_BASE_URL:-http://127.0.0.1:8201/v1/pki_int}"' "$DEVICE_CA_CRL_VERIFY"
+require_grep 'openssl crl -in "$k8s_crl" -noout -verify -CAfile "$k8s_ca"' "$DEVICE_CA_CRL_VERIFY"
+require_grep '(( restart_epoch >= force_sync_epoch ))' "$DEVICE_CA_CRL_VERIFY"
+require_grep 'VAULT_KV_PATH="${VAULT_KV_PATH:-kv/platform/endpoint-admin-remote-bridge-device-key}"' "$DEVICE_CA_CRL_REFRESH"
+require_grep 'vault kv patch kv/platform/endpoint-admin-remote-bridge-device-key' "$DEVICE_CA_CRL_REFRESH"
+require_grep 'rollout restart "deployment/$BROKER_DEPLOYMENT"' "$DEVICE_CA_CRL_REFRESH"
+require_grep 'cron: "17 1 * * *"' "$DEVICE_CA_CRL_REFRESH_WORKFLOW"
+require_grep 'runs-on: [self-hosted, aiserver, testai-deploy]' "$DEVICE_CA_CRL_REFRESH_WORKFLOW"
+require_grep 'refresh-device-ca-crl-test.sh' "$DEVICE_CA_CRL_REFRESH_WORKFLOW"
 for config in "$VIEWER_LEGACY_CONFIG" "$VIEWER_DEVICE_KEY_CONFIG"; do
   require_grep 'REMOTE_BRIDGE_OPERATOR_AUTH_JWT_SUBJECT_CLAIM: "sub"' "$config"
   if grep -Fq 'REMOTE_BRIDGE_OPERATOR_AUTH_JWT_SUBJECT_CLAIM: "preferred_username"' "$config"; then
