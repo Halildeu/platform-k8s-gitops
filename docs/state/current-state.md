@@ -67,6 +67,16 @@ ardından ESO `Ready=True` read-back'idir. Aynı takip seed aracındaki yanlış
 `127.0.0.1:8301` varsayılanını canlı TEST Vault portu `8201`e düzeltir; prod
 Vault `8200` ve prod kota değişikliği kapsam dışıdır.
 
+`gitops#3267` sonrası live sync denemesinde quota değişikliği henüz
+uygulanmadan önceki `openfga-migrate` PreSync Job'u da canlı
+`limits.cpu=15950m/16000m` sınırına takıldı; 200m hook pod'u oluşturulamadığı
+için Argo önceki operasyonu tamamlayıp yeni revision'a geçemedi. Takip desired
+state TEST `limits.cpu` tavanını `16`dan `17`ye çıkarır. Merge sonrasında
+yalnız exact desired `ResourceQuota/platform-quota` kaynağı Argo selective sync
+ile hook'tan önce uygulanacaktır; Deployment/StatefulSet scale veya imperative
+workload patch yapılmaz. Bu selective sync, sonrasında full Argo sync ve ESO
+`Ready=True` görülmeden canlı kabul değildir.
+
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
 Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.
