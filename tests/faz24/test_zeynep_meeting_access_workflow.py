@@ -220,6 +220,23 @@ def test_provisioner_queries_two_independent_subject_anchors():
     assert "from.emailAddress.name" not in text
 
 
+def test_provisioner_can_fail_closed_on_single_active_desktop_identity():
+    text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert '--target-active-desktop-session' in text
+    assert 'TARGET_MODE="mail-anchor"' in text
+    assert 'TARGET_MODE="active-desktop-session"' in text
+    assert 'desktop-session-user-not-exactly-one' in text
+    assert 'desktop-session-user-not-internal' in text
+    assert 'desktop-session-identity-drift' in text
+    assert 'desktop-session-user-id-drift' in text
+    assert 'desktop-session-company-id-missing' in text
+    assert 'selector: $targetMode' in text
+    assert 'active-desktop-session' in workflow
+    assert 'args+=(--target-active-desktop-session)' in workflow
+
+
 def _run_ambiguous_reset_scenario(
     tmp_path: Path,
     scenario: str,
