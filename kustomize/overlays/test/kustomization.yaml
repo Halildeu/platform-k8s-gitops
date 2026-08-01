@@ -9236,7 +9236,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-01-3240-v6-provider-select"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-01-3240-v7-credential-failsafe"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -9283,11 +9283,15 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS
         value: "30000"
-      # Faz 24 #3240/#desktop#104: provider is immutable per session. Keep
-      # internal as the TEST default while allowing attended Speechmatics use.
+      # Faz 24 #3240/#desktop#104: provider is immutable per session. The first
+      # Speechmatics rollout proved the TEST ESO policy was not yet applied
+      # because the scoped reconciler credential had expired. Keep the provider
+      # unavailable until ExternalSecret Ready=True is independently read back;
+      # this restores the existing internal path without removing the isolated
+      # Vault/ESO desired state or widening credentials.
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS
-        value: "internal,speechmatics"
+        value: "internal"
       # --- Faz 24 cumle birlestirme (platform-backend#918) ---
       #
       # SORUN: kullanicinin bildirdigi "ayni cumleyi on satirda okuyorsun".

@@ -31,6 +31,16 @@ production policy'leri bu path'i içermez. Canlı kabul, bu scoped policy'nin
 git-reviewed reconciler ile uygulanması, ESO `Ready=True` ve pod exact imageID
 read-back'i sonrasında yeniden değerlendirilir.
 
+Canlı takipte host-local `vault-config-reconciler` secret-id'sinin yedi günlük
+TTL sonrasında süresinin dolduğu ve scoped login'in başarısız olduğu görüldü;
+owner-only root-of-trust ile agent rotasyonu yapılmadı. Audio-gateway'i
+CrashLoop'ta bırakmamak için takip fail-safe desired state seçilebilir listeyi
+geçici olarak yalnız `internal`a döndürür ve pod-template revizyonunu artırır.
+Speechmatics Vault anahtarı, TEST-only policy kaynağı, ExternalSecret ve egress
+tanımı korunur; gerçek provider seçimi ancak reconciler kimliği owner tarafından
+yenilendikten, git-reviewed policy uygulandıktan ve ESO `Ready=True` görüldükten
+sonra ayrı GitOps flip'iyle yeniden açılır.
+
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
 Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.
