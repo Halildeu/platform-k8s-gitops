@@ -303,6 +303,13 @@ grep -Fq 'OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS: "5"' <<<"$browser_workflow
 grep -Fq 'if (( SECONDS >= deadline ))' "$SCRIPT"
 grep -Fq 'fail_smoke "open-session-device-not-connected-timeout"' "$SCRIPT"
 grep -Fq 'fail_smoke "open-session-transport-failure"' "$SCRIPT"
+grep -Fq 'VIEWER_END_WAIT_SECONDS="${VIEWER_END_WAIT_SECONDS:-35}"' "$SCRIPT"
+grep -Fq 'VIEWER_END_WAIT_SECONDS < 20 || VIEWER_END_WAIT_SECONDS > 60' "$SCRIPT"
+grep -Fq 'for _ in $(seq 1 "$VIEWER_END_WAIT_SECONDS"); do' "$SCRIPT"
+if grep -Fq 'for _ in $(seq 1 15); do' "$SCRIPT"; then
+  echo "viewer end wait must exceed one 15-second heartbeat interval" >&2
+  exit 1
+fi
 retry_function="$(sed -n \
   '/^open_session_after_agent_reconnect() {$/,/^}$/p' "$SCRIPT")"
 grep -Fq '404)' <<<"$retry_function"
