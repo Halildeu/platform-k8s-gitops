@@ -4,14 +4,16 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-VAULT_API_PATH = "kv/data/platform/audio-gateway-speechmatics"
+VAULT_API_PATH = "kv/data/platform/audio-gateway-service"
+LEGACY_VAULT_API_PATH = "kv/data/platform/audio-gateway-speechmatics"
+VAULT_KV_PATH = "kv/platform/audio-gateway-service"
 
 
 class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
-    def test_test_policy_grants_exact_read_only_path(self) -> None:
-        policy = (
-            ROOT / "bootstrap/vault-policies/test/eso-runtime-extras.hcl"
-        ).read_text(encoding="utf-8")
+    def test_common_policy_grants_exact_read_only_path(self) -> None:
+        policy = (ROOT / "bootstrap/vault-policies/common/eso-runtime.hcl").read_text(
+            encoding="utf-8"
+        )
 
         block = re.search(
             rf'path "{re.escape(VAULT_API_PATH)}"\s*\{{(?P<body>.*?)\}}',
@@ -25,23 +27,46 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
             r'"(?:create|update|patch|delete|list|sudo)"',
         )
 
-    def test_speechmatics_path_is_not_granted_to_common_or_prod_policy(self) -> None:
+    def test_legacy_dedicated_path_has_no_eso_grant(self) -> None:
         for relative_path in (
             "bootstrap/vault-policies/common/eso-runtime.hcl",
+            "bootstrap/vault-policies/test/eso-runtime-extras.hcl",
             "bootstrap/vault-policies/prod/eso-runtime-extras.hcl",
         ):
             with self.subTest(policy=relative_path):
                 policy = (ROOT / relative_path).read_text(encoding="utf-8")
-                self.assertNotIn(VAULT_API_PATH, policy)
+                self.assertNotIn(LEGACY_VAULT_API_PATH, policy)
 
-    def test_reconciler_applies_test_extras_policy(self) -> None:
-        reconciler = (ROOT / "scripts/ops/vault-policy-reconcile.sh").read_text(
-            encoding="utf-8"
-        )
+    def test_external_secret_uses_existing_path_and_dedicated_target(self) -> None:
+        external_secret = (
+            ROOT / "kustomize/overlays/test/eso/audio-gateway/externalsecret.yaml"
+        ).read_text(encoding="utf-8")
+
+        speechmatics_document = external_secret.split(
+            "name: audio-gateway-speechmatics", maxsplit=1
+        )[1]
         self.assertIn(
-            "test/eso-runtime-extras.hcl|eso-runtime-test-extras",
-            reconciler,
+            "target:\n    name: audio-gateway-speechmatics",
+            speechmatics_document,
         )
+        self.assertIn(f"key: {VAULT_KV_PATH}", speechmatics_document)
+        self.assertIn("property: speechmatics_api_key", speechmatics_document)
+        self.assertNotIn(
+            "kv/platform/audio-gateway-speechmatics",
+            speechmatics_document,
+        )
+
+    def test_seed_script_uses_scoped_seeder_and_additive_patch(self) -> None:
+        script = (ROOT / "scripts/faz24/seed-speechmatics-test-secret.sh").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn("audio-gateway-mtls-seeder", script)
+        self.assertIn("PATCH", script)
+        self.assertIn("application/merge-patch+json", script)
+        self.assertIn("speechmatics_api_key", script)
+        self.assertIn("read-back hash mismatch", script)
+        self.assertNotIn("vault kv put", script)
+        self.assertNotIn("root token", script.lower())
 
 
 if __name__ == "__main__":

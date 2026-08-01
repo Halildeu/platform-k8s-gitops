@@ -41,6 +41,16 @@ tanımı korunur; gerçek provider seçimi ancak reconciler kimliği owner taraf
 yenilendikten, git-reviewed policy uygulandıktan ve ESO `Ready=True` görüldükten
 sonra ayrı GitOps flip'iyle yeniden açılır.
 
+Takip düzeltme adayı, yeni ESO policy grant'ine ihtiyaç duymayan daha dar yolu
+seçer: ayrı `audio-gateway-speechmatics` Kubernetes Secret/ExternalSecret hedefi
+korunur, fakat remote property mevcut `eso-runtime` policy'sinin zaten okuduğu
+`kv/platform/audio-gateway-service#speechmatics_api_key` alanına taşınır. Ayrı
+Vault path grant'i desired state'ten çıkarılır. Credential yazımı yalnız canlı
+`audio-gateway-mtls-seeder-test` AppRole'unun `patch,read` sınırıyla ve KV-v2
+CAS üzerinden yapılacaktır; root init/unseal materyali bu akışta kullanılmaz.
+Bu kaynak değişikliği merge, Argo sync, ESO Ready ve sentetik transcript
+read-back'i görülene kadar canlı kabul kanıtı değildir.
+
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
 Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.
