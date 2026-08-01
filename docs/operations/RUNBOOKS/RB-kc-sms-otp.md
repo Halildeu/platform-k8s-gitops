@@ -233,9 +233,34 @@ kullandığını varsayın.
   telefonu olmayan bir hesap gibi `attempted()` olur, kardeş faktörler girişi
   taşımaya devam eder.
 
-`OTP Form` stock Keycloak'tır ve bu listeyi **okumaz**; liste yalnız bizim
-sahibi olduğumuz iki teslimat şeridini yönetir. Panel bunu bir satır metinle
-söyler — sessizce hiçbir şey yapmayan bir onay kutusu koymaz.
+### Doğrulama uygulaması da listeye tabi (2026-08-01, gitops#3251)
+
+Yukarıdaki "OTP Form bu listeyi okumaz" cümlesi **artık geçerli değil**.
+Ayrıcalıklı akış stok `auth-otp-form` yerine `mfa-otp-form` koşuyor:
+Keycloak'ın kendi formunun önüne tek bir soru koyan bir alt sınıf. Form,
+doğrulama ve kayıt yolu Keycloak'ta kaldı — en güçlü faktörü tek bir boolean
+uğruna baştan yazmak, gate etmek için en güvenilir şeridi riske atmak olurdu.
+
+Attribute deseni buna göre `^(sms|email|totp)$`.
+
+**Kilitlenme kuralı — kapının en önemli parçası.** `mfaMethods: ["sms"]`,
+telefonu **olmayan** bir hesapta her şeridi kapatırdı: SMS kullanılamaz,
+e-posta izinsiz, doğrulama uygulaması izinsiz — ve hesapta hâlâ
+`requires-mfa` var. Panelde hiçbir şey yanlış görünmez. Bu yüzden doğrulama
+uygulaması, listede olmasa bile **başka hiçbir şerit o hesap için
+kullanılabilir değilse** sunulur. Genişletme tek yönlüdür: telefonu olan bir
+hesapta "yalnız SMS" tam olarak istendiği gibi çalışır.
+
+`--check` **iki yönlü** doğrular: gate yüklüyse stok form akıştan gitmiş
+olmalı, yüklü değilse gate'li form olmamalı. İkisi birden dursa kullanıcıya
+birbirinin aynı iki "doğrulama uygulaması" seçeneği çıkardı; biri listeyi
+görmezden gelirdi — kısıtlama uygulanmış görünür, tek tıkla aşılırdı.
+
+**Panelde kutucuklar kısıtlamayı değil, sunulacak yöntemleri gösterir.**
+Kısıtsız hesapta üçü de işaretli gelir; birini kaldırmak yalnız onu geri
+çeker. Üçü de işaretlendiğinde attribute **silinir** (üçünü birden yazmak
+değil): ikisi de "kısıt yok" demek, ama biri hesabı ileride eklenecek bir
+yönteme karşı sessizce dondurur.
 
 Attribute mutlaka user-profile'da **managed** ilan edilmeli
 (`scripts/keycloak/setup-user-profile-phone-attribute.sh`): KC 26 ilan

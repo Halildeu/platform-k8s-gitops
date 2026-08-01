@@ -109,8 +109,8 @@ DESIRED_METHODS=$(jq -n --arg n "$METHODS_ATTR" '{
   permissions: { view: ["admin", "user"], edit: ["admin"] },
   validations: {
     pattern: {
-      pattern: "^(sms|email)$",
-      "error-message": "Yöntem yalnız sms veya email olabilir"
+      pattern: "^(sms|email|totp)$",
+      "error-message": "Yöntem yalnız sms, email veya totp olabilir"
     }
   },
   annotations: {}
@@ -194,7 +194,11 @@ trap cleanup_probe EXIT
 # (a 2xx write that stores nothing) is per-attribute, so proving one says
 # nothing about the other. The methods value is written with TWO entries
 # because a single-valued declaration would silently keep only the first.
-q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"],\"$METHODS_ATTR\":[\"sms\",\"email\"]}}" >/dev/null
+# ALL THREE methods are written (gitops#3251): a probe that only ever writes
+# the old two would keep passing while a newly added one is silently
+# discarded — the pattern rejecting it and the declaration dropping it look
+# identical from outside, and neither raises an error.
+q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"],\"$METHODS_ATTR\":[\"sms\",\"email\",\"totp\"]}}" >/dev/null
 PUID=$(q "$API/users?username=$PROBE&exact=true" | jq -r '.[0].id // empty')
 [ -n "$PUID" ] || { echo "ERROR: probe kullanıcı id'si çözülemedi" >&2; exit 3; }
 PROBE_BACK=$(q "$API/users/$PUID")
@@ -204,10 +208,10 @@ q -X DELETE "$API/users/$PUID" >/dev/null
 trap cleanup_hdr EXIT
 [ "$STORED" = "$PROBE_PHONE" ] \
   || { echo "ERROR: round-trip FAILED — yazılan '$PROBE_PHONE', okunan '$STORED'" >&2; exit 3; }
-[ "$STORED_METHODS" = "sms,email" ] \
-  || { echo "ERROR: methods round-trip FAILED — yazılan 'sms,email', okunan '$STORED_METHODS'" >&2; exit 3; }
+[ "$STORED_METHODS" = "sms,email,totp" ] \
+  || { echo "ERROR: methods round-trip FAILED — yazılan 'sms,email,totp', okunan '$STORED_METHODS'" >&2; exit 3; }
 
 echo "APPLIED: $ATTR + $METHODS_ATTR managed attribute (admin-only edit)"
-echo "ROUND-TRIP-OK: telefon ve iki-değerli yöntem listesi geri okundu"
+echo "ROUND-TRIP-OK: telefon ve üç-değerli yöntem listesi geri okundu"
 echo "$BACK" | jq -c '{name, permissions, validations}'
 echo "$BACK_METHODS" | jq -c '{name, multivalued, permissions, validations}'
