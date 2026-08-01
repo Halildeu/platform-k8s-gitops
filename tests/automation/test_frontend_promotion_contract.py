@@ -142,6 +142,18 @@ class FrontendPromotionContractTests(unittest.TestCase):
             self.image_availability,
         )
 
+    def test_promotion_resolves_parent_index_to_exact_test_platform_manifest(self):
+        self.assertIn("docker buildx imagetools inspect", self.promote)
+        self.assertIn('SOURCE_IMAGE_DIGEST="$IMAGE_DIGEST"', self.promote)
+        self.assertIn('.platform.os == "linux"', self.promote)
+        self.assertIn('.platform.architecture == "amd64"', self.promote)
+        self.assertIn(
+            "expected exactly one linux/amd64 child manifest",
+            self.promote,
+        )
+        self.assertIn("source_image_digest=$SOURCE_IMAGE_DIGEST", self.promote)
+        self.assertIn("image_digest=$IMAGE_DIGEST", self.promote)
+
     def test_test_frontend_rollout_keeps_the_ready_pod(self):
         frontend_patch = re.search(
             r"name: frontend\n\s+patch: \|-\n(?P<body>.*?)(?=\n\s+# 2026-04-29)",
