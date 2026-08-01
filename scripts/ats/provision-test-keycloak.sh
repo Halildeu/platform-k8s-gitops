@@ -269,14 +269,26 @@ print(json.dumps({"attributes":{"ats_tenant":[sys.argv[1]]}},separators=(",",":"
 
 ensure_tenant_user_profile_attribute
 
-ADMIN_UID=$(kc get users -r $REALM -q 'username=admin@example.com' -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+# Operator hesabı kullanıcı adı VE e-posta ile aranır. Kullanıcı adı
+# 2026-08-01'de admin@example.com → halildeu olarak değişti; tek literale
+# sabitlenmiş arama o an sessizce boşa düşer ve "WARN + devam" bunu başarılı bir
+# koşu gibi gösterirdi — operator ATS yetkisi ATANMADAN. Kimlik değişebilir
+# olduğu için iki alan da denenir; bulunamama artık koşuyu kırmızıya düşürür
+# (bilinçli atlama: ALLOW_MISSING_OPERATOR=1).
+OPERATOR_LOGIN="${OPERATOR_LOGIN:-halildeu}"
+OPERATOR_EMAIL="${OPERATOR_EMAIL:-halildeu@gmail.com}"
+ADMIN_UID=$(kc get users -r $REALM -q "username=$OPERATOR_LOGIN" -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+[ -n "$ADMIN_UID" ] || ADMIN_UID=$(kc get users -r $REALM -q "email=$OPERATOR_EMAIL" -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
 if [ -n "$ADMIN_UID" ]; then
   set_tenant "$ADMIN_UID" "$FULLATS_PUBLIC_TENANT_ID"
   # shellcheck disable=SC2086
   grant "$ADMIN_UID" $PERMS
   echo "KC: admin test kullanıcısına Full ATS public tenant + 15 ats-api rolü atandı (repair HARİÇ)"
+elif [ "${ALLOW_MISSING_OPERATOR:-0}" = "1" ]; then
+  echo "WARN: operator ($OPERATOR_LOGIN / $OPERATOR_EMAIL) bulunamadı — ALLOW_MISSING_OPERATOR=1, bilinçli atlandı" >&2
 else
-  echo "WARN: admin@example.com bulunamadı — operator ataması atlandı" >&2
+  OPERATOR_LOOKUP_FAILED=1
+  echo "WARN: operator ($OPERATOR_LOGIN / $OPERATOR_EMAIL) bulunamadı — atama YAPILMADI (koşu sonunda ASSERT FAIL)" >&2
 fi
 
 READER_UID=$(ensure_user ats-reader-persona)
@@ -463,6 +475,13 @@ assert_tenant_exact "$OPERATOR_UID" operator t-platform-test
 assert_tenant_exact "$ROLELESS_UID" roleless t-platform-test
 have_roleless=$(kc get "users/$ROLELESS_UID/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
 [ "$have_roleless" -eq 0 ] || { echo "ASSERT FAIL: roleless persona rol tasiyor ($have_roleless)" >&2; fail=1; }
+# Operator bulunamadiysa persona'lar saglandi ama kosu basarili DEGIL: yukaridaki
+# iki assert `[ -n "$ADMIN_UID" ] &&` ile korumali oldugu icin sessizce atlanir,
+# ve operator ATS yetkisi olmadan "DONE" basmak eksik saglamayi basari gosterir.
+[ "${OPERATOR_LOOKUP_FAILED:-0}" -eq 0 ] || {
+  echo "ASSERT FAIL: operator hesabi ($OPERATOR_LOGIN / $OPERATOR_EMAIL) bulunamadi — Full ATS tenant + 15 rol ATANMADI (bilerek atlamak icin ALLOW_MISSING_OPERATOR=1)" >&2
+  fail=1
+}
 [ "$fail" -eq 0 ] || exit 1
 echo "ASSERT OK: 16 rol + 17 default-scope + tenant-bagli persona atamalari dogrulandi (export.repair ATANMAMIS)"
 echo "DONE 39d-2c"

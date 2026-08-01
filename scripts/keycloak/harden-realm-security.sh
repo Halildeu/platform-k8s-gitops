@@ -22,6 +22,19 @@
 #        (Not: `frontend` public client + directAccessGrants=true, yani parola
 #        grant'i client kimlik dogrulamasi olmadan calisiyor — A2c'nin kapatmak
 #        istedigi risk tam olarak bu.)
+#   A2-obs2 — yonetici islem kaydi (adminEventsEnabled). A2-obs GIRIS
+#        event'lerini acti ama admin REST tarafi kapali kaldi. 2026-08-01: bir
+#        hesabin OTP credential'i kayboldu ve KIMIN sildigi cevaplanamadi.
+#        Ayrim onemli — kullanici-tarafi silme REMOVE_TOTP / REMOVE_CREDENTIAL
+#        user-event'i uretir (olcum: credential'in tum omrunu kapsayan pencerede
+#        ikisi de 0, yani kullanici silmedi), admin API silmesi ise YALNIZ admin
+#        event uretir; o kapali oldugu icin hicbir iz kalmadi. Kimlik bilgisine
+#        dokunan her admin cagrisi iz birakmali, aksi halde "kim sildi" sorusu
+#        kanit yoklugundan cevapsiz kalir.
+#        adminEventsDetailsEnabled bilerek false: detay modu istek GOVDESINI
+#        saklar (parola sifirlama govdesi, client secret) — denetim izi ugruna
+#        secret kalicilastirmayiz. Kim/ne zaman/hangi kaynak yolu sorusu icin
+#        govde zaten gerekmiyor.
 #   A3 — redirectUri + webOrigins narrowing. CANLIDA uygulanmış ama BU SCRIPT
 #        yönetemez: alanlar `clients/*` üzerinde ve liste tipinde; engine tek
 #        kaynak (`realms/$REALM`) + skaler varsayıyor, `--rollback` de realm
@@ -43,7 +56,7 @@
 #        (c) tercihen `requires-mfa`nin composite'lerden cikarilip hedefli atanmasini
 #        gerektirir. Bagladiktan sonra `browserFlow`u desired state'e geri koymak sart
 #        (aksi halde canli/desired drift kalir) — ama once (a)-(c).
-# Bu sürüm: A1 + A2-obs + B(browserFlow bağlaması).
+# Bu sürüm: A1 + A2-obs + A2-obs2 + B(browserFlow bağlaması).
 #
 # ── Modes ──
 #   --check                read-only drift raporu (MUTASYON YOK).
@@ -110,7 +123,9 @@ DESIRED_JSON='{
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
   "eventsEnabled": true,
-  "eventsExpiration": 604800
+  "eventsExpiration": 604800,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false
 }'
 
 # Beklenen -s arg sayısı (alan × 2). count-assert için (Codex REVISE-3).
@@ -125,7 +140,8 @@ EXPECTED_ARGS=$(( NKEYS * 2 ))
 PYENGINE='
 import json, os, sys
 DESIRED = json.loads(os.environ["DESIRED_JSON"])
-BOOL_KEYS = {"bruteForceProtected", "permanentLockout", "eventsEnabled"}
+BOOL_KEYS = {"bruteForceProtected", "permanentLockout", "eventsEnabled",
+             "adminEventsEnabled", "adminEventsDetailsEnabled"}
 STR_KEYS  = {"bruteForceStrategy"}
 INT_KEYS  = set(DESIRED) - BOOL_KEYS - STR_KEYS
 # KC 26.5.5 BruteForceStrategy enum (canli dogrulandi: MULTIPLE; LINEAR digeri).
