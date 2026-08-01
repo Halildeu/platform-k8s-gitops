@@ -142,6 +142,15 @@ class ViewerAuditSummaryTest(unittest.TestCase):
                 SESSION, STREAM, browser(), invalid_flow,
             )
 
+    def test_rejects_view_stop_before_last_broker_frame(self):
+        invalid_flow = frame_flow()
+        invalid_flow["lastObservedAtEpochMillis"] = millis("2026-07-14T00:06:01Z")
+        with self.assertRaisesRegex(ValueError, "precedes the last broker-observed frame"):
+            MODULE.build(
+                raw_chain(), f"{SESSION}\t1\tPOLICY_EVENT\t{{}}\n".encode(),
+                SESSION, STREAM, browser(), invalid_flow,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
