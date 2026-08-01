@@ -69,7 +69,7 @@ jobs:
           PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
         run: |
           set -euo pipefail
-          policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
+          policy=config/faz22-6-view-only-pilot-owner-policy.v2.json
           revocations=config/faz22-6-view-only-pilot-authorization-revocations.v1.json
           test -s "$policy"
           test -s "$revocations"
@@ -89,8 +89,14 @@ jobs:
           mkdir -p "$out"
           owner_comment_id="$(jq -er '.ownerDirective.commentId' "$policy")"
           advisory_comment_id="$(jq -er '.aiAdvisory.commentId' "$policy")"
+          temporary_comment_id="$(
+            jq -er '.authorization.environmentApproval.temporaryTestAutomation.directive.commentId' \
+              "$policy"
+          )"
           gh api "repos/$GITHUB_REPOSITORY/issues/comments/$owner_comment_id" > "$out/owner-comment.json"
           gh api "repos/$GITHUB_REPOSITORY/issues/comments/$advisory_comment_id" > "$out/advisory-comment.json"
+          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$temporary_comment_id" \
+            > "$out/temporary-automation-comment.json"
           gh api "repos/$GITHUB_REPOSITORY/issues/2374" > "$out/legal-issue.json"
           gh api "repos/$GITHUB_REPOSITORY/environments/faz22-view-only-pilot" > "$out/environment.json"
           authorization_ttl_minutes=120
@@ -106,6 +112,7 @@ jobs:
             --advisory-comment "$out/advisory-comment.json" \
             --legal-issue "$out/legal-issue.json" \
             --environment "$out/environment.json" \
+            --temporary-automation-comment "$out/temporary-automation-comment.json" \
             --revocations "$revocations" \
             --operator-sha256 "$PILOT_OPERATOR_SHA256" \
             --device-sha256 "$PILOT_DEVICE_SHA256" \
@@ -128,7 +135,8 @@ jobs:
           (cd "$out" && sha256sum protected-authorization.json > SHA256SUMS)
           (cd "$out" && sha256sum -c SHA256SUMS)
           rm -f "$out/owner-comment.json" "$out/advisory-comment.json" \
-            "$out/legal-issue.json" "$out/environment.json"
+            "$out/temporary-automation-comment.json" "$out/legal-issue.json" \
+            "$out/environment.json"
 
       - name: Upload protected authorization receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

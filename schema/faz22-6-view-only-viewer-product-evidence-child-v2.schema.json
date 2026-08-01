@@ -288,7 +288,7 @@
         "authorizationArtifactId": {"type": "integer", "minimum": 1},
         "authorizationArtifactDigest": {"$ref": "#/$defs/sha256"},
         "authorizationSha256": {"$ref": "#/$defs/sha256"},
-        "authorizationSchemaVersion": {"const": "faz22.6-view-only-pilot-protected-authorization-v2"},
+        "authorizationSchemaVersion": {"const": "faz22.6-view-only-pilot-protected-authorization-v3"},
         "ownerPolicySha256": {"$ref": "#/$defs/sha256"},
         "ownerDirectiveSha256": {"$ref": "#/$defs/sha256"},
         "aiAdvisorySha256": {"$ref": "#/$defs/sha256"},

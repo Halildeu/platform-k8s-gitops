@@ -1,5 +1,26 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 TEST deployment approval is temporarily automated and reversible (2026-08-01)
+
+Owner decision [#2828 comment `5150913900`](https://github.com/Halildeu/platform-k8s-gitops/issues/2828#issuecomment-5150913900)
+temporarily removes repeated GitHub reviewer clicks only for Environment
+`faz22-view-only-pilot`. Live REST read-back shows `protection_rules=[]`;
+production protection is unchanged. The previous reviewer state is retained as
+restoration authority: GitHub user `gladyatore-lab` / ID `287014213`,
+`prevent_self_review=true`. Local attended Windows `Evet/Hayır` consent remains
+manual and cannot be replaced by deployment automation.
+
+The source candidate introduces two explicit fail-closed modes:
+`required-reviewer` and time-bounded `temporary-test-automation`. The latter is
+valid only through `2026-08-08T09:54:13Z`, requires the exact owner-comment
+digest and an empty live protection-rule set, and emits an honest authorization
+receipt stating that no protected Environment reviewer approval occurred. On
+expiry, before production use, or after the #2502 service-identity machine gate
+is activated, the stored reviewer configuration must be restored. Until this
+source is merged and a fresh apply run succeeds, the last passed gate remains
+the exact TEST frontend/runtime read-back; live VIEW_ONLY attended product
+acceptance remains unverified.
+
 ## Live Delta — Faz 24 oturum-bazlı STT sağlayıcı seçimi TEST adayı (2026-08-01)
 
 `platform-backend#1047` canonical main merge'i

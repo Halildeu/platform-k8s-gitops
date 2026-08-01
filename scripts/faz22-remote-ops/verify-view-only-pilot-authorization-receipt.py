@@ -14,16 +14,21 @@ from typing import Any
 from view_only_pilot_authorization_common import canonical_bytes, digest_bytes
 
 
-SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
-POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v1"
+SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v3"
+POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v2"
 REVOCATION_SCHEMA = "faz22.6-view-only-pilot-authorization-revocations-v1"
 SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
 GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
 EXPECTED_FIELDS = {
     "schemaVersion", "minimumAcceptedAuthorizationSchema", "environment",
     "onePersonRoster", "operatorSha256", "consentingPilotDevice", "deviceSha256",
+    "environmentApprovalMode",
     "exposureApprovedByProtectedEnvironment", "protectedEnvironmentPreventSelfReview",
+    "temporaryTestAutomationApprovedByOwner", "temporaryAutomationDirectiveRef",
+    "temporaryAutomationDirectiveSha256", "temporaryAutomationValidUntil",
     "protectedEnvironmentReviewerCount", "protectedEnvironmentReviewerSetSha256",
+    "restorationPreventSelfReview", "restorationReviewerCount",
+    "restorationReviewerSetSha256", "restorationTrackedBy",
     "ownerPolicySha256", "ownerDirectiveRef", "ownerDirectiveSha256",
     "aiAdvisoryOnly", "aiAdvisoryProvenanceClass", "aiProviderCryptographicAttestation",
     "aiAdvisoryRef", "aiAdvisorySha256", "aiConsensusVerdict",
@@ -68,13 +73,14 @@ def verify(
     if set(receipt) != EXPECTED_FIELDS:
         raise ReceiptError("authorization receipt field set mismatch")
     if receipt["schemaVersion"] != SCHEMA or receipt["minimumAcceptedAuthorizationSchema"] != SCHEMA:
-        raise ReceiptError("authorization receipt is not strict v2")
+        raise ReceiptError("authorization receipt is not strict v3")
     if receipt["authorizationRunId"] != expected_run_id:
         raise ReceiptError("authorization run binding mismatch")
     if not GIT_SHA.fullmatch(expected_head_sha) or receipt["authorizationHeadSha"] != expected_head_sha:
         raise ReceiptError("authorization head SHA binding mismatch")
     for field in (
         "operatorSha256", "deviceSha256", "protectedEnvironmentReviewerSetSha256",
+        "restorationReviewerSetSha256",
         "ownerPolicySha256", "ownerDirectiveSha256", "aiAdvisorySha256",
     ):
         if not isinstance(receipt[field], str) or not SHA256.fullmatch(receipt[field]):
@@ -85,10 +91,12 @@ def verify(
         receipt["environment"] == "faz22-view-only-pilot"
         and receipt["onePersonRoster"] is True
         and receipt["consentingPilotDevice"] is True
-        and receipt["exposureApprovedByProtectedEnvironment"] is True
-        and receipt["protectedEnvironmentPreventSelfReview"] is True
         and isinstance(receipt["protectedEnvironmentReviewerCount"], int)
-        and receipt["protectedEnvironmentReviewerCount"] >= 1
+        and receipt["protectedEnvironmentReviewerCount"] >= 0
+        and receipt["restorationPreventSelfReview"] is True
+        and isinstance(receipt["restorationReviewerCount"], int)
+        and receipt["restorationReviewerCount"] >= 1
+        and receipt["restorationTrackedBy"] == "https://github.com/Halildeu/platform-k8s-gitops/issues/2502"
         and receipt["aiAdvisoryOnly"] is True
         and receipt["aiAdvisoryProvenanceClass"] == "owner-attested-provider-session"
         and receipt["aiProviderCryptographicAttestation"] is False
@@ -107,9 +115,60 @@ def verify(
     ):
         raise ReceiptError("authorization bounded privacy controls are invalid")
     if policy.get("schemaVersion") != POLICY_SCHEMA or policy.get("status") != "active":
-        raise ReceiptError("canonical owner policy is not active v1")
+        raise ReceiptError("canonical owner policy is not active v2")
     if receipt["ownerPolicySha256"] != digest_bytes(canonical_bytes(policy)):
         raise ReceiptError("canonical owner policy digest mismatch")
+    approval = policy.get("authorization", {}).get("environmentApproval")
+    if not isinstance(approval, dict) or receipt["environmentApprovalMode"] != approval.get("activeMode"):
+        raise ReceiptError("environment approval mode does not match canonical policy")
+    restoration = approval.get("restoration")
+    if not isinstance(restoration, dict):
+        raise ReceiptError("canonical reviewer restoration contract is missing")
+    restoration_reviewers = restoration.get("reviewers")
+    if not isinstance(restoration_reviewers, list) or not restoration_reviewers:
+        raise ReceiptError("canonical reviewer restoration set is absent")
+    restoration_identities = sorted(
+        restoration_reviewers,
+        key=lambda item: (item.get("type", ""), item.get("id", 0), item.get("name", "")),
+    )
+    if not (
+        receipt["restorationPreventSelfReview"] == restoration.get("preventSelfReview") is True
+        and receipt["restorationReviewerCount"] == len(restoration_identities)
+        and receipt["restorationReviewerSetSha256"]
+        == digest_bytes(canonical_bytes(restoration_identities))
+        and receipt["restorationTrackedBy"] == restoration.get("trackedBy")
+    ):
+        raise ReceiptError("reviewer restoration binding does not match canonical policy")
+    mode = receipt["environmentApprovalMode"]
+    if mode == "required-reviewer":
+        if not (
+            receipt["exposureApprovedByProtectedEnvironment"] is True
+            and receipt["temporaryTestAutomationApprovedByOwner"] is False
+            and receipt["temporaryAutomationDirectiveRef"] is None
+            and receipt["temporaryAutomationDirectiveSha256"] is None
+            and receipt["temporaryAutomationValidUntil"] is None
+            and receipt["protectedEnvironmentPreventSelfReview"] is True
+            and receipt["protectedEnvironmentReviewerCount"] >= 1
+        ):
+            raise ReceiptError("required-reviewer authorization semantics are invalid")
+    elif mode == "temporary-test-automation":
+        temporary = approval.get("temporaryTestAutomation")
+        if not isinstance(temporary, dict):
+            raise ReceiptError("temporary TEST automation policy is missing")
+        directive = temporary.get("directive")
+        if not isinstance(directive, dict) or not (
+            receipt["exposureApprovedByProtectedEnvironment"] is False
+            and receipt["temporaryTestAutomationApprovedByOwner"] is True
+            and receipt["temporaryAutomationDirectiveRef"] == directive.get("ref")
+            and receipt["temporaryAutomationDirectiveSha256"] == directive.get("bodySha256")
+            and receipt["temporaryAutomationValidUntil"] == temporary.get("validUntil")
+            and receipt["protectedEnvironmentPreventSelfReview"] is False
+            and receipt["protectedEnvironmentReviewerCount"] == 0
+            and receipt["protectedEnvironmentReviewerSetSha256"] == digest_bytes(canonical_bytes([]))
+        ):
+            raise ReceiptError("temporary TEST automation authorization semantics are invalid")
+    else:
+        raise ReceiptError("environment approval mode is unsupported")
     if revocations.get("schemaVersion") != REVOCATION_SCHEMA:
         raise ReceiptError("authorization revocation ledger schema mismatch")
     revoked = revocations.get("revokedAuthorizationSha256")
@@ -125,6 +184,12 @@ def verify(
         raise ReceiptError("authorization absolute TTL is invalid")
     if expires <= now:
         raise ReceiptError("authorization receipt is expired")
+    if mode == "temporary-test-automation":
+        temporary_until = parse_utc(
+            receipt["temporaryAutomationValidUntil"], "temporary automation validUntil",
+        )
+        if expires > temporary_until:
+            raise ReceiptError("authorization exceeds temporary TEST automation window")
 
 
 def main() -> int:

@@ -18,14 +18,16 @@ from view_only_pilot_authorization_common import (
 )
 
 
-SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
-POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v1"
+SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v3"
+POLICY_SCHEMA = "faz22.6-view-only-pilot-owner-policy-v2"
 REVOCATION_SCHEMA = "faz22.6-view-only-pilot-authorization-revocations-v1"
 SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
 GIT_SHA = re.compile(r"^[a-f0-9]{40}$")
 UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 EXPECTED_REPOSITORY = "Halildeu/platform-k8s-gitops"
 EXPECTED_ENVIRONMENT = "faz22-view-only-pilot"
+REQUIRED_REVIEWER_MODE = "required-reviewer"
+TEMPORARY_AUTOMATION_MODE = "temporary-test-automation"
 LEGAL_ISSUE_REF = "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
 EXPECTED_ADVISORY_PROVIDERS = [
     "Anthropic/claude-opus-4-8",
@@ -65,7 +67,9 @@ def require_sha256(value: Any, label: str) -> str:
     return value
 
 
-def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str) -> None:
+def verify_comment(
+    comment: dict[str, Any], contract: dict[str, Any], label: str, issue_number: int,
+) -> None:
     require_keys(
         contract,
         {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation"},
@@ -85,8 +89,8 @@ def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str
         raise AuthorizationError(f"{label} body is missing")
     if digest_bytes(body.encode()) != contract["bodySha256"]:
         raise AuthorizationError(f"{label} body digest mismatch")
-    if not str(comment.get("issue_url", "")).endswith("/issues/2373"):
-        raise AuthorizationError(f"{label} is not bound to #2373")
+    if not str(comment.get("issue_url", "")).endswith(f"/issues/{issue_number}"):
+        raise AuthorizationError(f"{label} is not bound to #{issue_number}")
 
 
 def canonical_reviewer_set(
@@ -133,6 +137,43 @@ def verify_environment(
     return reviewer_count, reviewer_set_sha256
 
 
+def verify_restoration(restoration: dict[str, Any]) -> tuple[int, str]:
+    if not isinstance(restoration, dict):
+        raise AuthorizationError("restoration contract is invalid")
+    require_keys(
+        restoration,
+        {"reviewers", "preventSelfReview", "trackedBy", "trigger"},
+        "policy.authorization.environmentApproval.restoration",
+    )
+    if restoration["preventSelfReview"] is not True:
+        raise AuthorizationError("restoration must prevent self review")
+    if restoration["trackedBy"] != "https://github.com/Halildeu/platform-k8s-gitops/issues/2502":
+        raise AuthorizationError("restoration machine-gate tracker mismatch")
+    if restoration["trigger"] != (
+        "temporary-window-expiry-or-before-production-or-after-machine-gate-activation"
+    ):
+        raise AuthorizationError("restoration trigger mismatch")
+    reviewers = restoration["reviewers"]
+    if not isinstance(reviewers, list) or not reviewers:
+        raise AuthorizationError("restoration reviewer set is absent")
+    identities: list[dict[str, Any]] = []
+    for reviewer in reviewers:
+        if not isinstance(reviewer, dict):
+            raise AuthorizationError("restoration reviewer entry is invalid")
+        require_keys(reviewer, {"type", "id", "name"}, "restoration reviewer")
+        if (
+            reviewer["type"] not in {"User", "Team"}
+            or not isinstance(reviewer["id"], int)
+            or reviewer["id"] < 1
+            or not isinstance(reviewer["name"], str)
+            or not reviewer["name"]
+        ):
+            raise AuthorizationError("restoration reviewer identity is invalid")
+        identities.append(dict(reviewer))
+    identities.sort(key=lambda item: (item["type"], item["id"], item["name"]))
+    return len(identities), digest_bytes(canonical_bytes(identities))
+
+
 def verify_legal_tracking_issue(issue: dict[str, Any], expected_ref: str) -> None:
     if expected_ref != LEGAL_ISSUE_REF:
         raise AuthorizationError("legal tracking ref must remain canonical #2374")
@@ -146,12 +187,13 @@ def build_authorization(
     policy: dict[str, Any], owner_comment: dict[str, Any],
     advisory_comment: dict[str, Any], legal_issue: dict[str, Any],
     environment: dict[str, Any], revocations: dict[str, Any],
+    temporary_automation_comment: dict[str, Any],
     operator_sha256: str, device_sha256: str, expires_at: str, issued_at: str,
     run_id: int, head_sha: str, triggering_actor: str,
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "active":
-        raise AuthorizationError("owner policy is not active v1")
+        raise AuthorizationError("owner policy is not active v2")
     require_keys(policy["aiAdvisory"], {"commentId", "ref", "bodySha256", "authorLogin", "authorAssociation", "advisoryOnly", "consensusVerdict", "providers", "provenanceClass", "providerCryptographicAttestation"}, "policy.aiAdvisory")
     if policy["aiAdvisory"]["advisoryOnly"] is not True or policy["aiAdvisory"]["consensusVerdict"] != "AGREE":
         raise AuthorizationError("provider-distinct AI advisory consensus is not AGREE/advisory-only")
@@ -163,8 +205,8 @@ def build_authorization(
         or policy["aiAdvisory"]["providerCryptographicAttestation"] is not False
     ):
         raise AuthorizationError("AI advisory provenance boundary is not explicit")
-    verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective")
-    verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory")
+    verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective", 2373)
+    verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory", 2373)
 
     require_keys(policy["legalTracking"], {"ref", "status", "clearanceClaimed", "dependencyAcknowledgedBy", "dependencyRationaleCode"}, "policy.legalTracking")
     legal = policy["legalTracking"]
@@ -184,9 +226,9 @@ def build_authorization(
     if policy["scope"] != expected_scope:
         raise AuthorizationError("owner policy scope is not the bounded privacy-safe pilot")
 
-    require_keys(policy["authorization"], {"protectedEnvironment", "requirePreventSelfReview", "maxTtlMinutes", "killSwitchWorkflowRef", "revocationLedgerRef"}, "policy.authorization")
+    require_keys(policy["authorization"], {"protectedEnvironment", "environmentApproval", "maxTtlMinutes", "killSwitchWorkflowRef", "revocationLedgerRef"}, "policy.authorization")
     auth_policy = policy["authorization"]
-    if auth_policy["protectedEnvironment"] != EXPECTED_ENVIRONMENT or auth_policy["requirePreventSelfReview"] is not True:
+    if auth_policy["protectedEnvironment"] != EXPECTED_ENVIRONMENT:
         raise AuthorizationError("protected environment policy is invalid")
     if auth_policy["maxTtlMinutes"] != 120:
         raise AuthorizationError("owner policy max TTL must be 120 minutes")
@@ -194,7 +236,21 @@ def build_authorization(
         raise AuthorizationError("kill-switch workflow ref mismatch")
     if auth_policy["revocationLedgerRef"] != "config/faz22-6-view-only-pilot-authorization-revocations.v1.json":
         raise AuthorizationError("revocation ledger ref mismatch")
-    reviewer_count, reviewer_set_sha256 = verify_environment(environment, True, triggering_actor)
+    approval = auth_policy["environmentApproval"]
+    if not isinstance(approval, dict):
+        raise AuthorizationError("environment approval policy is invalid")
+    require_keys(
+        approval,
+        {"activeMode", "requiredReviewer", "temporaryTestAutomation", "restoration"},
+        "policy.authorization.environmentApproval",
+    )
+    required_reviewer = approval["requiredReviewer"]
+    if not isinstance(required_reviewer, dict):
+        raise AuthorizationError("required-reviewer policy is invalid")
+    require_keys(required_reviewer, {"requirePreventSelfReview"}, "required-reviewer policy")
+    if required_reviewer["requirePreventSelfReview"] is not True:
+        raise AuthorizationError("required-reviewer mode must prevent self review")
+    restoration_count, restoration_sha256 = verify_restoration(approval["restoration"])
 
     require_keys(policy["lifecycle"], {"validFrom", "validUntil"}, "policy.lifecycle")
     valid_from = parse_utc(policy["lifecycle"]["validFrom"], "policy validFrom")
@@ -205,6 +261,53 @@ def build_authorization(
         raise AuthorizationError("authorization is outside owner-policy lifecycle")
     if (expires - issued).total_seconds() > auth_policy["maxTtlMinutes"] * 60:
         raise AuthorizationError("authorization exceeds the absolute TTL limit")
+
+    approval_mode = approval["activeMode"]
+    temporary_approved = False
+    temporary_ref: str | None = None
+    temporary_sha256: str | None = None
+    temporary_valid_until: str | None = None
+    if approval_mode == REQUIRED_REVIEWER_MODE:
+        reviewer_count, reviewer_set_sha256 = verify_environment(
+            environment, True, triggering_actor,
+        )
+        protected_approved = True
+        prevent_self_review = True
+    elif approval_mode == TEMPORARY_AUTOMATION_MODE:
+        temporary = approval["temporaryTestAutomation"]
+        if not isinstance(temporary, dict):
+            raise AuthorizationError("temporary TEST automation policy is invalid")
+        require_keys(
+            temporary,
+            {"directive", "expectedLiveProtectionRules", "validFrom", "validUntil"},
+            "temporary TEST automation policy",
+        )
+        if temporary["expectedLiveProtectionRules"] != []:
+            raise AuthorizationError("temporary TEST automation must expect no protection rules")
+        if environment.get("name") != EXPECTED_ENVIRONMENT:
+            raise AuthorizationError("protected environment name mismatch")
+        if environment.get("protection_rules") != []:
+            raise AuthorizationError("temporary TEST automation requires an empty live protection rule set")
+        verify_comment(
+            temporary_automation_comment,
+            temporary["directive"],
+            "temporaryAutomationDirective",
+            2828,
+        )
+        temporary_from = parse_utc(temporary["validFrom"], "temporary automation validFrom")
+        temporary_until = parse_utc(temporary["validUntil"], "temporary automation validUntil")
+        if not temporary_from <= issued < expires <= temporary_until:
+            raise AuthorizationError("authorization is outside temporary TEST automation window")
+        protected_approved = False
+        prevent_self_review = False
+        reviewer_count = 0
+        reviewer_set_sha256 = digest_bytes(canonical_bytes([]))
+        temporary_approved = True
+        temporary_ref = temporary["directive"]["ref"]
+        temporary_sha256 = temporary["directive"]["bodySha256"]
+        temporary_valid_until = temporary["validUntil"]
+    else:
+        raise AuthorizationError("environment approval mode is unsupported")
     if run_id < 1 or not GIT_SHA.fullmatch(head_sha):
         raise AuthorizationError("authorization run identity is invalid")
     require_sha256(operator_sha256, "operatorSha256")
@@ -226,10 +329,19 @@ def build_authorization(
         "operatorSha256": operator_sha256,
         "consentingPilotDevice": True,
         "deviceSha256": device_sha256,
-        "exposureApprovedByProtectedEnvironment": True,
-        "protectedEnvironmentPreventSelfReview": True,
+        "environmentApprovalMode": approval_mode,
+        "exposureApprovedByProtectedEnvironment": protected_approved,
+        "temporaryTestAutomationApprovedByOwner": temporary_approved,
+        "temporaryAutomationDirectiveRef": temporary_ref,
+        "temporaryAutomationDirectiveSha256": temporary_sha256,
+        "temporaryAutomationValidUntil": temporary_valid_until,
+        "protectedEnvironmentPreventSelfReview": prevent_self_review,
         "protectedEnvironmentReviewerCount": reviewer_count,
         "protectedEnvironmentReviewerSetSha256": reviewer_set_sha256,
+        "restorationPreventSelfReview": True,
+        "restorationReviewerCount": restoration_count,
+        "restorationReviewerSetSha256": restoration_sha256,
+        "restorationTrackedBy": approval["restoration"]["trackedBy"],
         "ownerPolicySha256": digest_bytes(canonical_bytes(policy)),
         "ownerDirectiveRef": policy["ownerDirective"]["ref"],
         "ownerDirectiveSha256": policy["ownerDirective"]["bodySha256"],
@@ -269,6 +381,7 @@ def main() -> int:
     parser.add_argument("--advisory-comment", required=True, type=Path)
     parser.add_argument("--legal-issue", required=True, type=Path)
     parser.add_argument("--environment", required=True, type=Path)
+    parser.add_argument("--temporary-automation-comment", required=True, type=Path)
     parser.add_argument("--revocations", required=True, type=Path)
     parser.add_argument("--operator-sha256", required=True)
     parser.add_argument("--device-sha256", required=True)
@@ -285,9 +398,12 @@ def main() -> int:
         advisory, _ = load_object(args.advisory_comment, "AI advisory comment")
         legal, _ = load_object(args.legal_issue, "legal tracking issue")
         environment, _ = load_object(args.environment, "protected environment")
+        temporary_comment, _ = load_object(
+            args.temporary_automation_comment, "temporary automation directive comment",
+        )
         revocations, _ = load_object(args.revocations, "revocation ledger")
         result = build_authorization(
-            policy, owner, advisory, legal, environment, revocations,
+            policy, owner, advisory, legal, environment, revocations, temporary_comment,
             args.operator_sha256, args.device_sha256,
             args.expires_at, args.issued_at, args.run_id, args.head_sha,
             args.triggering_actor,

@@ -31,13 +31,13 @@ from typing import Any, NamedTuple, Protocol
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 CHILD_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
-OWNER_POLICY = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+OWNER_POLICY = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
 REVOCATION_LEDGER = ROOT / "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
 EVIDENCE_SCHEMA = "faz22.6.viewOnlyViewerProductEvidence.v2"
 VERIFIER_SCHEMA = "faz22.6.viewOnlyViewerProductEvidenceVerifier.v2"
 MARKER = "F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2"
-AUTHORIZATION_SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
+AUTHORIZATION_SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v3"
 EXPECTED_REPOSITORY = "Halildeu/platform-k8s-gitops"
 EXPECTED_WORKFLOW_PATH = ".github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 EXPECTED_WORKFLOW_NAME = "Faz 22.6 VIEW_ONLY viewer product evidence"
@@ -1080,8 +1080,13 @@ def verify_activation_authorization(
     expected_keys = {
         "schemaVersion", "minimumAcceptedAuthorizationSchema", "environment",
         "onePersonRoster", "operatorSha256", "consentingPilotDevice", "deviceSha256",
+        "environmentApprovalMode",
         "exposureApprovedByProtectedEnvironment", "protectedEnvironmentPreventSelfReview",
+        "temporaryTestAutomationApprovedByOwner", "temporaryAutomationDirectiveRef",
+        "temporaryAutomationDirectiveSha256", "temporaryAutomationValidUntil",
         "protectedEnvironmentReviewerCount", "protectedEnvironmentReviewerSetSha256",
+        "restorationPreventSelfReview", "restorationReviewerCount",
+        "restorationReviewerSetSha256", "restorationTrackedBy",
         "ownerPolicySha256", "ownerDirectiveRef",
         "ownerDirectiveSha256", "aiAdvisoryOnly", "aiAdvisoryRef", "aiAdvisorySha256",
         "aiAdvisoryProvenanceClass", "aiProviderCryptographicAttestation",
@@ -1104,13 +1109,39 @@ def verify_activation_authorization(
         "minimum accepted authorization schema",
     )
     require_equal(authorization["environment"], "faz22-view-only-pilot", "protected environment")
-    if not (
-        authorization["onePersonRoster"] is True
-        and authorization["consentingPilotDevice"] is True
+    approval_mode = authorization["environmentApprovalMode"]
+    required_reviewer_approval = (
+        approval_mode == "required-reviewer"
         and authorization["exposureApprovedByProtectedEnvironment"] is True
+        and authorization["temporaryTestAutomationApprovedByOwner"] is False
+        and authorization["temporaryAutomationDirectiveRef"] is None
+        and authorization["temporaryAutomationDirectiveSha256"] is None
+        and authorization["temporaryAutomationValidUntil"] is None
         and authorization["protectedEnvironmentPreventSelfReview"] is True
         and isinstance(authorization["protectedEnvironmentReviewerCount"], int)
         and authorization["protectedEnvironmentReviewerCount"] >= 1
+    )
+    temporary_automation_approval = (
+        approval_mode == "temporary-test-automation"
+        and authorization["exposureApprovedByProtectedEnvironment"] is False
+        and authorization["temporaryTestAutomationApprovedByOwner"] is True
+        and isinstance(authorization["temporaryAutomationDirectiveRef"], str)
+        and isinstance(authorization["temporaryAutomationDirectiveSha256"], str)
+        and isinstance(authorization["temporaryAutomationValidUntil"], str)
+        and authorization["protectedEnvironmentPreventSelfReview"] is False
+        and authorization["protectedEnvironmentReviewerCount"] == 0
+        and authorization["protectedEnvironmentReviewerSetSha256"] == digest_json([])
+    )
+    if not (
+        authorization["onePersonRoster"] is True
+        and authorization["consentingPilotDevice"] is True
+        and (required_reviewer_approval or temporary_automation_approval)
+        and authorization["restorationPreventSelfReview"] is True
+        and isinstance(authorization["restorationReviewerCount"], int)
+        and authorization["restorationReviewerCount"] >= 1
+        and isinstance(authorization["restorationReviewerSetSha256"], str)
+        and authorization["restorationTrackedBy"]
+        == "https://github.com/Halildeu/platform-k8s-gitops/issues/2502"
         and authorization["aiAdvisoryOnly"] is True
         and authorization["aiAdvisoryProvenanceClass"] == "owner-attested-provider-session"
         and authorization["aiProviderCryptographicAttestation"] is False
@@ -1125,7 +1156,7 @@ def verify_activation_authorization(
         and authorization["visibleIndicatorRequired"] is True
         and authorization["localAbortRequired"] is True
     ):
-        raise EvidenceError("protected authorization boolean controls are not all true")
+        raise EvidenceError("protected authorization mode or privacy controls are invalid")
     require_equal(authorization["authorizationRunId"], run_id, "authorization receipt run id")
     require_equal(authorization["authorizationHeadSha"], expected_head_sha, "authorization head SHA")
     require_equal(authorization["operatorSha256"], binding["operatorSha256"], "authorized operator binding")
@@ -1144,12 +1175,33 @@ def verify_activation_authorization(
     }:
         raise EvidenceError("canonical owner policy field set mismatch")
     require_equal(
-        policy["schemaVersion"], "faz22.6-view-only-pilot-owner-policy-v1",
+        policy["schemaVersion"], "faz22.6-view-only-pilot-owner-policy-v2",
         "canonical owner policy schema",
     )
     require_equal(policy["status"], "active", "canonical owner policy status")
     policy_digest = digest_json(policy)
     require_equal(authorization["ownerPolicySha256"], policy_digest, "canonical owner policy digest")
+    approval_policy = policy.get("authorization", {}).get("environmentApproval")
+    if not isinstance(approval_policy, dict):
+        raise EvidenceError("canonical environment approval policy is missing")
+    require_equal(
+        authorization["environmentApprovalMode"], approval_policy.get("activeMode"),
+        "canonical environment approval mode",
+    )
+    restoration = approval_policy.get("restoration")
+    if not isinstance(restoration, dict):
+        raise EvidenceError("canonical reviewer restoration contract is missing")
+    restoration_reviewers = restoration.get("reviewers")
+    if not isinstance(restoration_reviewers, list) or not restoration_reviewers:
+        raise EvidenceError("canonical reviewer restoration set is absent")
+    require_equal(
+        authorization["restorationReviewerCount"], len(restoration_reviewers),
+        "restoration reviewer count",
+    )
+    require_equal(
+        authorization["restorationReviewerSetSha256"], digest_json(restoration_reviewers),
+        "restoration reviewer set digest",
+    )
     if revocations.get("schemaVersion") != "faz22.6-view-only-pilot-authorization-revocations-v1":
         raise EvidenceError("authorization revocation ledger schema mismatch")
     revoked = revocations.get("revokedAuthorizationSha256")
@@ -1201,7 +1253,33 @@ def verify_activation_authorization(
         "revocation ledger ref",
     )
 
-    for label, contract in (("owner directive", owner_contract), ("AI advisory", advisory_contract)):
+    comment_contracts = [
+        ("owner directive", owner_contract),
+        ("AI advisory", advisory_contract),
+    ]
+    if approval_mode == "temporary-test-automation":
+        temporary_policy = approval_policy.get("temporaryTestAutomation")
+        if not isinstance(temporary_policy, dict):
+            raise EvidenceError("temporary TEST automation policy is missing")
+        temporary_directive = temporary_policy.get("directive")
+        if not isinstance(temporary_directive, dict):
+            raise EvidenceError("temporary TEST automation directive is missing")
+        require_equal(
+            authorization["temporaryAutomationDirectiveRef"], temporary_directive.get("ref"),
+            "temporary automation directive ref",
+        )
+        require_equal(
+            authorization["temporaryAutomationDirectiveSha256"],
+            temporary_directive.get("bodySha256"),
+            "temporary automation directive digest",
+        )
+        require_equal(
+            authorization["temporaryAutomationValidUntil"], temporary_policy.get("validUntil"),
+            "temporary automation validity",
+        )
+        comment_contracts.append(("temporary automation directive", temporary_directive))
+
+    for label, contract in comment_contracts:
         comment_id = contract.get("commentId")
         if not isinstance(comment_id, int) or comment_id < 1:
             raise EvidenceError(f"{label} comment ID is invalid")
@@ -1229,15 +1307,23 @@ def verify_activation_authorization(
     actor_login = actor.get("login") if isinstance(actor, dict) else None
     if not isinstance(actor_login, str) or not actor_login:
         raise EvidenceError("activation workflow actor identity is absent")
-    reviewer_count, reviewer_set_sha256 = canonical_environment_reviewer_set(environment, actor_login)
-    require_equal(
-        reviewer_count, authorization["protectedEnvironmentReviewerCount"],
-        "protected environment reviewer count",
-    )
-    require_equal(
-        reviewer_set_sha256, authorization["protectedEnvironmentReviewerSetSha256"],
-        "protected environment reviewer set digest",
-    )
+    if approval_mode == "required-reviewer":
+        reviewer_count, reviewer_set_sha256 = canonical_environment_reviewer_set(
+            environment, actor_login,
+        )
+        require_equal(
+            reviewer_count, authorization["protectedEnvironmentReviewerCount"],
+            "protected environment reviewer count",
+        )
+        require_equal(
+            reviewer_set_sha256, authorization["protectedEnvironmentReviewerSetSha256"],
+            "protected environment reviewer set digest",
+        )
+    elif approval_mode == "temporary-test-automation":
+        require_equal(environment.get("name"), "faz22-view-only-pilot", "protected environment")
+        require_equal(environment.get("protection_rules"), [], "temporary automation protection rules")
+    else:
+        raise EvidenceError("environment approval mode is unsupported")
 
     issued_at = parse_utc(authorization["issuedAt"], "protected authorization issuedAt")
     run_created = parse_utc(run["created_at"], "activation created_at")
@@ -1248,6 +1334,12 @@ def verify_activation_authorization(
         raise EvidenceError("protected authorization exceeds the 120-minute absolute TTL")
     if expires_at < pilot_ended:
         raise EvidenceError("protected authorization expired before the pilot ended")
+    if approval_mode == "temporary-test-automation":
+        temporary_until = parse_utc(
+            authorization["temporaryAutomationValidUntil"], "temporary automation validUntil",
+        )
+        if pilot_ended > temporary_until:
+            raise EvidenceError("pilot ended after temporary TEST automation window")
     return expires_at
 
 
