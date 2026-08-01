@@ -2243,6 +2243,7 @@ spec:
         self.assertIsNotNone(quota_patch)
         patch = quota_patch.group(1)
         expected = {
+            "/spec/hard/limits.cpu": "17",
             "/spec/hard/services": "40",
             "/spec/hard/secrets": "45",
             "/spec/hard/pods": "34",

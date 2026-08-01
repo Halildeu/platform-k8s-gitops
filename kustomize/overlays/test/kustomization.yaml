@@ -9396,9 +9396,14 @@ patches:
       # 16 CPU: rolling-surge + ATS/audio-gateway buyumesi icin headroom
       # (limits ceiling; host gercek CPU yuku %9, overcommit guvenli). Asil
       # tavan node max-pods=50 (ayri kapasite-hardening isi, board item).
+      # 2026-08-01 Faz 24 #3240: steady-state reached 15950m/16000m and the
+      # 200m openfga-migrate PreSync pod could not be admitted. Because the
+      # quota manifest is applied after that hook, auto-sync could not apply
+      # its own quota changes. 17 CPU restores bounded hook/repair headroom;
+      # TEST-only limits overcommit, not a request or host-capacity increase.
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "16"
+        value: "17"
       - op: replace
         path: /spec/hard/limits.memory
         value: 24Gi
