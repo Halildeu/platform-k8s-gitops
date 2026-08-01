@@ -9,6 +9,7 @@ tool deliberately edits only the canonical frontend entry's ``newTag`` and
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -167,6 +168,7 @@ def inspect_rollout_contract(text: str) -> dict[str, int | str | None]:
         return match.group("value") if match else None
 
     return {
+        "patch_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
         "replicas": patch_value("/spec/replicas"),
         "max_surge": patch_value("/spec/strategy/rollingUpdate/maxSurge"),
         "max_unavailable": patch_value("/spec/strategy/rollingUpdate/maxUnavailable"),
