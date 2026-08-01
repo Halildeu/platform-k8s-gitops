@@ -47,6 +47,8 @@ EXPECTED_RESULT_STREAM = "transcript:direct-stt-results"
 EXPECTED_AUDIT_STREAM = "audit:events"
 EXPECTED_AUDIT_EVENT = "CHUNK_FORWARDED_TO_COMPUTE_PLANE"
 EXPECTED_RESULT_EVENT = "DIRECT_STT_TRANSCRIPT_RESULT"
+SUPPORTED_STT_PROVIDERS = {"internal", "speechmatics"}
+EXPECTED_SPEECHMATICS_DEVICE = "speechmatics-saas"
 REQUIRED_SECRET_KEYS = {
     "direct-stt-ca.crt",
     "direct-stt-client.crt",
@@ -1048,8 +1050,14 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     ids = smoke.get("ids") if isinstance(smoke.get("ids"), dict) else {}
     sample = smoke.get("sample") if isinstance(smoke.get("sample"), dict) else {}
 
-    meeting_id = str(ids.get("meetingId") or "")
     session_id = str(ids.get("sessionId") or "")
+    start_step = step_by_name(smoke, "start_session")
+    start_response = (
+        start_step.get("response")
+        if isinstance(start_step.get("response"), dict)
+        else {}
+    )
+    selected_provider = str(start_response.get("sttProvider") or "internal").lower()
     upload_step = step_by_name(smoke, "upload_chunk")
     upload_response = upload_step.get("response") if isinstance(upload_step.get("response"), dict) else {}
     chunk_seq = int(upload_response.get("chunkSeq", sample.get("chunkSeq", 0)) or 0)
@@ -1065,6 +1073,8 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
 
     if smoke.get("status") != "pass":
         failures.append("external-smoke-not-pass")
+    if selected_provider not in SUPPORTED_STT_PROVIDERS:
+        failures.append("unsupported-stt-provider")
     if not SESSION_ID_RE.match(session_id):
         failures.append("session-id-shape")
     if not SAFE_NAME_RE.match(correlation_id):
@@ -1112,21 +1122,35 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     if not direct_enabled:
         failures.append("direct-stt-not-enabled")
 
-    probe = mtls_probe(
-        runner,
-        context=args.context,
-        namespace=args.namespace,
-        pod_name=pod_name,
-        timeout=args.probe_timeout,
-    )
-    if probe.get("healthHttpStatus") != 200:
-        failures.append(str(probe.get("error") or "mtls-health-not-200"))
+    if selected_provider == "internal":
+        probe = mtls_probe(
+            runner,
+            context=args.context,
+            namespace=args.namespace,
+            pod_name=pod_name,
+            timeout=args.probe_timeout,
+        )
+        probe["applicable"] = True
+        probe["provider"] = "internal"
+        if probe.get("healthHttpStatus") != 200:
+            failures.append(str(probe.get("error") or "mtls-health-not-200"))
+    else:
+        probe = {
+            "applicable": False,
+            "provider": selected_provider,
+            "fromRealPod": False,
+            "clientCertificateUsed": False,
+            "healthHttpStatus": 0,
+            "totalMs": 0,
+        }
 
     result_record: tuple[str, dict[str, str]] | None = None
     audit_record: dict[str, str] | None = None
     transcript_hash = ""
     transcript_chars = 0
     transcript_text = ""
+    result_model = ""
+    result_device = ""
     result_wait_timeout = float(getattr(args, "result_wait_timeout", 60))
     result_wait_interval = float(getattr(args, "result_wait_interval", 2))
     waited_records, wait_errors = wait_for_direct_stt_result(
@@ -1186,8 +1210,15 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     else:
         transcript_text = result_record[1].get("textDraft", "")
         transcript_hash, transcript_chars = safe_text_hash(transcript_text)
+        result_model = result_record[1].get("model", "")
+        result_device = result_record[1].get("device", "")
         if not transcript_text:
             failures.append("result-stream-transcript-empty")
+        if selected_provider == "speechmatics" and (
+            not result_model.startswith("speechmatics-")
+            or result_device != EXPECTED_SPEECHMATICS_DEVICE
+        ):
+            failures.append("speechmatics-result-provider-mismatch")
 
     audit_record, audit_error = wait_for_durable_audit_record(
         lambda: durable_audit_record_via_postgres(
@@ -1274,6 +1305,7 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         },
         "runtime": {
             "directSttEnabled": direct_enabled,
+            "selectedProvider": selected_provider,
             "transcribeHost": EXPECTED_TRANSCRIBE_HOST,
             "transcribePort": EXPECTED_TRANSCRIBE_PORT,
             "hostAliasIp": host_alias_ip(deployment),
@@ -1285,6 +1317,7 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         },
         "mtlsProbe": {key: value for key, value in probe.items() if key != "error"},
         "flow": {
+            "sttProvider": selected_provider,
             "sessionId": session_id,
             "chunkSeq": chunk_seq,
             "correlationId": correlation_id,
@@ -1297,6 +1330,8 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
             "resultStreamKey": EXPECTED_RESULT_STREAM,
             "resultStreamEntryFound": result_record is not None,
             "resultStreamRecordId": result_record[0] if result_record else "",
+            "resultModel": result_model,
+            "resultDevice": result_device,
             "transcriptTextIncluded": False,
             "transcriptSha256": transcript_hash,
             "transcriptCharCount": transcript_chars,

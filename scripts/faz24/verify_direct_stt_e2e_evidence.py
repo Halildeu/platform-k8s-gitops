@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Validate Faz 24 #182 direct-STT e2e evidence.
+"""Validate Faz 24 #182 provider-selectable direct-STT e2e evidence.
 
 The #182 acceptance surface is narrow but strict:
 
 - audio-gateway direct-STT is enabled in the real test deployment.
-- The pod uses the mTLS/SNI path to live-stt and receives a transcript result.
+- The selected provider path returns a transcript result. Internal STT requires
+  the mTLS/SNI probe; Speechmatics requires provider-bound result metadata.
 - The same session/chunk/correlation is present in the result stream and the
   durable, hash-chained compute-plane audit record.
 - Evidence stays metadata-only: no PEM values, tokens, raw audio, transcript
@@ -41,6 +42,8 @@ EXPECTED_MTLS_MOUNT = "/etc/direct-stt-mtls"
 EXPECTED_RESULT_STREAM = "transcript:direct-stt-results"
 EXPECTED_AUDIT_STREAM = "audit:events"
 EXPECTED_AUDIT_EVENT = "CHUNK_FORWARDED_TO_COMPUTE_PLANE"
+SUPPORTED_STT_PROVIDERS = {"internal", "speechmatics"}
+EXPECTED_SPEECHMATICS_DEVICE = "speechmatics-saas"
 REQUIRED_SECRET_KEYS = {
     "direct-stt-ca.crt",
     "direct-stt-client.crt",
@@ -313,6 +316,12 @@ def validate_runtime(data: dict[str, Any], checks: list[Check]) -> None:
         return
 
     add(checks, "runtime_direct_stt_enabled", runtime.get("directSttEnabled") is True, "directSttEnabled must be true")
+    add(
+        checks,
+        "runtime_selected_provider",
+        runtime.get("selectedProvider") in SUPPORTED_STT_PROVIDERS,
+        "selectedProvider must be internal or speechmatics",
+    )
     add(checks, "runtime_transcribe_host", runtime.get("transcribeHost") == EXPECTED_TRANSCRIBE_HOST, f"transcribeHost must be {EXPECTED_TRANSCRIBE_HOST}")
     add(checks, "runtime_transcribe_port", as_int(runtime.get("transcribePort")) == EXPECTED_TRANSCRIBE_PORT, f"transcribePort must be {EXPECTED_TRANSCRIBE_PORT}")
     add(checks, "runtime_host_alias_ip", runtime.get("hostAliasIp") == EXPECTED_HOST_ALIAS_IP, f"hostAliasIp must be {EXPECTED_HOST_ALIAS_IP}")
@@ -336,6 +345,23 @@ def validate_mtls_probe(data: dict[str, Any], checks: list[Check]) -> None:
     if not isinstance(probe, dict):
         add(checks, "mtls_probe_shape", False, "mtlsProbe must be an object")
         return
+    runtime = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
+    selected_provider = runtime.get("selectedProvider")
+    add(
+        checks,
+        "mtls_probe_provider_match",
+        probe.get("provider") == selected_provider,
+        "mtls probe provider must match runtime.selectedProvider",
+    )
+    if selected_provider == "speechmatics":
+        add(checks, "mtls_probe_not_applicable", probe.get("applicable") is False, "internal mTLS probe must be inapplicable for speechmatics")
+        add(checks, "mtls_probe_not_run", probe.get("fromRealPod") is False, "internal mTLS probe must not run for speechmatics")
+        add(checks, "mtls_probe_no_client_auth", probe.get("clientCertificateUsed") is False, "internal client certificate must not be used for speechmatics")
+        add(checks, "mtls_probe_no_health_status", as_int(probe.get("healthHttpStatus")) == 0, "inapplicable internal health status must be 0")
+        add(checks, "mtls_probe_no_latency", as_int(probe.get("totalMs")) == 0, "inapplicable internal probe latency must be 0")
+        return
+
+    add(checks, "mtls_probe_applicable", probe.get("applicable") is True, "internal mTLS probe must be applicable")
     add(checks, "mtls_probe_real_pod", probe.get("fromRealPod") is True, "mtls probe must run from real audio-gateway pod")
     add(checks, "mtls_probe_host", probe.get("host") == EXPECTED_TRANSCRIBE_HOST, f"host must be {EXPECTED_TRANSCRIBE_HOST}")
     add(checks, "mtls_probe_port", as_int(probe.get("port")) == EXPECTED_TRANSCRIBE_PORT, f"port must be {EXPECTED_TRANSCRIBE_PORT}")
@@ -350,6 +376,28 @@ def validate_flow(data: dict[str, Any], checks: list[Check]) -> None:
     if not isinstance(flow, dict):
         add(checks, "flow_shape", False, "flow must be an object")
         return
+
+    runtime = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
+    selected_provider = runtime.get("selectedProvider")
+    add(
+        checks,
+        "flow_provider_match",
+        flow.get("sttProvider") == selected_provider,
+        "flow.sttProvider must match runtime.selectedProvider",
+    )
+    if selected_provider == "speechmatics":
+        add(
+            checks,
+            "flow_speechmatics_model",
+            safe_name(flow.get("resultModel")) and str(flow.get("resultModel")).startswith("speechmatics-"),
+            "Speechmatics resultModel must be bounded metadata with speechmatics- prefix",
+        )
+        add(
+            checks,
+            "flow_speechmatics_device",
+            flow.get("resultDevice") == EXPECTED_SPEECHMATICS_DEVICE,
+            f"Speechmatics resultDevice must be {EXPECTED_SPEECHMATICS_DEVICE}",
+        )
 
     add(
         checks,
