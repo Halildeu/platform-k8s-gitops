@@ -124,6 +124,20 @@ class FrontendPromotionContractTests(unittest.TestCase):
             between, r"kubectl\s+(apply|patch|edit|replace|set\s+image)"
         )
 
+    def test_verifier_only_change_does_not_request_argocd_mutation(self):
+        self.assertIn('requires_reconcile=false', self.verify)
+        self.assertIn('echo "requires_reconcile=$requires_reconcile"', self.verify)
+        self.assertIn(
+            "steps.pin.outputs.requires_reconcile == 'true'", self.verify
+        )
+        self.assertIn(
+            'if [[ "$REQUIRES_RECONCILE" != "true" ]]', self.verify
+        )
+        self.assertIn("scripts/deploy/verify-pod-digest.sh", self.verify)
+        self.assertIn(
+            "mutation-free frontend runtime verification succeeded", self.verify
+        )
+
     def test_image_availability_preflight_runs_before_argocd_mutation(self):
         """gitops#2885: kota headroom'u yetmez — imaj çekilebilir olmalı.
 
