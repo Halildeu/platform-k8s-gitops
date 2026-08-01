@@ -43,12 +43,12 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    # 2026-08-01 bump 5: sha-b446ae4 — platform-backend#1062 (ES-104K dilim 1).
-    # WebP kaniti: saf Java decode (TwelveMonkeys exact pin), turev PNG'ye
-    # duzlestirilir (metadata yapisal gider); TUM raster formatlara decode-oncesi
-    # tuval kapisi. Digest gercek pull ile (smoke-dig-wp).
-    # Onceki: sha-866dc21 @ sha256:bda8303d89bfa34b7...
-    digest: sha256:ad6e28eb380bf16619b45795d7b396b71c27fc46a11d6861b1422055d30bbeb4
+    # 2026-08-01 bump 6: sha-28e1824 — platform-backend#1064 (ES-104K dilim 2).
+    # HEIC: ftyp brand tespiti + digest-pinli donusturucu uzerinden decode +
+    # guvensiz-cikti disiplini (donusturucu cevabi ayni in-JVM kapi+recode'dan
+    # gecer). Digest gercek pull ile (smoke-dig-hc).
+    # Onceki: sha-b446ae4 @ sha256:ad6e28eb380bf1661...
+    digest: sha256:dec1a76ff42c963fbee166ec3ed4b1de50e1b88f4d278d7c62789cb70ccf7258
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
