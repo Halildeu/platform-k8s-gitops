@@ -231,6 +231,7 @@ mint_persona_token() {
     --data-urlencode "grant_type=password" \
     --data-urlencode "client_id=smoke-client" \
     --data-urlencode "client_secret@$SMOKE_CLIENT_SECRET_FILE" \
+    --data-urlencode "scope=openid smoke-notify-v1" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file")"
   token="$(printf '%s' "$response" | token_field)"

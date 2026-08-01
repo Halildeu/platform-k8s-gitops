@@ -48,6 +48,11 @@ if ! grep -Fq 'MAX_BYTES="${MAX_BYTES:-$EXPECTED_AGENT_MAX_BYTES}"' "${script}";
   exit 1
 fi
 
+if ! grep -Fq -- '--data-urlencode "scope=openid smoke-notify-v1"' "${script}"; then
+  echo "UPDATE_AGENT persona token must request the optional org_id scope used by endpoint-admin tenant resolution" >&2
+  exit 1
+fi
+
 if grep -Eq 'https://github\.com/Halildeu/platform-agent/releases/download/v0\.2\.28|e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4|MAX_BYTES="\$\{MAX_BYTES:-14377384\}"' "${script}"; then
   echo "UPDATE_AGENT script must not hard-code current release defaults outside the policy SSOT" >&2
   exit 1
