@@ -81,7 +81,12 @@ images:
     # ihlal oncesi geri sayim cipi. Kaynak: 8bcccc994c055d6cfb6870d9146d568db1919138
     # Etiket TAM sha; digest gercek pull ile okundu (smoke-dig-mgr pod).
     # Onceki: sha256:e658bd5f84b6abc11...
-    digest: sha256:4e7eb5f89712f1d58432c5aaf0cb44ddf63d16e0ebc3213cf95eb577254fa308
+    # 2026-08-01 bump 2: platform-web#1106 — taslak kutusu sunucu sablonuna
+    # baglandi: GET acknowledgement-draft + POST acknowledgement, eksik bolum
+    # uyarisi duzenlerken. Kaynak: 72213c91d8462b1e5b1c1ffce51452cd10ac81ec
+    # (etiket TAM sha; digest gercek pull ile, smoke-dig-au pod).
+    # Onceki: 8bcccc99 @ sha256:4e7eb5f89712f1d58...
+    digest: sha256:9807b816b7369c3b66c4fd410b2340edc034ced2081b4fec25bec6f2f0266ffa
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
