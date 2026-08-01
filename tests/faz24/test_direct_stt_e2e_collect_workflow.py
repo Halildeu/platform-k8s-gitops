@@ -392,6 +392,12 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "chunk_fixture_source=${fixture_source}" in workflow
     assert "CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}" in workflow
     assert "SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}" in workflow
+    assert "SMOKE_STT_PROVIDER: ${{ inputs.stt_provider }}" in workflow
+    assert 'STT_PROVIDER_INPUT: ${{ inputs.stt_provider }}' in workflow
+    assert 'internal|speechmatics) ;;' in workflow
+    assert (
+        "speechmatics smoke requires a readable privacy-safe speech fixture" in workflow
+    )
     assert "faz24-direct-stt-e2e-collect-${{ github.run_id }}" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "group: faz24-platform-desktop-keycloak-test-mutation" in workflow
