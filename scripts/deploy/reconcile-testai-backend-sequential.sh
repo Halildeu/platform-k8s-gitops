@@ -149,7 +149,6 @@ refresh_semantic_main_fence() {
     return 1
   }
   git diff --quiet "$REVISION" "$latest_main" -- \
-    kustomize/overlays/test/kustomization.yaml \
     docs/operations/services.yaml \
     .github/workflows/deploy-backend-testai.yml \
     .github/workflows/verify-testai-backend-rollout.yml \
