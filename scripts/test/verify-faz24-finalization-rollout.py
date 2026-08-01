@@ -483,13 +483,14 @@ def main() -> None:
     container_image(
         auth_deploy,
         "auth-service",
-        # 2026-08-01 (gitops#3230): sha-b131846 — the delivery-grant
-        # allow-lists gain the e-mail channel and recipient validation now
-        # follows the channel, on top of the one-shot grant endpoint
-        # (#1036) and the keycloak-sms-otp service client. The Faz 24 mint
-        # surface this verifier pins is unchanged by all three.
+        # 2026-08-01 (gitops#3285): sha-43ab06d — the delivery-grant
+        # allow-lists move inside a purpose, so `account_invite` can exist
+        # without handing its client the MFA lane. `mfa_otp` resolves to
+        # exactly the values it had, which the ten pre-existing grant tests
+        # assert unchanged. The Faz 24 mint surface this verifier pins is a
+        # different endpoint and is untouched.
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:25e3e24931d274f17270b7d667094e366f4c0de0948c2986ab64eeee6bff54a6",
+        "sha256:350c70ef79b74257bf84ab532d176257cce224411e7eb4105d52701a10696354",
     )
     container_image(
         meeting_deploy,
