@@ -82,7 +82,7 @@ case "${VAULT_TRANSPORT}" in
     export VAULT_ADDR="${VAULT_ADDR_VALUE}"
     export VAULT_CACERT="${VAULT_CACERT_FILE}"
     export VAULT_TOKEN
-    vault token renew -format=json -increment=24h -self >/dev/null
+    vault token renew -format=json -increment=24h >/dev/null
     response="$(vault write -format=json pki_meeting_ai_server/issue/staging-gateway \
       common_name=meeting-ai-gateway.internal \
       alt_names=meeting-ai-gateway.internal \
@@ -97,7 +97,7 @@ case "${VAULT_TRANSPORT}" in
     response="$(printf '%s\n' "${VAULT_TOKEN}" | docker exec -i "${VAULT_DOCKER_CONTAINER}" sh -ec '
       IFS= read -r VAULT_TOKEN
       export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
-      vault token renew -format=json -increment=24h -self >/dev/null
+      vault token renew -format=json -increment=24h >/dev/null
       vault write -format=json pki_meeting_ai_server/issue/staging-gateway \
         common_name=meeting-ai-gateway.internal \
         alt_names=meeting-ai-gateway.internal \
