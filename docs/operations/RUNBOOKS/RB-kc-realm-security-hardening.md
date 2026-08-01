@@ -434,7 +434,7 @@ bunun yanlış olduğunu gösterdi.
 
 | sınıf | sayı | örnekler |
 |---|---|---|
-| **İNSAN** | **4** | `admin@example.com`, `etik-staff@acik.com`, `halil.kocoglu@serban.com.tr`, `zeynep.akkilic@serban.com.tr` |
+| **İNSAN** | **4** | `halildeu`, `etik-staff`, `halil.kocoglu`, `zeynep.akkilic` — 2026-08-01'de dördünün de kullanıcı adı e-posta biçiminden sadeleştirildi (gitops#3245); e-posta ile giriş açık olduğu için oturumlar etkilenmedi |
 | belirsiz otomasyon | 4 | `codex-faz226-approver/creator`, `endpoint-admin-lock-approver/proposer` |
 | sentetik persona | 26 | `ag028-*`, `ag029-*`, `ag042-*`, `c5persona-*`, `codex-*-smoke-*`, `rb-operator-*`, `ethics-manager-*-test`, `endpoint-admin-test-approver`, `test-recorder-182` |
 
