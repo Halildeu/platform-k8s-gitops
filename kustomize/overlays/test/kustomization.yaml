@@ -6628,7 +6628,16 @@ images:
     # locales, external_allowed for the {type: external, email} recipient the
     # SPI submits). Digest read back from a real host-lane pull +
     # node-imported.
-    digest: sha256:436c10d23ca72f6be335b34330f97599f9b8d91b47168c41640148d8f7b70863
+    #
+    # 2026-08-01 fix: sha-1a88b10 — platform-backend#1043. The grant verifier
+    # compared the granted recipient against `recipients[0].phone()` for every
+    # channel, so every e-mail grant was rejected and the delivery fell back to
+    # the ordinary authz path and was blocked (measured live: `mfa grant
+    # rejected: intent must carry exactly the granted recipient` →
+    # BLOCKED_BY_AUTHZ). The recipient field now follows the channel, and an
+    # unknown channel resolves to none, so the exact-match check fails closed.
+    # Digest read back from a real host-lane pull + node-imported.
+    digest: sha256:8e40e789823ecfb5172f36c9583c847d301896c052272a8c68d183ddcbe9af7c
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.27:
