@@ -251,6 +251,8 @@ kubectl --context k3d-<env> -n platform-<env> rollout restart deploy/<svc>
 
 > **NOT 2026-05-10**: Eski "D17 scale-to-zero patch'leri tekrar uygular → outage riski" gerekçesi DEPRECATED. HARD RULE — TEST Cluster Scale-to-Zero YASAK (global memory): test overlay artık `replicas=1` default; full apply scale=0 outage yaratmaz. Selective apply tercih sebebi sadece **blast radius** kontrolü.
 
+> **NOT 2026-08-01 (gitops#3316)**: `kustomize/overlays/test` ağacı (activation/* dahil) ArgoCD `platform-test` Application'ı tarafından **automated + selfHeal + ServerSideApply=true** ile yönetiliyor. Bu ağaçtaki **spec değişiklikleri** (imaj digest, replicas, env) için manuel `kubectl apply` ARTIK GEÇERSİZ — selfHeal ~6 saniyede git state'ine geri çevirir (canlı kanıtlı). Doğru akış: merge → `scripts/deploy/argocd-app-sync-wait.sh` → `verify-pod-digest.sh`. Detay: Pitfall #6.
+
 ### Codex Adversarial Protokol
 
 Her büyük delta (10+ commit) sonrası Codex MCP **retrospektif ping-pong** yeni thread'de:
@@ -291,6 +293,14 @@ Types: `feat` / `fix` / `refactor` / `docs` / `chore` / `test`
    kubectl -n calico-system scale deploy calico-typha --replicas=0
    kubectl -n calico-system delete pod -l k8s-app=calico-node
    kubectl -n calico-system scale deploy calico-typha --replicas=1
+   ```
+
+6. **ArgoCD selfHeal manuel apply'ı ezer ("ilk apply yazmadı" sessiz no-op):** `kustomize/overlays/test` ArgoCD-yönetimli (automated + selfHeal + SSA). Merge'den hemen sonra manuel `kubectl apply -k` yeni digest'i yazar ama ArgoCD'nin git cache'i 180s'e kadar bayat olduğundan selfHeal saniyeler içinde ESKİ git state'ine geri çevirir; ikinci apply "tutmuş" görünür çünkü o sırada ArgoCD yeni commit'i çekmiştir (2026-08-01'de 4x yaşandı; canlı repro: apply 17:59:56 → selfHeal revert 18:00:02). Her kaynaktaki "missing last-applied-configuration annotation" uyarısı bu durumun imzasıdır (SSA anotasyon yazmaz) — `--server-side --force-conflicts` çözüm DEĞİLDİR, yazma yine ezilir. Doğru akış:
+   ```bash
+   # merge + git pull sonrası (staging-sw checkout):
+   scripts/deploy/argocd-app-sync-wait.sh --app platform-test
+   scripts/deploy/verify-pod-digest.sh --context k3d-test --namespace platform-test \
+     --selector "app.kubernetes.io/name=<svc>" --expected-digest "sha256:<64hex>"
    ```
 
 ## Hızlı Bağlam — MSSQL Şema Gezgini (Workcube)
