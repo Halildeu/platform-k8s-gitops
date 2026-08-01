@@ -107,6 +107,8 @@ def test_runner_contract_restores_and_redacts():
     assert "rawPasswordLogged: false" in text
     assert "rawAdminCredentialLogged: false" in text
     assert "run_external_recorder_smoke.py" in text
+    assert 'SMOKE_STT_PROVIDER="${SMOKE_STT_PROVIDER:-}"' in text
+    assert 'smoke_args+=(--stt-provider "${SMOKE_STT_PROVIDER}")' in text
     assert "verify_external_recorder_smoke_evidence.py" in text
     assert "RUN_SESSION_EXPIRY_SMOKE" in text
     assert "SESSION_EXPIRY_AUDIO_BASE_URL" in text
