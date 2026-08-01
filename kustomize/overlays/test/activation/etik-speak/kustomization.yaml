@@ -74,7 +74,12 @@ images:
     # Kaynak: f88437152bda1624808d4929caef819b0cc1c7ee (etiket TAM sha).
     # Digest gercek pull ile (smoke-dig-wu).
     # Onceki: 22ecb02d (#1103) @ sha256:eb356ebcf09102016...
-    digest: sha256:f9a921ea8f63a9a46aba98cbd0dc51aca46c67c014ca3f6d3425fe10b9f54a9a
+    # 2026-08-01 bump 4: platform-web#1109 — HEIC/HEIF allowlist + accept +
+    # anonimlik guvenceli yardim metni (backend+donusturucu canli kabulunden
+    # SONRA). Kaynak: fa04b687c1a2fbfa5316e044c3c1c07836242191 (TAM sha).
+    # Digest gercek pull ile (smoke-dig-hu).
+    # Onceki: f8843715 (#1108) @ sha256:f9a921ea8f63a9a46aba98cb...
+    digest: sha256:f2abcee52bbefa4b80553ac61581a75370c254d9dd85380e6c9ec408b10ff98c
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
