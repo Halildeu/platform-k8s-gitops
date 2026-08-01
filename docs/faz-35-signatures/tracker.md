@@ -1,9 +1,9 @@
 # Faz 35 ES-311 — İmza Toplama Tracker
 
-**Son güncelleme**: 2026-07-22T13:40Z (acting mode aktif)
+**Son güncelleme**: 2026-08-01 (acting mode 2. dönem)
 **Hedef**: 7 imza (Reveal Officer 2 kişi dahil = 8 satır)
 **Şu anki durum**: **0/8 resmi imza + 7/7 acting** (owner halildeu@gmail.com)
-**Deadline**: 2026-07-29 resmi imzaların tamamlanma tarihi
+**Deadline**: 2026-08-08 (2. uzatma; ilk deadline 2026-07-29 dolmuştu — 3 gün kayıtsız aşım roster.md'de not edildi)
 
 ## Progress
 
@@ -31,6 +31,8 @@
 |---|---|---|
 | 2026-07-22T13:20Z | ES-311 imza pack template oluşturuldu | agent |
 | 2026-07-22T13:40Z | Acting mode aktif — owner 7 rolü geçici taahhüt | halildeu@gmail.com |
+| 2026-07-29 | İlk acting dönemi doldu; kayıt güncellenmedi (aşım) | — |
+| 2026-08-01 | Acting 2. dönem — owner 2026-08-08'e uzattı; görevler ayrılığı kuralı (vaka yürüten ≠ secret owner) roster'a işlendi; 4-göz ayrı-kişi zorlamasının kodda+testte mevcut olduğu doğrulandı (RevealService/RevealServiceTest) | halildeu@gmail.com |
 | — | Owner roster.md doldurur (7 rol × isim/email) | pending |
 | — | Ilk resmi imza (Legal Owner) | pending |
 | — | 4/8 milestone | pending |

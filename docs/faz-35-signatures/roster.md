@@ -1,21 +1,45 @@
 # Faz 35 ES-311 — Rol Roster
 
-**Son güncelleme**: 2026-07-22T13:35Z — **ACTING MODE** aktif
+**Son güncelleme**: 2026-08-01 — **ACTING MODE** aktif (2. dönem)
 **Owner acting**: halildeu@gmail.com (7 rol geçici taahhüt)
-**Resmi imza deadline**: 2026-07-29 (7 gün)
+**Resmi imza deadline**: 2026-08-08 (2. uzatma penceresi)
 
 ---
 
-## Şu anki durum — Geçici mode (2026-07-22)
+## Şu anki durum — Geçici mode (2. dönem, 2026-08-01)
 
-Kanal LIVE (ES-313 2026-07-22T13:14 UTC). Aşağıdaki 7 rol için resmi imza toplanana kadar:
+İlk acting dönemi 2026-07-22'de başladı ve **2026-07-29'da doldu**; 2026-07-29 →
+2026-08-01 arasında roster güncellenmedi — bu üç gün kayıtsız aşımdır ve burada
+dürüstçe not edilir (acting fiilen devam etti, kaydı gecikti). Owner 2026-08-01'de
+kararları teyit ederken acting'i kendi kuralı uyarınca ("owner tekrar 7 gün
+uzatabilir") **2026-08-08'e uzattı**.
 
-> **halildeu@gmail.com** (owner) tüm 7 rolü **acting** olarak taahhüt eder.
+> **halildeu@gmail.com** (owner) tüm 7 rolü **acting** olarak taahhüt etmeye devam eder.
 
-- Audit trail'de "acting: halildeu@gmail.com since 2026-07-22" olarak işaretlenir
+- Audit trail: "acting: halildeu@gmail.com since 2026-07-22, renewed 2026-08-01"
 - SEV1 alert email → halildeu@gmail.com
-- Reveal talebi 4-göz için: **acting mode'da 2. göz olarak bir kurumsal başka kişi belirlenmeli** (aynı kişi 4-göz'ün iki tarafı olamaz)
-- Resmi imzalar 7 gün içinde toplanır; toplanmadığı takdirde owner tekrar 7 gün acting uzatabilir
+- Reveal 4-göz: acting mode'da aynı kişi iki taraf olamaz — bu **kodda zorlanıyor**
+  (`RevealService` talep eden onaylayamaz; aynı onaycı iki kez onaylayamaz;
+  regresyon testleri `RevealServiceTest`) → 2. kurumsal kişi atanana kadar ifşa
+  **default-deny** kalır. Bu bilinçli davranıştır, arıza değil.
+- Uzatma zincirlenebilir ama sınırsız değil: **3. uzatma (2026-08-08 sonrası)
+  ancak bu dosyaya yeni bir tarihli kayıt düşülerek yapılır** — sessiz aşım bir
+  daha yaşanmaz; aylık status raporu aşımı otomatik raporlar.
+
+### Görevler ayrılığı kuralı (owner kararı, 2026-08-01)
+
+**Vaka yürüten kişi ile secret owner aynı kişi olamaz** (kalıcı atamalarda).
+Vakayı yürüten kişi kimlik kasasını açan anahtarı da tutuyorsa görevler ayrılığı
+yoktur ve ihbarcı kimliğinin korunduğu iddiası denetimde düşer. Acting mode bu
+kuralın bilinen ve kabul edilmiş tek istisnasıdır — tam da bu yüzden acting'de
+ifşa default-deny'dir. Kalıcı roster doldurulurken: İhbar Sorumlusu (rol 6a/6b
+tarafında vaka yürüten kim ise) ≠ Secret Owner (rol 3).
+
+### Kalan tek insan girdisi
+
+**Bir ikinci kurumsal kişi.** Aynı kişi hem Reveal Officer #2 hem On-Call
+Secondary olarak atanabilir; iki 🔴 boşluk tek isimle kapanır. Yapıda inşa
+edilecek bir şey kalmadı — satır boş, isim bekliyor.
 
 ---
 
