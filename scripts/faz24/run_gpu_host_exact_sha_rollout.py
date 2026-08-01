@@ -26,7 +26,10 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $TargetCommit = '__TARGET_COMMIT__'
 $RepoRoot = 'C:\platform-ai'
-$UpdateScript = Join-Path $RepoRoot 'deploy\gpu-host\update.ps1'
+$ControllerRoot = Join-Path $env:TEMP (
+  'platform-ai-rollout-controller-' + [Guid]::NewGuid().ToString('N')
+)
+$UpdateScript = Join-Path $ControllerRoot 'deploy\gpu-host\update.ps1'
 $MigrationScript = Join-Path $RepoRoot 'deploy\gpu-host\migrate-task-actions.ps1'
 $StatePath = 'C:\ProgramData\Acik\platform-ai\deployment-state.json'
 
@@ -246,6 +249,18 @@ function Invoke-PowerShellChild {
   }
 }
 
+function Invoke-GitSilent {
+  param([Parameter(Mandatory = $true)][string[]]$GitArgs)
+  $oldEap = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    & git @GitArgs 1> $null 2> $null
+    return [int]$LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $oldEap
+  }
+}
+
 function Invoke-UpdaterChild {
   param(
     [switch]$WhatIfOnly,
@@ -295,7 +310,10 @@ function Get-RolloutFailureClass {
   $message = [string]$ErrorRecord.Exception.Message
   $known = @(
     'invalid-target-commit', 'unexpected-rollout-identity',
-    'rollout-principal-not-admin', 'canonical-repo-missing', 'updater-missing',
+    'rollout-principal-not-admin', 'canonical-repo-missing',
+    'controller-fetch-rejected', 'controller-commit-rejected',
+    'controller-checkout-rejected', 'controller-updater-missing',
+    'controller-cleanup-rejected',
     'before-commit-invalid', 'required-task-missing', 'task-action-unrecognized',
     'updater-whatif-rejected', 'updater-pin-rejected',
     'task-migration-script-missing', 'task-migration-whatif-rejected',
@@ -317,6 +335,8 @@ $migrationExitCode = -1
 $sourceRollbackExitCode = -1
 $deployExitCode = -1
 $failureClass = 'none'
+$controllerCreated = $false
+$controllerCleanupExitCode = -1
 $migrationRequired = $false
 $sourcePinnedWithoutRestart = $false
 $ledger = [ordered]@{ currentCommit = ''; previousCommit = ''; action = ''; lastResult = ''; timestampUtc = '' }
@@ -339,12 +359,27 @@ try {
   if (-not $principalMetadata.expectedIdentity) { throw 'unexpected-rollout-identity' }
   if (-not $principalMetadata.administrator) { throw 'rollout-principal-not-admin' }
   if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))) { throw 'canonical-repo-missing' }
-  if (-not (Test-Path -LiteralPath $UpdateScript -PathType Leaf)) { throw 'updater-missing' }
 
   Set-Location $RepoRoot
   $beforeCommit = [string](& git rev-parse HEAD 2>$null)
   $beforeCommit = $beforeCommit.Trim().ToLowerInvariant()
   if ($LASTEXITCODE -ne 0 -or $beforeCommit -notmatch '^[0-9a-f]{40}$') { throw 'before-commit-invalid' }
+
+  if ((Invoke-GitSilent -GitArgs @(
+      '-C', $RepoRoot, 'fetch', '--prune', 'origin'
+    )) -ne 0) { throw 'controller-fetch-rejected' }
+  if ((Invoke-GitSilent -GitArgs @(
+      '-C', $RepoRoot, 'merge-base', '--is-ancestor',
+      $TargetCommit, 'origin/main'
+    )) -ne 0) { throw 'controller-commit-rejected' }
+  if ((Invoke-GitSilent -GitArgs @(
+      '-C', $RepoRoot, 'worktree', 'add', '--detach',
+      $ControllerRoot, $TargetCommit
+    )) -ne 0) { throw 'controller-checkout-rejected' }
+  $controllerCreated = $true
+  if (-not (Test-Path -LiteralPath $UpdateScript -PathType Leaf)) {
+    throw 'controller-updater-missing'
+  }
 
   $taskService = New-Object -ComObject 'Schedule.Service'
   $taskService.Connect()
@@ -398,6 +433,14 @@ try {
     }
   }
 } finally {
+  if ($controllerCreated) {
+    $controllerCleanupExitCode = Invoke-GitSilent -GitArgs @(
+      '-C', $RepoRoot, 'worktree', 'remove', '--force', $ControllerRoot
+    )
+    if ($controllerCleanupExitCode -ne 0 -and $failureClass -eq 'none') {
+      $failureClass = 'controller-cleanup-rejected'
+    }
+  }
   try {
     Set-Location $RepoRoot
     $afterCommit = [string](& git rev-parse HEAD 2>$null)
@@ -438,6 +481,7 @@ $migrationAccepted = (
   )
 )
 $sourceCommitVerified = (
+  $controllerCleanupExitCode -eq 0 -and
   $whatIfExitCode -eq 0 -and
   $deployExitCode -eq 0 -and
   $afterCommit -eq $TargetCommit -and
@@ -445,6 +489,7 @@ $sourceCommitVerified = (
 )
 $go = (
   $failureClass -eq 'none' -and
+  $controllerCleanupExitCode -eq 0 -and
   $migrationAccepted -and
   $whatIfExitCode -eq 0 -and
   $deployExitCode -eq 0 -and
@@ -470,6 +515,10 @@ $evidence = [ordered]@{
   whatIfExitCode = $whatIfExitCode
   deployExitCode = $deployExitCode
   failureClass = $failureClass
+  controller = [ordered]@{
+    exactTarget = $true
+    cleanupExitCode = $controllerCleanupExitCode
+  }
   principal = $principalMetadata
   ledger = $ledger
   taskMigration = [ordered]@{

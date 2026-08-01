@@ -77,6 +77,12 @@ grep -Fq "GIT_CONFIG_KEY_0 = 'safe.directory'" "${RUNNER}" || \
 grep -Fq "GIT_CONFIG_VALUE_0 = 'C:/platform-ai'" "${RUNNER}" || \
   fail 'process-local Git safe-directory path missing'
 grep -Fq 'Invoke-UpdaterChild -WhatIfOnly' "${RUNNER}" || fail 'WhatIf preflight missing'
+grep -Fq "'worktree', 'add', '--detach'" "${RUNNER}" || \
+  fail 'exact-target controller worktree missing'
+grep -Fq "'worktree', 'remove', '--force'" "${RUNNER}" || \
+  fail 'controller worktree cleanup missing'
+grep -Fq 'controller worktree cleanup failed' "${VERIFIER}" || \
+  fail 'controller cleanup verifier guard missing'
 grep -Fq "sourceCommitVerified = \$sourceCommitVerified" "${RUNNER}" || \
   fail 'source verification must be derived from updater postconditions'
 grep -Fq 'Test-WebSocketReady' "${RUNNER}" || fail 'WebSocket ready proof missing'

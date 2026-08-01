@@ -32,6 +32,7 @@ def accepted_evidence() -> dict:
         "whatIfExitCode": 0,
         "deployExitCode": 0,
         "failureClass": "none",
+        "controller": {"exactTarget": True, "cleanupExitCode": 0},
         "taskMigration": {
             "required": True,
             "pinWithoutRestartExitCode": 0,
@@ -115,6 +116,12 @@ class RunnerContractTests(unittest.TestCase):
         script = runner.build_remote_script(COMMIT)
         self.assertIn(f"$TargetCommit = '{COMMIT}'", script)
         self.assertIn("$RepoRoot = 'C:\\platform-ai'", script)
+        self.assertIn("platform-ai-rollout-controller-", script)
+        self.assertIn("function Invoke-GitSilent", script)
+        self.assertIn("'worktree', 'add', '--detach'", script)
+        self.assertIn("'worktree', 'remove', '--force'", script)
+        self.assertIn("controller-cleanup-rejected", script)
+        self.assertIn("$UpdateScript = Join-Path $ControllerRoot", script)
         self.assertIn("$env:GIT_CONFIG_COUNT = '1'", script)
         self.assertIn("$env:GIT_CONFIG_KEY_0 = 'safe.directory'", script)
         self.assertIn("$env:GIT_CONFIG_VALUE_0 = 'C:/platform-ai'", script)
@@ -235,6 +242,12 @@ class VerifierContractTests(unittest.TestCase):
     def test_rejects_non_ready_stream(self) -> None:
         data = accepted_evidence()
         data["webSocket"]["ready"] = False
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_rejects_controller_cleanup_failure(self) -> None:
+        data = accepted_evidence()
+        data["controller"]["cleanupExitCode"] = 1
         with self.assertRaises(verifier.EvidenceError):
             verifier.verify(data, COMMIT)
 
