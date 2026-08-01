@@ -104,7 +104,11 @@ PRIVILEGED_ROLES="ENDPOINT_ADMIN MEETING_ADMIN TRANSCRIPT_ADMIN ethics-manager r
 # needs a second factor is the wrong thing to put in a security script. `--check` reports
 # any privileged-role holder missing from this list, so a new human admin cannot silently
 # escape MFA -- the list is authoritative but its drift is visible.
-DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-admin@example.com etik-staff@acik.com halil.kocoglu@serban.com.tr zeynep.akkilic@serban.com.tr}"
+# admin@example.com -> halildeu on 2026-08-01 (gitops#3245). This list is a
+# LOOKUP, not a guard, so the retired name is replaced rather than kept: a name
+# that resolves to nobody reports MISSING for ever, and --apply would try to
+# grant the role to a user that does not exist.
+DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-halildeu etik-staff@acik.com halil.kocoglu@serban.com.tr zeynep.akkilic@serban.com.tr}"
 # Identities that must NEVER receive the marker, whatever roles they hold. Automation.
 AUTOMATION_MARKERS="${AUTOMATION_MARKERS:-persona -test smoke canary ag0 c5persona rb- codex -lock- recorder .invalid @test. @synthetic. localtest.me test.local}"
 MFA_ROLE="requires-mfa"
@@ -133,6 +137,15 @@ SMS_CONFIG_ALIAS="sms-otp-notify-lane"
 EMAIL_PROVIDER_ID="email-otp"
 EMAIL_DISPLAY="E-mail OTP"
 EMAIL_CONFIG_ALIAS="email-otp-notify-lane"
+# gitops#3251 — the authenticator app becomes governable by the same per-user
+# allow-list. Stock auth-otp-form never reads it, so the lane runs our
+# drop-in instead when the provider is present. Capability-gated exactly like
+# the other two: on a Keycloak with the old jar the stock form stays and this
+# script changes nothing about TOTP.
+TOTP_PROVIDER_ID="mfa-otp-form"
+TOTP_DISPLAY="OTP Form (method allow-list)"
+STOCK_OTP_PROVIDER_ID="auth-otp-form"
+STOCK_OTP_DISPLAY="OTP Form"
 # Deployment-specific SPI config (only the two URLs — every other knob has a
 # contract default inside the SPI). Test defaults point at the NodePort lane
 # (activation/keycloak-sms-otp); any other realm must provide both via env
@@ -242,6 +255,19 @@ email_provider_available() {
 }
 # The e-mail lane rides the SMS lane's URLs: same auth-service, same notify.
 email_lane_wanted() { email_provider_available && sms_urls_provided; }
+totp_gate_available() {
+  q "$API/authentication/authenticator-providers" \
+    | jq -e --arg p "$TOTP_PROVIDER_ID" '.[]?|select(.id==$p)' >/dev/null 2>&1
+}
+# Which OTP form this realm should be running. One source of truth: every
+# lookup, assertion and creation below asks this rather than naming a form,
+# so the two shapes cannot drift apart.
+otp_form_provider() { totp_gate_available && echo "$TOTP_PROVIDER_ID" || echo "$STOCK_OTP_PROVIDER_ID"; }
+otp_form_display()  { totp_gate_available && echo "$TOTP_DISPLAY"     || echo "$STOCK_OTP_DISPLAY"; }
+# The form we must NOT leave behind. Both present would give the user two
+# identical-looking "authenticator app" choices, one of which ignores the
+# allow-list — the restriction would look applied and be trivially bypassed.
+otp_form_stale_display() { totp_gate_available && echo "$STOCK_OTP_DISPLAY" || echo "$TOTP_DISPLAY"; }
 sms_urls_provided() { [ -n "$SMS_AUTH_TOKEN_URL" ] && [ -n "$SMS_NOTIFY_INTENT_URL" ]; }
 subflow_ready() {
   # Parent-aware, order-aware. Two accepted shapes under privileged-force-otp
@@ -274,8 +300,15 @@ subflow_ready() {
   # login: the role condition cannot evaluate without a user.
   echo "$kids" | jq -e '[.[]|select(.displayName=="Condition - user role" and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 || return 1
 
+  # gitops#3251 — exactly one OTP form, and the right one. Asserted in BOTH
+  # directions: with the gate deployed the stock form must be gone, and without
+  # it the gated one must be. Leaving both would offer the user two
+  # identical-looking authenticator choices, one of which ignores the per-user
+  # allow-list — the restriction would look applied and be trivially bypassed.
+  echo "$kids" | jq -e --arg o "$(otp_form_stale_display)" '[.[]|select(.displayName==$o)]|length==0' >/dev/null 2>&1 || return 1
+
   if sms_provider_available && sms_urls_provided; then
-    echo "$kids" | jq -e '[.[]|select(.displayName=="OTP Form" and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
+    echo "$kids" | jq -e --arg o "$(otp_form_display)" '[.[]|select(.displayName==$o and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
       && echo "$kids" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s and .requirement=="ALTERNATIVE")]|length==1' >/dev/null 2>&1 \
       && { local sid cid cfg
            sid=$(child_id "$SUB_ALIAS" "$SMS_DISPLAY")
@@ -285,7 +318,7 @@ subflow_ready() {
            [ "$(echo "$cfg" | jq -r '.config["auth-token-url"] // empty')" = "$SMS_AUTH_TOKEN_URL" ] \
              && [ "$(echo "$cfg" | jq -r '.config["notify-intent-url"] // empty')" = "$SMS_NOTIFY_INTENT_URL" ]; }
   else
-    echo "$kids" | jq -e '[.[]|select(.displayName=="OTP Form" and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 \
+    echo "$kids" | jq -e --arg o "$(otp_form_display)" '[.[]|select(.displayName==$o and .requirement=="REQUIRED")]|length==1' >/dev/null 2>&1 \
       && echo "$kids" | jq -e --arg s "$SMS_DISPLAY" '[.[]|select(.displayName==$s)]|length==0' >/dev/null 2>&1
   fi || return 1
 
@@ -324,6 +357,11 @@ report() {  # DRIFT counter
     else echo "  role $r: absent (skip)"; fi
   done
   flow_exists && echo "  flow $NEW_FLOW: OK" || { echo "  flow $NEW_FLOW: MISSING"; d=$((d+1)); }
+  if totp_gate_available; then
+    echo "  otp form: $TOTP_PROVIDER_ID kayıtlı — doğrulama uygulaması mfaMethods listesine tabi"
+  else
+    echo "  otp form: $TOTP_PROVIDER_ID yok — stok $STOCK_OTP_DISPLAY, doğrulama uygulaması kısıtlanamaz"
+  fi
   if sms_provider_available; then
     if sms_urls_provided; then echo "  sms lane: provider kayıtlı + URL'ler set (hedef: OTP|SMS alternatif çifti)"
     else echo "  sms lane: provider kayıtlı ama SMS_AUTH_TOKEN_URL/SMS_NOTIFY_INTENT_URL boş — wiring atlanır (bu realm için env ver)"; fi
@@ -423,7 +461,7 @@ apply_all() {
   if ! q "$API/authentication/flows/$NEW_FLOW/executions" | jq -e --arg s "$SUB_ALIAS" '.[]?|select(.displayName==$s)' >/dev/null 2>&1; then
     q -X POST "$API/authentication/flows/${NEW_FLOW}%20forms/executions/flow" -H "$CT" -d "{\"alias\":\"$SUB_ALIAS\",\"type\":\"basic-flow\"}" >/dev/null
     q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"conditional-user-role"}' >/dev/null
-    q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
+    q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d "{\"provider\":\"$(otp_form_provider)\"}" >/dev/null
   fi
   # 4b) gitops#3212 — SMS lane, capability-gated, FLAT, and PARENT-AWARE.
   # Every lookup below goes through sub_children so it can only ever touch
@@ -439,9 +477,16 @@ apply_all() {
 
   # OTP Form is required in BOTH shapes; the nested migration above may have
   # taken it with the subflow, so ensure it exists inside OUR subflow.
-  [ -n "$(child_id "$SUB_ALIAS" "OTP Form")" ] || \
-    { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d '{"provider":"auth-otp-form"}' >/dev/null
-      echo "  mfa: OTP Form eklendi"; }
+  [ -n "$(child_id "$SUB_ALIAS" "$(otp_form_display)")" ] || \
+    { q -X POST "$API/authentication/flows/${SUB_ALIAS}/executions/execution" -H "$CT" -d "{\"provider\":\"$(otp_form_provider)\"}" >/dev/null
+      echo "  mfa: $(otp_form_display) eklendi"; }
+  # Remove the other form if a previous run left it: two OTP forms would be two
+  # identical-looking choices, and the user could simply pick the ungated one.
+  local otp_stale
+  otp_stale=$(child_id "$SUB_ALIAS" "$(otp_form_stale_display)")
+  [ -z "$otp_stale" ] || \
+    { q -X DELETE "$API/authentication/executions/$otp_stale" >/dev/null
+      echo "  mfa: $(otp_form_stale_display) kaldırıldı (tek OTP formu kalır)"; }
 
   if sms_provider_available && sms_urls_provided; then
     [ -n "$(child_id "$SUB_ALIAS" "$SMS_DISPLAY")" ] || \
@@ -477,7 +522,7 @@ apply_all() {
   local SUB ROLE OTP SMS2
   SUB=$(q "$API/authentication/flows/$NEW_FLOW/executions" | jq -r --arg s "$SUB_ALIAS" '[.[]|select(.displayName==$s)][0].id')
   ROLE=$(child_id "$SUB_ALIAS" "Condition - user role")
-  OTP=$(child_id "$SUB_ALIAS" "OTP Form")
+  OTP=$(child_id "$SUB_ALIAS" "$(otp_form_display)")
   [ -n "$ROLE" ] && [ -n "$OTP" ] || { echo "ERROR: privileged-force-otp içinde condition/OTP yok — apply yarım kaldı" >&2; exit 3; }
   q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$SUB\",\"requirement\":\"CONDITIONAL\"}" >/dev/null
   q -X PUT "$API/authentication/flows/$NEW_FLOW/executions" -H "$CT" -d "{\"id\":\"$ROLE\",\"requirement\":\"REQUIRED\"}" >/dev/null
