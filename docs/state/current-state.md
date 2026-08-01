@@ -177,13 +177,16 @@ meeting session `PROCESSING`, analysis-run/action/decision sayaçları `0` kald�
 
 İlk doğrulanmamış ürün kapısı `#2610` transcript-ready consumer ve
 analysis-delivery aktivasyonudur. Live TEST producer non-null `analysisRunId`
-üretir; ancak policy `producerCapabilities=[]`, `hostStartupGuards=[]` ve
-`enableAuthorized=false` olduğu için GPU-host consumer bilinçli olarak kapalı
-kalır. 2026-08-01 canlı yeniden kontrolde host-local reconciler dosyaları
-`0600 aiadmin:aiadmin` olarak mevcut, fakat AppRole login `HTTP 400 invalid role
-or secret ID` döndürür; bilinen owner-token dosyaları ve Vault container env'i
-boştur. Root-token araması, doğrudan Kubernetes Secret/workload mutasyonu veya
-permit bypass yapılmamıştır. Ayrı dağıtım kapısında lokal Keychain kod-imza
+üretir; PostgreSQL şeması `analysis_run_id UUID NOT NULL`, legacy/malformed
+PostgreSQL ve Redis inventory'leri sıfır, occurrence-bound uyumlu setler 55/55
+eşleşir ve Redis taraması 268/268 tamdır. Policy exact backend commit, immutable
+transcript image digest, dört typed evidence artifact'i, platform-ai commit ve
+startup script SHA-256 tuple'ını allowlist'e alır. Bu authorization consumer'ı
+tek başına açmaz: fresh accepted-candidate, TEST Vault Transit imzası ve pinned
+trust root ile doğrulanmış permit olmadan startup guard fail-closed kalır.
+Sonraki canlı kapı, permit'in Denetim PC'de tüketilmesi ve canonical
+transcript -> özet/karar/aksiyon sonucunun kalıcı read-back'idir. Ayrı dağıtım
+kapısında lokal Keychain kod-imza
 kimliği `0`, `platform-desktop` repo/environment secret ve variable listeleri
 boştur; imzalı/notarized macOS paket, Gatekeeper ve attended tek-seferlik TCC
 kanıtı bu dış Apple kimlikleri sağlanmadan ileri sürülmez.

@@ -45,6 +45,30 @@ EXPECTED_REMEDIATIONS = {
     "metadataOnly": "RECOLLECT_METADATA_ONLY",
     "rerun": "FRESH_ZERO_SCAN",
 }
+EXPECTED_PRODUCER_CAPABILITIES = [
+    {
+        "transcriptImageDigest": "sha256:6f930cec0ba1de575c9ce6f9779d4913e50ebe4bc47c1e82eb7fcd42eea53884",
+        "backendCommit": "619378ad2c0ec5a11d1efc62a7a1e6465ee220b5",
+        "eventContractEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-event-contract.json",
+        "eventContractSha256": "a54c1a165656a13b413bea6d7138881b0520cdce369fad496f65abcb75c85fe9",
+        "gateContractSha256": "e4c080a6f080deecebe7d713a8993372e8e6fbf94d0b1fe5d1fe90822fa047f3",
+        "backfillEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-backfill.json",
+        "backfillEvidenceSha256": "4b562339f510d689e05f25bb96311125d76ccdcf4d70a08099b0a12d4e256795",
+        "outboxRemediationEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-outbox-remediation.json",
+        "outboxRemediationEvidenceSha256": "34d6189757df167041270875557ae8a23eef06b893173e840804883316378f49",
+        "redisRemediationEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-redis-remediation.json",
+        "redisRemediationEvidenceSha256": "d059fbe057f758d3dfcfe9e27a7696aa534970b65f95590fb23c78f5a21b7ac1",
+        "analysisRunIdEmission": "non-null-v1",
+        "finalizationAnalysisRunId": "uuid-not-null-event-bound",
+    }
+]
+EXPECTED_HOST_STARTUP_GUARDS = [
+    {
+        "platformAiCommit": "458020514a1d500d8d4c1d56eb2bf6be489a99b0",
+        "startupScriptSha256": "97fd2de20d13f4cbf65ceee8dc2921d6a69586bb589000ba768854a2e08144e3",
+        "permitRequired": True,
+    }
+]
 EXPECTED_TRANSIT_POLICY = '''# TEST-only Faz 24 transcript-ready pre-enable permit signer.
 #
 # This token can sign with one dedicated non-exportable Ed25519 Transit key. It
@@ -97,14 +121,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     policy = json.loads(POLICY.read_text(encoding="utf-8"))
-    if policy.get("producerCapabilities") != []:
-        fail("producer allowlist changed without replacing the pending policy guard")
-    if policy.get("hostStartupGuards") != []:
-        fail(
-            "host startup allowlist changed without replacing the pending policy guard"
-        )
-    if policy.get("currentBoundary", {}).get("enableAuthorized") is not False:
-        fail("current policy must keep enableAuthorized=false")
+    if policy.get("producerCapabilities") != EXPECTED_PRODUCER_CAPABILITIES:
+        fail("producer allowlist must remain pinned to the reviewed exact tuple")
+    if policy.get("hostStartupGuards") != EXPECTED_HOST_STARTUP_GUARDS:
+        fail("host startup allowlist must remain pinned to the reviewed exact tuple")
+    if policy.get("currentBoundary") != {
+        "enableAuthorized": True,
+        "reason": (
+            "exact-test-producer-remediation-receipts-and-permit-enforcing-"
+            "host-guard-approved"
+        ),
+    }:
+        fail("current policy must retain the exact reviewed TEST authorization")
     if policy.get("environment", {}).get("redisTls") is not False:
         fail("current Redis evidence target must remain explicit non-TLS test runtime")
     if policy.get("environment", {}).get("appEnv") != "test":

@@ -154,7 +154,7 @@ def schema_sql(schema: str) -> str:
     return f"""
 SELECT json_build_object(
   'databaseName', current_database(),
-  'serverAddress', COALESCE(inet_server_addr()::text, ''),
+  'serverAddress', COALESCE(host(inet_server_addr()), ''),
   'serverPort', inet_server_port(),
   'finalizationTablePresent', to_regclass('{schema}.transcript_finalizations') IS NOT NULL,
   'outboxTablePresent', to_regclass('{schema}.transcript_event_outbox') IS NOT NULL,
