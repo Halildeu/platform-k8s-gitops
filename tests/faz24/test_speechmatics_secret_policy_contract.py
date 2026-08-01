@@ -65,6 +65,8 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
         self.assertIn("application/merge-patch+json", script)
         self.assertIn("speechmatics_api_key", script)
         self.assertIn("read-back hash mismatch", script)
+        self.assertIn("http://127.0.0.1:8201", script)
+        self.assertNotIn("http://127.0.0.1:8301", script)
         self.assertNotIn("vault kv put", script)
         self.assertNotIn("root token", script.lower())
 

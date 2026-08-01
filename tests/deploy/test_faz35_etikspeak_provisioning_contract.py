@@ -2244,7 +2244,7 @@ spec:
         patch = quota_patch.group(1)
         expected = {
             "/spec/hard/services": "40",
-            "/spec/hard/secrets": "44",
+            "/spec/hard/secrets": "45",
             "/spec/hard/pods": "34",
             "/spec/hard/configmaps": "35",
         }
