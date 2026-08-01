@@ -8122,6 +8122,13 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # 2026-08-01 #2828: the AI-server migration left the sha-162872b tag
+      # pointing at an imported local manifest while desired state now pins
+      # the canonical registry manifest digest. Always resolve the immutable
+      # digest from GHCR so a stale tag alias cannot bypass D30 verification.
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
       # 2026-07-11 #2299: the former maxSurge=0/maxUnavailable=1
       # setting converted quota pressure into a public 503 by deleting
       # the only ready frontend pod before the replacement was admitted.
