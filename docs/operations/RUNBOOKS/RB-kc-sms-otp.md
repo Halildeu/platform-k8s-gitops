@@ -192,8 +192,62 @@ Tek tarafı döndürmek mint'i 401'e düşürür — belirti: SMS seçildiğinde
   Acil pencerede stop-gap + kalıcı PR birlikte yürütülür; yalnız delete ile
   bırakmak reconcile'da sessizce geri gelir.
 
+## Üç faktör (2026-08-01, gitops#3230 + gitops#3232)
+
+`privileged-force-otp` artık üç ALTERNATIVE taşıyor — hepsi DÜZ, koşulla
+kardeş:
+
+```
+privileged-force-otp (CONDITIONAL)
+  ├─ Condition - user role (REQUIRED)
+  ├─ OTP Form            (ALTERNATIVE)   ← varsayılan, en güçlüsü
+  ├─ SMS OTP             (ALTERNATIVE)
+  └─ E-mail OTP          (ALTERNATIVE)
+```
+
+SMS ve e-posta **aynı SPI**'dir; fark yalnız `delivery-channel` ayarı. Kanalı
+adlandırmak yeter: SPI konu ve şablon varsayılanlarını ondan türetir
+(`auth.mfa.<kanal>-otp` / `auth.<kanal>-otp`) ve notify alıcı anahtarını da
+(`phone` / `email`) ona göre seçer.
+
+### Kanal-körü alıcı: iki kez ısırdı
+
+Alıcı alanı kanala bağlıdır ve **iki uçta da** sabit `phone` okunuyordu:
+
+| yer | belirti |
+|---|---|
+| auth-service grant kontrolcüsü | e-posta grant'i **400**, şerit hiç başlamadı |
+| notify grant doğrulayıcısı | `mfa grant rejected: intent must carry exactly the granted recipient` → `BLOCKED_BY_AUTHZ` |
+
+İkincisi **ancak canlı koşuda** çıktı: her iki tarafın birim testleri de
+telefon alıcısı kullanıyordu, yani e-posta şeridi yapısal olarak ölüyken suite
+yeşildi. Yeni kanal eklerken mevcut testlerin hepsinin eski varyantı
+kullandığını varsayın.
+
+### Kullanıcı bazlı yöntem seçimi
+
+`mfaMethods` kullanıcı attribute'u (managed, çok değerli, `^(sms|email)$`):
+
+- **yok/boş = kısıtlama yok** — her hesap kullanabildiği her şeridi korur;
+- **doluysa** yalnız adı geçen kanallar sunulur; izin verilmeyen kanal
+  telefonu olmayan bir hesap gibi `attempted()` olur, kardeş faktörler girişi
+  taşımaya devam eder.
+
+`OTP Form` stock Keycloak'tır ve bu listeyi **okumaz**; liste yalnız bizim
+sahibi olduğumuz iki teslimat şeridini yönetir. Panel bunu bir satır metinle
+söyler — sessizce hiçbir şey yapmayan bir onay kutusu koymaz.
+
+Attribute mutlaka user-profile'da **managed** ilan edilmeli
+(`scripts/keycloak/setup-user-profile-phone-attribute.sh`): KC 26 ilan
+edilmemiş attribute'u 2xx dönerek yutar, panel başarı raporlar ve kısıtlama
+hiç uygulanmaz. `multivalued: true` de şart — tek değerli bildirimde
+"sms ve email" sessizce "sms"e düşer.
+
 ## Bilinen sınırlar
 
 - Prod: SPI/secret/flow **yok** — owner-gated promosyon (D30 sonrası ayrı iş).
 - Telefon kaynağı KC `phoneNumber` attribute'u; panelden yönetimi gitops#3211.
+- Zorunluluk `requires-mfa` realm rolüdür; panelden anahtarı gitops#3228.
+- E-posta faktörü **doğrulanmamış adreste kapalıdır**: herkesin yazabileceği
+  bir adres ikinci faktör değildir.
 - NodePort şeridi yalnız docker-network içi; LAN'a hiçbir port yayınlanmaz.
