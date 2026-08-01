@@ -9,6 +9,12 @@ data:
   # keys override the request-facing values while everything else (database,
   # issuer, tenant, OpenFGA) stays identical. One image, two roles.
   ETHICS_EVIDENCE_PIPELINE_ENABLED: "true"
+  # ES-104J (#2929): this worker now drains the NON-PDF lane only; PDFs belong
+  # to ethics-cdr-worker. Disjoint lanes are the crash containment — see the
+  # CDR deployment's comment. Before the CDR worker is activated, PDF rows
+  # simply wait in quarantine (fail-closed), which is strictly better than the
+  # previous behaviour of this worker rejecting them.
+  ETHICS_EVIDENCE_PIPELINE_LANE: "core"
   # Bounded in-process processor for UTF-8 text, JPEG and PNG. PDF stays
   # fail-closed here by design: it needs the dedicated no-network CDR worker,
   # and accepting it with this processor would be a silent downgrade.

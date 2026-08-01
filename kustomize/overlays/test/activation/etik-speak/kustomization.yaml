@@ -43,12 +43,12 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    # 2026-08-01 bump: sha-9fd610a — platform-backend#1045 (ES-403 #885).
-    # Dusen abonelik yalniz YENI alimi kapatir: IntakeChannelGate fail-open
-    # (kesinti kanali kapatamaz), yalniz grace-asimi kanitlanmis dusus 403
-    # INTAKE_CHANNEL_INACTIVE dondurur; mailbox/delil/SLA/export acik kalir.
-    # Digest hedef kumeye gercek pull ile okundu (smoke-dig-eth pod).
-    digest: sha256:8ce026e2f26f8c4797385840c6c06c96344365dc8f3bc5b04a1a9f25ace832dd
+    # 2026-08-01 bump 2: sha-88631b4 — platform-backend#1049 (ES-104J #2929).
+    # PDF CDR: sayfa->raster->sifirdan insa; bulgular denetim defterine; serit
+    # ayrimi (core/pdf) — dusman PDF yalniz CDR isscisini tuketir.
+    # Digest hedef kumeye gercek pull ile okundu (smoke-dig-cdr pod).
+    # Onceki: sha-9fd610a @ sha256:8ce026e2... (#1045 IntakeChannelGate).
+    digest: sha256:147950e79079926735e21424a65c468f938ed828e08ae31645aea3f81792a0de
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -151,6 +151,27 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
+  # ES-104J (#2929): PDF CDR işçisi aktivasyonu. Sanitizer/parser digest'i bu
+  # işçinin KOŞTUĞU ethics-service imajının digest'idir (CDR renderer imajın
+  # içinde) — hedef kümeye gerçek pull ile okundu (smoke-dig-cdr pod), build
+  # log'undan kopyalanmadı. İnsan-okur etiket kabul edilmez (#2860): işlemci
+  # sha256 olmayan değerle EVIDENCE_TOOL_PROVENANCE_UNVERIFIED verir.
+  - target: {kind: Deployment, name: ethics-cdr-worker}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+  - target: {kind: ConfigMap, name: ethics-cdr-worker-config}
+    patch: |-
+      - op: replace
+        path: /data/ETHICS_EVIDENCE_SANITIZER_DIGEST
+        value: sha256:147950e79079926735e21424a65c468f938ed828e08ae31645aea3f81792a0de
+      - op: replace
+        path: /data/ETHICS_EVIDENCE_PARSER_DIGEST
+        value: sha256:147950e79079926735e21424a65c468f938ed828e08ae31645aea3f81792a0de
   - target: {kind: Deployment, name: clamav}
     patch: |-
       - op: replace

@@ -178,10 +178,12 @@ else
   # ES-104G added the evidence worker and the scanner. Both use the Recreate
   # strategy, so each contributes one pod to the rollout peak rather than two,
   # and only the scanner adds a Service.
+  # ES-104J added the PDF CDR worker: one more ConfigMap and one more pod
+  # (Recreate, no surge); it answers no traffic, so no new Service.
   check_object_headroom services 4 2
-  check_object_headroom configmaps 3 2
+  check_object_headroom configmaps 4 2
   check_object_headroom secrets 3 2
-  check_object_headroom pods 8 2
+  check_object_headroom pods 9 2
 fi
 [ "$quota_failures" -eq 0 ] || exit 1
 

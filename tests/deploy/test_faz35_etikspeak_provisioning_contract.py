@@ -1430,9 +1430,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             # while the ingress annotation looks correct.
             "client_max_body_size 26m;",
             "check_object_headroom services 4 2",
-            "check_object_headroom configmaps 3 2",
+            "check_object_headroom configmaps 4 2",
             "check_object_headroom secrets 3 2",
-            "check_object_headroom pods 8 2",
+            "check_object_headroom pods 9 2",
             "activation must render exactly four ExternalSecrets",
             "public reporter ingresses must not retain the removed Basic Auth gate",
             "public reporter ingress displaced edge",
@@ -2122,10 +2122,10 @@ spec:
 
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
-            'requests.cpu: "700m"',
-            "requests.memory: 3Gi",
-            'limits.cpu: "4500m"',
-            "limits.memory: 6Gi",
+            'requests.cpu: "800m"',
+            "requests.memory: 3584Mi",
+            'limits.cpu: "5500m"',
+            "limits.memory: 7680Mi",
         ):
             self.assertIn(expected, self.product_quota)
 
@@ -2169,10 +2169,10 @@ spec:
             rollout_peak += int(replicas.group(1)) + surge
 
         repair_reserve = 2
-        # Three request-facing Deployments plus the ES-104G evidence worker and
-        # its scanner; the worker answers no traffic and therefore has no
-        # Service of its own.
-        self.assertEqual(len(deployment_documents), 5)
+        # Three request-facing Deployments plus the ES-104G evidence worker, its
+        # scanner, and the ES-104J PDF CDR worker; the two workers answer no
+        # traffic and therefore have no Service of their own.
+        self.assertEqual(len(deployment_documents), 6)
         self.assertEqual(service_count, 4)
         self.assertIn(f'pods: "{rollout_peak + repair_reserve}"', self.product_quota)
         self.assertIn(
