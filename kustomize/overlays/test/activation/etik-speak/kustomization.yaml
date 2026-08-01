@@ -43,12 +43,12 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    # 2026-08-01 bump 2: sha-88631b4 — platform-backend#1049 (ES-104J #2929).
-    # PDF CDR: sayfa->raster->sifirdan insa; bulgular denetim defterine; serit
-    # ayrimi (core/pdf) — dusman PDF yalniz CDR isscisini tuketir.
-    # Digest hedef kumeye gercek pull ile okundu (smoke-dig-cdr pod).
-    # Onceki: sha-9fd610a @ sha256:8ce026e2... (#1045 IntakeChannelGate).
-    digest: sha256:147950e79079926735e21424a65c468f938ed828e08ae31645aea3f81792a0de
+    # 2026-08-01 bump 3: sha-f3ae6b2 — platform-backend#1054 (ES-2 #3271).
+    # Alindi teyidi: otomatik taslak (kiraci-parametrik sablon defteri V19/V20),
+    # insan gonderimi (eksik zorunlu bolum kayda gecer), 7. gun son-gun agi
+    # (dispatch=AUTOMATIC). Digest gercek pull ile okundu (smoke-dig-ack pod).
+    # Onceki: sha-88631b4 @ sha256:147950e7... (#1049 PDF CDR).
+    digest: sha256:9033c5940010b20e6d45b4701a799ee78764a4eb645e791bef64f89c1b75a34d
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
@@ -86,6 +86,11 @@ images:
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
+      # ES-2 (#3271): son-gun agi yalniz istek karsilayan dagitimda kosar —
+      # delivery loop'lariyla ayni sebep: outbox-sekilli is basina tek poller.
+      - op: add
+        path: /data/ETHICS_ACK_NET_ENABLED
+        value: "true"
       - op: add
         path: /data/ETHICS_AUDIT_DELIVERY_ENABLED
         value: "true"
