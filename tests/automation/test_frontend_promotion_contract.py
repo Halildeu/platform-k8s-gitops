@@ -163,7 +163,10 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertIsNotNone(frontend_patch)
         body = frontend_patch.group("body")
         self.assertRegex(body, r"imagePullPolicy\n\s+value: Always")
-        self.assertIn('faz22.acik.com/d30-cache-reconcile: "2026-08-01"', body)
+        self.assertIn(
+            'faz22.acik.com/d30-cache-reconcile: "2026-08-01-platform-child-retry"',
+            body,
+        )
         self.assertRegex(body, r"maxSurge\n\s+value: 1")
         self.assertRegex(body, r"maxUnavailable\n\s+value: 0")
         self.assertRegex(body, r"progressDeadlineSeconds\n\s+value: 300")
