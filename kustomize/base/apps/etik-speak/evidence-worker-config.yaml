@@ -54,6 +54,12 @@ data:
   # the same outbox rows. The worker writes audit entries; it does not ship them.
   ETHICS_AUDIT_DELIVERY_ENABLED: "false"
   ETHICS_NOTIFICATION_DELIVERY_ENABLED: "false"
+  # ES-2 (#3271) canli dersi (2026-08-01): bu satir yokken iki worker,
+  # istek-karsilayan config'ten ETHICS_ACK_NET_ENABLED=true'yu MIRAS ALDI ve
+  # son-gun agini ikisi birden kostu — 53 vakada cift dispatch denetim kaydi
+  # (mesajlar idempotency ile tek kaldi). Delivery loop'lariyla ayni disiplin:
+  # outbox-sekilli is basina TEK poller, o da istek karsilayan dagitimda.
+  ETHICS_ACK_NET_ENABLED: "false"
   # Migrations belong to the request-facing deployment. Flyway would take its
   # own lock and converge safely, but running it from two places makes the
   # schema owner ambiguous for no benefit.

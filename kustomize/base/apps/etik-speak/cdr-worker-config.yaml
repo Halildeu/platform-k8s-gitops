@@ -53,4 +53,10 @@ data:
   # belong to the request-facing deployment.
   ETHICS_AUDIT_DELIVERY_ENABLED: "false"
   ETHICS_NOTIFICATION_DELIVERY_ENABLED: "false"
+  # ES-2 (#3271) canli dersi (2026-08-01): bu satir yokken iki worker,
+  # istek-karsilayan config'ten ETHICS_ACK_NET_ENABLED=true'yu MIRAS ALDI ve
+  # son-gun agini ikisi birden kostu — 53 vakada cift dispatch denetim kaydi
+  # (mesajlar idempotency ile tek kaldi). Delivery loop'lariyla ayni disiplin:
+  # outbox-sekilli is basina TEK poller, o da istek karsilayan dagitimda.
+  ETHICS_ACK_NET_ENABLED: "false"
   SPRING_FLYWAY_ENABLED: "false"
