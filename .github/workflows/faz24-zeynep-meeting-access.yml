@@ -12,6 +12,14 @@ on:
           - repair-persona
           - apply
         default: dry-run
+      target:
+        description: "Mail-anchored Zeynep identity or the single active platform-desktop TEST session"
+        required: true
+        type: choice
+        options:
+          - mail-anchor
+          - active-desktop-session
+        default: mail-anchor
 
 permissions:
   contents: read
@@ -41,6 +49,9 @@ jobs:
             bash scripts/faz24/repair-d35-permission-writer-credential.sh --out "${OUT_PATH}"
           else
             args=(--out "${OUT_PATH}")
+            if [ "${{ inputs.target }}" = "active-desktop-session" ]; then
+              args+=(--target-active-desktop-session)
+            fi
             if [ "${MODE}" = "apply" ]; then
               args+=(--apply)
             fi

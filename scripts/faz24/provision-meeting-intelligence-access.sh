@@ -19,6 +19,7 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-$VAULT_INIT_FILE_DEFAULT}"
 umask 077
 
 MODE="dry-run"
+TARGET_MODE="mail-anchor"
 OUT_PATH="${OUT_PATH:-/tmp/faz24-meeting-intelligence-access.json}"
 readonly MAILBOX="ai@acik.com"
 readonly MAIL_PRIMARY_SUBJECT="FAZ 24"
@@ -28,6 +29,7 @@ readonly BASE_URL="https://testai.acik.com"
 readonly KC_BASE_URL="http://127.0.0.1:8082"
 readonly KC_REALM="platform-test"
 readonly KC_ADMIN_USER="admin"
+readonly KC_DESKTOP_CLIENT="platform-desktop"
 readonly KC_REALM_ROLE="MEETING_ADMIN"
 readonly KC_RESOURCE_CLIENT="audio-gateway-service"
 readonly KC_CLIENT_ROLE="audio_record"
@@ -47,17 +49,21 @@ MEMBERSHIP_READY=false
 
 usage() {
   cat <<'EOF'
-Usage: provision-meeting-intelligence-access.sh [--apply] [--out PATH]
+Usage: provision-meeting-intelligence-access.sh [--apply] [--target-active-desktop-session] [--out PATH]
 
 Default mode is dry-run. It performs every identity and authorization preflight
-but does not create or modify a role assignment. --apply performs the bounded,
-idempotent platform-test mutation and verifies readback.
+but does not create or modify a role assignment. The default target remains the
+mail-anchored Zeynep identity. --target-active-desktop-session instead requires
+exactly one active platform-desktop user in platform-test and binds that exact
+Keycloak identity to the matching user-service record. --apply performs the
+bounded, idempotent platform-test mutation and verifies readback.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) MODE="apply"; shift ;;
+    --target-active-desktop-session) TARGET_MODE="active-desktop-session"; shift ;;
     --out) OUT_PATH="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -77,6 +83,7 @@ mkdir -p "$(dirname "${OUT_PATH}")"
 write_result() {
   jq -n \
     --arg mode "${MODE}" \
+    --arg targetMode "${TARGET_MODE}" \
     --arg status "${STATUS}" \
     --arg failureReason "${FAILURE_REASON}" \
     --arg permissionRole "${PERMISSION_ROLE_NAME}" \
@@ -96,6 +103,7 @@ write_result() {
       status: $status,
       failureReason: (if $failureReason == "" then null else $failureReason end),
       target: {
+        selector: $targetMode,
         exactKeycloakMatch: $keycloakMatch,
         exactUserServiceMatch: $userServiceMatch
       },
@@ -174,14 +182,7 @@ read_vault_path() {
   unset root_token
 }
 
-GRAPH_VAULT_JSON="${TMP_DIR}/graph-vault.json"
 PERSONA_VAULT_JSON="${TMP_DIR}/persona-vault.json"
-read_vault_path \
-  "${VAULT_GRAPH_PATH}" \
-  "${GRAPH_VAULT_JSON}" \
-  "platform-vault-prod" \
-  "/srv/platform/secrets/backup-auth/vault-init-prod.json" \
-  || die "graph-prod-vault-read-failed"
 read_vault_path \
   "${VAULT_PERSONA_PATH}" \
   "${PERSONA_VAULT_JSON}" \
@@ -189,19 +190,13 @@ read_vault_path \
   "/srv/platform/secrets/backup-auth/vault-init-test.json" \
   || die "persona-test-vault-read-failed"
 
-GRAPH_CLIENT_ID="$(jq -r '.data.data.graph_client_id // .data.data.client_id // empty' "${GRAPH_VAULT_JSON}")"
-GRAPH_CLIENT_SECRET="$(jq -r '.data.data.graph_client_secret // .data.data.client_secret // empty' "${GRAPH_VAULT_JSON}")"
-GRAPH_TENANT_ID="$(jq -r '.data.data.graph_tenant_id // .data.data.tenant_id // empty' "${GRAPH_VAULT_JSON}")"
 PERSONA_USERNAME="$(jq -r '.data.data.admin_persona_username // empty' "${PERSONA_VAULT_JSON}")"
 PERSONA_PASSWORD="$(jq -r '.data.data.admin_persona_password // empty' "${PERSONA_VAULT_JSON}")"
 
-[[ -n "${GRAPH_CLIENT_ID}" && -n "${GRAPH_CLIENT_SECRET}" && -n "${GRAPH_TENANT_ID}" ]] \
-  || die "graph-vault-fields-missing"
 [[ -n "${PERSONA_USERNAME}" && -n "${PERSONA_PASSWORD}" ]] \
   || die "persona-vault-fields-missing"
 [[ -n "${KC_ADMIN_PASSWORD:-}" ]] || die "keycloak-admin-password-missing"
 
-GRAPH_CLIENT_SECRET_FILE="${TMP_DIR}/graph-client-secret"
 PERSONA_USERNAME_FILE="${TMP_DIR}/persona-username"
 PERSONA_PASSWORD_FILE="${TMP_DIR}/persona-password"
 KC_ADMIN_PASSWORD_FILE="${TMP_DIR}/keycloak-admin-password"
@@ -219,27 +214,9 @@ if [[ -n "${SMOKE_VAULT_ROOT}" ]]; then
 else
   die "smoke-client-vault-root-token-missing"
 fi
-printf '%s' "${GRAPH_CLIENT_SECRET}" > "${GRAPH_CLIENT_SECRET_FILE}"
 printf '%s' "${PERSONA_USERNAME}" > "${PERSONA_USERNAME_FILE}"
 printf '%s' "${PERSONA_PASSWORD}" > "${PERSONA_PASSWORD_FILE}"
 printf '%s' "${KC_ADMIN_PASSWORD}" > "${KC_ADMIN_PASSWORD_FILE}"
-
-GRAPH_TOKEN_JSON="${TMP_DIR}/graph-token.json"
-code="$(http_status POST \
-  "https://login.microsoftonline.com/${GRAPH_TENANT_ID}/oauth2/v2.0/token" \
-  "${GRAPH_TOKEN_JSON}" \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode "client_id=${GRAPH_CLIENT_ID}" \
-  --data-urlencode "client_secret@${GRAPH_CLIENT_SECRET_FILE}" \
-  --data-urlencode 'scope=https://graph.microsoft.com/.default' \
-  --data-urlencode 'grant_type=client_credentials')"
-[[ "${code}" == "200" ]] || die "graph-token-failed"
-GRAPH_ACCESS_TOKEN="$(jq -r '.access_token // empty' "${GRAPH_TOKEN_JSON}")"
-[[ -n "${GRAPH_ACCESS_TOKEN}" ]] || die "graph-token-missing"
-GRAPH_AUTH_CONFIG="${TMP_DIR}/graph-auth.curl"
-write_bearer_config "${GRAPH_AUTH_CONFIG}" "${GRAPH_ACCESS_TOKEN}"
-
-[[ -f "${MAIL_ANCHOR_RESOLVER}" ]] || die "mail-anchor-resolver-missing"
 
 read_mail_anchor() {
   local subject="$1"
@@ -256,24 +233,55 @@ read_mail_anchor() {
   [[ "${status}" == "200" ]]
 }
 
-PRIMARY_MAIL_JSON="${TMP_DIR}/primary-mail-anchor.json"
-CORROBORATING_MAIL_JSON="${TMP_DIR}/corroborating-mail-anchor.json"
-read_mail_anchor "${MAIL_PRIMARY_SUBJECT}" "${PRIMARY_MAIL_JSON}" \
-  || die "graph-primary-mail-anchor-read-failed"
-read_mail_anchor "${MAIL_CORROBORATING_SUBJECT}" "${CORROBORATING_MAIL_JSON}" \
-  || die "graph-corroborating-mail-anchor-read-failed"
+if [[ "${TARGET_MODE}" == "mail-anchor" ]]; then
+  GRAPH_VAULT_JSON="${TMP_DIR}/graph-vault.json"
+  read_vault_path \
+    "${VAULT_GRAPH_PATH}" \
+    "${GRAPH_VAULT_JSON}" \
+    "platform-vault-prod" \
+    "/srv/platform/secrets/backup-auth/vault-init-prod.json" \
+    || die "graph-prod-vault-read-failed"
+  GRAPH_CLIENT_ID="$(jq -r '.data.data.graph_client_id // .data.data.client_id // empty' "${GRAPH_VAULT_JSON}")"
+  GRAPH_CLIENT_SECRET="$(jq -r '.data.data.graph_client_secret // .data.data.client_secret // empty' "${GRAPH_VAULT_JSON}")"
+  GRAPH_TENANT_ID="$(jq -r '.data.data.graph_tenant_id // .data.data.tenant_id // empty' "${GRAPH_VAULT_JSON}")"
+  [[ -n "${GRAPH_CLIENT_ID}" && -n "${GRAPH_CLIENT_SECRET}" && -n "${GRAPH_TENANT_ID}" ]] \
+    || die "graph-vault-fields-missing"
+  GRAPH_CLIENT_SECRET_FILE="${TMP_DIR}/graph-client-secret"
+  printf '%s' "${GRAPH_CLIENT_SECRET}" > "${GRAPH_CLIENT_SECRET_FILE}"
 
-if ! TARGET_EMAIL="$(jq -nr \
-  --arg primary_subject "${MAIL_PRIMARY_SUBJECT}" \
-  --arg corroborating_subject "${MAIL_CORROBORATING_SUBJECT}" \
-  --slurpfile primary "${PRIMARY_MAIL_JSON}" \
-  --slurpfile corroborating "${CORROBORATING_MAIL_JSON}" \
-  -f "${MAIL_ANCHOR_RESOLVER}" 2>/dev/null)"; then
-  die "exact-zeynep-mail-anchor-inconsistent"
+  GRAPH_TOKEN_JSON="${TMP_DIR}/graph-token.json"
+  code="$(http_status POST \
+    "https://login.microsoftonline.com/${GRAPH_TENANT_ID}/oauth2/v2.0/token" \
+    "${GRAPH_TOKEN_JSON}" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "client_id=${GRAPH_CLIENT_ID}" \
+    --data-urlencode "client_secret@${GRAPH_CLIENT_SECRET_FILE}" \
+    --data-urlencode 'scope=https://graph.microsoft.com/.default' \
+    --data-urlencode 'grant_type=client_credentials')"
+  [[ "${code}" == "200" ]] || die "graph-token-failed"
+  GRAPH_ACCESS_TOKEN="$(jq -r '.access_token // empty' "${GRAPH_TOKEN_JSON}")"
+  [[ -n "${GRAPH_ACCESS_TOKEN}" ]] || die "graph-token-missing"
+  GRAPH_AUTH_CONFIG="${TMP_DIR}/graph-auth.curl"
+  write_bearer_config "${GRAPH_AUTH_CONFIG}" "${GRAPH_ACCESS_TOKEN}"
+
+  [[ -f "${MAIL_ANCHOR_RESOLVER}" ]] || die "mail-anchor-resolver-missing"
+  PRIMARY_MAIL_JSON="${TMP_DIR}/primary-mail-anchor.json"
+  CORROBORATING_MAIL_JSON="${TMP_DIR}/corroborating-mail-anchor.json"
+  read_mail_anchor "${MAIL_PRIMARY_SUBJECT}" "${PRIMARY_MAIL_JSON}" \
+    || die "graph-primary-mail-anchor-read-failed"
+  read_mail_anchor "${MAIL_CORROBORATING_SUBJECT}" "${CORROBORATING_MAIL_JSON}" \
+    || die "graph-corroborating-mail-anchor-read-failed"
+
+  if ! TARGET_EMAIL="$(jq -nr \
+    --arg primary_subject "${MAIL_PRIMARY_SUBJECT}" \
+    --arg corroborating_subject "${MAIL_CORROBORATING_SUBJECT}" \
+    --slurpfile primary "${PRIMARY_MAIL_JSON}" \
+    --slurpfile corroborating "${CORROBORATING_MAIL_JSON}" \
+    -f "${MAIL_ANCHOR_RESOLVER}" 2>/dev/null)"; then
+    die "exact-zeynep-mail-anchor-inconsistent"
+  fi
+  [[ -n "${TARGET_EMAIL}" ]] || die "exact-zeynep-mail-anchor-inconsistent"
 fi
-[[ -n "${TARGET_EMAIL}" ]] || die "exact-zeynep-mail-anchor-inconsistent"
-TARGET_EMAIL_FILE="${TMP_DIR}/target-email"
-printf '%s' "${TARGET_EMAIL}" > "${TARGET_EMAIL_FILE}"
 
 KC_ADMIN_TOKEN_JSON="${TMP_DIR}/kc-admin-token.json"
 code="$(http_status POST \
@@ -290,6 +298,44 @@ KC_ADMIN_TOKEN="$(jq -r '.access_token // empty' "${KC_ADMIN_TOKEN_JSON}")"
 KC_AUTH_CONFIG="${TMP_DIR}/keycloak-auth.curl"
 write_bearer_config "${KC_AUTH_CONFIG}" "${KC_ADMIN_TOKEN}"
 
+ACTIVE_KC_USER_ID=""
+if [[ "${TARGET_MODE}" == "active-desktop-session" ]]; then
+  DESKTOP_CLIENTS_JSON="${TMP_DIR}/desktop-clients.json"
+  code="$(curl -sS --max-time 20 -o "${DESKTOP_CLIENTS_JSON}" -w '%{http_code}' --get \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/clients" \
+    --config "${KC_AUTH_CONFIG}" \
+    --data-urlencode "clientId=${KC_DESKTOP_CLIENT}" || printf '000')"
+  [[ "${code}" == "200" && "$(jq 'length' "${DESKTOP_CLIENTS_JSON}")" == "1" ]] \
+    || die "desktop-client-not-exactly-one"
+  DESKTOP_CLIENT_UUID="$(jq -r '.[0].id // empty' "${DESKTOP_CLIENTS_JSON}")"
+
+  DESKTOP_SESSIONS_JSON="${TMP_DIR}/desktop-sessions.json"
+  code="$(http_status GET \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/clients/${DESKTOP_CLIENT_UUID}/user-sessions?first=0&max=20" \
+    "${DESKTOP_SESSIONS_JSON}" \
+    --config "${KC_AUTH_CONFIG}")"
+  [[ "${code}" == "200" ]] || die "desktop-session-read-failed"
+  [[ "$(jq '[.[].userId] | unique | length' "${DESKTOP_SESSIONS_JSON}")" == "1" ]] \
+    || die "desktop-session-user-not-exactly-one"
+  ACTIVE_KC_USER_ID="$(jq -r '[.[].userId] | unique[0] // empty' "${DESKTOP_SESSIONS_JSON}")"
+  [[ -n "${ACTIVE_KC_USER_ID}" ]] || die "desktop-session-user-missing"
+
+  ACTIVE_KC_USER_JSON="${TMP_DIR}/active-kc-user.json"
+  code="$(http_status GET \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${ACTIVE_KC_USER_ID}" \
+    "${ACTIVE_KC_USER_JSON}" \
+    --config "${KC_AUTH_CONFIG}")"
+  [[ "${code}" == "200" ]] || die "desktop-session-user-read-failed"
+  [[ "$(jq -r '.enabled // false' "${ACTIVE_KC_USER_JSON}")" == "true" ]] \
+    || die "desktop-session-user-disabled"
+  TARGET_EMAIL="$(jq -r '.email // empty | ascii_downcase' "${ACTIVE_KC_USER_JSON}")"
+  [[ "${TARGET_EMAIL}" =~ ^[^@[:space:]]+@acik\.com$ ]] \
+    || die "desktop-session-user-not-internal"
+fi
+
+TARGET_EMAIL_FILE="${TMP_DIR}/target-email"
+printf '%s' "${TARGET_EMAIL}" > "${TARGET_EMAIL_FILE}"
+
 KC_USERS_JSON="${TMP_DIR}/kc-users.json"
 code="$(curl -sS --max-time 20 -o "${KC_USERS_JSON}" -w '%{http_code}' --get \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
@@ -303,6 +349,9 @@ KC_EMAIL_NORMALIZED="$(jq -r '.[0].email // empty | ascii_downcase' "${KC_USERS_
 [[ "${KC_EMAIL_NORMALIZED}" == "${TARGET_EMAIL}" ]] || die "keycloak-user-email-mismatch"
 KC_USER_ID="$(jq -r '.[0].id // empty' "${KC_USERS_JSON}")"
 [[ -n "${KC_USER_ID}" ]] || die "keycloak-user-id-missing"
+if [[ "${TARGET_MODE}" == "active-desktop-session" ]]; then
+  [[ "${KC_USER_ID}" == "${ACTIVE_KC_USER_ID}" ]] || die "desktop-session-identity-drift"
+fi
 KEYCLOAK_MATCH=true
 
 REALM_ROLE_JSON="${TMP_DIR}/realm-role.json"
@@ -354,6 +403,13 @@ PLATFORM_USER_ID="$(jq -r '.id // empty' "${USER_JSON}")"
 USER_EMAIL_NORMALIZED="$(jq -r '.email // empty | ascii_downcase' "${USER_JSON}")"
 [[ "${PLATFORM_USER_ID}" =~ ^[0-9]+$ && "${USER_EMAIL_NORMALIZED}" == "${TARGET_EMAIL}" ]] \
   || die "user-service-identity-mismatch"
+if [[ "${TARGET_MODE}" == "active-desktop-session" ]]; then
+  KC_PLATFORM_USER_ID="$(jq -r '.[0].attributes.userId[0] // empty' "${KC_USERS_JSON}")"
+  KC_COMPANY_ID="$(jq -r '.[0].attributes.companyId[0] // empty' "${KC_USERS_JSON}")"
+  [[ "${KC_PLATFORM_USER_ID}" == "${PLATFORM_USER_ID}" ]] \
+    || die "desktop-session-user-id-drift"
+  [[ "${KC_COMPANY_ID}" =~ ^[0-9]+$ ]] || die "desktop-session-company-id-missing"
+fi
 USER_SERVICE_MATCH=true
 
 ROLES_JSON="${TMP_DIR}/roles.json"
