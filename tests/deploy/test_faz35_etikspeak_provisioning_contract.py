@@ -1432,7 +1432,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "check_object_headroom services 5 2",
             "check_object_headroom configmaps 4 2",
             "check_object_headroom secrets 3 2",
-            "check_object_headroom pods 10 2",
+            "check_object_headroom pods 9 2",
             "activation must render exactly four ExternalSecrets",
             "public reporter ingresses must not retain the removed Basic Auth gate",
             "public reporter ingress displaced edge",
@@ -2122,10 +2122,10 @@ spec:
 
     def test_product_quota_has_rollout_and_repair_reserve(self):
         for expected in (
-            'requests.cpu: "850m"',
-            "requests.memory: 3648Mi",
-            'limits.cpu: "5800m"',
-            "limits.memory: 7936Mi",
+            'requests.cpu: "800m"',
+            "requests.memory: 3584Mi",
+            'limits.cpu: "5500m"',
+            "limits.memory: 7680Mi",
         ):
             self.assertIn(expected, self.product_quota)
 
@@ -2205,7 +2205,13 @@ spec:
             capture_output=True,
             text=True,
         ).stdout
-        self.assertEqual(rendered.count("replicas: 0"), 3)
+        # Four workloads render at zero on the kill-switch target: the three
+        # request-facing Deployments the deactivation patch scales down, plus the
+        # ES-104K HEIC converter, which the ES-306 image finding already left at
+        # zero in activation. The two custody workers deliberately keep running —
+        # a kill switch stops serving users, it does not abandon evidence already
+        # in the queue.
+        self.assertEqual(rendered.count("replicas: 0"), 4)
         for active_host in (
             "host: etik.acik.com",
             "host: speakup.acik.com",

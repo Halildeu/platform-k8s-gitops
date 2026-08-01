@@ -180,12 +180,13 @@ else
   # and only the scanner adds a Service.
   # ES-104J added the PDF CDR worker: one more ConfigMap and one more pod
   # (Recreate, no surge); it answers no traffic, so no new Service.
-  # ES-104K added the HEIC converter: one more Service and one more pod
-  # (Recreate, no surge); its configuration is container args, no ConfigMap.
+  # ES-104K's HEIC converter still renders a Service (the workload manifest is
+  # kept so re-enabling is one line) but runs zero replicas after the ES-306
+  # image finding, so it costs a Service slot and no pod.
   check_object_headroom services 5 2
   check_object_headroom configmaps 4 2
   check_object_headroom secrets 3 2
-  check_object_headroom pods 10 2
+  check_object_headroom pods 9 2
 fi
 [ "$quota_failures" -eq 0 ] || exit 1
 

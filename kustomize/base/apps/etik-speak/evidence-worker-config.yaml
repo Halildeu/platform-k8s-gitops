@@ -25,10 +25,24 @@ data:
   # A decompression-bomb ceiling: a small file can still declare an enormous
   # canvas, and decoding it is what exhausts the worker.
   ETHICS_EVIDENCE_MAX_IMAGE_PIXELS: "40000000"
-  # ES-104K dilim 2 (#2930): HEIC decode'u yapan digest-pinli donusturucu. URL
-  # YALNIZ bu worker'da — API JVM'i ve pdf seridi donusturucuye hic ulasamaz
-  # (orada anahtar yok = fail-closed; NetPol de ayni siniri agda cizer).
-  ETHICS_EVIDENCE_HEIC_CONVERTER_URL: "http://heic-converter:9000"
+  # ES-104K dilim 2 (#2930) — HEIC seridi ES-306 (#2665) bulgusuyla KAPATILDI.
+  #
+  # Bos URL = fail-closed: SafeMetadataSanitizer HEIC'i
+  # EVIDENCE_HEIC_CONVERTER_NOT_CONFIGURED ile reddeder, tahmin etmez.
+  #
+  # Sebep (2026-08-01 SBOM + grype taramasi): sectigimiz donusturucu imaji
+  # (h2non/imaginary:1.2.4) 2020-08-12'den beri hic guncellenmemis ve 80
+  # Critical + 386 High tasiyor. Kritik olan sayilar degil NEREDE olduklari:
+  # libwebp CVE-2023-4863 (vahsi dogada aktif somurulen sifir-tik RCE),
+  # libde265 ve libheif HIGH'lari — yani tam da SALDIRGAN GIRDISINI ayristiran
+  # kod. Konteyner izolasyonu gercekten guclu (egress yok, secret yok, non-root,
+  # readOnlyRootFilesystem, tum capability dusuk, 256Mi) ama izolasyon
+  # yamanin YERINE gecmez; bes yillik terk edilmis bir ayristiriciyi dusman
+  # girdisiyle beslemek savunulabilir degil.
+  #
+  # Geri acma sarti: bakimli bir donusturucu (guncel libheif tasiyan, aktif
+  # yayinlanan imaj) secilip ayni SBOM+grype kapisindan gecmesi. Takip: #3335.
+  ETHICS_EVIDENCE_HEIC_CONVERTER_URL: ""
   # Pinned scanner identity. The digest is the clamav image actually deployed
   # alongside this worker; the rules version is the definition set baked into
   # that image, because freshclam updates are disabled (no internet egress).
