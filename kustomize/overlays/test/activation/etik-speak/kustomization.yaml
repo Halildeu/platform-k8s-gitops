@@ -57,16 +57,12 @@ images:
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
     # birden fazla ek eklenebilir, yuklemeler sirali.
-    # 2026-08-01 bump 2: platform-web#1103 — content-first tip olcegi. Iki
-    # OLCULMUS kusur kapandi: kapali-kanal basligi kelime ortasindan
-    # kirpiliyordu ("aımıyor."); 1280x720'de birincil eylemler katlamanin
-    # altindaydi. clamp tavani 3.5rem + satir yuksekligi 1.12 + tasma savunmasi;
-    # invaryant testler olcegi pinler.
-    # Kaynak: 22ecb02d6db0f6e3dcb33e39d3797093450c8fe8
-    # Etiket: sha-22ecb02d6db0f6e3dcb33e39d3797093450c8fe8 (bu hat TAM sha kullanir).
-    # Digest hedef kumeye gercek pull ile okundu (smoke-dig-pub pod).
-    # Onceki: a0e360c8 (#1100) @ sha256:55e12e70443612226ca8ee4e9e84bf0b967f83d6decad3c527306c2b1dc5e514
-    digest: sha256:eb356ebcf09102016e7238136a0b3f95e75c22eee7092b03851d5711f51bf30b
+    # 2026-08-01 bump 3: platform-web#1108 — WebP allowlist + accept + yardim
+    # metni; issue sarti geregi backend canli kabulunden SONRA genisletildi.
+    # Kaynak: f88437152bda1624808d4929caef819b0cc1c7ee (etiket TAM sha).
+    # Digest gercek pull ile (smoke-dig-wu).
+    # Onceki: 22ecb02d (#1103) @ sha256:eb356ebcf09102016...
+    digest: sha256:f9a921ea8f63a9a46aba98cbd0dc51aca46c67c014ca3f6d3425fe10b9f54a9a
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
