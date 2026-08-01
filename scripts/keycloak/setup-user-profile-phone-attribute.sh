@@ -92,26 +92,73 @@ DESIRED=$(jq -n --arg n "$ATTR" '{
   # null` would make every exact comparison below report false drift.
 }')
 
-PROFILE=$(q "$API/users/profile")
-CURRENT=$(echo "$PROFILE" | jq --arg n "$ATTR" '[.attributes[] | select(.name == $n)][0] // empty')
+# gitops#3232 — the per-user method allow-list. Same two traps as the phone:
+# VIEW must include "user" (the authenticator reads it in the USER context
+# during login; admin-only VIEW makes it read as absent and silently removes
+# the restriction), and `required` stays out so the exact comparison does not
+# report false drift.
+#
+# multivalued is TRUE here: the panel writes a list and the SPI reads a
+# stream. Declaring it single-valued would make Keycloak keep only the first
+# entry, which turns "sms and email" into "sms" with no error anywhere.
+METHODS_ATTR="${MFA_METHODS_ATTRIBUTE:-mfaMethods}"
+DESIRED_METHODS=$(jq -n --arg n "$METHODS_ATTR" '{
+  name: $n,
+  displayName: "İkinci adım yöntemleri",
+  multivalued: true,
+  permissions: { view: ["admin", "user"], edit: ["admin"] },
+  validations: {
+    pattern: {
+      pattern: "^(sms|email)$",
+      "error-message": "Yöntem yalnız sms veya email olabilir"
+    }
+  },
+  annotations: {}
+}')
 
-if [ -n "$CURRENT" ] && [ "$(echo "$CURRENT" | jq -S -c .)" = "$(echo "$DESIRED" | jq -S -c .)" ]; then
-  echo "CONVERGED: $ATTR user-profile attribute zaten istenen şekilde"
+PROFILE=$(q "$API/users/profile")
+
+# Both attributes are converged in one PUT: the profile is a single document,
+# so writing it twice would make the second write race the first read.
+DRIFT=0
+for pair in "$ATTR" "$METHODS_ATTR"; do
+  case "$pair" in
+    "$ATTR") want="$DESIRED" ;;
+    *)       want="$DESIRED_METHODS" ;;
+  esac
+  have=$(echo "$PROFILE" | jq --arg n "$pair" '[.attributes[] | select(.name == $n)][0] // empty')
+  if [ -z "$have" ] || [ "$(echo "$have" | jq -S -c .)" != "$(echo "$want" | jq -S -c .)" ]; then
+    DRIFT=$((DRIFT+1))
+    echo "  drift: $pair"
+  fi
+done
+
+if [ "$DRIFT" -eq 0 ]; then
+  echo "CONVERGED: $ATTR + $METHODS_ATTR user-profile attribute'ları zaten istenen şekilde"
   exit 0
 fi
 
 if [ "$MODE" = "--check" ]; then
-  echo "DRIFT: $ATTR attribute eksik veya farklı — --apply gerekli"
+  echo "DRIFT ($DRIFT): attribute eksik veya farklı — --apply gerekli"
   exit 2
 fi
 
-UPDATED=$(echo "$PROFILE" | jq --arg n "$ATTR" --argjson d "$DESIRED" \
-  '.attributes = ([.attributes[] | select(.name != $n)] + [$d])')
+UPDATED=$(echo "$PROFILE" \
+  | jq --arg n "$ATTR" --argjson d "$DESIRED" \
+      '.attributes = ([.attributes[] | select(.name != $n)] + [$d])' \
+  | jq --arg n "$METHODS_ATTR" --argjson d "$DESIRED_METHODS" \
+      '.attributes = ([.attributes[] | select(.name != $n)] + [$d])')
 printf '%s' "$UPDATED" | q -X PUT "$API/users/profile" -H "$CT" -d @- >/dev/null
 
 # Post-condition 1: the declaration is readable.
-BACK=$(q "$API/users/profile" | jq --arg n "$ATTR" '[.attributes[] | select(.name == $n)][0] // empty')
-[ -n "$BACK" ] || { echo "ERROR: attribute PUT sonrası okunamadı" >&2; exit 3; }
+PROFILE_BACK=$(q "$API/users/profile")
+BACK=$(echo "$PROFILE_BACK" | jq --arg n "$ATTR" '[.attributes[] | select(.name == $n)][0] // empty')
+BACK_METHODS=$(echo "$PROFILE_BACK" | jq --arg n "$METHODS_ATTR" '[.attributes[] | select(.name == $n)][0] // empty')
+[ -n "$BACK" ] || { echo "ERROR: $ATTR PUT sonrası okunamadı" >&2; exit 3; }
+[ -n "$BACK_METHODS" ] || { echo "ERROR: $METHODS_ATTR PUT sonrası okunamadı" >&2; exit 3; }
+[ "$(echo "$BACK_METHODS" | jq -S -c .)" = "$(echo "$DESIRED_METHODS" | jq -S -c .)" ] \
+  || { echo "ERROR: $METHODS_ATTR stored declaration DESIRED ile birebir değil" >&2
+       echo "$BACK_METHODS" | jq -S -c . >&2; exit 3; }
 # Presence is not convergence: the admin-only permissions and the E.164
 # validator are the two security properties this script exists to install,
 # so the stored declaration must match DESIRED exactly, not merely exist.
@@ -143,15 +190,24 @@ cleanup_probe() {
   rm -f -- "$HDR_FILE"
 }
 trap cleanup_probe EXIT
-q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"]}}" >/dev/null
+# Both attributes ride the same probe user: the failure this guards against
+# (a 2xx write that stores nothing) is per-attribute, so proving one says
+# nothing about the other. The methods value is written with TWO entries
+# because a single-valued declaration would silently keep only the first.
+q -X POST "$API/users" -H "$CT" -d "{\"username\":\"$PROBE\",\"enabled\":false,\"attributes\":{\"$ATTR\":[\"$PROBE_PHONE\"],\"$METHODS_ATTR\":[\"sms\",\"email\"]}}" >/dev/null
 PUID=$(q "$API/users?username=$PROBE&exact=true" | jq -r '.[0].id // empty')
 [ -n "$PUID" ] || { echo "ERROR: probe kullanıcı id'si çözülemedi" >&2; exit 3; }
-STORED=$(q "$API/users/$PUID" | jq -r --arg n "$ATTR" '.attributes[$n][0] // empty')
+PROBE_BACK=$(q "$API/users/$PUID")
+STORED=$(echo "$PROBE_BACK" | jq -r --arg n "$ATTR" '.attributes[$n][0] // empty')
+STORED_METHODS=$(echo "$PROBE_BACK" | jq -r --arg n "$METHODS_ATTR" '(.attributes[$n] // []) | join(",")')
 q -X DELETE "$API/users/$PUID" >/dev/null
 trap cleanup_hdr EXIT
 [ "$STORED" = "$PROBE_PHONE" ] \
   || { echo "ERROR: round-trip FAILED — yazılan '$PROBE_PHONE', okunan '$STORED'" >&2; exit 3; }
+[ "$STORED_METHODS" = "sms,email" ] \
+  || { echo "ERROR: methods round-trip FAILED — yazılan 'sms,email', okunan '$STORED_METHODS'" >&2; exit 3; }
 
-echo "APPLIED: $ATTR managed attribute (admin-only edit, E.164 validator)"
-echo "ROUND-TRIP-OK: yazılan telefon geri okundu"
+echo "APPLIED: $ATTR + $METHODS_ATTR managed attribute (admin-only edit)"
+echo "ROUND-TRIP-OK: telefon ve iki-değerli yöntem listesi geri okundu"
 echo "$BACK" | jq -c '{name, permissions, validations}'
+echo "$BACK_METHODS" | jq -c '{name, multivalued, permissions, validations}'
