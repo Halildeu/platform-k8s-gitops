@@ -5,7 +5,7 @@ set -euo pipefail
 # audio-gateway-mtls-seeder AppRole. Secret values never enter argv or stdout.
 
 HOST="${SPEECHMATICS_VAULT_HOST:-aiserver}"
-VAULT_ADDR="${SPEECHMATICS_VAULT_ADDR:-http://127.0.0.1:8301}"
+VAULT_ADDR="${SPEECHMATICS_VAULT_ADDR:-http://127.0.0.1:8201}"
 ROLE_ID_FILE="${SPEECHMATICS_ROLE_ID_FILE:-/home/aiadmin/.vault/audio-gateway-mtls-seeder-role-id}"
 SECRET_ID_FILE="${SPEECHMATICS_SECRET_ID_FILE:-/home/aiadmin/.vault/audio-gateway-mtls-seeder-secret-id}"
 

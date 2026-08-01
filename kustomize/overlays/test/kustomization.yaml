@@ -9417,10 +9417,13 @@ patches:
       # isolated ExternalSecret-owned Secrets (runtime, TLS, signer). Live
       # namespace was already secrets=30/30, so keep this test-only object
       # quota honest instead of reusing the shared broker secret path.
-      # Faz 35 adds two ESO-owned Secrets; 44 retains four steady-state slots.
+      # Faz 35 adds two ESO-owned Secrets; Faz 24 Speechmatics keeps its API
+      # key in a separate ESO-owned Secret so provider failure cannot disturb
+      # the shared audio-gateway secret. Live reached 44/44 before that target
+      # could reconcile; 45 admits this exact TEST-only secret.
       - op: replace
         path: /spec/hard/secrets
-        value: "44"
+        value: "45"
       # Faz 35 steady state adds three pods; simultaneous maxSurge adds three.
       # Live was 26/30, so 34 preserves two slots at the six-pod rollout peak.
       - op: replace

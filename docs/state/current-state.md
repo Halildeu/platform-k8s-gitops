@@ -47,9 +47,25 @@ korunur, fakat remote property mevcut `eso-runtime` policy'sinin zaten okuduğu
 `kv/platform/audio-gateway-service#speechmatics_api_key` alanına taşınır. Ayrı
 Vault path grant'i desired state'ten çıkarılır. Credential yazımı yalnız canlı
 `audio-gateway-mtls-seeder-test` AppRole'unun `patch,read` sınırıyla ve KV-v2
-CAS üzerinden yapılacaktır; root init/unseal materyali bu akışta kullanılmaz.
+CAS üzerinden yapılacaktır. Statik seed aracı root token kabul etmez; canlı
+tek-kullanımlık SecretID üretimi ise TEST secret operasyon yetkisiyle root
+bağlamından süreç içinde yapılıp ham değer yazdırılmadan hemen temizlenir.
 Bu kaynak değişikliği merge, Argo sync, ESO Ready ve sentetik transcript
 read-back'i görülene kadar canlı kabul kanıtı değildir.
+
+`gitops#3264` merge commit'i
+`9d0d433393c1364c239274314ee0301e78cfd6d2` exact revision'ında
+`platform-test` ve `platform-eso-test` Argo uygulamalarına ulaştı. Geçerli
+Speechmatics anahtarı eski TEST Vault kaydından sunucu içinde alındı, API auth
+`HTTP 200` verdi ve dedicated AppRole ile ortak KV kaydına additive PATCH
+yapıldı; kaynak/hedef hash read-back eşleşti ve tek-kullanımlık credential
+dosyaları temizlendi. ESO sonraki reconcile'da property'yi buldu ancak ayrı
+Kubernetes Secret oluştururken canlı `platform-quota` sınırına takıldı:
+`secrets=44/44`, `exceeded quota`. Bu nedenle ilk doğrulanmamış kapı artık Vault
+policy/credential değil, TEST secret kotasının GitOps ile `45`e çıkması ve
+ardından ESO `Ready=True` read-back'idir. Aynı takip seed aracındaki yanlış
+`127.0.0.1:8301` varsayılanını canlı TEST Vault portu `8201`e düzeltir; prod
+Vault `8200` ve prod kota değişikliği kapsam dışıdır.
 
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
