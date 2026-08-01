@@ -613,7 +613,15 @@ images:
     # and recipient validation now follows the channel: pinning E.164 for
     # every channel refused every e-mail grant before the lane started.
     # Digest read back from a real host-lane pull + node-imported.
-    digest: sha256:25e3e24931d274f17270b7d667094e366f4c0de0948c2986ab64eeee6bff54a6
+    #
+    # 2026-08-01 bump: sha-43ab06d — platform-backend#1059 (gitops#3285). The
+    # delivery grant's allow-lists move inside a purpose. `mfa_otp` keeps
+    # exactly the values it had; `account_invite` is new and reaches only
+    # `auth.admin-invite` on e-mail. The lists had to stop being flat: the
+    # invitation sender is user-service, so putting it on a shared client list
+    # would have let it mint MFA OTP grants too — cross-use prevented by
+    # convention rather than by construction.
+    digest: sha256:350c70ef79b74257bf84ab532d176257cce224411e7eb4105d52701a10696354
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -1025,7 +1033,14 @@ images:
     # Pullability proven before pinning (2026-07-24 entry above): a throwaway
     # pod with the ghcr-pull secret pinned to this digest reached Succeeded and
     # reported imageID = …@sha256:331f7926…
-    digest: sha256:331f79262d49d0374c8e53f6c0d4567b1f88704b16685bfa73eed22790a3a579
+    #
+    # 2026-08-01 bump: sha-43ab06d — platform-backend#1061 (gitops#3285). The
+    # invitation e-mail now carries a one-shot delivery grant. Without it the
+    # intent was accepted (202) and then refused deep in notify with
+    # `authz_deny: no_tuple` — 13 for 13, in a column nobody reads. An invited
+    # address has no `can_receive` relation by construction; the person does
+    # not exist yet.
+    digest: sha256:d1b562c7a98236bbb848af0912c14d33788cf9394126c3748d262f5bdce5a3de
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -6728,7 +6743,13 @@ images:
     # BLOCKED_BY_AUTHZ). The recipient field now follows the channel, and an
     # unknown channel resolves to none, so the exact-match check fails closed.
     # Digest read back from a real host-lane pull + node-imported.
-    digest: sha256:8e40e789823ecfb5172f36c9583c847d301896c052272a8c68d183ddcbe9af7c
+    #
+    # 2026-08-01 bump: sha-43ab06d — platform-backend#1059 (gitops#3285). The
+    # grant verifier honours a closed SET of purposes rather than one constant.
+    # This does not widen what a grant can do: the exact binding to one
+    # recipient, channel, topic and template is untouched, so an invitation
+    # grant can no more deliver an OTP than the reverse.
+    digest: sha256:54aa59fc3c975c3ef16a0c4b14e957635d23c08e904e842c4da9b02e187be3b3
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.27:
@@ -7061,6 +7082,27 @@ patches:
           # never implies being able to authorise a delivery to a number.
           name: SECURITY_MFA_DELIVERY_GRANT_ALLOWED_CLIENTS
           value: "keycloak-sms-otp"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          # gitops#3285: the account-invitation lane. user-service, and ONLY
+          # user-service, may request a grant for it — the flat key above still
+          # governs mfa_otp alone, so being trusted for one lane grants nothing
+          # in the other.
+          #
+          # Why JSON and not SECURITY_MFA_DELIVERY_GRANT_PURPOSES_ACCOUNT_INVITE_
+          # ALLOWED_CLIENTS: the purpose is a map KEY containing an underscore,
+          # and Spring's relaxed binding does not carry `_` through an
+          # environment variable into a map key — `ACCOUNT_INVITE` would arrive
+          # as something else and the lane would stay disabled. It would fail
+          # silently, too: an unconfigured purpose answers `invalid_purpose`,
+          # so the invitation would go on being refused with nothing to show
+          # for it. SPRING_APPLICATION_JSON binds the key exactly.
+          #
+          # It is additive: this is the only key inside it, and it merges as a
+          # high-priority property source without touching anything else.
+          name: SPRING_APPLICATION_JSON
+          value: '{"security":{"mfa-delivery-grant":{"purposes":{"account_invite":{"allowed-clients":["user-service"]}}}}}'
   - target:
       kind: Deployment
       name: api-gateway
