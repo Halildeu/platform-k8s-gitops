@@ -179,7 +179,7 @@ validate_inputs() {
 }
 
 validate_product_evidence() {
-  local evidence_dir="$1" expected_session_id="$2" proof_start_marker="$3" proof_line expected_session_sha256
+  local evidence_dir="$1" expected_session_id="$2" proof_start_marker="$3" expected_session_sha256
   [[ -n "$evidence_dir" && -d "$evidence_dir" ]] || {
     echo "denetim-attestation-migration: product evidence directory is absent" >&2
     return 1
@@ -238,14 +238,22 @@ validate_product_evidence() {
       echo "denetim-attestation-migration: endpoint attended-consent evidence is absent" >&2
       return 1
     }
-  proof_line="$(grep -F "session=${expected_session_id} " "$evidence_dir/broker-relevant.log" \
-    | grep -F 'CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true' \
+  local consent_proof_line device_proof_line
+  consent_proof_line="$(grep -F "session=${expected_session_id} " "$evidence_dir/broker-relevant.log" \
+    | grep -E 'type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=(true|false)$' \
     | tail -1 || true)"
-  [[ -n "$proof_line" ]] || {
-    echo "denetim-attestation-migration: transaction-bound broker trust refresh is absent from captured product evidence" >&2
+  [[ -n "$consent_proof_line" ]] || {
+    echo "denetim-attestation-migration: transaction-bound consent cert/attestation refresh is absent from captured product evidence" >&2
     return 1
   }
-  printf '%s' "$proof_line"
+  device_proof_line="$(grep -F "session=${expected_session_id} " "$evidence_dir/broker-relevant.log" \
+    | grep -E 'type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified$' \
+    | tail -1 || true)"
+  [[ -n "$device_proof_line" ]] || {
+    echo "denetim-attestation-migration: transaction-bound hardware-key device-trust decision is absent from captured product evidence" >&2
+    return 1
+  }
+  printf '%s\n%s' "$consent_proof_line" "$device_proof_line"
 }
 
 rollback_armed=0
@@ -411,18 +419,18 @@ main() {
   # Separate marker/evidence mtimes even on one-second-resolution filesystems.
   sleep 2
   SESSION_ID="$session_id" SESSION_SHA256="$session_binding_sha256" "$@"
-  local proof_line
-  proof_line="$(validate_product_evidence "$EVIDENCE_DIR" "$session_id" "$proof_start_marker")"
-  [[ -n "$proof_line" ]] || {
-    echo "denetim-attestation-migration: broker proof line is empty after evidence validation" >&2
+  local proof_bundle
+  proof_bundle="$(validate_product_evidence "$EVIDENCE_DIR" "$session_id" "$proof_start_marker")"
+  [[ "$(printf '%s\n' "$proof_bundle" | wc -l | tr -d ' ')" == "2" ]] || {
+    echo "denetim-attestation-migration: broker proof bundle is incomplete after evidence validation" >&2
     exit 1
   }
   rm -f "$proof_start_marker"
   product_proof_verified=1
 
   local proof_sha256 transaction_proof_sha256 session_sha256 release_body release_output
-  proof_sha256="$(printf '%s' "$proof_line" | sha256_text)"
-  transaction_proof_sha256="$(printf '%s\n%s' "$transaction_id" "$proof_line" | sha256_text)"
+  proof_sha256="$(printf '%s' "$proof_bundle" | sha256_text)"
+  transaction_proof_sha256="$(printf '%s\n%s' "$transaction_id" "$proof_bundle" | sha256_text)"
   session_sha256="$(printf '%s' "$session_id" | sha256_text)"
   release_body="$(verified_patch_body "-Action ReleaseLock -TransactionId '${transaction_id}' -Confirm:\$false")"
   release_output="$(run_denetimepc_powershell "$release_body")"
@@ -434,7 +442,7 @@ main() {
   trap - EXIT
   remove_remote_patch_best_effort
   echo "status=transaction-bound-product-attestation-verified"
-  echo "brokerProofLineSha256=$proof_sha256"
+  echo "brokerProofBundleSha256=$proof_sha256"
   echo "transactionBrokerProofSha256=$transaction_proof_sha256"
   echo "sessionSha256=$session_sha256"
   echo "rollbackMaterial=retained-locally-non-shareable-cleanup-scheduled"
