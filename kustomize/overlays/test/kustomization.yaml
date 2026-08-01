@@ -6326,7 +6326,11 @@ images:
     # observation for each distinct inventory command result. Image build run
     # 30336183050, endpoint-admin-service job 90201462863; GitHub provenance
     # and OCI manifest verified at the immutable digest below.
-    digest: sha256:abab574627dd0775918f0c3d1a25cf0d9e7089e2ac8dcb277b5c1abd420f5c4b
+    # 2026-08-01 Faz 22.6 #2828 accepted-frame metadata barrier: platform-backend
+    # PR #1052, main 1310deb4ad7ee2c8d052f82188e6e06f88a31bf6. Image build run
+    # 30702036147, endpoint-admin-service job 91374618866; GitHub-hosted SLSA
+    # provenance verifies the exact main source, signer workflow and digest.
+    digest: sha256:a3bd3fdb0cdec1b7ec69a59741904ddf685d5dafbbc38fb79ab72ab6327977e7
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
