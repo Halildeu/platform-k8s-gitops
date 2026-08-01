@@ -386,13 +386,6 @@ jobs:
             echo "::error::GitOps-owned Budget Control route 28 is missing or changed"
             exit 1
           }
-          route_keys="$(printf '%s\n' "${gateway_config}" \
-            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_"))')"
-          if [ -n "${route_keys}" ]; then
-            echo "::error::viewer route 29 is not clean before apply"
-            printf '%s\n' "${route_keys}"
-            exit 1
-          fi
 
           # ${sid} is a Spring RewritePath variable, not a shell variable.
           # shellcheck disable=SC2016
@@ -408,6 +401,20 @@ jobs:
               "SPRING_CLOUD_GATEWAY_ROUTES_29_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
             }
           }'
+
+          route_keys="$(printf '%s\n' "${gateway_config}" \
+            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_"))')"
+          if [ -n "${route_keys}" ]; then
+            existing_route="$(printf '%s\n' "${gateway_config}" \
+              | jq -S -c '.data | with_entries(select(.key | startswith("SPRING_CLOUD_GATEWAY_ROUTES_29_")))')"
+            expected_route="$(printf '%s\n' "${patch_payload}" | jq -S -c '.data')"
+            if [ "${existing_route}" != "${expected_route}" ]; then
+              echo "::error::existing viewer route 29 differs from the bounded VIEW_ONLY route"
+              printf '%s\n' "${route_keys}"
+              exit 1
+            fi
+            echo "::notice::existing viewer route 29 matches the bounded VIEW_ONLY route; continuing idempotently"
+          fi
 
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             patch configmap api-gateway-config --type merge -p "${patch_payload}"

@@ -463,7 +463,9 @@ require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
 require_grep "GATEWAY_CONFIGMAP: api-gateway-config" "$VIEWER_APPLY_WORKFLOW"
 require_grep "GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_29_" "$VIEWER_APPLY_WORKFLOW"
 require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID=budget-service-route" "$VIEWER_APPLY_WORKFLOW"
-require_grep "viewer route 29 is not clean before apply" "$VIEWER_APPLY_WORKFLOW"
+require_grep "existing viewer route 29 differs from the bounded VIEW_ONLY route" "$VIEWER_APPLY_WORKFLOW"
+require_grep "existing viewer route 29 matches the bounded VIEW_ONLY route; continuing idempotently" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'jq -S -c' "$VIEWER_APPLY_WORKFLOW"
 for suffix in ID URI ORDER PREDICATES_0 PREDICATES_1 FILTERS_0; do
   require_grep \
     "/data/SPRING_CLOUD_GATEWAY_ROUTES_29_${suffix}" \
