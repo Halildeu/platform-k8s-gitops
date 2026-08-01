@@ -83,6 +83,16 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     require(data.get("deployExitCode") == 0, "deploy updater failed")
     require(data.get("failureClass") == "none", "failureClass is not none")
 
+    controller = object_field(data, "controller")
+    require(
+        controller.get("exactTarget") is True,
+        "controller was not created from the exact target",
+    )
+    require(
+        controller.get("cleanupExitCode") == 0,
+        "controller worktree cleanup failed",
+    )
+
     task_migration = object_field(data, "taskMigration")
     migration_required = task_migration.get("required")
     require(isinstance(migration_required, bool), "task migration required is invalid")
