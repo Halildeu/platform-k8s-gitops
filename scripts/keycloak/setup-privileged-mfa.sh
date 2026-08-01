@@ -108,7 +108,7 @@ PRIVILEGED_ROLES="ENDPOINT_ADMIN MEETING_ADMIN TRANSCRIPT_ADMIN ethics-manager r
 # LOOKUP, not a guard, so the retired name is replaced rather than kept: a name
 # that resolves to nobody reports MISSING for ever, and --apply would try to
 # grant the role to a user that does not exist.
-DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-halildeu etik-staff@acik.com halil.kocoglu@serban.com.tr zeynep.akkilic@serban.com.tr}"
+DIRECT_MFA_USERS="${DIRECT_MFA_USERS:-halildeu etik-staff halil.kocoglu zeynep.akkilic}"
 # Identities that must NEVER receive the marker, whatever roles they hold. Automation.
 AUTOMATION_MARKERS="${AUTOMATION_MARKERS:-persona -test smoke canary ag0 c5persona rb- codex -lock- recorder .invalid @test. @synthetic. localtest.me test.local}"
 MFA_ROLE="requires-mfa"
