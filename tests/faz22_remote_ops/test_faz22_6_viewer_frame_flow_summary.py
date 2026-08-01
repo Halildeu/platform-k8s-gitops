@@ -47,6 +47,7 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
         self.assertEqual(100, result["brokerReceivedDistinctCount"])
         self.assertEqual(1783987500000, result["firstObservedAtEpochMillis"])
         self.assertEqual(1783987500001, result["firstDeliveredAtEpochMillis"])
+        self.assertEqual(1783987500099, result["lastDeliveredAtEpochMillis"])
         self.assertEqual(1783987500099, result["lastObservedAtEpochMillis"])
         self.assertNotIn("s-safe", str(result))
 
@@ -71,6 +72,11 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
         raw = logs().replace(b"disposition=DELIVERED", b"disposition=DROPPED_NO_VIEWER")
         with self.assertRaisesRegex(ValueError, "did not deliver"):
             MODULE.build(raw, "s-safe", browser())
+
+    def test_distinguishes_trailing_dropped_frame_from_last_delivery(self):
+        result = MODULE.build(logs(count=101), "s-safe", browser())
+        self.assertEqual(1783987500099, result["lastDeliveredAtEpochMillis"])
+        self.assertEqual(1783987500100, result["lastObservedAtEpochMillis"])
 
     def test_accepts_json_wrapped_broker_log_message(self):
         raw = b"\n".join(

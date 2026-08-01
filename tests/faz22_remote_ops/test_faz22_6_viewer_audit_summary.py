@@ -41,6 +41,7 @@ def frame_flow():
         "binding": browser()["binding"],
         "firstObservedAtEpochMillis": millis("2026-07-14T00:00:59Z"),
         "firstDeliveredAtEpochMillis": millis("2026-07-14T00:01:01Z"),
+        "lastDeliveredAtEpochMillis": millis("2026-07-14T00:05:59Z"),
         "lastObservedAtEpochMillis": millis("2026-07-14T00:05:59Z"),
     }
 
@@ -142,14 +143,24 @@ class ViewerAuditSummaryTest(unittest.TestCase):
                 SESSION, STREAM, browser(), invalid_flow,
             )
 
-    def test_rejects_view_stop_before_last_broker_frame(self):
+    def test_rejects_view_stop_before_last_broker_delivery(self):
         invalid_flow = frame_flow()
+        invalid_flow["lastDeliveredAtEpochMillis"] = millis("2026-07-14T00:06:01Z")
         invalid_flow["lastObservedAtEpochMillis"] = millis("2026-07-14T00:06:01Z")
-        with self.assertRaisesRegex(ValueError, "precedes the last broker-observed frame"):
+        with self.assertRaisesRegex(ValueError, "precedes the last broker-delivered frame"):
             MODULE.build(
                 raw_chain(), f"{SESSION}\t1\tPOLICY_EVENT\t{{}}\n".encode(),
                 SESSION, STREAM, browser(), invalid_flow,
             )
+
+    def test_accepts_dropped_no_viewer_frame_observed_after_view_stop(self):
+        valid_flow = frame_flow()
+        valid_flow["lastObservedAtEpochMillis"] = millis("2026-07-14T00:06:01Z")
+        result = MODULE.build(
+            raw_chain(), f"{SESSION}\t1\tPOLICY_EVENT\t{{}}\n".encode(),
+            SESSION, STREAM, browser(), valid_flow,
+        )
+        self.assertTrue(result["viewStopPresent"])
 
 
 if __name__ == "__main__":

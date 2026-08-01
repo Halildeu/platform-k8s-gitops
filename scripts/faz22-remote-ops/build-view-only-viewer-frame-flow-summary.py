@@ -66,13 +66,14 @@ def build(raw_log: bytes, session_id: str, browser: dict) -> dict:
     if not isinstance(binding, dict) or not isinstance(observed_at, str):
         raise ValueError("browser evidence binding or observedAt is missing")
     return {
-        "schemaVersion": "faz22.6-viewer-frame-flow-raw-v1",
+        "schemaVersion": "faz22.6-viewer-frame-flow-raw-v2",
         "observedAt": observed_at,
         "binding": binding,
         "firstSeq": first_seq,
         "lastSeq": last_seq,
         "firstObservedAtEpochMillis": sequences[first_seq][1],
         "firstDeliveredAtEpochMillis": delivered_timestamps[0],
+        "lastDeliveredAtEpochMillis": delivered_timestamps[-1],
         "lastObservedAtEpochMillis": sequences[last_seq][1],
         "producedSequenceCount": produced_sequence_count,
         "brokerReceivedDistinctCount": len(sequences),

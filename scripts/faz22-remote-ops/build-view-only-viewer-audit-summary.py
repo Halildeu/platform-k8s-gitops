@@ -166,10 +166,13 @@ def build(chain_raw: bytes, recording_raw: bytes, session_id: str, stream_id: st
     if frame_flow.get("binding") != binding:
         raise ValueError("frame-flow binding mismatch")
     first_frame_millis = frame_flow.get("firstDeliveredAtEpochMillis")
-    last_frame_millis = frame_flow.get("lastObservedAtEpochMillis")
-    if not isinstance(first_frame_millis, int) or not isinstance(last_frame_millis, int):
+    last_delivered_millis = frame_flow.get("lastDeliveredAtEpochMillis")
+    last_observed_millis = frame_flow.get("lastObservedAtEpochMillis")
+    if not all(isinstance(value, int) for value in (
+            first_frame_millis, last_delivered_millis, last_observed_millis)):
         raise ValueError("frame-flow delivered timestamps are invalid")
-    if first_frame_millis <= 0 or last_frame_millis < first_frame_millis:
+    if first_frame_millis <= 0 or not (
+            first_frame_millis <= last_delivered_millis <= last_observed_millis):
         raise ValueError("frame-flow timestamp order is invalid")
 
     rows = load_rows(chain_raw)
@@ -215,8 +218,8 @@ def build(chain_raw: bytes, recording_raw: bytes, session_id: str, stream_id: st
     stop_at = normalize_instant(stop["occurred_at"])
     if epoch_millis(start_at) > first_frame_millis:
         raise ValueError("VIEW_START was not committed before first broker delivery")
-    if epoch_millis(stop_at) < last_frame_millis:
-        raise ValueError("VIEW_STOP precedes the last broker-observed frame")
+    if epoch_millis(stop_at) < last_delivered_millis:
+        raise ValueError("VIEW_STOP precedes the last broker-delivered frame")
     delivered = stop["metadata"]["framesDelivered"]
     rendered = stop["metadata"]["framesRenderAcknowledged"]
     if not isinstance(delivered, int) or not isinstance(rendered, int) or delivered < 1 or rendered < 1:
