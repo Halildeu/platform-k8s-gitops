@@ -13,6 +13,24 @@ umask 077
 
 STORE_ID="${1:-}"
 MODEL_ID="${2:-}"
+# ES-304 (#2666): the decision matrix, passed BASE64-ENCODED by the caller that already
+# holds the reviewed checkout. Base64 rather than raw JSON because the rationale strings
+# contain apostrophes, and a single-quoted remote argument cannot carry those — the first
+# live run died on exactly that. Optional, so this script keeps working as the preflight's
+# authz proof on its own; when supplied, every row is executed and a REDACTED aggregate is
+# printed in the marker-delimited block below.
+DECISION_MATRIX_B64="${3:-}"
+DECISION_MATRIX=""
+if [ -n "$DECISION_MATRIX_B64" ]; then
+  DECISION_MATRIX=$(printf '%s' "$DECISION_MATRIX_B64" | base64 -d) || {
+    echo "FATAL: decision matrix argument is not valid base64" >&2
+    exit 1
+  }
+  printf '%s' "$DECISION_MATRIX" | jq -e '.rows | length > 0' >/dev/null || {
+    echo "FATAL: decoded decision matrix carries no rows" >&2
+    exit 1
+  }
+fi
 KUBE_CONTEXT="k3d-test"
 KUBE_NS="platform-test"
 POD_DEPLOY="deploy/meeting-service"
@@ -165,6 +183,24 @@ assert_relation_set() {
   }
 }
 
+# ES-304: the same call as check_expected, but it RETURNS the decision instead of
+# asserting one. Two functions rather than a flag: the assert path must stay the
+# thing that fails loudly, and a shared boolean argument is how that gets softened.
+openfga_check() {
+  local subject=$1 relation=$2 object=$3 response code body
+  response=$(jq -nc --arg model "$MODEL_ID" --arg user "user:$subject" \
+    --arg relation "$relation" --arg object "$object" \
+    '{authorization_model_id:$model,tuple_key:{user:$user,relation:$relation,object:$object}}' \
+    | pod_post "$OPENFGA_BASE/stores/$STORE_ID/check")
+  code=${response##*$'\n'}
+  body=${response%$'\n'*}
+  [ "$code" = 200 ] || {
+    echo "FATAL: OpenFGA check call failed (HTTP $code)" >&2
+    exit 1
+  }
+  printf '%s' "$body" | jq -r '.allowed // false'
+}
+
 check_expected() {
   local subject=$1 relation=$2 object=$3 expected=$4 label=$5 response code body
   response=$(jq -nc --arg model "$MODEL_ID" --arg user "user:$subject" \
@@ -224,5 +260,69 @@ done
 assert_exact_tuple "ethics_product:$ETHICS_ORG_ID" product "$sentinel_case" recusal-product
 assert_exact_tuple "user:$STAFF_SUBJECT" recused "$sentinel_case" recusal-user
 check_expected "$STAFF_SUBJECT" case_viewer "$sentinel_case" false recusal-sentinel
+
+# ---------------------------------------------------------------------------
+# ES-304 (#2666) — full decision-matrix execution.
+#
+# The hand-written loops above are the ES-1 core proof and stay as they are. This
+# block adds the exhaustive pass: every row of the frozen matrix, executed here where
+# the personas were already resolved from live Keycloak — so no caller can point the
+# matrix at a friendlier principal than the one the deny proofs used.
+#
+# The aggregate printed below is redacted BY CONSTRUCTION: relation, persona CLASS and
+# object SCOPE only. Subjects, case ids and tuples never leave this host.
+# ---------------------------------------------------------------------------
+if [ -n "$DECISION_MATRIX" ]; then
+  matrix_total=0
+  matrix_passed=0
+  matrix_rows='[]'
+  while read -r row; do
+    [ -n "$row" ] || continue
+    rel=$(printf '%s' "$row" | jq -r .relation)
+    persona=$(printf '%s' "$row" | jq -r .persona)
+    scope=$(printf '%s' "$row" | jq -r .object_scope)
+    expect=$(printf '%s' "$row" | jq -r .expect)
+    case "$persona" in
+      staff|recused) subject="$STAFF_SUBJECT" ;;
+      wrong_org) subject="$WRONG_ORG_SUBJECT" ;;
+      denied) subject="$DENIED_SUBJECT" ;;
+      *) echo "FATAL: matrix names an unknown persona class" >&2; exit 1 ;;
+    esac
+    case "$scope" in
+      canonical_product) object="$canonical_product" ;;
+      foreign_product) object="$wrong_product" ;;
+      sentinel_case) object="$sentinel_case" ;;
+      *) echo "FATAL: matrix names an unknown object scope" >&2; exit 1 ;;
+    esac
+    observed=$(openfga_check "$subject" "$rel" "$object")
+    matrix_total=$((matrix_total + 1))
+    if [ "$observed" = "$expect" ]; then
+      matrix_passed=$((matrix_passed + 1))
+    fi
+    matrix_rows=$(jq -nc --argjson acc "$matrix_rows" --arg r "$rel" --arg p "$persona" \
+      --arg s "$scope" --argjson e "$expect" --argjson o "$observed" \
+      '$acc + [{relation:$r, persona:$p, scope:$s, expected:$e, observed:$o, pass:($e == $o)}]')
+  done <<<"$(printf '%s' "$DECISION_MATRIX" | jq -c '.rows[] | select(.execution == "live")')"
+
+  declared=$(printf '%s' "$DECISION_MATRIX" | jq '[.rows[] | select(.execution == "live")] | length')
+  # No silent caps: a short run is a failure, never a quiet pass.
+  [ "$matrix_total" -eq "$declared" ] || {
+    echo "FATAL: executed $matrix_total of $declared declared matrix rows" >&2
+    exit 1
+  }
+  echo "ES304_MATRIX_EVIDENCE_BEGIN"
+  jq -nc --argjson rows "$matrix_rows" --arg store "$STORE_ID" --arg model "$MODEL_ID" \
+    '{schema_version:"faz35-authz-matrix-evidence-v1",
+      note:"Redacted by construction: relation, persona CLASS and object SCOPE only.",
+      store_id:$store, model_id:$model,
+      total:($rows|length), passed:([$rows[]|select(.pass)]|length), rows:$rows}'
+  echo "ES304_MATRIX_EVIDENCE_END"
+  if [ "$matrix_passed" -ne "$matrix_total" ]; then
+    echo "FATAL: $((matrix_total - matrix_passed)) matrix rows diverged from the declared decisions" >&2
+    printf '%s' "$matrix_rows" | jq -r '.[] | select(.pass|not) | "  \(.relation) persona=\(.persona) scope=\(.scope) expected=\(.expected) observed=\(.observed)"' >&2
+    exit 1
+  fi
+  echo "ES-304 decision matrix: $matrix_passed/$matrix_total rows behaved as declared"
+fi
 
 echo "OpenFGA authorization: live read-only persona, tuple, allow, deny and recusal proofs PASS"
