@@ -1,0 +1,676 @@
+{
+  "schema_version": "faz35-authz-decision-matrix-v1",
+  "purpose": "ES-304 (#2666): every relation in the frozen registry, executed as an explicit allow/deny expectation against live OpenFGA. Coverage is proven against the registry itself — a relation added to the model without a row here fails the completeness gate, which is the only reason this file is machine-readable rather than prose.",
+  "registry_source": "docs/contracts/faz35-authorization-relation-registry.v1.json",
+  "persona_classes": {
+    "staff": "Canonical org persona holding handler + triager.",
+    "wrong_org": "Real staff persona of a different organisation.",
+    "denied": "In-org persona carrying content_denied.",
+    "recused": "The staff persona measured against the recusal sentinel case."
+  },
+  "object_scopes": {
+    "canonical_product": "ethics_product of the pilot organisation.",
+    "foreign_product": "ethics_product of the other organisation.",
+    "sentinel_case": "The recusal sentinel case object."
+  },
+  "rows": [
+    {
+      "type": "ethics_product",
+      "relation": "viewer",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "viewer",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "viewer",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "viewer",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "triager",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": true,
+      "rationale": "The persona holds this product role directly.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "triager",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "triager",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "triager",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "handler",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": true,
+      "rationale": "The persona holds this product role directly.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "handler",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "handler",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "handler",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "technical_admin",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "technical_admin",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "technical_admin",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "technical_admin",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_approver",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_approver",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_approver",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_approver",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "ethics_product_admin",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "ethics_product_admin",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "ethics_product_admin",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "ethics_product_admin",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "content_denied",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "content_denied",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "content_denied",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "content_denied",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_viewer",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": true,
+      "rationale": "Derived from the held handler/triager roles.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_viewer",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_viewer",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_viewer",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_triager",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": true,
+      "rationale": "Derived from the held handler/triager roles.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_triager",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_triager",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_triager",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_handler",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": true,
+      "rationale": "Derived from the held handler/triager roles.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_handler",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_handler",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "case_handler",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_reveal_approved",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_reveal_approved",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_reveal_approved",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "evidence_reveal_approved",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_approver",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_approver",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_approver",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_approver",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_reveal_approved",
+      "persona": "staff",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Least privilege: not granted, and not derivable from what is held.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_reveal_approved",
+      "persona": "wrong_org",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "Cross-tenant: another org's principal never reaches this product.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_reveal_approved",
+      "persona": "wrong_org",
+      "object_scope": "foreign_product",
+      "expect": false,
+      "rationale": "Own-tenant object without a grant is still no.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_product",
+      "relation": "subject_reveal_approved",
+      "persona": "denied",
+      "object_scope": "canonical_product",
+      "expect": false,
+      "rationale": "content_denied principal is refused across the whole product surface.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "conflicted",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "The sentinel case exercises RECUSAL, not conflict of interest — two distinct ways to be removed from a case. Expecting true here would have conflated them; a conflicted-case sentinel is separate future coverage, not a claim this row may make.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "conflicted",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "recused",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": true,
+      "rationale": "Marker relation: on a recused principal this must be TRUE. Asserting false would let a change that silently dropped the recusal marker pass as compliant.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "recused",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "denied",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": true,
+      "rationale": "Marker relation: on a recused principal this must be TRUE. Asserting false would let a change that silently dropped the recusal marker pass as compliant.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "denied",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_viewer",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Access relation: recusal removes the case from view even where the product role would allow it.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_viewer",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_triager",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Access relation: recusal removes the case from view even where the product role would allow it.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_triager",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_handler",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Access relation: recusal removes the case from view even where the product role would allow it.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "case_handler",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "evidence_reveal_approved",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Access relation: recusal removes the case from view even where the product role would allow it.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "evidence_reveal_approved",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "subject_reveal_approved",
+      "persona": "recused",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Access relation: recusal removes the case from view even where the product role would allow it.",
+      "execution": "live"
+    },
+    {
+      "type": "ethics_case",
+      "relation": "subject_reveal_approved",
+      "persona": "wrong_org",
+      "object_scope": "sentinel_case",
+      "expect": false,
+      "rationale": "Cross-tenant principals never reach a case object either.",
+      "execution": "live"
+    },
+    {
+      "type": "team",
+      "relation": "member",
+      "persona": "n/a",
+      "object_scope": "n/a",
+      "expect": false,
+      "execution": "source",
+      "source_test": "tests/deploy/test_faz35_relation_registry_completeness.py",
+      "rationale": "Subject-to-TEAM relation: a user never holds it on a product object, so a live Check is a type error rather than a denial. Shape is asserted in the registry completeness gate; a fabricated live 'deny' here would be a false compartment proof."
+    },
+    {
+      "type": "ethics_case",
+      "relation": "product",
+      "persona": "n/a",
+      "object_scope": "n/a",
+      "expect": false,
+      "execution": "source",
+      "source_test": "tests/deploy/test_faz35_relation_registry_completeness.py",
+      "rationale": "The subject of this relation is an ethics_product, not a user; the live tuple assertion for it already exists as assert_exact_tuple in the OpenFGA verifier (recusal-product). No user-subject Check applies."
+    }
+  ],
+  "no_cross_compartment_reconstruction": [
+    {
+      "holds": "case_handler",
+      "must_not_hold": "subject_reveal_approved",
+      "why": "Handling a case must not unwrap the reporter's identity compartment."
+    },
+    {
+      "holds": "case_handler",
+      "must_not_hold": "evidence_reveal_approved",
+      "why": "Handling a case must not unwrap sealed original evidence."
+    },
+    {
+      "holds": "case_triager",
+      "must_not_hold": "subject_reveal_approved",
+      "why": "Triage sees less than handling; it certainly does not unwrap identity."
+    },
+    {
+      "holds": "triager",
+      "must_not_hold": "ethics_product_admin",
+      "why": "No horizontal escalation from a product role into product administration."
+    }
+  ],
+  "execution_modes": {
+    "live": "Executed as an OpenFGA Check against the running store on every preflight.",
+    "source": "Shape-only relation: the subject or object type makes a user-subject Check a type error. Covered by the named source test; never fabricated as a denial."
+  }
+}

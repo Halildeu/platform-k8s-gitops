@@ -498,8 +498,22 @@ if [ "$PREFLIGHT_STAGE" = activation ]; then
   # fixed TEST personas from live Keycloak and prove the exact allow/deny tuple
   # matrix against the pinned store/model without mutating either system.
   # shellcheck disable=SC2029 # validated ULIDs are the only remote arguments.
-  remote "bash -s -- '$store_id' '$model_id'" \
-    <"$SCRIPT_DIR/verify-test-openfga-authz.sh"
+  # ES-304 (#2666): the same run now also executes the full decision matrix. The
+  # matrix travels from THIS reviewed checkout; the personas are resolved on the host
+  # inside that script, so coverage and identity can never be chosen by the same hand.
+  decision_matrix=$(jq -c . "$REPO_ROOT/docs/contracts/faz35-authorization-decision-matrix.v1.json" | base64 | tr -d '\n')
+  matrix_output=$(remote "bash -s -- '$store_id' '$model_id' '$decision_matrix'" \
+    <"$SCRIPT_DIR/verify-test-openfga-authz.sh")
+  printf '%s\n' "$matrix_output" | grep -v '^ES304_MATRIX_EVIDENCE_'
+  # Redacted aggregate, kept as a file so a later reader can diff coverage over time.
+  printf '%s\n' "$matrix_output" \
+    | awk '/^ES304_MATRIX_EVIDENCE_BEGIN$/{flag=1;next}/^ES304_MATRIX_EVIDENCE_END$/{flag=0}flag' \
+    > "$REPO_ROOT/docs/faz-35-evidence/authz-decision-matrix-latest.json"
+  jq -e '.total > 0 and .total == .passed' \
+    "$REPO_ROOT/docs/faz-35-evidence/authz-decision-matrix-latest.json" >/dev/null || {
+    echo "FATAL: ES-304 decision matrix evidence is missing or not fully passing" >&2
+    exit 1
+  }
 fi
 
 if grep -Fq 'activation/etik-speak' "$ROOT_OVERLAY"; then
