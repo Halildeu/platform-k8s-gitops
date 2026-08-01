@@ -12,6 +12,13 @@ path "kv/data/platform/meeting-analysis-capability" {
   capabilities = ["read"]
 }
 
+# Faz 24 #3240: Speechmatics is selectable only in TEST. Keep this grant out
+# of the common/prod policy so production ESO cannot read or materialize the
+# SaaS credential without a separate owner/legal activation decision.
+path "kv/data/platform/audio-gateway-speechmatics" {
+  capabilities = ["read"]
+}
+
 # Additional test-specific debug/dev paths may be added later:
 # - kv/data/platform/test-fixtures (synthetic test data)
 # - kv/data/platform/debug-tokens (ops debug)
