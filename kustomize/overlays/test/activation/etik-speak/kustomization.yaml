@@ -211,11 +211,15 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
+  # ES-306 (#2665) bulgusu: donusturucu imaji 2020'den beri yamalanmamis ve
+  # ayristirma kutuphanelerinde aktif somurulen CVE'ler tasiyor. Sifira
+  # cekildi; is yuku manifesti duruyor ki bakimli imajla geri acmak tek satir
+  # olsun (silmek, karari ve gerekcesini de silerdi). Takip: #3335.
   - target: {kind: Deployment, name: heic-converter}
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 1
+        value: 0
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
