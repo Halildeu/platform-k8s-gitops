@@ -66,10 +66,22 @@ Storage-list / read-metadata yetkisi olan biri fazla şey görmesin diye metadat
 ### 5. Retention + crypto-erase (WORM-uyumlu)
 
 - Per-substream retention (KVKK inventory ile hizalı; transcript/recording §22.8 plan).
-- **Crypto-erase = per-case KMS key destruction.** **WORM-uyumlu:** Object-Lock
-  retention / legal-hold **dolmadan** silme/crypto-erase **YAPILAMAZ**; KMS key
-  destruction yalnız retention + legal-hold bitiminden **sonra** uygulanır.
+- **Crypto-erase = per-case KMS key destruction.**
+- **Object silme WORM-uyumlu:** Object-Lock retention / legal-hold **dolmadan**
+  nesne **silinemez** — bu depolama katmanınca zorlanır, politika tercihi değildir.
+- **Legal-hold aktifken KMS key destruction YAPILAMAZ**, istisnasız: hold altındaki
+  içeriğin anahtarını imha etmek delil karartmasıdır.
 - Retention sonu (yasalsa): KMS key destroy + object delete.
+
+> **Revizyon — 2026-08-01 (ADR-0047 K1).** Bu bölümün ilk hâli iki farklı şeyi tek
+> cümlede tutuyordu: *nesnenin silinmesi* ve *anahtarın imhası*. Object-Lock
+> retention'ı yalnız birincisini engeller. Faz 35 ihbar akışında ihbarcının kendi
+> bildirimi için **onaylı erken silme talebi**, legal-hold ve aktif reveal grant
+> yokken KMS key destruction'ı tetikleyebilir; şifreli nesne yerinde kalır
+> (Object-Lock ihlali yok) ve yalnız erişilemez hale gelir. Saklama yükümlülüğünün
+> koruduğu şey içerik değil kayıttır (2019/1937 Art.18, SOX Sec.802) ve o kayıt
+> denetim defterinde durmaya devam eder. Tam karar metni ve silme sonrası defterde
+> neyin kaldığı: [ADR-0047 §5 K1](0047-faz35-retention-legal-hold-erasure-invariants.md).
 
 ### 6. Access control + quarantine
 
