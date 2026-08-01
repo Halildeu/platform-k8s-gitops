@@ -1,5 +1,45 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 TEST customer journey passed; historical DLQ disposition remains tracked (2026-08-01)
+
+The last passed customer gate for [#2610](https://github.com/Halildeu/platform-k8s-gitops/issues/2610)
+is the exact TEST meeting journey, not merely merge, CI, or rollout. Authorized Electron
+runtime `812977edbefd6cd544f1bc9b992f3c1e3f8496f6` selected an existing meeting and
+`speechmatics`, then reopened meeting
+`7c6942c4-21da-416a-8102-c9c488c4b80b` after navigating away. The same persisted
+analysis run `da238992-7e8e-4a46-85c9-d22cdd36b471` and its summary, decision, and
+action were read back from meeting-service. No attended microphone-consent action was
+performed as part of this acceptance.
+
+The active immutable runtime pair is audio-gateway
+`sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe`
+(pod UID `8df117ff-54dc-4513-ab3e-6c514ce8c134`) and transcript-service
+`sha256:6f930cec0ba1de575c9ce6f9779d4913e50ebe4bc47c1e82eb7fcd42eea53884`
+(pod UID `b5d7591f-ee20-451d-ad87-9e6316107a64`). Denetim meeting-ai runs exact
+`4df5fcd5039779c0fd9f57463cdaf54d6e43be74`, and the scoped TEST permit/policy
+activation is bound to policy SHA-256
+`2795b6d630cfbb64544337a5d4a25666ce5ad5ef5bb4182b4c9166466eec8425`, permit
+SHA-256 `c44e1b58e4b9cbbbe399e6f99857ea52620a7a3d3711aa5afd65b506c3464836`, and
+activation-receipt SHA-256
+`02f70a40afd497f1a63e751553318bce2aacaaa804f08b63a1e38aeb0d4e6068`.
+Five named Speechmatics WebSocket/backpressure/terminal scenarios passed on Denetim;
+the desktop gateway suite passed `28/28` and the exact merged desktop suite passed
+`558/558` plus typecheck, lint, format check, and build.
+
+The first operationally unverified gate is historical replay disposition, not the
+accepted meeting. A metadata-only read-back after worker restart and queue quiescence
+found `25` terminal
+analysis rows with `ingestion_http_409` and `3` ready-event rows with
+`RETRY_EXHAUSTED/processing_AnalysisTimeoutError`; the accepted analysis run above was
+absent from the result DLQ. Pending and in-flight analysis-delivery counts were zero;
+the ready inbox reached `received=0`, `processing=0`, `outboxed=53`, and
+`oldest_unfinished_age_sec=null`, while the consumer remained running and Redis-group
+ready. These retained rows
+must not be silently deleted to make health appear green. Auditable, reason-specific
+disposition and a final health read-back are tracked separately in
+[#3323](https://github.com/Halildeu/platform-k8s-gitops/issues/3323). Production
+enablement and production legal acceptance remain outside this TEST evidence.
+
 ## Live Delta — Faz 22.6 TEST deployment approval is temporarily automated and reversible (2026-08-01)
 
 Owner decision [#2828 comment `5150913900`](https://github.com/Halildeu/platform-k8s-gitops/issues/2828#issuecomment-5150913900)
