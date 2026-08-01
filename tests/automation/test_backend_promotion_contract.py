@@ -138,7 +138,11 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertIn("environment: testai-product-acceptance", self.verify)
         self.assertIn("secrets.P5_SMOKE_AUTH_USERNAME", self.verify)
         self.assertIn("secrets.P5_SMOKE_AUTH_PASSWORD", self.verify)
+        self.assertIn("secrets.P5_SMOKE_CLIENT_SECRET", self.verify)
         self.assertIn('SMOKE_AUTH_USERNAME:-}" == "p5-readiness-viewer"', self.runtime)
+        self.assertIn('SMOKE_CLIENT_SECRET:-}', self.runtime)
+        self.assertIn('"client_id": "smoke-client"', self.runtime)
+        self.assertNotIn('"client_id": "frontend"', self.runtime)
         self.assertIn("pass-p5-readiness-viewer-exact-view", self.runtime)
         self.assertIn("assert_current_backend_map", self.runtime)
         self.assertIn('latest_map" == "$NORMALIZED_DIGEST_MAP', self.runtime)
@@ -216,6 +220,7 @@ class BackendPromotionContractTests(unittest.TestCase):
             {
                 "SMOKE_AUTH_USERNAME": "p5-readiness-viewer",
                 "SMOKE_AUTH_PASSWORD": "exact-test-password",
+                "SMOKE_CLIENT_SECRET": "exact-client-secret",
             }
         )
         result = subprocess.run(
@@ -228,6 +233,8 @@ class BackendPromotionContractTests(unittest.TestCase):
         parsed = urllib.parse.parse_qs(result.stdout.decode(), strict_parsing=True)
         self.assertEqual(parsed["username"], ["p5-readiness-viewer"])
         self.assertEqual(parsed["password"], ["exact-test-password"])
+        self.assertEqual(parsed["client_id"], ["smoke-client"])
+        self.assertEqual(parsed["client_secret"], ["exact-client-secret"])
 
     def test_p5_token_pipeline_is_valid_shell_and_preserves_form_bytes(self):
         block_start = self.runtime.index("token=$(\n")
@@ -253,6 +260,7 @@ class BackendPromotionContractTests(unittest.TestCase):
                     "CAPTURE_PATH": str(captured),
                     "SMOKE_AUTH_USERNAME": "p5-readiness-viewer",
                     "SMOKE_AUTH_PASSWORD": "exact-test-password",
+                    "SMOKE_CLIENT_SECRET": "exact-client-secret",
                     "TESTAI_URL": "https://example.invalid",
                 }
             )
@@ -268,6 +276,8 @@ class BackendPromotionContractTests(unittest.TestCase):
             parsed = urllib.parse.parse_qs(body.decode(), strict_parsing=True)
             self.assertEqual(parsed["username"], ["p5-readiness-viewer"])
             self.assertEqual(parsed["password"], ["exact-test-password"])
+            self.assertEqual(parsed["client_id"], ["smoke-client"])
+            self.assertEqual(parsed["client_secret"], ["exact-client-secret"])
 
     def test_argocd_core_kubeconfig_is_scoped_private_and_deleted(self):
         self.assertIn("mktemp", self.reconcile)

@@ -231,6 +231,10 @@ CURRENT_GATE="jwt-auth-flow"
   echo "FAIL: dedicated P5 smoke password is absent" >&2
   exit 1
 }
+[[ -n "${SMOKE_CLIENT_SECRET:-}" ]] || {
+  echo "FAIL: confidential smoke-client secret is absent" >&2
+  exit 1
+}
 
 # Keep username/password out of argv and logs. Python reads the inherited
 # environment and writes only an URL-encoded request body to curl stdin.
@@ -242,7 +246,8 @@ import urllib.parse
 
 sys.stdout.write(urllib.parse.urlencode({
     "grant_type": "password",
-    "client_id": "frontend",
+    "client_id": "smoke-client",
+    "client_secret": os.environ["SMOKE_CLIENT_SECRET"],
     "username": os.environ["SMOKE_AUTH_USERNAME"],
     "password": os.environ["SMOKE_AUTH_PASSWORD"],
 }))
