@@ -6381,7 +6381,11 @@ images:
     # PR #1052, main 1310deb4ad7ee2c8d052f82188e6e06f88a31bf6. Image build run
     # 30702036147, endpoint-admin-service job 91374618866; GitHub-hosted SLSA
     # provenance verifies the exact main source, signer workflow and digest.
-    digest: sha256:a3bd3fdb0cdec1b7ec69a59741904ddf685d5dafbbc38fb79ab72ab6327977e7
+    # 2026-08-01 Faz 22.6 #2828 VIEW_START-before-delivery ordering: backend
+    # PR #1063, main 24cfa11042c8c4ea7c4a213e5076d62f4f4bcd9b. Image build
+    # run 30712943636, endpoint-admin-service job 91403581085; GitHub-hosted
+    # provenance verifies the immutable digest below.
+    digest: sha256:d8a65f9bd0789c5728d806eaea39329adba205542c035d5cf47d22ad86944324
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
