@@ -141,6 +141,7 @@ jobs:
           REPORT_PATH: ${{ runner.temp }}/testai-backend-runtime-verification.json
           SMOKE_AUTH_USERNAME: ${{ secrets.P5_SMOKE_AUTH_USERNAME }}
           SMOKE_AUTH_PASSWORD: ${{ secrets.P5_SMOKE_AUTH_PASSWORD }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.P5_SMOKE_CLIENT_SECRET }}
         run: bash scripts/deploy/verify-testai-backend-runtime.sh
 
       - name: Validate terminal backend evidence contract
