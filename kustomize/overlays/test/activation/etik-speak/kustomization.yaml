@@ -57,13 +57,16 @@ images:
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
     # birden fazla ek eklenebilir, yuklemeler sirali.
-    # 2026-08-01 bump: platform-web#1100 (ES-403 #885 UI yarisi) — kapali kanal
-    # reddi kendi gorunumunde: mevcut bildirimler erisilebilir + dis kanallar.
-    # Kaynak: a0e360c82d73dbff0a75d27673e289f3d171d825
-    # Etiket: sha-a0e360c82d73dbff0a75d27673e289f3d171d825 (bu hat TAM sha kullanir).
+    # 2026-08-01 bump 2: platform-web#1103 — content-first tip olcegi. Iki
+    # OLCULMUS kusur kapandi: kapali-kanal basligi kelime ortasindan
+    # kirpiliyordu ("aımıyor."); 1280x720'de birincil eylemler katlamanin
+    # altindaydi. clamp tavani 3.5rem + satir yuksekligi 1.12 + tasma savunmasi;
+    # invaryant testler olcegi pinler.
+    # Kaynak: 22ecb02d6db0f6e3dcb33e39d3797093450c8fe8
+    # Etiket: sha-22ecb02d6db0f6e3dcb33e39d3797093450c8fe8 (bu hat TAM sha kullanir).
     # Digest hedef kumeye gercek pull ile okundu (smoke-dig-pub pod).
-    # Onceki: 598f7953 (#1016) @ sha256:2a47d483a5ff7119f88e59ef9fc28fab5fd5f549efde21e0a5e20861d1fdea86
-    digest: sha256:55e12e70443612226ca8ee4e9e84bf0b967f83d6decad3c527306c2b1dc5e514
+    # Onceki: a0e360c8 (#1100) @ sha256:55e12e70443612226ca8ee4e9e84bf0b967f83d6decad3c527306c2b1dc5e514
+    digest: sha256:eb356ebcf09102016e7238136a0b3f95e75c22eee7092b03851d5711f51bf30b
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
