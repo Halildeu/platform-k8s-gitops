@@ -153,6 +153,41 @@ canonical event olarak okunmasıdır. Bunu izleyen kapı exact masaüstü paketi
 aynı oturumun görünür transkript, karar ve aksiyon sonucudur. Bu kapılar
 geçmeden sağlayıcı seçimi TEST kullanıcı yolculuğu olarak kabul edilmez.
 
+Sonraki source/read-back dalgasında `platform-desktop#105` merge commit'i
+`b25c3d94c25a89aa805ca56eaab5f9f8848585fd` oldu ve main CI run
+[`30699391259`](https://github.com/Halildeu/platform-desktop/actions/runs/30699391259)
+başarılı sonuçlandı. `gitops#3282` merge commit'i
+`ab290e6fa730026d7228fc3f9ac3623ad4e7a385`, Speechmatics kanıtını internal
+app-mTLS probundan ayıran ve recorder yaşam döngüsünü canonical oturumla
+bağlayan verifier'ları main'e taşıdı. Aynı exact commit üzerindeki workflow
+[`30700859445`](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/30700859445)
+`success` oldu: canlı sağlayıcı `speechmatics`, model
+`speechmatics-realtime-v2`, cihaz `speechmatics-saas`, transcribe HTTP `200`,
+transkript karakter sayısı `64` ve durable audit eşleşmesi kanıtlandı. Ham ses
+ve ham transkript evidence/log yüzeylerine alınmadı.
+
+Canlı PostgreSQL metadata read-back'inde meeting
+`4fc35ff6-aa07-4657-931f-0e6fbb9c4fba`, dış gateway session
+`SES-a479b743-7cec-4079-9bed-069f0a19f2c8` ve canonical session
+`e73fc3d8-0cbf-4971-96d0-c75154d2e41c` eşleşti. Association
+`RESOLVED/FINALIZED`, finalization version `1`, segment sayısı `2` ve non-empty
+canonical finalization sayısı `1` oldu. Böylece önceki PENDING/canonical-id
+kapısı artık bu exact sentetik koşu için geçmiştir. Meeting `COMPLETED` olsa da
+meeting session `PROCESSING`, analysis-run/action/decision sayaçları `0` kaldı.
+
+İlk doğrulanmamış ürün kapısı `#2610` transcript-ready consumer ve
+analysis-delivery aktivasyonudur. Live TEST producer non-null `analysisRunId`
+üretir; ancak policy `producerCapabilities=[]`, `hostStartupGuards=[]` ve
+`enableAuthorized=false` olduğu için GPU-host consumer bilinçli olarak kapalı
+kalır. 2026-08-01 canlı yeniden kontrolde host-local reconciler dosyaları
+`0600 aiadmin:aiadmin` olarak mevcut, fakat AppRole login `HTTP 400 invalid role
+or secret ID` döndürür; bilinen owner-token dosyaları ve Vault container env'i
+boştur. Root-token araması, doğrudan Kubernetes Secret/workload mutasyonu veya
+permit bypass yapılmamıştır. Ayrı dağıtım kapısında lokal Keychain kod-imza
+kimliği `0`, `platform-desktop` repo/environment secret ve variable listeleri
+boştur; imzalı/notarized macOS paket, Gatekeeper ve attended tek-seferlik TCC
+kanıtı bu dış Apple kimlikleri sağlanmadan ileri sürülmez.
+
 ## Live Delta — Graph mailbox routine Vault access uses a scoped AppRole (2026-07-30)
 
 Board issue `#771` kapsamında production Vault üzerinde `graph-mail-ops`
