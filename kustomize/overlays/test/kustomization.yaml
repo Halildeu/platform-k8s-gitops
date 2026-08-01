@@ -4838,8 +4838,10 @@ images:
     # The authenticator app is deliberately not a checkbox: `OTP Form` is stock
     # Keycloak and does not read our attribute, so a box there would look like a
     # control and silently do nothing. The section says so instead.
-    # Digest read back from a real host-lane pull (RepoDigests) + node-imported.
-    digest: sha256:8f51c8785089468085785b6e9930c6797c52acfc43c57139df1e1de2302cdb57
+    # Parent OCI index: sha256:8f51c8785089468085785b6e9930c6797c52acfc43c57139df1e1de2302cdb57.
+    # TEST is linux/amd64, so pin its registry-verified child manifest. This
+    # keeps D30 exact: the desired digest must equal the running pod imageID.
+    digest: sha256:972820a6b489a951e772ff31eef24fa83421e221910b17e99ff4aa624fafd9f7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
