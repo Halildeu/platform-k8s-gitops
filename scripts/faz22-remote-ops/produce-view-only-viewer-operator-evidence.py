@@ -62,7 +62,10 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
     return {
         "onePersonRoster": authorization.get("onePersonRoster"),
         "pilotDeviceConsented": authorization.get("consentingPilotDevice"),
-        "exposureApproved": authorization.get("exposureApprovedByProtectedEnvironment"),
+        "exposureApproved": (
+            authorization.get("exposureApprovedByProtectedEnvironment") is True
+            or authorization.get("temporaryTestAutomationApprovedByOwner") is True
+        ),
         "protectedEnvironment": authorization.get("environment"),
         "activationRunId": activation_run_id,
         "activationRunAttempt": run["run_attempt"],

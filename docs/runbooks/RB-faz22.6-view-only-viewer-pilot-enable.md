@@ -81,14 +81,25 @@ This is the owner decision. Do not flip the flag until every box holds:
       HTTP listener that is deliberately closed today — a security-boundary
       decision, not a default).
 - [ ] A single **pilot device** identified + consenting (attended).
-- [ ] GitHub Environment `faz22-view-only-pilot` has a required reviewer,
-      `prevent_self_review=true`,
-      and the two protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256` and
+- [ ] GitHub Environment `faz22-view-only-pilot` matches the exact active mode
+      in `config/faz22-6-view-only-pilot-owner-policy.v2.json`. Supported modes
+      are `required-reviewer` and bounded `temporary-test-automation`; no third
+      mode or implicit fallback is accepted. The temporary mode requires an
+      empty live protection-rule set, an immutable owner comment bound to
+      #2828, and an unexpired policy window. It does not claim that a protected
+      Environment reviewer approved the deployment. The policy retains the
+      exact reviewer restoration set (`gladyatore-lab`, GitHub user ID
+      `287014213`, `prevent_self_review=true`) and the permanent machine-gate
+      tracker #2502. On temporary-window expiry, before any production use, or
+      after #2502 activation, restore the reviewer mode before another apply.
+- [ ] The Environment retains the two protected values
+      `VIEW_ONLY_PILOT_OPERATOR_SHA256` and
       `VIEW_ONLY_PILOT_DEVICE_SHA256`. They are distinct
       `sha256:<64hex>` opaque bindings; raw identity/device values do not enter
-      workflow inputs or logs. The authorization expiry is not a static
-      Environment secret: the protected job derives it after reviewer approval,
-      with a fixed 120-minute upper bound.
+      workflow inputs or logs. Authorization expiry is not a static Environment
+      secret: the job derives it after the selected mode is verified, with a
+      fixed 120-minute upper bound and, in temporary mode, never beyond the
+      temporary policy window.
 
 ## 3. Enable steps (TEST/pilot env; each: command → expected → fail signal)
 
@@ -404,9 +415,12 @@ all seven source workflows have successful, same-revision, same-authorization
 runs inside the bounded matrix window (with distinct isolated sessions for each
 termination case) and the independent verifier emits the content-addressed v2 marker.
 The canonical owner/advisory policy is content-addressed. A missing protected
-GitHub Environment, missing required reviewer, self-review allowance, closed
-#2374 ticket, revoked receipt or absent real endpoint consent keeps live
-activation/product acceptance fail-closed.
+GitHub Environment, a live Environment state that does not match the selected
+approval mode, an expired or modified temporary owner directive, a missing
+reviewer restoration contract, closed #2374 ticket, revoked receipt or absent
+real endpoint consent keeps live activation/product acceptance fail-closed.
+Temporary TEST deployment automation never changes the separate attended
+Windows `Evet/Hayır` consent boundary.
 
 Negative evidence must be produced fresh against the current contract. A token
 missing the required operator role is rejected as unauthenticated (`401`);

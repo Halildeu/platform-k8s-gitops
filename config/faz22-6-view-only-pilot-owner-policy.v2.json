@@ -15,10 +15,39 @@
     "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-5011715034"
   },
   "authorization": {
+    "environmentApproval": {
+      "activeMode": "temporary-test-automation",
+      "requiredReviewer": {
+        "requirePreventSelfReview": true
+      },
+      "temporaryTestAutomation": {
+        "directive": {
+          "authorAssociation": "OWNER",
+          "authorLogin": "Halildeu",
+          "bodySha256": "sha256:baf2a3ac5aade8d27ff165fa435f0ea7451c5011352360d4434b282d28fd2d5a",
+          "commentId": 5150913900,
+          "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2828#issuecomment-5150913900"
+        },
+        "expectedLiveProtectionRules": [],
+        "validFrom": "2026-08-01T09:54:13Z",
+        "validUntil": "2026-08-08T09:54:13Z"
+      },
+      "restoration": {
+        "preventSelfReview": true,
+        "reviewers": [
+          {
+            "id": 287014213,
+            "name": "gladyatore-lab",
+            "type": "User"
+          }
+        ],
+        "trackedBy": "https://github.com/Halildeu/platform-k8s-gitops/issues/2502",
+        "trigger": "temporary-window-expiry-or-before-production-or-after-machine-gate-activation"
+      }
+    },
     "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
     "maxTtlMinutes": 120,
     "protectedEnvironment": "faz22-view-only-pilot",
-    "requirePreventSelfReview": true,
     "revocationLedgerRef": "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
   },
   "legalTracking": {
@@ -39,7 +68,7 @@
     "commentId": 4977782172,
     "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-4977782172"
   },
-  "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v1",
+  "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v2",
   "scope": {
     "attendedConsentRequired": true,
     "broadRolloutReady": false,

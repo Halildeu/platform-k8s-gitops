@@ -29,8 +29,10 @@ ACTIVATION_RUN_ID = 400001
 AUTHORIZATION_ARTIFACT_ID = 500001
 OWNER_COMMENT_ID = 900001
 ADVISORY_COMMENT_ID = 900002
+TEMPORARY_AUTOMATION_COMMENT_ID = 5150913900
 OWNER_COMMENT_BODY = "Owner authorizes the bounded attended VIEW_ONLY test pilot; legal clearance is not claimed."
 ADVISORY_COMMENT_BODY = "Claude Opus 4.8 and Codex 5.6 SOL agree on the bounded engineering authorization with legal tracked_pending."
+TEMPORARY_AUTOMATION_COMMENT_BODY = "Owner authorizes bounded temporary TEST deployment automation."
 
 
 def sha(char):
@@ -506,7 +508,7 @@ def encode_zip(files):
 
 def owner_policy_fixture():
     return {
-        "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v1",
+        "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v2",
         "status": "active",
         "ownerDirective": {
             "commentId": OWNER_COMMENT_ID,
@@ -550,7 +552,32 @@ def owner_policy_fixture():
         },
         "authorization": {
             "protectedEnvironment": "faz22-view-only-pilot",
-            "requirePreventSelfReview": True,
+            "environmentApproval": {
+                "activeMode": "required-reviewer",
+                "requiredReviewer": {"requirePreventSelfReview": True},
+                "temporaryTestAutomation": {
+                    "directive": {
+                        "commentId": TEMPORARY_AUTOMATION_COMMENT_ID,
+                        "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2828#issuecomment-{TEMPORARY_AUTOMATION_COMMENT_ID}",
+                        "bodySha256": VERIFIER.digest_bytes(
+                            TEMPORARY_AUTOMATION_COMMENT_BODY.encode()
+                        ),
+                        "authorLogin": "Halildeu",
+                        "authorAssociation": "OWNER",
+                    },
+                    "expectedLiveProtectionRules": [],
+                    "validFrom": "2026-08-01T09:54:13Z",
+                    "validUntil": "2026-08-08T09:54:13Z",
+                },
+                "restoration": {
+                    "reviewers": [
+                        {"type": "User", "id": 287014213, "name": "gladyatore-lab"}
+                    ],
+                    "preventSelfReview": True,
+                    "trackedBy": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2502",
+                    "trigger": "temporary-window-expiry-or-before-production-or-after-machine-gate-activation",
+                },
+            },
             "maxTtlMinutes": 120,
             "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
             "revocationLedgerRef": "config/faz22-6-view-only-pilot-authorization-revocations.v1.json",
@@ -578,12 +605,23 @@ def authorization_document():
         "operatorSha256": binding()["operatorSha256"],
         "consentingPilotDevice": True,
         "deviceSha256": binding()["deviceSha256"],
+        "environmentApprovalMode": "required-reviewer",
         "exposureApprovedByProtectedEnvironment": True,
+        "temporaryTestAutomationApprovedByOwner": False,
+        "temporaryAutomationDirectiveRef": None,
+        "temporaryAutomationDirectiveSha256": None,
+        "temporaryAutomationValidUntil": None,
         "protectedEnvironmentPreventSelfReview": True,
         "protectedEnvironmentReviewerCount": 1,
         "protectedEnvironmentReviewerSetSha256": VERIFIER.digest_json([
             {"type": "User", "id": 700001, "name": "security-reviewer"}
         ]),
+        "restorationPreventSelfReview": True,
+        "restorationReviewerCount": 1,
+        "restorationReviewerSetSha256": VERIFIER.digest_json([
+            {"type": "User", "id": 287014213, "name": "gladyatore-lab"}
+        ]),
+        "restorationTrackedBy": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2502",
         "ownerPolicySha256": VERIFIER.digest_json(owner_policy_fixture()),
         "ownerDirectiveRef": owner_policy_fixture()["ownerDirective"]["ref"],
         "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
@@ -769,8 +807,10 @@ class FakeClient:
         self.source_run_missing = None
         self.owner_comment_body = OWNER_COMMENT_BODY
         self.advisory_comment_body = ADVISORY_COMMENT_BODY
+        self.temporary_automation_comment_body = TEMPORARY_AUTOMATION_COMMENT_BODY
         self.legal_issue_state = "open"
         self.environment_prevent_self_review = True
+        self.environment_rules_override = None
         self.environment_reviewers = [{
             "type": "User",
             "reviewer": {"id": 700001, "login": "security-reviewer"},
@@ -885,6 +925,16 @@ class FakeClient:
                 "user": {"login": "Halildeu"},
                 "body": self.advisory_comment_body,
             }
+        if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/comments/{TEMPORARY_AUTOMATION_COMMENT_ID}":
+            return {
+                "id": TEMPORARY_AUTOMATION_COMMENT_ID,
+                "html_url": owner_policy_fixture()["authorization"]["environmentApproval"]
+                ["temporaryTestAutomation"]["directive"]["ref"],
+                "issue_url": f"https://api.github.com/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2828",
+                "author_association": "OWNER",
+                "user": {"login": "Halildeu"},
+                "body": self.temporary_automation_comment_body,
+            }
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374":
             return {
                 "number": 2374,
@@ -892,6 +942,11 @@ class FakeClient:
                 "html_url": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374",
             }
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/environments/faz22-view-only-pilot":
+            if self.environment_rules_override is not None:
+                return {
+                    "name": "faz22-view-only-pilot",
+                    "protection_rules": self.environment_rules_override,
+                }
             return {
                 "name": "faz22-view-only-pilot",
                 "protection_rules": [{
@@ -1085,6 +1140,62 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "authorized operator binding"):
             VERIFIER.verify_activation_authorization(
                 FakeClient(), operator, HEAD_SHA, unauthorized_binding,
+                datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
+            )
+
+    def test_temporary_test_automation_receipt_is_honest_and_live_rule_bound(self):
+        policy = owner_policy_fixture()
+        approval = policy["authorization"]["environmentApproval"]
+        approval["activeMode"] = "temporary-test-automation"
+        approval["temporaryTestAutomation"]["validFrom"] = "2026-07-14T00:00:00Z"
+        approval["temporaryTestAutomation"]["validUntil"] = "2026-07-14T00:30:00Z"
+        VERIFIER.OWNER_POLICY.write_bytes(encode_json(policy))
+
+        authorization = authorization_document()
+        authorization.update({
+            "environmentApprovalMode": "temporary-test-automation",
+            "exposureApprovedByProtectedEnvironment": False,
+            "temporaryTestAutomationApprovedByOwner": True,
+            "temporaryAutomationDirectiveRef": approval["temporaryTestAutomation"]["directive"]["ref"],
+            "temporaryAutomationDirectiveSha256": approval["temporaryTestAutomation"]["directive"]["bodySha256"],
+            "temporaryAutomationValidUntil": "2026-07-14T00:30:00Z",
+            "protectedEnvironmentPreventSelfReview": False,
+            "protectedEnvironmentReviewerCount": 0,
+            "protectedEnvironmentReviewerSetSha256": VERIFIER.digest_json([]),
+            "ownerPolicySha256": VERIFIER.digest_json(policy),
+        })
+        raw_authorization = VERIFIER.canonical_bytes(authorization) + b"\n"
+        sums = (
+            f"{hashlib.sha256(raw_authorization).hexdigest()}  protected-authorization.json\n"
+        ).encode("ascii")
+        activation = encode_zip({
+            "protected-authorization.json": raw_authorization,
+            "SHA256SUMS": sums,
+        })
+
+        client = FakeClient()
+        client.activation_archive = activation
+        client.environment_rules_override = []
+        operator = child_documents()["operator"]["payload"]
+        operator.update({
+            "authorizationArtifactDigest": VERIFIER.digest_bytes(activation),
+            "authorizationSha256": VERIFIER.digest_bytes(raw_authorization),
+            "ownerPolicySha256": VERIFIER.digest_json(policy),
+        })
+        expires = VERIFIER.verify_activation_authorization(
+            client, operator, HEAD_SHA, binding(),
+            datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+            datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            datetime(2026, 7, 14, 0, 20, tzinfo=timezone.utc), expires,
+        )
+
+        client.environment_rules_override = [{"type": "wait_timer", "wait_timer": 1}]
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "temporary automation protection rules"):
+            VERIFIER.verify_activation_authorization(
+                client, operator, HEAD_SHA, binding(),
                 datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
                 datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
             )
