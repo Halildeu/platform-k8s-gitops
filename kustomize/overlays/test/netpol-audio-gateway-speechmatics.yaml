@@ -1,0 +1,37 @@
+# Faz 24 #3240 — DEFAULT-OFF Speechmatics SaaS egress for synthetic TEST audio.
+#
+# Do not add this file to test/kustomization.yaml before the provider activation
+# commit. Kubernetes NetworkPolicy cannot express an FQDN, while Speechmatics
+# uses dynamic SaaS addresses, so this is necessarily a pod-scoped TCP/443
+# allow. TLS hostname verification and the fixed application endpoint remain
+# mandatory. Production and real meeting audio require owner/legal DPA,
+# subprocessor and cross-border decisions before any equivalent policy exists.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-audio-gateway-egress-speechmatics
+  labels:
+    app.kubernetes.io/name: audio-gateway
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "24"
+    platform.acik.com/issue: "3240"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audio-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918 and cluster/service networks
+              - 100.64.0.0/10    # carrier-grade NAT
+              - 127.0.0.0/8      # loopback
+              - 169.254.0.0/16   # link-local and cloud metadata
+              - 172.16.0.0/12    # RFC1918 and docker/k3d bridges
+              - 192.168.0.0/16   # RFC1918 office/home networks
+      ports:
+        - protocol: TCP
+          port: 443
