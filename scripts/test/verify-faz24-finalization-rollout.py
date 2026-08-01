@@ -508,8 +508,10 @@ def main() -> None:
     container_image(
         transcript_deploy,
         "transcript-service",
+        # 2026-08-01 (backend#1058, gitops#2610): Flyway V13 and the entity
+        # mapping require occurrence-bound analysis_run_id UUID NOT NULL.
         "ghcr.io/halildeu/platform-backend-transcript-service@"
-        "sha256:5ad3a6d4028bf439eb855e8c0cb06139ac06424ee4793238451a9b577c0b8f16",
+        "sha256:6f930cec0ba1de575c9ce6f9779d4913e50ebe4bc47c1e82eb7fcd42eea53884",
     )
     container_image(
         audio_deploy,
@@ -530,6 +532,11 @@ def main() -> None:
         transcript_deploy,
         "transcript-service.acik.com/direct-stt-result-consumer-rev",
         "2026-07-29-2610-v6-transport-epoch",
+    )
+    pod_annotation(
+        transcript_deploy,
+        "transcript-service.acik.com/analysis-run-contract-rev",
+        "2026-08-01-2610-v1",
     )
     reject_prod_leakage(prod_docs, prod_eso_docs)
 
