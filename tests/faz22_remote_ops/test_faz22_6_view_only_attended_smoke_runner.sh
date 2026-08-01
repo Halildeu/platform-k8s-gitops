@@ -6,6 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh"
 WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-attended-smoke.yml"
 BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
+MATRIX_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-matrix-collector.yml"
+TERMINATION_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-termination-collector.yml"
 DIAGNOSTIC_SCRIPT="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-collector-diagnostic.sh"
 TARGET_PREFLIGHT_SCRIPT="$ROOT/scripts/faz22-remote-ops/verify-view-only-viewer-target.sh"
 DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist.v1.json"
@@ -15,6 +17,8 @@ BROWSER_DIAGNOSTIC_READER="$ROOT/scripts/faz22-remote-ops/read-view-only-viewer-
 [ -f "$SCRIPT" ] || { echo "missing script: $SCRIPT" >&2; exit 1; }
 [ -f "$WORKFLOW" ] || { echo "missing workflow: $WORKFLOW" >&2; exit 1; }
 [ -f "$BROWSER_WORKFLOW" ] || { echo "missing workflow: $BROWSER_WORKFLOW" >&2; exit 1; }
+[ -f "$MATRIX_WORKFLOW" ] || { echo "missing workflow: $MATRIX_WORKFLOW" >&2; exit 1; }
+[ -f "$TERMINATION_WORKFLOW" ] || { echo "missing workflow: $TERMINATION_WORKFLOW" >&2; exit 1; }
 [ -f "$DIAGNOSTIC_SCRIPT" ] || { echo "missing script: $DIAGNOSTIC_SCRIPT" >&2; exit 1; }
 [ -f "$TARGET_PREFLIGHT_SCRIPT" ] || { echo "missing script: $TARGET_PREFLIGHT_SCRIPT" >&2; exit 1; }
 [ -f "$DIAGNOSTIC_ALLOWLIST" ] || { echo "missing config: $DIAGNOSTIC_ALLOWLIST" >&2; exit 1; }
@@ -316,9 +320,15 @@ grep -q "DENETIM_SSH_TARGET=\"\${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2
 grep -q "DENETIM_SSH_OPTS=\"\${DENETIM_SSH_OPTS:--i \${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}\"" "$SCRIPT"
 grep -q 'denetim-ssh-key-not-readable' "$SCRIPT"
 grep -q "DEFAULT_DENETIM_SSH_CONFIG=\"\${DEFAULT_DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}\"" "$SCRIPT"
-grep -q "EXPECTED_DENETIM_SSH_HOSTNAME=\"\${EXPECTED_DENETIM_SSH_HOSTNAME:-10.9.161.202}\"" "$SCRIPT"
+grep -q "EXPECTED_DENETIM_SSH_HOSTNAME=\"\${EXPECTED_DENETIM_SSH_HOSTNAME:-10.99.0.2}\"" "$SCRIPT"
 grep -q "ssh \"\${opts\\[@\\]}\" -G \"\$DENETIM_SSH_TARGET\"" "$SCRIPT"
-grep -q 'EXPECTED_DENETIM_SSH_HOSTNAME: 10.9.161.202' "$BROWSER_WORKFLOW"
+for collector_workflow in "$BROWSER_WORKFLOW" "$MATRIX_WORKFLOW" "$TERMINATION_WORKFLOW"; do
+  grep -q 'EXPECTED_DENETIM_SSH_HOSTNAME: 10.99.0.2' "$collector_workflow"
+  if grep -q '10\.9\.161\.202' "$collector_workflow"; then
+    echo "collector workflow retains the stale Denetim LAN address: $collector_workflow" >&2
+    exit 1
+  fi
+done
 grep -q 'denetim-ssh-alias-missing-identity' "$SCRIPT"
 grep -q "WHERE chain_id = :'sid'" "$SCRIPT"
 grep -q -- "-v \"sid=\${SESSION_ID}\"" "$SCRIPT"

@@ -71,7 +71,7 @@ DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed2
 DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/aiadmin/.ssh/config}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
 DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
-EXPECTED_DENETIM_SSH_HOSTNAME="${EXPECTED_DENETIM_SSH_HOSTNAME:-10.9.161.202}"
+EXPECTED_DENETIM_SSH_HOSTNAME="${EXPECTED_DENETIM_SSH_HOSTNAME:-10.99.0.2}"
 if [[ "$DENETIM_SSH_OPTS" == "__SSH_CONFIG__" ]]; then
   DENETIM_SSH_OPTS="-F ${DEFAULT_DENETIM_SSH_CONFIG}"
 fi
@@ -166,7 +166,7 @@ Important optional environment:
   DEVICE_HOSTNAME=...
   DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
   DENETIM_SSH_OPTS="-i ../.faz24-i3-ssh/faz24-i3-denetim_ed25519 -o IdentitiesOnly=yes"
-  EXPECTED_DENETIM_SSH_HOSTNAME=10.9.161.202 (required resolved host for denetim-pc alias mode)
+  EXPECTED_DENETIM_SSH_HOSTNAME=10.99.0.2 (required resolved host for denetim-pc alias mode)
   REQUIRE_ACTIVE_GUI=1
   AUTO_FINALIZE=1
   EVIDENCE_URL=https://...
