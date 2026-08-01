@@ -27,6 +27,7 @@ GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:@/-]{1,200}$")
 SSH_ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+SQL_IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 KEY_ID_RE = re.compile(
     r"^vault-transit://[a-z0-9][a-z0-9-]*/[A-Za-z0-9_.-]+#v[1-9][0-9]*$"
 )
@@ -244,6 +245,7 @@ def load_policy(path: Path) -> dict[str, Any]:
         "transcriptDeployment",
         "postgresHost",
         "postgresDatabase",
+        "postgresSchema",
         "postgresSslMode",
         "redisHost",
         "redisStream",
@@ -255,6 +257,10 @@ def load_policy(path: Path) -> dict[str, Any]:
         require_safe_name(environment.get(name), f"environment.{name}")
     if environment["appEnv"] not in APP_ENVIRONMENTS:
         raise ContractError("environment.appEnv must be test, stage or prod")
+    if not SQL_IDENTIFIER_RE.fullmatch(environment["postgresSchema"]):
+        raise ContractError(
+            "environment.postgresSchema must be a simple lowercase identifier"
+        )
     if not SSH_ALIAS_RE.fullmatch(environment["gpuHost"]):
         raise ContractError("environment.gpuHost must be a simple SSH alias")
     for name in ("postgresPort", "redisPort"):

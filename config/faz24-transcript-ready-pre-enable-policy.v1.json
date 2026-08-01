@@ -10,6 +10,7 @@
     "postgresHost": "172.19.0.6",
     "postgresPort": 5432,
     "postgresDatabase": "transcript",
+    "postgresSchema": "transcript_service",
     "postgresSslMode": "disable",
     "redisHost": "172.19.0.250",
     "redisPort": 6379,

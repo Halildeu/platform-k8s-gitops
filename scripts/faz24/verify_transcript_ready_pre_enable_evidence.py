@@ -536,7 +536,10 @@ def validate(
         "evidence policy digest must match the verified policy bytes",
         "FRESH_ZERO_SCAN",
     )
-    expected_contract = contract_sha256("public", policy["requiredStartupGateMarker"])
+    expected_contract = contract_sha256(
+        policy["environment"]["postgresSchema"],
+        policy["requiredStartupGateMarker"],
+    )
     add(
         checks,
         "query_contract_digest",
