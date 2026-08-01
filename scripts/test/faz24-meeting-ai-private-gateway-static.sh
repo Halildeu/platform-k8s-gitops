@@ -21,6 +21,17 @@ for file in Caddyfile firewall.sh install.sh rotate-server-cert.sh \
   [[ -s "${GW}/${file}" ]] || fail "missing gateway artifact: ${file}"
 done
 
+grep -Fq 'access log must be a regular non-symlink file' \
+  "${GW}/install.sh" || fail "access-log symlink/type guard missing"
+# Assert the literal installer variable reference.
+# shellcheck disable=SC2016
+grep -Fq 'install -o caddy -g caddy -m 0640 /dev/null "${ACCESS_LOG}"' \
+  "${GW}/install.sh" || fail "access-log initial ownership missing"
+# Assert the literal installer variable reference.
+# shellcheck disable=SC2016
+grep -Fq 'chown caddy:caddy "${ACCESS_LOG}"' \
+  "${GW}/install.sh" || fail "access-log ownership repair missing"
+
 grep -Fq 'https://meeting-ai-gateway.internal:9447' "${GW}/Caddyfile" || \
   fail "Caddy private SNI listener missing"
 grep -Fq $'\tbind 10.99.0.1' "${GW}/Caddyfile" || fail "Caddy exact bind missing"

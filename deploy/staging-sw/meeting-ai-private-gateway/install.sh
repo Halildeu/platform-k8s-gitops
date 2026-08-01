@@ -4,6 +4,8 @@ set -euo pipefail
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SOURCE_DIR
 readonly TLS_DIR="/etc/platform/meeting-ai-gateway/tls"
+readonly LOG_DIR="/var/log/platform/meeting-ai-gateway"
+readonly ACCESS_LOG="${LOG_DIR}/access.json"
 
 die() {
   printf 'meeting-ai gateway install: %s\n' "$*" >&2
@@ -16,7 +18,16 @@ command -v systemd-analyze >/dev/null 2>&1 || die "systemd is required"
 getent passwd caddy >/dev/null || die "the package-managed caddy user does not exist"
 
 install -d -o root -g caddy -m 0750 /etc/platform/meeting-ai-gateway "${TLS_DIR}"
-install -d -o caddy -g caddy -m 0750 /run/caddy /var/log/platform/meeting-ai-gateway
+install -d -o caddy -g caddy -m 0750 /run/caddy "${LOG_DIR}"
+if [[ -L "${ACCESS_LOG}" || ( -e "${ACCESS_LOG}" && ! -f "${ACCESS_LOG}" ) ]]; then
+  die "access log must be a regular non-symlink file"
+fi
+if [[ ! -e "${ACCESS_LOG}" ]]; then
+  install -o caddy -g caddy -m 0640 /dev/null "${ACCESS_LOG}"
+else
+  chown caddy:caddy "${ACCESS_LOG}"
+  chmod 0640 "${ACCESS_LOG}"
+fi
 install -d -o root -g root -m 0755 /usr/local/libexec/platform
 mkdir -p /var/lib/node_exporter
 chmod 0755 /var/lib/node_exporter
