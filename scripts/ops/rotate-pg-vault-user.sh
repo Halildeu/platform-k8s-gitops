@@ -52,7 +52,7 @@ Options:
   --help                   This help
 
 Environment:
-  VAULT_TOKEN        Required. Default: ~/bootstrap-drill/vault-init-<env>.json
+  VAULT_TOKEN        Required. Default: /srv/platform/secrets/backup-auth/vault-init-<env>.json
   PG_CONTAINER       Default: platform-pg-<env>
   VAULT_CONTAINER    Default: platform-vault-<env>
 
@@ -139,7 +139,12 @@ VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-${ENV_NAME}}"
 # --- Vault token lookup -----------------------------------------------------
 
 if [[ -z "${VAULT_TOKEN:-}" ]]; then
-  VAULT_INIT_FILE="${HOME}/bootstrap-drill/vault-init-${ENV_NAME}.json"
+  # Host 53->15: the init files moved to /srv/platform/secrets/ and
+  # ~/bootstrap-drill/ no longer exists on the host. Canonical location first,
+  # legacy second, so an older restore still resolves.
+  VAULT_INIT_FILE="/srv/platform/secrets/backup-auth/vault-init-${ENV_NAME}.json"
+  [[ -r "${VAULT_INIT_FILE}" ]] \
+    || VAULT_INIT_FILE="${HOME}/bootstrap-drill/vault-init-${ENV_NAME}.json"
   if [[ ! -r "${VAULT_INIT_FILE}" ]]; then
     log "FATAL: VAULT_TOKEN unset and ${VAULT_INIT_FILE} not readable"
     exit 2

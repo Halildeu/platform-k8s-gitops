@@ -165,6 +165,43 @@ vault_get_secret() {
   printf '%s' "$out"
 }
 
+# vault_mktemp — secret taşıyacak container-içi unique temp dosya (umask 077).
+#
+# BusyBox `mktemp` şablonu `XXXXXX` ile BİTMEK zorundadır; sonek kabul etmez.
+# Eski şablon `/tmp/.smoke-secret.XXXXXX.json` GNU coreutils'de çalışır ama bu
+# host'un Alpine tabanlı Vault imajında `mktemp: Invalid argument` verir — yani
+# --rotate-secret bu imajda HİÇ çalışmadı. Uzantı Vault için anlamsız: `kv put
+# @dosya` içeriğe bakar, ada değil.
+vault_mktemp() {
+  local t
+  t="$(docker exec "$VAULT_CONTAINER" sh -c 'umask 077; mktemp /tmp/.smoke-secret.XXXXXX' 2>/dev/null)" || t=""
+  [ -n "$t" ] || { echo "ERROR: container temp oluşturulamadı ($VAULT_CONTAINER)" >&2; return 1; }
+  printf '%s' "$t"
+}
+
+# vault_write_preflight — rotation'ın YIKICI adımından ÖNCE yazma yolunu dener.
+#
+# --rotate-secret sırası: KC regenerate → Vault put. Vault put patlarsa KC yeni
+# secret'ta, Vault eskide kalır; o andan itibaren Vault'tan okuyan HER tüketici
+# kırılır ve onarım elle yapılır. Bu gerçekten yaşandı (2026-08-01, BusyBox
+# mktemp). Geri alınamayan adımdan önce yazma yolunun sağlam olduğunu kanıtlamak
+# bu sınıfı tümden kapatır: preflight fail ederse KC'ye hiç dokunulmaz.
+vault_write_preflight() {
+  local rt tmp; rt="$(vault_token)" || return 1
+  tmp="$(vault_mktemp)" || return 1
+  if ! printf 'preflight' | docker exec -i "$VAULT_CONTAINER" sh -c "umask 077; cat > '$tmp'" 2>/dev/null; then
+    docker exec "$VAULT_CONTAINER" rm -f "$tmp" >/dev/null 2>&1 || true
+    echo "ERROR: container'a yazılamadı — rotation başlatılmadı" >&2
+    return 1
+  fi
+  docker exec "$VAULT_CONTAINER" rm -f "$tmp" >/dev/null 2>&1 || true
+  # Vault'un kendisi de erişilebilir mi: token geçerli + path okunabilir.
+  { printf 'export VAULT_TOKEN=%q\n' "$rt"
+    printf 'vault kv get %q >/dev/null\n' "$VAULT_PATH"
+  } | docker exec -i -e VAULT_ADDR=http://localhost:8200 "$VAULT_CONTAINER" sh -s >/dev/null 2>&1 \
+    || { echo "ERROR: Vault erişilemedi/path okunamadı ($VAULT_PATH) — rotation başlatılmadı" >&2; return 1; }
+}
+
 # vault_put_secret <secret> — setup-m365 pattern: container-içi temp (umask 077)
 # JSON + `vault kv put @file`; secret argv'de görünmez.
 # Codex 019f6b1d must-fix 3: temp dosya UNIQUE (container-side mktemp) — sabit ad
@@ -173,8 +210,7 @@ vault_get_secret() {
 # naive printf JSON'u bozardı).
 vault_put_secret() {
   local secret="$1" rt tmp; rt="$(vault_token)" || return 1
-  tmp="$(docker exec "$VAULT_CONTAINER" sh -c 'umask 077; mktemp /tmp/.smoke-secret.XXXXXX.json' 2>/dev/null)" \
-    || { echo "ERROR: container temp oluşturulamadı" >&2; return 1; }
+  tmp="$(vault_mktemp)" || return 1
   [ -n "$tmp" ] || { echo "ERROR: container temp adı boş" >&2; return 1; }
   # cleanup her yolda (success + failure)
   _cleanup_tmp() { docker exec "$VAULT_CONTAINER" rm -f "$tmp" > /dev/null 2>&1 || true; }
@@ -338,19 +374,33 @@ case "$MODE" in
 
   --rotate-secret)
     [ -n "$UUID" ] || { echo "ERROR: client '$CLIENT_ID' yok — önce --apply" >&2; exit 1; }
+    # KC regenerate geri alınamaz: eski secret o anda ölür. Yazma yolunu ÖNCE
+    # kanıtla, yoksa hiç başlama (split-brain sınıfı burada kapanıyor).
+    vault_write_preflight || exit 1
+    echo "  preflight: Vault yazma yolu doğrulandı"
     echo "⚠️  Explicit rotation: KC secret regenerate → Vault put"
     $KC create "clients/$UUID/client-secret" -r "$REALM" >/dev/null 2>&1 \
       || { echo "ERROR: secret regenerate başarısız" >&2; exit 1; }
     new_sec="$(kc_client_secret "$UUID")"
     [ -n "$new_sec" ] || { echo "ERROR: yeni secret okunamadı" >&2; exit 1; }
-    vault_put_secret "$new_sec" || exit 1
+    # Buradan sonraki her hata KC↔Vault ayrışması demektir: KC yeni secret'ta,
+    # Vault eskide. Sessiz `exit 1` operatörü yanıltır — ne olduğunu ve nasıl
+    # onarılacağını söyle.
+    if ! vault_put_secret "$new_sec"; then
+      unset new_sec
+      echo "ERROR: KC secret DÖNDÜ ama Vault'a YAZILAMADI — KC↔Vault ayrıştı." >&2
+      echo "       Vault'tan okuyan tüketiciler ŞU AN kırık." >&2
+      echo "       Onarım: KC canlı değer otoritedir → aynı komutu tekrar çalıştır" >&2
+      echo "       (--rotate-secret idempotent değil ama tekrar denemek Vault'u KC'ye hizalar)." >&2
+      exit 3
+    fi
     vault_sec="$(vault_get_secret || echo "")"
     if [ "$vault_sec" = "$new_sec" ]; then
       echo "✓ ROTATE PASS — KC ↔ Vault parity (değer basılmaz)"
       unset new_sec vault_sec; exit 0
     fi
     unset new_sec vault_sec
-    echo "ERROR: rotation sonrası parity FAIL" >&2; exit 3
+    echo "ERROR: rotation sonrası parity FAIL — Vault yazıldı ama geri okuma eşleşmedi" >&2; exit 3
     ;;
 
   *)
