@@ -22,6 +22,15 @@ Vault `kv/platform/audio-gateway-speechmatics` kaynağından ESO ile teslim edil
 Production manifesti ve gerçek toplantı sesinin SaaS'a gönderim yetkisi bu
 değişikliğin kapsamında değildir.
 
+İlk rollout, TEST `eso-runtime` AppRole'unda yeni path grant'i olmadığı için
+ExternalSecret'te Vault `403 permission denied` ve audio-gateway'de fail-closed
+startup reddi üretti. Takip `gitops#3240` düzeltmesi yalnız
+`eso-runtime-test-extras` politikasına
+`kv/data/platform/audio-gateway-speechmatics` read yetkisini ekler; common ve
+production policy'leri bu path'i içermez. Canlı kabul, bu scoped policy'nin
+git-reviewed reconciler ile uygulanması, ESO `Ready=True` ve pod exact imageID
+read-back'i sonrasında yeniden değerlendirilir.
+
 `platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
 `Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
 Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.
