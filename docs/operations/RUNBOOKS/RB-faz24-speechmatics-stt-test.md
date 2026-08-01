@@ -14,18 +14,31 @@ evidence. Evidence is limited to key presence, ESO condition, provider id,
 immutable image digest and transcript metadata/content from the synthetic
 fixture.
 
-## 1. Seed the isolated Vault path
+## 1. Seed the provider property with the scoped AppRole
 
-Run from this repository. The key is entered on the remote Vault host without
-echo and is piped to Vault on stdin:
+The Kubernetes target remains isolated as `audio-gateway-speechmatics`, while
+its source property uses the existing ESO-readable
+`kv/platform/audio-gateway-service` path. This removes a new policy/reconciler
+dependency without coupling the provider key to the Redis or mTLS target
+Secrets.
+
+First mint the one-use `audio-gateway-mtls-seeder-test` SecretID through the
+reviewed reconciler and store its role-id/secret-id in the owner-provisioned
+host-local `0600` files named by the seed script. Then run from this repository.
+The key is read without echo and sent on stdin only:
 
 ```bash
 scripts/faz24/seed-speechmatics-test-secret.sh
 ```
 
-This writes only `kv/platform/audio-gateway-speechmatics:api_key`. It must not
-be added to `kv/platform/audio-gateway-service`, because a missing provider key
-must not disturb Redis or the internal direct-STT mTLS secret.
+The script requires exactly `patch,read` on
+`kv/data/platform/audio-gateway-service`, rejects widened
+`create|update|delete` capabilities, uses KV-v2 CAS and adds only
+`speechmatics_api_key`. Cleanup attempts self-revoke; the AppRole's `15m` token
+TTL remains the upper bound if live policy does not grant `revoke-self`. The
+dedicated Speechmatics ExternalSecret reads that property into its own target
+Secret, so a missing property cannot disturb Redis or the internal direct-STT
+mTLS Secret.
 
 ## 2. Verify ESO without reading the value
 
