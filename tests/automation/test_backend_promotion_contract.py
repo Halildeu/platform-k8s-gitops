@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BackendPromotionContractTests(unittest.TestCase):
+    @staticmethod
+    def _shell_function(source: str, signature: str) -> str:
+        start = source.index(signature)
+        end = source.index("\n}\n", start) + 2
+        return source[start:end]
+
     @classmethod
     def setUpClass(cls):
         cls.promote = (ROOT / ".github/workflows/deploy-backend-testai.yml").read_text()
@@ -110,16 +116,32 @@ class BackendPromotionContractTests(unittest.TestCase):
         )
         self.assertEqual(3, self.verify.count("docs/operations/services.yaml"))
         self.assertEqual(1, self.reconcile.count("docs/operations/services.yaml"))
-        self.assertIn(
-            "kustomize/overlays/test/kustomization.yaml \\\n"
-            "                docs/operations/services.yaml",
+        workflow_diff_blocks = re.findall(
+            r"git diff --quiet .*?; then",
             self.verify,
+            re.DOTALL,
         )
-        self.assertIn(
-            "kustomize/overlays/test/kustomization.yaml \\\n"
-            "    docs/operations/services.yaml",
+        self.assertEqual(2, len(workflow_diff_blocks))
+        for block in workflow_diff_blocks:
+            self.assertNotIn(
+                "kustomize/overlays/test/kustomization.yaml",
+                block,
+            )
+            self.assertIn("docs/operations/services.yaml", block)
+
+        reconcile_fence = self._shell_function(
             self.reconcile,
+            "refresh_semantic_main_fence() {",
         )
+        self.assertIn('latest_map" == "$NORMALIZED_DIGEST_MAP', reconcile_fence)
+        reconcile_diff = reconcile_fence[
+            reconcile_fence.index('git diff --quiet "$REVISION" "$latest_main" --') :
+        ]
+        self.assertNotIn(
+            "kustomize/overlays/test/kustomization.yaml",
+            reconcile_diff,
+        )
+        self.assertIn("docs/operations/services.yaml", reconcile_diff)
         self.assertIn("effectiveRevision", self.reconcile)
         self.assertNotIn("was superseded by main", self.reconcile)
         self.assertIn("verify-testai-backend-runtime.sh", self.verify)
@@ -157,6 +179,18 @@ class BackendPromotionContractTests(unittest.TestCase):
         )
         self.assertIn("runtime verifier contract was superseded on main", self.runtime)
         self.assertEqual(2, self.runtime.count("docs/operations/services.yaml"))
+        runtime_fence = self._shell_function(
+            self.runtime,
+            "assert_current_backend_map() {",
+        )
+        runtime_diff = runtime_fence[
+            runtime_fence.index('git diff --quiet "$REVISION" "$latest_main" --') :
+        ]
+        self.assertNotIn(
+            "kustomize/overlays/test/kustomization.yaml",
+            runtime_diff,
+        )
+        self.assertIn("docs/operations/services.yaml", runtime_diff)
         self.assertIn("finalize_report", self.runtime)
         self.assertIn("if-no-files-found: error", self.verify)
         self.assertIn("Validate terminal backend evidence contract", self.verify)

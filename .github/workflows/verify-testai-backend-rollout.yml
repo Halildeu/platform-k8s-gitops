@@ -65,7 +65,6 @@ jobs:
               --kustomization "$latest_file")
             if [[ "$latest" == "$current" ]]; then
               if git diff --quiet "$CURRENT_REVISION" "$latest_revision" -- \
-                kustomize/overlays/test/kustomization.yaml \
                 docs/operations/services.yaml \
                 .github/workflows/deploy-backend-testai.yml \
                 .github/workflows/verify-testai-backend-rollout.yml \
@@ -97,7 +96,6 @@ jobs:
                 --kustomization "$before_file")
               if [[ "$before" == "$current" ]]; then
                 if git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
-                  kustomize/overlays/test/kustomization.yaml \
                   docs/operations/services.yaml \
                   .github/workflows/deploy-backend-testai.yml \
                   .github/workflows/verify-testai-backend-rollout.yml \
