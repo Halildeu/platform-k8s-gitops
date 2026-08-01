@@ -24,7 +24,6 @@ import importlib.util
 import json
 import os
 import re
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -324,6 +323,7 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "boundaries": {
             "externalMeetingAdminPathExercised": False,
             "recorderLifecycleExercised": False,
+            "canonicalRecordingLifecycleSynced": False,
             "directSttProven": False,
             "directSttTranscriptProven": False,
             "directClientToStt": False,
@@ -437,6 +437,34 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             raise SmokeError("start_session response contains unsafe sessionId")
         report["ids"]["sessionId"] = session_id
 
+        recording_started_at = _iso_z(dt.datetime.now(dt.timezone.utc))
+        ok, step, response = _http_request(
+            base_url=args.base_url,
+            token=token,
+            method="PUT",
+            path=f"/api/v1/admin/meetings/{meeting_id}/recording-lifecycle",
+            expected_statuses={200},
+            timeout_seconds=args.timeout_seconds,
+            json_body={
+                "externalSessionId": session_id,
+                "startedAt": recording_started_at,
+            },
+        )
+        step["name"] = "sync_recording_lifecycle_start"
+        report["steps"].append(step)
+        if not ok:
+            failures.append("sync_recording_lifecycle_start did not return HTTP 200")
+            report["status"] = "fail"
+            return 1, report
+        canonical_session_id = _require_field(
+            response, "sessionId", "sync_recording_lifecycle_start"
+        )
+        if not isinstance(response, dict) or response.get("externalSessionId") != session_id:
+            failures.append("recording lifecycle start externalSessionId mismatch")
+            report["status"] = "fail"
+            return 1, report
+        report["ids"]["canonicalSessionId"] = canonical_session_id
+
         now_ms = int(time.time() * 1000)
         ok, step, response = _http_request(
             base_url=args.base_url,
@@ -478,6 +506,37 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             failures.append("finish_session did not return HTTP 200")
             report["status"] = "fail"
             return 1, report
+
+        recording_ended_at = _iso_z(dt.datetime.now(dt.timezone.utc))
+        ok, step, response = _http_request(
+            base_url=args.base_url,
+            token=token,
+            method="PUT",
+            path=f"/api/v1/admin/meetings/{meeting_id}/recording-lifecycle",
+            expected_statuses={200},
+            timeout_seconds=args.timeout_seconds,
+            json_body={
+                "externalSessionId": session_id,
+                "startedAt": recording_started_at,
+                "endedAt": recording_ended_at,
+            },
+        )
+        step["name"] = "sync_recording_lifecycle_finish"
+        report["steps"].append(step)
+        if not ok:
+            failures.append("sync_recording_lifecycle_finish did not return HTTP 200")
+            report["status"] = "fail"
+            return 1, report
+        if (
+            not isinstance(response, dict)
+            or response.get("externalSessionId") != session_id
+            or str(response.get("sessionId", "")) != canonical_session_id
+            or response.get("transcriptStatus") not in {"PROCESSING", "COMPLETED"}
+        ):
+            failures.append("recording lifecycle finish canonical projection mismatch")
+            report["status"] = "fail"
+            return 1, report
+        report["boundaries"]["canonicalRecordingLifecycleSynced"] = True
 
         ok, step, response = _http_request(
             base_url=args.base_url,

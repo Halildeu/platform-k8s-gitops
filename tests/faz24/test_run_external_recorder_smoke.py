@@ -50,6 +50,7 @@ class _SmokeHandler(BaseHTTPRequestHandler):
     calls = []
     bearer_seen = False
     session_stt_provider = None
+    canonical_session_id = "33333333-3333-4333-8333-333333333333"
 
     def log_message(self, *_args):  # pragma: no cover - keeps test output clean.
         return
@@ -170,6 +171,31 @@ class _SmokeHandler(BaseHTTPRequestHandler):
             return
         self._write(404, {"error": "not_found"})
 
+    def do_PUT(self):
+        self._record()
+        if self.path == (
+            "/api/v1/admin/meetings/"
+            "22222222-2222-4222-8222-222222222222/recording-lifecycle"
+        ):
+            body = self._read_json()
+            assert body["externalSessionId"] == "SES-test-1"
+            assert body["startedAt"]
+            finished = bool(body.get("endedAt"))
+            self._write(
+                200,
+                {
+                    "meetingId": "22222222-2222-4222-8222-222222222222",
+                    "sessionId": type(self).canonical_session_id,
+                    "externalSessionId": "SES-test-1",
+                    "meetingStatus": "COMPLETED" if finished else "IN_PROGRESS",
+                    "transcriptStatus": "PROCESSING" if finished else "PENDING",
+                    "startedAt": body["startedAt"],
+                    "endedAt": body.get("endedAt"),
+                },
+            )
+            return
+        self._write(404, {"error": "not_found"})
+
 
 class _ForbiddenMeetingHandler(_SmokeHandler):
     def do_POST(self):
@@ -252,6 +278,7 @@ def _serve(handler_cls):
     handler_cls.calls = []
     handler_cls.bearer_seen = False
     handler_cls.session_stt_provider = None
+    handler_cls.canonical_session_id = "33333333-3333-4333-8333-333333333333"
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -291,12 +318,16 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
     assert token not in proc.stderr
     assert report["ids"]["meetingId"] == "22222222-2222-4222-8222-222222222222"
     assert report["ids"]["sessionId"] == "SES-test-1"
+    assert report["ids"]["canonicalSessionId"] == (
+        "33333333-3333-4333-8333-333333333333"
+    )
     assert report["sample"]["chunkSeq"] == 0
     assert report["sample"]["sampleSha256"]
     assert report["sample"]["rawAudioIncluded"] is False
     assert "audioBytes" not in report["sample"]
     assert report["boundaries"]["externalMeetingAdminPathExercised"] is True
     assert report["boundaries"]["recorderLifecycleExercised"] is True
+    assert report["boundaries"]["canonicalRecordingLifecycleSynced"] is True
     assert report["boundaries"]["directSttProven"] is False
     assert report["boundaries"]["directSttTranscriptProven"] is False
     assert report["boundaries"]["directClientToStt"] is False
@@ -307,8 +338,18 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
         ("POST", "/api/v1/admin/meetings"),
         ("POST", "/api/v1/audio-gateway/consents"),
         ("POST", "/api/v1/audio-gateway/sessions"),
+        (
+            "PUT",
+            "/api/v1/admin/meetings/"
+            "22222222-2222-4222-8222-222222222222/recording-lifecycle",
+        ),
         ("POST", "/api/v1/audio-gateway/sessions/SES-test-1/chunks"),
         ("POST", "/api/v1/audio-gateway/sessions/SES-test-1/finish"),
+        (
+            "PUT",
+            "/api/v1/admin/meetings/"
+            "22222222-2222-4222-8222-222222222222/recording-lifecycle",
+        ),
         ("GET", "/api/v1/audio-gateway/sessions/SES-test-1/status"),
     ]
 
