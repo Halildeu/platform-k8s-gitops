@@ -46,6 +46,7 @@ Reddedilen alternatifler + red nedenleri.
 | 0046 | [Faz 35 Etik Speak Dual-Public-Host and Isolated Product-Cell Topology](./0046-faz35-etik-speak-product-cell-topology.md) | **Accepted for test implementation** (2026-07-18) |
 | 0047 | [Faz 35 Case, Reporter Identity and IdentityLinkVault Compartments](./0047-faz35-case-identity-link-compartments.md) | **Accepted for TEST implementation** (2026-07-24) |
 | 0048 | [Faz 35 Evidence Dual-Artifact Custody and Attachment Safety](./0048-faz35-evidence-dual-artifact-custody.md) | **Accepted for TEST implementation** (2026-07-24) |
+| 0049 | [Ürün ayrık satış sınırı: ortak zorunlu çekirdek vs satılabilir modüller](./0049-product-module-split-core-vs-sellable.md) | **Accepted** (2026-08-01) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 
