@@ -102,6 +102,10 @@ spec:
       ports: [{port: 9000, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: clamav}}}]
       ports: [{port: 3310, protocol: TCP}]
+    # ES-104K dilim 2: HEIC donusturucuye tek hat. Yalniz core-serit worker'i
+    # (pdf seridi ve API bu hatti hic kullanmaz; onlarin config'inde URL yok).
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: heic-converter}}}]
+      ports: [{port: 9000, protocol: TCP}]
 ---
 # ES-104J (#2929): the PDF CDR worker's world is exactly the core worker's —
 # DNS, the database, the object store, the scanner. No general egress: the
@@ -131,6 +135,24 @@ spec:
       ports: [{port: 9000, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: clamav}}}]
       ports: [{port: 3310, protocol: TCP}]
+---
+# ES-104K dilim 2: the converter is not a shared service either. Only the
+# core-lane evidence worker may hand it bytes; it initiates NOTHING (egress
+# empty, and -enable-url-source=false in the container arguments besides).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: heic-converter}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: heic-converter}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ethics-evidence-worker
+              app.kubernetes.io/part-of: etik-speak
+      ports: [{port: 9000, protocol: TCP}]
+  egress: []
 ---
 # The scanner is not a shared service. Only the two custody workers may hand it
 # bytes, and it initiates nothing itself.
