@@ -88,6 +88,10 @@ OPERATOR_REST_READY_INTERVAL_SECONDS="${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}
 # 404 while that verified peer is absent; wait only for that exact state.
 OPEN_SESSION_DEVICE_READY_SECONDS="${OPEN_SESSION_DEVICE_READY_SECONDS:-180}"
 OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS="${OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS:-5}"
+# The viewer emits a heartbeat every 15 seconds. Browser disconnect can reach
+# the servlet lifecycle immediately after a heartbeat, so the terminal metric
+# needs a bounded window longer than one full heartbeat plus async cleanup.
+VIEWER_END_WAIT_SECONDS="${VIEWER_END_WAIT_SECONDS:-35}"
 BROWSER_EVIDENCE_SCRIPT="${BROWSER_EVIDENCE_SCRIPT:-}"
 AUTH_ROUTE_PREFLIGHT_ONLY="${AUTH_ROUTE_PREFLIGHT_ONLY:-0}"
 VIEWER_PRODUCT_BASE_URL="${VIEWER_PRODUCT_BASE_URL:-https://testai.acik.com}"
@@ -309,6 +313,10 @@ validate_inputs() {
   if [[ ! "$OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS" =~ ^[0-9]+$ ]] \
     || (( OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS < 1 || OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS > 10 )); then
     fail_smoke "open-session-device-ready-interval-invalid"
+  fi
+  if [[ ! "$VIEWER_END_WAIT_SECONDS" =~ ^[0-9]+$ ]] \
+    || (( VIEWER_END_WAIT_SECONDS < 20 || VIEWER_END_WAIT_SECONDS > 60 )); then
+    fail_smoke "viewer-end-wait-seconds-invalid"
   fi
   if [[ -n "$BROWSER_EVIDENCE_SCRIPT" ]]; then
     [[ -r "$BROWSER_EVIDENCE_SCRIPT" ]] || fail_smoke "browser-evidence-script-not-readable"
@@ -792,7 +800,7 @@ wait_for_viewer_end_metric() {
   local before after
   before="$(viewer_metric_value "${EVIDENCE_DIR}/metrics-before.prom" \
     remote_access_bridge_viewer_ended_total)"
-  for _ in $(seq 1 15); do
+  for _ in $(seq 1 "$VIEWER_END_WAIT_SECONDS"); do
     capture_viewer_metrics after
     after="$(viewer_metric_value "${EVIDENCE_DIR}/metrics-after.prom" \
       remote_access_bridge_viewer_ended_total)"
