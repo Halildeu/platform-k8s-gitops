@@ -48,7 +48,14 @@ images:
     # duzlestirilir (metadata yapisal gider); TUM raster formatlara decode-oncesi
     # tuval kapisi. Digest gercek pull ile (smoke-dig-wp).
     # Onceki: sha-866dc21 @ sha256:bda8303d89bfa34b7...
-    digest: sha256:ad6e28eb380bf16619b45795d7b396b71c27fc46a11d6861b1422055d30bbeb4
+    # 2026-08-01 bump 6+7 (birlesik): sha-c7e2795 — platform-backend#1064
+    # (HEIC decode hatti) + #1065 (HeicConverter tek-bean duzeltmesi). Ilk HEIC
+    # promosyonu (sha-28e1824) worker'i crash-loop'a soktu (havingValue=""
+    # semantigi ile IKI bean); paralel oturum #3325 ile dogru sekilde rollback
+    # etti. Bu pin ozellik+duzeltmeyi birlikte tasir; wiring testi ikiligi
+    # pinler. Digest gercek pull ile (smoke-dig-bf).
+    # Onceki: sha-b446ae4 @ sha256:ad6e28eb380bf16619b45795d7...
+    digest: sha256:df77f7134bcb75d61b85c2c2cb44313bebc33bc2bba6e433269c54adf4e26a37
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
