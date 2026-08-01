@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed — 2026-07-29. Mühendislik invaryantları ölçüme dayalı ve uygulanmış
-durumda; **§5'teki üç karar hukuk/DPO ve ürün sahibine aittir** ve bu ADR onları
-karara bağlamaz. Production aktivasyonu bu ADR ile yetkilendirilmez.
+Accepted — 2026-08-01. Mühendislik invaryantları (§3) 2026-07-29'da ölçüme dayalı
+olarak yazıldı ve uygulandı. §5'te hukuk/DPO ve ürün sahibine bırakılan üç karar
+**2026-08-01'de ürün sahibi tarafından verildi** ve aşağıya karar metni olarak
+işlendi. Production aktivasyonu hâlâ bu ADR ile yetkilendirilmez — o ES-312'nin
+kapısıdır.
 
 **Owner issue:** ES-006 [#2652](https://github.com/Halildeu/platform-k8s-gitops/issues/2652)
 
@@ -117,40 +119,98 @@ Silme doğrulaması iki farklı soruyu karıştırmaya çok müsait:
 olarak tutar, çünkü tek mekanizma sanıp birini diğerinin yerine koymak, denetimde
 "sildik" denip gösterilecek kanıtın olmaması demektir.
 
-## 5. Hukuk/DPO ve ürün sahibi kararına bırakılanlar
+## 5. Ürün sahibi kararları (2026-08-01)
 
-Aşağıdakiler mühendislik tercihi değildir ve bu ADR onları karara bağlamaz.
+Aşağıdaki üç soru mühendislik tercihi değildi; 2026-07-29'da açık bırakıldı ve
+2026-08-01'de ürün sahibi tarafından karara bağlandı. Sorular soruldukları hâliyle
+korunuyor — bir kararın neyi kapattığı, ancak açık hâli okunabildiğinde denetlenir.
 
 ### K1 — Kripto-silme ne zaman meşru?
 
-[ADR-0035](0035-evidence-storage-contract.md) anahtar imhasını **saklama süresi
-ve legal-hold sonuna** bağlıyor. Saklama politikası kripto-silmeyi "şu an aktif
-değil, gelecek dilim" diye tanımlıyor. İhbarcı talebiyle **daha erken** silme
+**Soru.** [ADR-0035](0035-evidence-storage-contract.md) anahtar imhasını **saklama
+süresi ve legal-hold sonuna** bağlıyor. Saklama politikası kripto-silmeyi "şu an
+aktif değil, gelecek dilim" diye tanımlıyor. İhbarcı talebiyle **daha erken** silme
 yapılacaksa bu iki metin arasındaki çatışma açıkça çözülmelidir.
 
-| seçenek | sonuç |
+**Karar — "talep üzerine erken imha".** Kripto-silme yalnız **vaka içerik bölmesine**
+uygulanır: bildirim gövdesi, ek dosyalar, kimlik kasası. Denetim defteri
+(`ethics_worm_audit`) ve kapsam tablosu (`ethics_audit_scope`) hiçbir tetikte
+imha edilmez; I4 bunu zaten ayrı anahtar şartıyla mümkün kılıyor.
+
+İki tetik, ikisi de dört kapıdan geçer:
+
+| tetik | ek koşul |
 |---|---|
-| Yalnız saklama sonu | ADR-0035 korunur; erken silme talebi karşılanamaz |
-| Talep üzerine erken imha | ADR-0035 revize edilmeli; WORM attribution'ın ne kadarının korunacağı tanımlanmalı |
-| Kategori bazlı | En esnek, en karmaşık; her kategori için ayrı gerekçe gerekir |
+| **Normal** — vaka kapanışı + saklama süresi dolumu | saklama süresi default 5 yıl, **kiracı-parametrik** (yalnız uzatılabilir; [retention policy §1a](../legal/faz35-retention-policy.md)) |
+| **Erken** — ihbarcının kendi bildirimi için onaylı silme talebi | talep sahibi = bildirim sahibi (access-secret eşleşmesi); kiracı profili bu tetiği kapatabilir (kamu Md.28) |
+
+Her iki tetikte de dördü birden aranır: **legal-hold yok**, **aktif reveal grant
+yok**, **kapsam manifesti yazıldı** (I5), **kapsam kontrolü eksiksiz**. Biri
+sağlanmazsa işlem fail-closed durur; kısmi silme başarı sayılmaz.
+
+**ADR-0035 ile çatışmanın çözümü.** ADR-0035 §5 iki farklı şeyi tek cümlede
+tutuyordu: nesnenin silinmesi ve anahtarın imhası. Object-Lock compliance-mode
+retention'ı **nesne silmeyi** engeller — anahtar imhasını değil. Erken talepte
+şifreli nesne yerinde kalır (Object-Lock ihlali yok), yalnız erişilemez hale
+gelir. Saklama yükümlülüğünün koruduğu şey de zaten içerik değil kayıttır:
+2019/1937 Art.18 ihbarın *kaydını*, SOX Sec.802 *denetim kaydını* korur. İçeriğin
+erken imhası bu kayıtların hiçbirini eksiltmez. **Legal-hold** tarafında istisna
+yoktur ve mutlaktır: hold aktifken anahtar imhası delil karartmasıdır.
+
+**Silmeden sonra defterde ne kalır** (K1'in "tanımlanmalı" dediği kısım):
+
+| kalır | kalmaz |
+|---|---|
+| olay tipi, zaman damgası, aktör (staff subject / reporter) | bildirim gövdesi |
+| `aggregate_id`, `aggregate_type` | ek dosya içeriği |
+| `root_case_id` (kapsam tablosundan) | ihbarcı kimliği |
+| silme makbuzu: manifest digest, kapsam sayıları, anahtar referansı, legal-hold sonucu | içeriğe çözülebilen hiçbir anahtar |
+
+Yani silme sonrası cevaplanabilen soru şudur: *"bu vaka vardı, şu tarihte şu
+aktörler şunu yaptı, içeriği şu kapsamla imha edildi"*. Cevaplanamayan: *"ne
+yazıyordu"*. Ayrım kasıtlıdır.
 
 ### K2 — Mevcut 430 satır için kripto-silme geçerli değil
 
-Sonradan üretilen bir anahtar, değiştirilemez geçmiş gövdeyi geriye dönük
-şifrelemez. Bugünkü defter için "anahtar imhası kapsamı yok etti" **denemez**.
-Bu satırlar ya mevcut hâliyle saklanır ya da ayrı bir karar gerektirir.
+**Soru.** Sonradan üretilen bir anahtar, değiştirilemez geçmiş gövdeyi geriye
+dönük şifrelemez. Bugünkü defter için "anahtar imhası kapsamı yok etti"
+**denemez**. Bu satırlar ya mevcut hâliyle saklanır ya da ayrı bir karar gerektirir.
+
+**Karar — mevcut hâliyle saklanır; geriye dönük imha yok.** Kripto-silme yalnız
+anahtarın devreye alınmasından **sonra** oluşan içeriği kapsar. Anahtar öncesi
+vakalar için silme makbuzu "kripto-silme" değil, **satır düzeyinde silme** iddia
+eder ve makbuzda yöntem açıkça yazılır; iki yöntem tek kelimeye ("silindi")
+katlanmaz.
+
+Bu 430 satır zaten içerik değil, denetim satırıdır — silinmeleri gündemde
+değildi. Karar, ileride bir denetimde "neden bu satırlar için anahtar yok"
+sorusuna verilecek cevabı bugünden sabitliyor.
 
 ### K3 — Kapsam tablosunun KVKK statüsü
 
-İçinde kişisel veri yok — yalnız UUID ve tip. Ama bir ihbar vakasının
+**Soru.** İçinde kişisel veri yok — yalnız UUID ve tip. Ama bir ihbar vakasının
 **varlığını** kanıtlıyor ve yaşayan kayıtlarla aynı kimlik uzayında. Bunun
 dolaylı tanımlayıcı sayılıp sayılmayacağı, hangi saklama süresine tabi olacağı
 ve silme talebinin kapsamına girip girmediği hukuk kararıdır.
 
-Mühendislik tarafındaki güvenli sınır I4'te yazılı: kapsam kaydı içerikle aynı
-anahtara bağlanmaz. Hukuk kararı kapsam kaydının da yok olmasını isterse, ham
-UUID → makbuz eşlemesi imha edilir ve geriye yalnız doğrulama commitment'ı
-kalır; bu, orijinal UUID ile sonradan doğrulama yapabilme yeteneğini azaltır.
+**Karar — bağımsız veri kategorisi değil; denetim kaydının teknik eki.**
+
+- **Saklama süresi:** denetim defteriyle aynı — 10 yıl.
+- **Silme talebinin kapsamı:** girmez.
+- **VERBİS:** ayrı kayıt açılmaz; mevcut denetim kaydı kapsamında tanımlanır.
+
+Gerekçe iki adımlı. Birincisi, vakanın *varlığını* zaten denetim defteri
+kanıtlıyor; kapsam tablosu bir kişi hakkında yeni bir olgu eklemiyor, yalnız
+mevcut satırın hangi köke ait olduğunu söylüyor. İkincisi ve daha önemlisi:
+kapsam kaydını silmek veri sahibini **korumaz, korumasız bırakır**. I2'yi yok
+eder, aidiyeti öldürür, ve geriye "sildik" denip kapsamı gösterilemeyen bir iddia
+kalır. Silme talebinin amacı denetlenebilirliği azaltmak değildir.
+
+Mühendislik tarafındaki güvenli sınır I4'te yazılı ve bu kararla korunuyor:
+kapsam kaydı içerikle aynı anahtara bağlanmaz. Karar ileride değişir ve kapsam
+kaydının da yok olması istenirse, ham UUID → makbuz eşlemesi imha edilir ve
+geriye yalnız doğrulama commitment'ı kalır; bu, orijinal UUID ile sonradan
+doğrulama yapabilme yeteneğini azaltır — bilerek ödenen bir bedel olmalıdır.
 
 ## 6. Sonuçlar
 
