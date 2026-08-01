@@ -115,7 +115,7 @@ def policy() -> dict:
             "backendCommit": BACKEND_COMMIT,
             "eventContractSha256": EVENT_CONTRACT_SHA,
             "gateContractSha256": collector.contract_sha256(
-                "public", "Assert-TranscriptReadyPreEnablePermit"
+                "transcript_service", "Assert-TranscriptReadyPreEnablePermit"
             ),
             "backfillEvidenceSha256": "6" * 64,
             "outboxRemediationEvidenceSha256": "7" * 64,
@@ -180,7 +180,7 @@ def evidence(policy_path: Path, generated_at: str) -> dict:
             "gitopsCommit": GITOPS_COMMIT,
             "policySha256": file_sha256(policy_path),
             "queryContractSha256": collector.contract_sha256(
-                "public", "Assert-TranscriptReadyPreEnablePermit"
+                "transcript_service", "Assert-TranscriptReadyPreEnablePermit"
             ),
             "collectionStartedAt": "2026-07-18T11:59:55Z",
             "collectionFinishedAt": "2026-07-18T12:00:00Z",
@@ -811,6 +811,15 @@ class GateTests(unittest.TestCase):
             ]
         )
         self.assertEqual(Path("test.yaml"), parsed.test_render)
+
+    def test_policy_rejects_injectable_postgres_schema(self) -> None:
+        value = policy()
+        value["environment"]["postgresSchema"] = "public.schema"
+        self.path.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(
+            collector.ContractError, "postgresSchema must be a simple lowercase identifier"
+        ):
+            collector.load_policy(self.path)
 
 
 if __name__ == "__main__":

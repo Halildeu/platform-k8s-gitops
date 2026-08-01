@@ -57,7 +57,8 @@ parola veya Secret değeri girmez.
 3. `psql`, `redis-cli`, `ssh`, `python3` kurulu runner kullanılır.
 4. PostgreSQL credential'ı yalnız `PGUSER`, `PGPASSWORD` environment
    değişkenleriyle verilir. Collector `PGHOST=172.19.0.6`, `PGPORT=5432`,
-   `PGDATABASE=transcript` ve `PGSSLMODE=disable` hedefini policy'den zorlar;
+   `PGDATABASE=transcript`, `postgresSchema=transcript_service` ve
+   `PGSSLMODE=disable` hedefini policy'den zorlar;
    `PGSERVICE`/`PGSERVICEFILE` kabul edilmez.
 5. Redis erişimi `REDIS_HOST=172.19.0.250`, `REDIS_PORT=6379` ve
    `REDISCLI_AUTH` ile verilir. Host/port policy ile birebir eşleşmezse collection

@@ -700,7 +700,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--gitops-commit")
-    parser.add_argument("--db-schema", default="public")
     parser.add_argument("--redis-tls", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=45)
     return parser.parse_args(argv)
@@ -710,9 +709,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         policy = load_policy(args.policy)
-        if not IDENTIFIER_RE.fullmatch(args.db_schema):
-            raise ContractError("db schema must be a simple lowercase identifier")
         environment = policy["environment"]
+        db_schema = environment["postgresSchema"]
+        if not IDENTIFIER_RE.fullmatch(db_schema):
+            raise ContractError(
+                "environment.postgresSchema must be a simple lowercase identifier"
+            )
         redis_host = os.environ.get("REDIS_HOST", "")
         redis_port_text = os.environ.get("REDIS_PORT", "")
         if redis_host != environment["redisHost"]:
@@ -754,7 +756,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "postgresBefore",
         lambda: collect_postgres_snapshot(
             run_command,
-            schema=args.db_schema,
+            schema=db_schema,
             environment=environment,
             timeout=args.timeout_seconds,
         ),
@@ -776,7 +778,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "postgresAfter",
         lambda: collect_postgres_snapshot(
             run_command,
-            schema=args.db_schema,
+            schema=db_schema,
             environment=environment,
             timeout=args.timeout_seconds,
         ),
@@ -801,7 +803,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "gitopsCommit": git_commit,
             "policySha256": file_sha256(args.policy),
             "queryContractSha256": contract_sha256(
-                args.db_schema, policy["requiredStartupGateMarker"]
+                db_schema, policy["requiredStartupGateMarker"]
             ),
             "collectionStartedAt": collection_started_at,
             "collectionFinishedAt": collection_finished_at,
