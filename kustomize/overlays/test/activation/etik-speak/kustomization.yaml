@@ -43,12 +43,11 @@ images:
   # defterinde izi yoktu.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    # 2026-08-01 bump 3: sha-f3ae6b2 — platform-backend#1054 (ES-2 #3271).
-    # Alindi teyidi: otomatik taslak (kiraci-parametrik sablon defteri V19/V20),
-    # insan gonderimi (eksik zorunlu bolum kayda gecer), 7. gun son-gun agi
-    # (dispatch=AUTOMATIC). Digest gercek pull ile okundu (smoke-dig-ack pod).
-    # Onceki: sha-88631b4 @ sha256:147950e7... (#1049 PDF CDR).
-    digest: sha256:9033c5940010b20e6d45b4701a799ee78764a4eb645e791bef64f89c1b75a34d
+    # 2026-08-01 bump 4: sha-866dc21 — platform-backend#1056. Dispatch denetim
+    # kaydini damgayi GERCEKTEN vuran cagri yazar (canli cift-kayit yarisinin
+    # backend savunmasi; gitops#3292 kaynagi kurutmustu). Digest gercek pull
+    # ile okundu (smoke-dig-a2). Onceki: sha-f3ae6b2 @ sha256:9033c5940010b20e6...
+    digest: sha256:bda8303d89bfa34b78d6778e0af53c0aeeac00c321f30dfb761b205cf3ea0921
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
