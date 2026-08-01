@@ -55,7 +55,13 @@ images:
     # etti. Bu pin ozellik+duzeltmeyi birlikte tasir; wiring testi ikiligi
     # pinler. Digest gercek pull ile (smoke-dig-bf).
     # Onceki: sha-b446ae4 @ sha256:ad6e28eb380bf16619b45795d7...
-    digest: sha256:df77f7134bcb75d61b85c2c2cb44313bebc33bc2bba6e433269c54adf4e26a37
+    # 2026-08-02 bump 8: sha-a895ed8 — platform-backend#1067 (ES-306 #2665).
+    # Spring Boot 3.5.6 -> 3.5.16: tomcat-embed-core 10.1.46 -> 10.1.55 ve
+    # spring-security-web 6.5.5 -> 6.5.11. Kapanma iddiasi surum notuna degil
+    # YENIDEN TARAMAYA dayaniyor: bu digest grype ile tekrar tarandi,
+    # Critical 4 -> 0, toplam 112 -> 50. Digest gercek pull (smoke-dig-bp).
+    # Onceki: sha-c7e2795 @ sha256:df77f7134bcb75d61b85c2c...
+    digest: sha256:d165a0fcae271696549cb2fba04966af0a1ca54665130430c13c89ac9347b0ba
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
