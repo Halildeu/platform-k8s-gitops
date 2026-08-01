@@ -984,7 +984,12 @@ images:
     # and an unknown method is refused rather than stored — a typo must not be
     # able to narrow an allow-list down to nothing anybody recognises.
     # Digest read back from a real host-lane pull (RepoDigests) + node-imported.
-    digest: sha256:a60f5830776a053935791c23c7265784d46aa0796b6b8a0ac6e7ef41e905c247
+    # 2026-08-01 bump: sha-40bf498 — platform-backend#1048 (gitops#3251).
+    # SUPPORTED_METHODS gains `totp`. It was refused while nothing enforced it;
+    # the privileged flow now runs mfa-otp-form, which reads the attribute, so
+    # the value is honoured rather than stored as a restriction no code obeys.
+    # Digest read back from a real host-lane pull + node-imported.
+    digest: sha256:464dda21a3b84fde67da592dbf9eb1214614775e8ed3869e8b24baf062907b93
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -4796,7 +4801,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: 162872b10c622ee6d1ce459a643af54baf36a61f
+    # sourceRevision: b4fa6d0eb9d0b93d02581c1381c8f3418a092cfb
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -4814,7 +4819,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-162872b
+    newTag: sha-b4fa6d0
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -4841,7 +4846,16 @@ images:
     # Parent OCI index: sha256:8f51c8785089468085785b6e9930c6797c52acfc43c57139df1e1de2302cdb57.
     # TEST is linux/amd64, so pin its registry-verified child manifest. This
     # keeps D30 exact: the desired digest must equal the running pod imageID.
-    digest: sha256:972820a6b489a951e772ff31eef24fa83421e221910b17e99ff4aa624fafd9f7
+    # 2026-08-01 bump: sha-b4fa6d0 — platform-web#1102 (gitops#3251). The
+    # authenticator app becomes a real checkbox, and the boxes stop showing the
+    # stored restriction and start showing what is actually OFFERED: an
+    # unrestricted account had every box empty while every method was on offer,
+    # which read as the opposite of the truth. Ticking the last box clears the
+    # attribute rather than storing all three — both mean unrestricted, only one
+    # of them freezes the account against a method added later.
+    # Digest read back from a real host-lane pull (RepoDigests), as the tuple
+    # above documents, and node-imported with that ref.
+    digest: sha256:f8142b51831769e06b2e749031cc8f851d87b2b7aed34a9d7808894341ffcfda
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
