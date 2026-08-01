@@ -71,6 +71,12 @@ data:
   # rollout restart) — envFrom ConfigMap values are read only at pod start, so a
   # flag change alone does not roll the pod.
   AUDIO_GATEWAY_DIRECT_STT_ENABLED: "true"
+  # Provider-neutral switch. Existing in-house live-stt remains the default and
+  # rollback target; Speechmatics is enabled only by a deliberate TEST patch.
+  AUDIO_GATEWAY_DIRECT_STT_PROVIDER: "internal"
+  # Base stays internal-only. Environment overlays may widen this only when
+  # their provider credential and egress policy are present.
+  AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS: "internal"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
   AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
   AUDIO_GATEWAY_DIRECT_STT_CONNECT_TIMEOUT_MS: "5000"
@@ -89,6 +95,13 @@ data:
   AUDIO_GATEWAY_DIRECT_STT_TLS_CA_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-ca.crt"
   AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-client.crt"
   AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_PRIVATE_KEY_PATH: "/etc/direct-stt-mtls/direct-stt-client.key"
+  # Speechmatics non-secret defaults. The API key is never stored in this
+  # ConfigMap; Deployment reads it from the isolated optional Secret below.
+  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_REALTIME_URL: "wss://eu2.rt.speechmatics.com/v2"
+  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_LANGUAGE: "tr"
+  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_MAX_DELAY_SECONDS: "2.0"
+  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_AUDIO_CHUNK_BYTES: "32768"
+  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_ALLOW_INSECURE: "false"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED: "true"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_KEY: "transcript:direct-stt-results"
   # Faz 24 ai#184 (#788): gateway -> live-stt canli WebSocket koprusu.

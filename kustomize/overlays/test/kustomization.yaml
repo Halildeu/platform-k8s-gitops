@@ -73,6 +73,7 @@ resources:
   - netpol-budget-service-api-gateway.yaml  # #3007: exact api-gateway -> budget-service:8101 TEST path
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
   - netpol-audio-gateway-live-stt-mtls.yaml  # Faz 24 #182/#198: audio-gateway -> platform-ai live-stt app-mTLS 10.99.0.2:8243
+  - netpol-audio-gateway-speechmatics.yaml  # Faz 24 #3240: session-selected Speechmatics WSS egress; internal remains default
   # #2610: this bridge is reachability only. The Windows-host
   # MAI_READY_CONSUMER_ENABLED flag remains absent/default-off. A later enable
   # requires the fresh machine-bound gate in
@@ -308,7 +309,16 @@ images:
     # copied to the TEST-only local registry with --preserve-digests; source
     # GHCR and local-registry manifest HEAD both returned the digest below.
     # Production manifests and shared Vault credentials are unchanged.
-    digest: sha256:e06f757ffa5ed279358f319d113e7975ebacdfacfc1255d8bec4f3a92a789602
+    # 2026-08-01 update: platform-backend#1047 adds the immutable per-session
+    # `internal|speechmatics` provider contract while preserving `internal` as
+    # the default and rejecting disabled/unknown selections without fallback.
+    # Canonical main merge f4ee38877d2d480a569ff2459aabe5cb1ea61549;
+    # audio-gateway image-build job 91353061143 in run 30693801300 succeeded.
+    # While gitops#2876 remains open, the exact OCI manifest was copied to the
+    # TEST-only local registry. Source raw-manifest SHA-256, registry PUT
+    # response and destination manifest HEAD all returned the digest below.
+    # Production manifests and the existing internal STT path are unchanged.
+    digest: sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9219,7 +9229,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-29-2610-v5-stt-timeout"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-01-3240-v6-provider-select"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -9266,6 +9276,11 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS
         value: "30000"
+      # Faz 24 #3240/#desktop#104: provider is immutable per session. Keep
+      # internal as the TEST default while allowing attended Speechmatics use.
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS
+        value: "internal,speechmatics"
       # --- Faz 24 cumle birlestirme (platform-backend#918) ---
       #
       # SORUN: kullanicinin bildirdigi "ayni cumleyi on satirda okuyorsun".

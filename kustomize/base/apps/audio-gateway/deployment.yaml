@@ -76,6 +76,15 @@ spec:
                 name: audio-gateway-secrets   # ESO: SPRING_DATA_REDIS_PASSWORD
                 optional: false
           env:
+            # Separate failure domain from Redis and direct-STT mTLS. The key is
+            # optional while provider=internal; backend validation fails closed
+            # if provider=speechmatics is selected before ESO has materialized it.
+            - name: AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: audio-gateway-speechmatics
+                  key: api-key
+                  optional: true
             # HandshakeWebSocketService DEBUG renders the complete request
             # header map, including Authorization. Keep framework socket
             # diagnostics below DEBUG in every environment; operational

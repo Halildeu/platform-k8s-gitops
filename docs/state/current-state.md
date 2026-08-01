@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 oturum-bazlı STT sağlayıcı seçimi TEST adayı (2026-08-01)
+
+`platform-backend#1047` canonical main merge'i
+`f4ee38877d2d480a569ff2459aabe5cb1ea61549`, audio-gateway oturum başlangıç
+sözleşmesine `internal|speechmatics` sağlayıcı alanını ekler. Sağlayıcı oturum
+boyunca değişmez; bilinmeyen, TEST'te seçilebilir listede bulunmayan veya hazır
+credential'ı olmayan sağlayıcı seçimi sessizce dahili STT'ye düşmeden reddedilir.
+`internal` varsayılanı ve mevcut app-mTLS/WebSocket yolu korunur. Image-build run
+[`30693801300`](https://github.com/Halildeu/platform-backend/actions/runs/30693801300)
+içindeki audio-gateway job `91353061143`, immutable
+`sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe`
+OCI manifestini üretti. `gitops#2876` açıkken kaynak ham-manifest SHA-256,
+TEST-only registry PUT yanıtı ve hedef manifest HEAD aynı digest'i verdi.
+
+GitOps `#3243`, bu digest'i TEST overlay'ine pinler; `internal` varsayılanıyla
+`internal,speechmatics` seçilebilir listesini, yalnız audio-gateway pod'una
+TCP/443 SaaS egress'ini ve izole `audio-gateway-speechmatics` ExternalSecret
+referansını ekler. API anahtarı repo, manifest veya masaüstü paketine girmez;
+Vault `kv/platform/audio-gateway-speechmatics` kaynağından ESO ile teslim edilir.
+Production manifesti ve gerçek toplantı sesinin SaaS'a gönderim yetkisi bu
+değişikliğin kapsamında değildir.
+
+`platform-desktop#105` draft adayı, kayıt öncesinde `Dahili STT` veya
+`Speechmatics` seçimini renderer -> preload -> IPC -> kalıcı start outbox ->
+Gateway zincirinde taşır ve sunucu geri-okuması farklıysa fail-closed davranır.
+Exact PR head'indeki typecheck, lint, format, `547` test ve build ile GitHub
+kontrolleri geçti. İlk doğrulanmamış kapı GitOps main merge + Argo/ESO rollout
+sonrasında canlı pod `imageID`/Secret Ready read-back'idir; bunu izleyen kapı
+exact masaüstü paketinde sentetik Türkçe ses ile aynı oturumun görünür
+transkript, karar ve aksiyon sonucudur. Bu kapılar geçmeden sağlayıcı seçimi
+TEST kullanıcı yolculuğu olarak kabul edilmez.
+
 ## Live Delta — Graph mailbox routine Vault access uses a scoped AppRole (2026-07-30)
 
 Board issue `#771` kapsamında production Vault üzerinde `graph-mail-ops`
