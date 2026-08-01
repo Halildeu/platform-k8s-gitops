@@ -150,6 +150,7 @@ class FrontendPromotionContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(frontend_patch)
         body = frontend_patch.group("body")
+        self.assertRegex(body, r"imagePullPolicy\n\s+value: Always")
         self.assertRegex(body, r"maxSurge\n\s+value: 1")
         self.assertRegex(body, r"maxUnavailable\n\s+value: 0")
         self.assertRegex(body, r"progressDeadlineSeconds\n\s+value: 300")
