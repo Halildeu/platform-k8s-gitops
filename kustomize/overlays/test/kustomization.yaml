@@ -963,7 +963,18 @@ images:
     # comes from the user-scoped role-mapping lists, never a realm-wide role
     # read — the service account stays at view-users + manage-users.
     # Digest read back from a real host-lane pull + node-imported.
-    digest: sha256:ddb00064a0b84ed0e0f4da436ef7d7d8c8ae1dfb7946aecb4d21dae1e1449112
+    #
+    # 2026-08-01 bump: sha-5c7421c — platform-backend#1042 (gitops#3232) adds
+    # PUT /api/v1/users/{id}/mfa/methods and returns allowedMethods[] from the
+    # GET. It is what makes the panel's method checkboxes do anything: the
+    # frontend carrying them (sha-162872b) shipped in gitops#3249, and without
+    # this digest those boxes would post to a route the service does not map.
+    # Semantics worth keeping in view: an absent or empty list means
+    # unrestricted, so every existing account keeps every lane it already had,
+    # and an unknown method is refused rather than stored — a typo must not be
+    # able to narrow an allow-list down to nothing anybody recognises.
+    # Digest read back from a real host-lane pull (RepoDigests) + node-imported.
+    digest: sha256:a60f5830776a053935791c23c7265784d46aa0796b6b8a0ac6e7ef41e905c247
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
