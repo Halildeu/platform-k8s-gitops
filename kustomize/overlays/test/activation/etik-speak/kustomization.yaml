@@ -61,7 +61,17 @@ images:
     # YENIDEN TARAMAYA dayaniyor: bu digest grype ile tekrar tarandi,
     # Critical 4 -> 0, toplam 112 -> 50. Digest gercek pull (smoke-dig-bp).
     # Onceki: sha-c7e2795 @ sha256:df77f7134bcb75d61b85c2c...
-    digest: sha256:d165a0fcae271696549cb2fba04966af0a1ca54665130430c13c89ac9347b0ba
+    # 2026-08-02 bump: platform-backend#1068 — ES-306 taramasinin biraktigi on
+    # High kapandi. netty 4.1.135 → 4.1.136 (alti bulgu), pgJDBC 42.7.11 →
+    # 42.7.12, ve tabandaki p11-kit 0.25.5-r2 → 0.26.2-r0 (yayinlanmis temurin
+    # tabani henuz yeniden derlenmemisti; hedefli apk upgrade ile kapatildi).
+    # Yeniden tarandi: 0 Critical / 2 High — kalan ikisi sqlite-libs, hicbir
+    # dagitimda yamasi yok, ethics-service PostgreSQL konusur ve hicbir kod
+    # yolu SQLite acmaz (kapinin ACCEPTED_IDS'inde son-kullanma tarihli kabul).
+    # Imajda dogrulandi: netty 4.1.136, pgjdbc 42.7.12, p11-kit 0.26.2-r0.
+    # Kaynak: b0e40ac4c398edf03c65d1f06f322251c8a0da79
+    # Onceki: a895ed83 @ sha256:d165a0fcae271696549cb...
+    digest: sha256:602df6a9affc8c3f02161c46d3745d7ec6176bda0e33fde7ffc9ea0a3544665a
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
@@ -70,7 +80,15 @@ images:
   # Pinned scanner. The same digest is handed to the pipeline as its declared
   # scanner identity, so recorded provenance and running container cannot drift.
   - name: docker.io/clamav/clamav
-    digest: sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
+    # 2026-08-02 bump: ES-306 taramasi 1.4.3'te 4 Critical / 33 High buldu —
+    # hepsi OpenSSL (libcrypto3/libssl3 3.5.5-r0) ve hepsinin yamasi vardi.
+    # Bu, dusman dosyaya dokunan tarayicinin kendisi; yamali Critical burada
+    # bekletilmez. 1.5 ayni tarayiciyla olculdu: 0 Critical / 0 High, OpenSSL
+    # 3.5.7-r0, 42 paketli gercek SBOM (bos tarama degil).
+    # Digest registry index manifest'inden cozuldu (syft'in verdigi platform
+    # manifest digest'i cekilemiyordu — pin edilecek digest pull edilebilmeli).
+    # Onceki: 1.4.3 @ sha256:75fb5fd95fcbe1d7e6d24...
+    digest: sha256:24cab211a882e9f767b84b76afe197d82554306ad6d43b782f80cd6aa1e61427
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
@@ -85,7 +103,17 @@ images:
     # SONRA). Kaynak: fa04b687c1a2fbfa5316e044c3c1c07836242191 (TAM sha).
     # Digest gercek pull ile (smoke-dig-hu).
     # Onceki: f8843715 (#1108) @ sha256:f9a921ea8f63a9a46aba98cb...
-    digest: sha256:f2abcee52bbefa4b80553ac61581a75370c254d9dd85380e6c9ec408b10ff98c
+    # 2026-08-02 bump 5: platform-web#1112 — nginx tabani tazelendi. ES-306
+    # taramasi eski tabanda 13 Critical / 56 High buldu; hepsi yamaliydi ve
+    # hicbiri urun kodundan degil, tabandan geliyordu. Aday tabanlar ayni
+    # tarayiciyla olculdu (1.27-alpine 13/56, 1.29-alpine 10/34, stable-alpine
+    # 0/2) ve en temizi secildi; taban artik digest ile sabit.
+    # Yeni tabanda olculen: 0 Critical / 2 High (tiff, yamasi yok, statik dosya
+    # sunan nginx bu kod yoluna hic girmez — kapinin ACCEPTED_IDS listesinde).
+    # Kaynak: 6f9ee66d8d3b7a8f4c1f4cc971b4a17edc854bd1 (etiket TAM sha).
+    # Digest gercek cekisle dogrulandi (syft registry pull, aiserver).
+    # Onceki: fa04b687 (#1109) @ sha256:f2abcee52bbefa4b805...
+    digest: sha256:eea78ec3c83abbb34f8d76aad8e73f4b0bb28bd268236c71e03736fb5c50a931
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
@@ -106,7 +134,13 @@ images:
     # uyarisi duzenlerken. Kaynak: 72213c91d8462b1e5b1c1ffce51452cd10ac81ec
     # (etiket TAM sha; digest gercek pull ile, smoke-dig-au pod).
     # Onceki: 8bcccc99 @ sha256:4e7eb5f89712f1d58...
-    digest: sha256:9807b816b7369c3b66c4fd410b2340edc034ced2081b4fec25bec6f2f0266ffa
+    # 2026-08-02 bump 3: platform-web#1112 — public ile ayni nginx taban
+    # tazelemesi; manager de ayni tabani paylasiyordu, ayni 13 Critical'i
+    # tasiyordu. Yeni tabanda olculen: 0 Critical / 2 High (tiff, yamasi yok).
+    # Kaynak: 6f9ee66d8d3b7a8f4c1f4cc971b4a17edc854bd1 (etiket TAM sha).
+    # Digest gercek cekisle dogrulandi (syft registry pull, aiserver).
+    # Onceki: 72213c91 (#1106) @ sha256:9807b816b7369c3b66c...
+    digest: sha256:7cca4fb895c569061377b80ce2d43fa060502d83dffa388dc60f8a8ccbd4ee01
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
