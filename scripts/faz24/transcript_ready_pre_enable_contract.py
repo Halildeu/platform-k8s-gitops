@@ -230,6 +230,10 @@ def load_policy(path: Path) -> dict[str, Any]:
         raise ContractError(f"policy schemaVersion must be {POLICY_SCHEMA}")
     if policy.get("issue") != ISSUE:
         raise ContractError(f"policy issue must be {ISSUE}")
+    if policy.get("activationMode") not in {"first-enable", "reactivation"}:
+        raise ContractError(
+            "policy activationMode must be first-enable or reactivation"
+        )
     capabilities = policy.get("producerCapabilities")
     guards = policy.get("hostStartupGuards")
     if not isinstance(capabilities, list) or not isinstance(guards, list):

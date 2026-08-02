@@ -856,10 +856,27 @@ def validate(
         "retained malformed transcript-ready rows must be zero",
         "DLQ_ACK_XDEL",
     )
-    compatible_binding_digest = counts.get("compatibleBindingSetSha256")
-    redis_binding_digest = redis.get("compatibleBindingSetSha256")
-    compatible_binding_count = integer(counts.get("compatibleReadyOutbox"))
-    redis_compatible_count = integer(redis.get("compatibleReady"))
+    activation_mode = policy["activationMode"]
+    if activation_mode == "first-enable":
+        compatible_binding_digest = counts.get("compatibleBindingSetSha256")
+        redis_binding_digest = redis.get("compatibleBindingSetSha256")
+        compatible_binding_count = integer(counts.get("compatibleReadyOutbox"))
+        redis_compatible_count = integer(redis.get("compatibleReady"))
+        binding_check_name = "cross_store_compatible_bindings"
+        binding_message = (
+            "Redis and PostgreSQL must contain the same compatible occurrence "
+            "bindings"
+        )
+    else:
+        compatible_binding_digest = counts.get("compatibleBindingUniqueSetSha256")
+        redis_binding_digest = redis.get("compatibleBindingUniqueSetSha256")
+        compatible_binding_count = integer(counts.get("compatibleBindingUniqueCount"))
+        redis_compatible_count = integer(redis.get("compatibleBindingUniqueCount"))
+        binding_check_name = "cross_store_unique_compatible_bindings"
+        binding_message = (
+            "Redis and PostgreSQL must contain the same unique compatible "
+            "occurrence bindings during reactivation"
+        )
     binding_digests_valid = True
     try:
         require_sha256(compatible_binding_digest, "PostgreSQL compatible binding set")
@@ -868,14 +885,25 @@ def validate(
         binding_digests_valid = False
     add(
         checks,
-        "cross_store_compatible_bindings",
+        binding_check_name,
         binding_digests_valid
         and compatible_binding_count is not None
         and compatible_binding_count == redis_compatible_count
         and compatible_binding_digest == redis_binding_digest,
-        "Redis and PostgreSQL must contain the same compatible occurrence bindings",
+        binding_message,
         "PURGE_OR_REPUBLISH",
     )
+    if activation_mode == "reactivation":
+        redis_occurrence_count = integer(redis.get("compatibleReady"))
+        add(
+            checks,
+            "redis_duplicate_occurrences_bounded",
+            redis_occurrence_count is not None
+            and redis_compatible_count is not None
+            and redis_occurrence_count >= redis_compatible_count,
+            "Redis duplicate occurrences may exist, but cannot undercount unique bindings",
+            "PURGE_OR_REPUBLISH",
+        )
     digest = redis.get("classificationDigestSha1")
     add(
         checks,
@@ -892,15 +920,32 @@ def validate(
         "target ready consumer group PEL must be empty",
         "DLQ_ACK_XDEL",
     )
-    add(
-        checks,
-        "redis_group_absent_before_enable",
-        group.get("exists") is False
-        and zero(group.get("pending"))
-        and zero(group.get("consumers")),
-        "target ready group must not exist before the first governed enable",
-        "DLQ_ACK_XDEL",
-    )
+    if activation_mode == "first-enable":
+        add(
+            checks,
+            "redis_group_absent_before_enable",
+            group.get("exists") is False
+            and zero(group.get("pending"))
+            and zero(group.get("consumers")),
+            "target ready group must not exist before the first governed enable",
+            "DLQ_ACK_XDEL",
+        )
+    else:
+        add(
+            checks,
+            "redis_group_idle_before_reactivation",
+            group.get("exists") is True
+            and zero(group.get("pending"))
+            and integer(group.get("consumers")) is not None
+            and integer(group.get("consumers")) >= 0
+            and isinstance(group.get("lastDeliveredId"), str)
+            and bool(group.get("lastDeliveredId"))
+            and integer(group.get("entriesRead")) is not None
+            and integer(group.get("entriesRead")) >= 0
+            and zero(group.get("lag")),
+            "existing ready group must be fully caught up with an empty PEL",
+            "KEEP_CONSUMER_DISABLED",
+        )
 
     host = object_field(live.get("gpuHost"), "live.gpuHost")
     guard = host_guard(policy, host)

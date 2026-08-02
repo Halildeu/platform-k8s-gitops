@@ -581,6 +581,9 @@ def collect_postgres_snapshot(
         ):
             raise ContractError("PostgreSQL ready classification is not exhaustive")
         counts["compatibleBindingSetSha256"] = binding_set_sha256(bindings)
+        unique_bindings = sorted(set(bindings))
+        counts["compatibleBindingUniqueCount"] = len(unique_bindings)
+        counts["compatibleBindingUniqueSetSha256"] = binding_set_sha256(unique_bindings)
     return {"collected": True, "schema": metadata, "counts": counts}
 
 
@@ -622,6 +625,11 @@ def collect_redis(
         raise ContractError("Redis compatible binding inventory is invalid")
     payload["compatibleBindingSetSha256"] = binding_set_sha256_from_sha1s(
         binding_hashes
+    )
+    unique_binding_hashes = sorted(set(binding_hashes))
+    payload["compatibleBindingUniqueCount"] = len(unique_binding_hashes)
+    payload["compatibleBindingUniqueSetSha256"] = binding_set_sha256_from_sha1s(
+        unique_binding_hashes
     )
     payload["collected"] = True
     payload["host"] = host

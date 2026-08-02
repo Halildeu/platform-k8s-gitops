@@ -15,8 +15,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config/faz24-transcript-ready-pre-enable-policy.v1.json"
 TRANSIT_POLICY = (
-    ROOT
-    / "bootstrap/vault-policies/test/faz24-transcript-ready-permit-signer.hcl"
+    ROOT / "bootstrap/vault-policies/test/faz24-transcript-ready-permit-signer.hcl"
+)
+CLIENT_ISSUER_POLICY = (
+    ROOT / "bootstrap/vault-policies/test/meeting-ai-client-issuer.hcl"
 )
 CONTRACT = ROOT / "scripts/faz24/transcript_ready_pre_enable_contract.py"
 VERIFIER = ROOT / "scripts/faz24/verify_transcript_ready_pre_enable_evidence.py"
@@ -47,29 +49,29 @@ EXPECTED_REMEDIATIONS = {
 }
 EXPECTED_PRODUCER_CAPABILITIES = [
     {
-        "transcriptImageDigest": "sha256:6f930cec0ba1de575c9ce6f9779d4913e50ebe4bc47c1e82eb7fcd42eea53884",
-        "backendCommit": "619378ad2c0ec5a11d1efc62a7a1e6465ee220b5",
-        "eventContractEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-event-contract.json",
-        "eventContractSha256": "a54c1a165656a13b413bea6d7138881b0520cdce369fad496f65abcb75c85fe9",
+        "transcriptImageDigest": "sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f",
+        "backendCommit": "01e0fde9460757eef519344e4f292da615df9e4e",
+        "eventContractEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-event-contract.json",
+        "eventContractSha256": "efaae65b743b977a9b29f339c56e0ad551267700c60b4ed9090088ed1df921c7",
         "gateContractSha256": "e4c080a6f080deecebe7d713a8993372e8e6fbf94d0b1fe5d1fe90822fa047f3",
-        "backfillEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-backfill.json",
-        "backfillEvidenceSha256": "4b562339f510d689e05f25bb96311125d76ccdcf4d70a08099b0a12d4e256795",
-        "outboxRemediationEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-outbox-remediation.json",
-        "outboxRemediationEvidenceSha256": "34d6189757df167041270875557ae8a23eef06b893173e840804883316378f49",
-        "redisRemediationEvidencePath": "docs/faz-24-evidence/2026-08-01-transcript-ready-redis-remediation.json",
-        "redisRemediationEvidenceSha256": "d059fbe057f758d3dfcfe9e27a7696aa534970b65f95590fb23c78f5a21b7ac1",
+        "backfillEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-backfill.json",
+        "backfillEvidenceSha256": "ee77bb8a29b9f572c4dd2ab16b1cb76bc46ff0e02a3ae19a6bf33b0eeaa9a15f",
+        "outboxRemediationEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-outbox-remediation.json",
+        "outboxRemediationEvidenceSha256": "e7306225d9384472fe049d9366864d87aebec18ab5ab2fab6600b270515963e1",
+        "redisRemediationEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-redis-remediation.json",
+        "redisRemediationEvidenceSha256": "d66e850c16cd2f3a981230fb85abf154ccf7272de4d82094ba83f29283df34f1",
         "analysisRunIdEmission": "non-null-v1",
         "finalizationAnalysisRunId": "uuid-not-null-event-bound",
     }
 ]
 EXPECTED_HOST_STARTUP_GUARDS = [
     {
-        "platformAiCommit": "4df5fcd5039779c0fd9f57463cdaf54d6e43be74",
+        "platformAiCommit": "492a2e06b28f358867bd469c2fd44de74790d70b",
         "startupScriptSha256": "97fd2de20d13f4cbf65ceee8dc2921d6a69586bb589000ba768854a2e08144e3",
         "permitRequired": True,
     }
 ]
-EXPECTED_TRANSIT_POLICY = '''# TEST-only Faz 24 transcript-ready pre-enable permit signer.
+EXPECTED_TRANSIT_POLICY = """# TEST-only Faz 24 transcript-ready pre-enable permit signer.
 #
 # This token can sign with one dedicated non-exportable Ed25519 Transit key. It
 # cannot read/export/delete/rotate keys, mint tokens, access KV, or use the
@@ -86,7 +88,29 @@ path "auth/token/lookup-self" {
 path "auth/token/revoke-self" {
   capabilities = ["update"]
 }
-'''
+"""
+EXPECTED_CLIENT_ISSUER_POLICY = """# TEST-only short-lived mTLS client certificate issuer for meeting-ai.
+#
+# The operator token must be minted without the default policy, with a short
+# non-renewable TTL and bounded uses. It can issue only the dedicated
+# meeting-ai client role, read the server CA, inspect itself, and revoke itself.
+
+path "pki_meeting_ai_client/issue/meeting-ai" {
+  capabilities = ["update"]
+}
+
+path "pki_meeting_ai_server/cert/ca" {
+  capabilities = ["read"]
+}
+
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+
+path "auth/token/revoke-self" {
+  capabilities = ["update"]
+}
+"""
 
 
 def fail(message: str) -> None:
@@ -125,11 +149,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         fail("producer allowlist must remain pinned to the reviewed exact tuple")
     if policy.get("hostStartupGuards") != EXPECTED_HOST_STARTUP_GUARDS:
         fail("host startup allowlist must remain pinned to the reviewed exact tuple")
+    if policy.get("activationMode") != "reactivation":
+        fail("current policy must use the explicit reactivation contract")
     if policy.get("currentBoundary") != {
         "enableAuthorized": True,
         "reason": (
-            "exact-test-producer-remediation-receipts-and-permit-enforcing-"
-            "host-guard-approved"
+            "exact-test-reactivation-idle-group-unique-bindings-and-permit-"
+            "enforcing-host-guard-approved"
         ),
     }:
         fail("current policy must retain the exact reviewed TEST authorization")
@@ -146,6 +172,11 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if TRANSIT_POLICY.read_text(encoding="utf-8") != EXPECTED_TRANSIT_POLICY:
         fail("dedicated TEST Transit signer policy drifted")
+    if (
+        CLIENT_ISSUER_POLICY.read_text(encoding="utf-8")
+        != EXPECTED_CLIENT_ISSUER_POLICY
+    ):
+        fail("dedicated TEST meeting-ai client issuer policy drifted")
     source_markers = {
         CONTRACT: (
             'VERDICT_SCHEMA = "faz24.transcriptReadyPreEnableVerdict.v2"',
