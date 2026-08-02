@@ -496,7 +496,7 @@ def main() -> None:
         meeting_deploy,
         "meeting-service",
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:8265d161a7076f128513a905842d2026c57e6e550f2465225c5043b977f267c5",
+        "sha256:a6b2bb8cba25d90f727cf3d7297527abd6f53932b5be4e40a30a333016969812",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
@@ -512,7 +512,7 @@ def main() -> None:
         # 2026-08-01 (backend#1058, gitops#2610): Flyway V13 and the entity
         # mapping require occurrence-bound analysis_run_id UUID NOT NULL.
         "ghcr.io/halildeu/platform-backend-transcript-service@"
-        "sha256:6f930cec0ba1de575c9ce6f9779d4913e50ebe4bc47c1e82eb7fcd42eea53884",
+        "sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f",
     )
     container_image(
         audio_deploy,
