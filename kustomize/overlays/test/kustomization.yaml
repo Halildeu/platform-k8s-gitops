@@ -357,7 +357,18 @@ images:
     # return the pinned manifest below; source and destination config ID is
     # sha256:82ee723a2d166a99d3fccaa4de5c77ee898570deeb0d0625feec21e4e5cc4015.
     # Production manifests remain unchanged.
-    digest: sha256:9a5f387f85e76d5fff2234f965204bc88aff1ad4ba9c10bc7fa89cf18204e324
+    # 2026-08-02 update: platform-backend#1082 emits Speechmatics EndOfStream
+    # inline after the contiguous AudioAdded receipt barrier. This removes the
+    # dependency on desktop receive-publisher completion while retaining the
+    # gateway-only marker boundary and fail-closed receipt checks. Canonical
+    # main merge 4bf2345cf2aabffa62be701887e3d2b23c181e08; image-build run
+    # 30734943287 (audio job 91461930226). GHCR source OCI digest
+    # sha256:c8100265a4373738140e42fa13b8da34b711509a78b4815b97a968a3bd39663a
+    # was copied only to the TEST registry. The destination tag and digest HEAD
+    # return the pinned manifest below; source and destination config ID is
+    # sha256:bcb4561fd01614ad356f6ef44053e9b3c6e4111489067e154cdb803b560195f6.
+    # Production manifests remain unchanged.
+    digest: sha256:a546c66cf8c890242b44d84f17749f227bbc9385d64aff7d4248cb4e53cae58a
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9388,7 +9399,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v14-speechmatics-eof-marker"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v15-speechmatics-inline-eof"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
