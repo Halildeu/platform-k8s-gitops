@@ -64,8 +64,11 @@ commit:
 2. Patch `audio-gateway-config` with
    `AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS=internal,speechmatics`.
    Keep `AUDIO_GATEWAY_DIRECT_STT_PROVIDER=internal` and do not change the
-   internal TLS or streaming settings. Speechmatics sessions use the bounded
-   REST chunk path; the server rejects their internal WebSocket attempt.
+   internal TLS or streaming settings. Speechmatics `balanced` sessions retain
+   the bounded REST window path. Speechmatics `realtime` sessions use the
+   gateway-owned Realtime v2 WebSocket adapter with partial transcripts enabled;
+   the API key stays server-side and the desktop sends bounded PCM16 frames only
+   through the authenticated gateway session.
 3. Keep `AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_ALLOW_INSECURE=false` and the endpoint
    `wss://eu2.rt.speechmatics.com/v2`.
 4. Bump `audio-gateway.acik.com/direct-stt-enable-rev` so the pod re-reads both
@@ -83,6 +86,9 @@ all of the following on the exact rolled pod:
 - desired and live image digest match;
 - pod readiness is `True` and `audio_gateway_direct_stt_provider_active` has
   `provider="speechmatics"`;
+- a `realtime` session emits at least one provider partial before its canonical
+  final/utterance event, while a separate `balanced` session still reaches the
+  durable transcript path;
 - one canonical transcript result is written for the test session;
 - the owner-scoped transcript events endpoint returns the expected synthetic
   sentence;
