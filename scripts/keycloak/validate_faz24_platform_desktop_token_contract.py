@@ -142,6 +142,7 @@ def validate(
     required_azp: str,
     required_role: str,
     expected_issuer: str | None,
+    additional_required_roles: list[str] | None = None,
 ) -> dict[str, Any]:
     aud = _normalize_audience(payload.get("aud"))
     roles = _roles(payload)
@@ -157,6 +158,10 @@ def validate(
     ]
     missing_client_roles = [
         item for item in required_client_roles if item not in client_roles
+    ]
+    additional_required_roles = additional_required_roles or []
+    missing_additional_realm_roles = [
+        item for item in additional_required_roles if item not in roles
     ]
 
     tenant_aliases: dict[str, uuid.UUID] = {}
@@ -215,6 +220,11 @@ def validate(
         failures.append(f"azp mismatch: expected {required_azp}")
     if required_role not in roles:
         failures.append(f"missing realm role: {required_role}")
+    if missing_additional_realm_roles:
+        failures.append(
+            "missing additional realm role(s): "
+            + ",".join(missing_additional_realm_roles)
+        )
     if missing_client_roles:
         failures.append(
             "missing client role(s) for "
@@ -254,6 +264,11 @@ def validate(
         "realmRole": {
             "required": required_role,
             "present": required_role in roles,
+        },
+        "additionalRealmRoles": {
+            "required": additional_required_roles,
+            "missing": missing_additional_realm_roles,
+            "present": not missing_additional_realm_roles,
         },
         "clientRole": {
             "resourceClientId": resource_client_id,
@@ -322,6 +337,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Expected realm role. Default: MEETING_ADMIN.",
     )
     parser.add_argument(
+        "--additional-required-roles",
+        default=os.environ.get("ADDITIONAL_REQUIRED_ROLES"),
+        help="Optional comma-separated additional realm roles.",
+    )
+    parser.add_argument(
         "--expected-issuer",
         default=os.environ.get("EXPECTED_ISSUER"),
         help="Optional exact issuer assertion.",
@@ -344,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
             required_azp=args.required_azp,
             required_role=args.required_role,
             expected_issuer=args.expected_issuer,
+            additional_required_roles=_csv(args.additional_required_roles, ()),
         )
     except ValueError as exc:
         report = {

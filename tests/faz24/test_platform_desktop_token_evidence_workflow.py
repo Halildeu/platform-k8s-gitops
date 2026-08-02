@@ -144,6 +144,9 @@ def test_realtime_helper_and_runner_keep_private_media_out_of_evidence():
     realtime_preflight = runner.split(
         'if [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]]; then', 1
     )[1].split("\nfi", 1)[0]
+    realtime_scope_function = runner.split(
+        "ensure_realtime_client_scope_role() {", 1
+    )[1].split("\n}\n\ncreate_temp_user()", 1)[0]
 
     assert REALTIME_FIXTURE.is_file()
     assert "RUN_SPEECHMATICS_REALTIME" in runner
@@ -153,7 +156,11 @@ def test_realtime_helper_and_runner_keep_private_media_out_of_evidence():
     assert 'REALTIME_REQUIRED_ROLE="${REALTIME_REQUIRED_ROLE:-TRANSCRIPT_ADMIN}"' in runner
     assert 'PLATFORM_USER_ID="${PLATFORM_USER_ID:-990001}"' in runner
     assert 'REALTIME_TRANSCRIPT_ROLE_ASSIGNED="true"' in runner
-    assert 'openFgaGrantSource: "preseeded-test-recorder-persona"' in runner
+    assert 'REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED="true"' in runner
+    assert 'REALTIME_CLIENT_SCOPE_ROLE_ADDED="true"' in runner
+    assert 'REALTIME_CLIENT_SCOPE_ROLE_RESTORED="true"' in runner
+    assert 'openFgaGrantContract: "preseeded-test-recorder-persona"' in runner
+    assert "openFgaGrantLiveCheckedByRunner: false" in runner
     assert '[[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]] || return 0' in realtime_role_function
     assert 'kc_admin_rest GET "/roles/${REALTIME_REQUIRED_ROLE}"' in realtime_role_function
     assert (
@@ -164,6 +171,22 @@ def test_realtime_helper_and_runner_keep_private_media_out_of_evidence():
     assert '"${REQUIRED_ROLE}" != "MEETING_ADMIN"' in realtime_preflight
     assert '"${REALTIME_REQUIRED_ROLE}" != "TRANSCRIPT_ADMIN"' in realtime_preflight
     assert "assign_realtime_transcript_role\n  assign_capability_role" in runner
+    assert 'ensure_realtime_client_scope_role\ncreate_temp_user' in runner
+    assert '"/clients/${CLIENT_UUID}/scope-mappings/realm"' in runner
+    assert '--additional-required-roles "${REALTIME_REQUIRED_ROLE}"' in runner
+    assert realtime_scope_function.index(
+        'REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED="true"'
+    ) < realtime_scope_function.index(
+        'kc_admin_rest POST "/clients/${CLIENT_UUID}/scope-mappings/realm"'
+    )
+    assert realtime_scope_function.index(
+        'REALTIME_CLIENT_SCOPE_ROLE_ADDED="true"'
+    ) < realtime_scope_function.index(
+        'realtime-client-scope-role-assign-verify-failed'
+    )
+    assert "unexpected-preexisting-realtime-client-scope-role" in realtime_scope_function
+    assert '"${REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED}" == "true"' in runner
+    assert "realtime-client-scope-cleanup-current.json" in runner
     assert '"transcriptIncluded": False' in helper
     assert '"audioIncluded": False' in helper
     assert '"tokenIncluded": False' in helper
@@ -532,6 +555,13 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert '"platformUserId": "990001"' in workflow
     assert '"transcriptRealmRole": "TRANSCRIPT_ADMIN"' in workflow
     assert '"transcriptRealmRoleAssigned": True' in workflow
+    assert '"clientScopeRoleOriginal": False' in workflow
+    assert '"clientScopeRoleMutationAttempted": True' in workflow
+    assert '"clientScopeRoleAdded": True' in workflow
+    assert '"clientScopeRoleRestored": True' in workflow
+    assert '"openFgaGrantLiveCheckedByRunner": False' in workflow
+    assert 'token_contract = json.load(token_contract_path.open(encoding="utf-8"))' in workflow
+    assert 'token_contract["additionalRealmRoles"]' in workflow
     assert 'failureReason: "evidence-chain-exited-before-diagnostic"' in workflow
     assert "Free-form runner logs are ephemeral and never uploaded" in workflow
     assert "does not claim production or physical desktop mic/loopback acceptance" in workflow

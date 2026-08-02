@@ -72,6 +72,83 @@ def test_valid_platform_desktop_token_contract_passes():
     assert report["clientRole"]["present"] is True
 
 
+def test_additional_realtime_realm_role_is_fail_closed():
+    token = _token(
+        {
+            "iss": "https://testai.acik.com/realms/platform-test",
+            "azp": "platform-desktop",
+            "aud": ["audio-gateway-service", "meeting-service", "frontend"],
+            "tenantId": "1",
+            "companyId": "1",
+            "userId": "990001",
+            "realm_access": {"roles": ["MEETING_ADMIN"]},
+            "resource_access": {
+                "audio-gateway-service": {"roles": ["audio_record"]}
+            },
+        }
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--additional-required-roles",
+            "TRANSCRIPT_ADMIN",
+        ],
+        input=token,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert report["additionalRealmRoles"] == {
+        "required": ["TRANSCRIPT_ADMIN"],
+        "missing": ["TRANSCRIPT_ADMIN"],
+        "present": False,
+    }
+    assert token not in proc.stdout
+
+
+def test_additional_realtime_realm_role_passes_when_token_contains_it():
+    token = _token(
+        {
+            "iss": "https://testai.acik.com/realms/platform-test",
+            "azp": "platform-desktop",
+            "aud": ["audio-gateway-service", "meeting-service", "frontend"],
+            "tenantId": "1",
+            "companyId": "1",
+            "userId": "990001",
+            "realm_access": {"roles": ["MEETING_ADMIN", "TRANSCRIPT_ADMIN"]},
+            "resource_access": {
+                "audio-gateway-service": {"roles": ["audio_record"]}
+            },
+        }
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--additional-required-roles",
+            "TRANSCRIPT_ADMIN",
+        ],
+        input=token,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 0
+    assert report["additionalRealmRoles"] == {
+        "required": ["TRANSCRIPT_ADMIN"],
+        "missing": [],
+        "present": True,
+    }
+
+
 def test_conflicting_tenant_aliases_fail_without_emitting_values():
     proc, report = _run(
         _token(

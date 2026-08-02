@@ -406,7 +406,7 @@ jobs:
 
           test -s "${DIAG_JSON}"
 
-          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" "${RECOVER_STALE_RUN_ID_INPUT}" "${REALTIME_ACCEPTANCE_JSON}" "${RUN_SPEECHMATICS_REALTIME_INPUT}" <<'PY'
+          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" "${RECOVER_STALE_RUN_ID_INPUT}" "${REALTIME_ACCEPTANCE_JSON}" "${RUN_SPEECHMATICS_REALTIME_INPUT}" "${TOKEN_CONTRACT_JSON}" <<'PY'
           import json
           import pathlib
           import sys
@@ -441,15 +441,43 @@ jobs:
               assert session["boundaries"]["negativeInvariantStable"] is True
           if sys.argv[6] == "true":
               realtime_path = pathlib.Path(sys.argv[5])
+              token_contract_path = pathlib.Path(sys.argv[7])
               assert realtime_path.is_file()
+              assert token_contract_path.is_file()
               realtime = json.load(realtime_path.open(encoding="utf-8"))
+              token_contract = json.load(token_contract_path.open(encoding="utf-8"))
               assert data["status"] == "pass"
               assert data["results"]["speechmaticsRealtimeLifecycle"]["status"] == "pass"
-              assert data["results"]["speechmaticsRealtimePersona"] == {
+              assert data["results"]["tokenContract"]["status"] == "pass"
+              assert token_contract["additionalRealmRoles"] == {
+                  "required": ["TRANSCRIPT_ADMIN"],
+                  "missing": [],
+                  "present": True,
+              }
+              persona = data["results"]["speechmaticsRealtimePersona"]
+              assert {
+                  key: persona[key]
+                  for key in (
+                      "platformUserId",
+                      "transcriptRealmRole",
+                      "transcriptRealmRoleAssigned",
+                      "clientScopeRoleOriginal",
+                      "clientScopeRoleMutationAttempted",
+                      "clientScopeRoleAdded",
+                      "clientScopeRoleRestored",
+                      "openFgaGrantContract",
+                      "openFgaGrantLiveCheckedByRunner",
+                  )
+              } == {
                   "platformUserId": "990001",
                   "transcriptRealmRole": "TRANSCRIPT_ADMIN",
                   "transcriptRealmRoleAssigned": True,
-                  "openFgaGrantSource": "preseeded-test-recorder-persona",
+                  "clientScopeRoleOriginal": False,
+                  "clientScopeRoleMutationAttempted": True,
+                  "clientScopeRoleAdded": True,
+                  "clientScopeRoleRestored": True,
+                  "openFgaGrantContract": "preseeded-test-recorder-persona",
+                  "openFgaGrantLiveCheckedByRunner": False,
               }
               assert realtime["schemaVersion"] == "faz24.speechmaticsRealtimeLifecycleAcceptance.v1"
               assert realtime["status"] == "pass"
