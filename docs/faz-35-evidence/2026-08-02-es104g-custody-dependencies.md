@@ -73,10 +73,38 @@ olduğu değil. İkisi farklı sorular ve ikincisi şu an ölçülmüyor → #33
 İşçinin **istek yüzeyi yok**: namespace'e ulaşan bir saldırganın orada çalacağı bir uç
 bulunmuyor. Tarayıcının ise dışarı çıkacak hattı yok.
 
+## Bulgu 4 — provenance: üç birinci-taraf imajın üçünde de var
+
+Hat cosign kullanmıyor; GitHub'ın yerel `actions/attest-build-provenance` adımını
+kullanıyor. Doğru araçla sorgulandığında (attestation API — imaj çekmeye gerek yok):
+
+| imaj | attestation |
+|---|---|
+| `platform-backend-ethics-service` | **1** |
+| `platform-web-etik-speak-public` | **1** |
+| `platform-web-etik-speak-manager` | **1** |
+| `clamav` (üçüncü taraf) | **yok** (404 — beklenen) |
+
+`ethics-service` attestation'ının içeriği:
+
+```
+predicateType : https://slsa.dev/provenance/v1
+subject       : sha256:602df6a9affc8c3f...   (overlay'de pinli digest ile aynı)
+buildType     : https://actions.github.io/buildtypes/workflow/v1
+builder       : Halildeu/platform-backend/.github/workflows/ci-image-push.yml@refs/heads/main
+repository    : https://github.com/Halildeu/platform-backend
+```
+
+Yani pinlenen digest'in **kanonik depodaki main dalından, kanonik iş akışıyla** üretildiği
+kanıtlı. `platform-ssot` hattından gelen bir imaj bu kontrolü geçemezdi.
+
+Üçüncü-taraf tarayıcı imajında attestation yok ve olması da beklenmiyor — oradaki güvence
+digest sabitleme + ES-306 zafiyet kapısı.
+
 ## Neyi kanıtlamaz
 
 - Yalnız **test hücresi**. Prod ayrı kapı (ES-310/312).
-- İmza/provenance doğrulaması bu belgede **yapılmadı**; ES-306 kapısı digest kimliğini
-  ve zafiyet yüzeyini doğruluyor, cosign-tipi provenance ayrı iştir.
+- Üçüncü-taraf `clamav` imajının **GitHub attestation'ı yok** (bizim hattımız üretmiyor);
+  oradaki güvence digest sabitleme + ES-306 zafiyet kapısıyla sınırlı.
 - Tanım tazeliği ölçülmedi ve şu an ölçülemiyor (#3354) — yalnız tanımların *sabit*
   olduğu ve *nereden geldiği* kanıtlandı.
