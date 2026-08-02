@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "faz24.transcriptReadyRemediationEvidence.v1",
+  "issue": "platform-k8s-gitops#2610",
+  "evidenceType": "EVENT_CONTRACT",
+  "status": "accepted",
+  "environment": {
+    "appEnv": "test",
+    "cluster": "k3d-test",
+    "kubectlContext": "k3d-test",
+    "namespace": "platform-test",
+    "transcriptDeployment": "transcript-service",
+    "postgresHost": "172.19.0.6",
+    "postgresPort": 5432,
+    "postgresDatabase": "transcript",
+    "postgresSchema": "transcript_service",
+    "postgresSslMode": "disable",
+    "redisHost": "172.19.0.250",
+    "redisPort": 6379,
+    "redisTls": false,
+    "redisStream": "meeting:events",
+    "redisGroup": "meeting-ai-transcript-ready-v1",
+    "gpuHost": "denetim-pc",
+    "gpuHostComputerName": "SRB-AIDENETIMPC"
+  },
+  "backendCommit": "01e0fde9460757eef519344e4f292da615df9e4e",
+  "transcriptImageDigest": "sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f",
+  "gateContractSha256": "e4c080a6f080deecebe7d713a8993372e8e6fbf94d0b1fe5d1fe90822fa047f3",
+  "evidenceIssue": "Halildeu/platform-k8s-gitops#3399",
+  "evidenceIssueClaimPath": "docs/faz-24-evidence/2026-08-02-transcript-ready-reactivation-claim.json",
+  "evidenceIssueClaimSha256": "142512f617d3faa81e149f6f8390acbc13efd93b6987cd62c64a11fa4c84e7bf",
+  "completedAt": "2026-08-02T17:46:58Z",
+  "evidence": {
+    "meetingEventSchema": "meeting.event.v1",
+    "readyEventType": "meeting.transcript.ready",
+    "analysisRunIdEmission": "non-null-v1",
+    "finalizationAnalysisRunId": "uuid-not-null-event-bound"
+  }
+}

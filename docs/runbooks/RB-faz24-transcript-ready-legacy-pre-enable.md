@@ -2,16 +2,19 @@
 
 > **Issue:** `platform-k8s-gitops#2610`
 > **Ortam:** yalnız `k3d-test` + `platform-test` + `denetim-pc`
-> **Durum (2026-08-01):** exact TEST tuple authorized; ready consumer permit'e kadar default-off
+> **Durum (2026-08-02):** exact TEST reactivation tuple authorized; ready consumer permit'e kadar default-off
 > **Mutation sınırı:** §4-§5 read-only'dir. §6 yalnız TEST Vault'ta owner-gated
 > dedicated Transit key/policy/token oluşturur. §8 imzalama yapar; Kubernetes,
 > backend veya Windows runtime'ını kendi başına değiştirmez.
 
 ## 1. Amaç ve Fail-Closed Sonuç
 
-`meeting-ai` ready consumer retained Redis stream'i `0-0` konumundan okuyacağı
-için, etkinleştirme öncesinde aşağıdaki eski işlerin hiçbirinin consumer'a
-ulaşamayacağı kanıtlanır:
+Policy iki açık aktivasyon modu taşır. `first-enable`, consumer group'un henüz
+oluşmadığını ve retained Redis stream'inin ilk kez güvenli biçimde tüketileceğini
+kanıtlar. `reactivation`, daha önce kurulmuş group'u silmeden veya `0-0` replay
+yapmadan yalnız `pending=0`, `lag=0` ve PostgreSQL/Redis benzersiz occurrence
+binding setleri birebir eşleştiğinde yeniden açılmasına izin verir. Her iki modda
+da aşağıdaki eski işlerin hiçbirinin consumer'a ulaşamayacağı kanıtlanır:
 
 - `meeting.event.v1` olup `analysisRunId` alanı eksik veya `null` kalan
   `meeting.transcript.ready` outbox kayıtları;
@@ -46,9 +49,12 @@ Collector aşağıdaki live identity'leri doğrudan okur:
 | Repo | GitOps commit, policy SHA-256, SQL/Lua/host-probe contract SHA-256 |
 
 Redis payload byte'ları Redis dışına çıkarılmaz; Lua yalnız compatible binding
-SHA-1 ara özetlerini collector'a döndürür, collector bunları sıralı bir SHA-256
-set digest'ine indirger. PostgreSQL sorgusundaki UUID binding tuple'ları da yalnız
-collector belleğinde aynı digest'e çevrilir ve evidence'e yazılmaz. Evidence'e
+SHA-1 ara özetlerini collector'a döndürür. Collector hem occurrence sayısını hem
+de benzersiz binding setini ayrı SHA-256 digest'lerine indirger. PostgreSQL
+sorgusundaki UUID binding tuple'ları da yalnız collector belleğinde aynı iki
+ölçüme çevrilir ve evidence'e yazılmaz. Redis'in at-least-once teslimatından
+kaynaklanan duplicate occurrence'lar reactivation'da benzersiz set eşleşmesini
+bozmaz; malformed/legacy kayıtlar ve eksik binding'ler yine reddedilir. Evidence'e
 event key, meeting/session/tenant kimliği, transcript, payload, URL, token,
 parola veya Secret değeri girmez.
 
@@ -120,8 +126,9 @@ Kabul için tüm koşullar birlikte gerekir:
 - NULL finalization, legacy/malformed outbox ve retained Redis sayaçları sıfırdır;
 - PENDING, active/stale CLAIMED, DEAD ve PUBLISHED legacy outbox sınıflarının
   her biri sıfırdır; PUBLISHED satır elle replay edilebileceği için istisna yoktur;
-- atomik Redis scan `scanned == length`, truncation false olur; target consumer
-  group henüz yoktur (`exists=false`, pending/consumer sıfır);
+- atomik Redis scan `scanned == length`, truncation false olur; `first-enable`
+  modunda target group yoktur; `reactivation` modunda group vardır, PEL ve lag
+  sıfırdır, last-delivered/entries-read metadata'sı geçerlidir;
 - PostgreSQL sayaçları Redis scan öncesi ve sonrasında aynıdır;
 - GPU host live health consumer'ı `disabled`, worker/group'u kapalı gösterir;
 - effective env dosyasında ready flag ya hiç yoktur (`matchCount=0`) ya da tek
@@ -135,7 +142,27 @@ Kabul için tüm koşullar birlikte gerekir:
 
 Bu koşullardan biri eksikse verifier `enableAuthorized=false` döndürür.
 
-## 6. Owner-Gated TEST Vault Transit Bootstrap
+Group'u silmek, yeniden oluşturmak veya retained stream'i zorla replay etmek bu
+runbook'un remediation adımı değildir. Reactivation kapısı başarısızsa consumer
+kapalı tutulur ve PEL/lag ya da cross-store binding drift'i kök nedeninde
+düzeltilir.
+
+## 6. TEST mTLS İstemci Sertifikası Yenileme Sınırı
+
+`meeting-ai` hazır-event tüketicisi, `audio-gateway` ve Redis erişiminden ayrı
+olarak TEST Vault PKI tarafından verilen istemci sertifikası kullanır. Repo
+policy'si `bootstrap/vault-policies/test/meeting-ai-client-issuer.hcl` yalnız şu
+yetkileri verir: dedicated `meeting-ai` client role üzerinden sertifika üretme,
+server CA okuma, token self lookup ve self revoke.
+
+Operator token `http://127.0.0.1:8201` TEST Vault listener'ında, default policy
+olmadan, non-renewable, en fazla `15m` TTL ve bounded-use olarak mint edilir.
+Sertifika/key Windows'a aktarılıp DPAPI-protected runtime config'e alındıktan ve
+subject/EKU/notAfter ile private-key match read-back'i yapıldıktan hemen sonra
+token revoke edilir; geçici plaintext key dosyaları silinir. Sertifika yenileme
+tek başına consumer'ı açmaz; §4-§5 fresh evidence ve imzalı permit yine gerekir.
+
+## 7. Owner-Gated TEST Vault Transit Bootstrap
 
 Bu adım yalnız `platform-test` Vault cluster'ında çalışır. Root token owner-only
 bir dosyadan okunur; stdout, shell argümanı, GitHub artifact'ı veya evidence'e
@@ -178,7 +205,7 @@ out-of-band pin gereksinimini taşır. `SIGNER_TOKEN_FILE` Git'e, GitHub'a,
 Windows host'a veya Kubernetes Secret'a kopyalanmaz; yalnız §8 imza koşusunda
 Vault'a gönderilen `X-Vault-Token` header'ı için kullanılır.
 
-## 7. Public Trust-Root ve Out-of-Band Pin
+## 8. Public Trust-Root ve Out-of-Band Pin
 
 Public receipt'in SHA-256 değeri, receipt dosyasını taşıyan kanaldan bağımsız
 owner/operator kanalında doğrulanır. Builder yalnız TEST environment allowlist'i,
@@ -217,7 +244,7 @@ dosyasından ayrı kanalda pinlenir. Public trust root secret değildir; yine de
 başka key/environment ile sessizce değiştirilmemesi için digest binding'i
 zorunludur.
 
-## 8. Accepted v2 Verdict'i DSSE Permit Olarak İmzalama
+## 9. Accepted v2 Verdict'i DSSE Permit Olarak İmzalama
 
 Verifier'ın `accepted-candidate` üretmesi yeterli değildir. Signer; verdict'in
 kapalı alanlı `faz24.transcriptReadyPreEnableVerdict.v2` şemasını, `appEnv=test`,
@@ -276,7 +303,7 @@ immutable platform-ai commit + Windows CI, test host activation, ready event
 consume, canonical meeting result persistence ve attended kullanıcı yolculuğu
 ayrı ayrı doğrulanınca oluşur.
 
-## 9. Rejection ve Remediation Evidence
+## 10. Rejection ve Remediation Evidence
 
 Verifier her başarısız kontrolü aşağıdaki evidence sınıfına bağlar:
 
@@ -323,7 +350,7 @@ veya workload mutation yapmaz. Bu operasyonların her biri ayrı claimed issue,
 rollback/irreversibility değerlendirmesi ve metadata-only evidence ister. Ham SQL
 row veya Redis payload evidence'e kopyalanmaz.
 
-## 10. Sonraki Enable Değişikliğinin Şartı
+## 11. Sonraki Enable Değişikliğinin Şartı
 
 Bir sonraki source/runtime dalgası şu sırayı korur:
 
@@ -344,7 +371,7 @@ Bir sonraki source/runtime dalgası şu sırayı korur:
    test consumer'ı başlatabilir. Artifact tek başına production, insan/hukuk
    veya müşteri acceptance kanıtı değildir.
 
-## 11. Rollback
+## 12. Rollback
 
 §4-§5 read-only olduğundan rollback gerektirmez. §6 başarısızlığında bootstrap
 minted token'ı accessor ile revoke eder; dedicated TEST key silinmez, export

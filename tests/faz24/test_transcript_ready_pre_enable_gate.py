@@ -132,6 +132,7 @@ def policy() -> dict:
         }
     ]
     value["currentBoundary"] = {"enableAuthorized": True, "reason": "test-only"}
+    value["activationMode"] = "reactivation"
     return value
 
 
@@ -150,6 +151,8 @@ def zero_counts() -> dict:
         "malformedReadyOutbox": 0,
         "compatibleReadyOutbox": 2,
         "compatibleBindingSetSha256": BINDING_SET_SHA,
+        "compatibleBindingUniqueCount": 2,
+        "compatibleBindingUniqueSetSha256": BINDING_SET_SHA,
         "readyOutboxTotal": 2,
     }
 
@@ -223,15 +226,17 @@ def evidence(policy_path: Path, generated_at: str) -> dict:
                 "malformedReady": 0,
                 "compatibleReady": 2,
                 "compatibleBindingSetSha256": BINDING_SET_SHA,
+                "compatibleBindingUniqueCount": 2,
+                "compatibleBindingUniqueSetSha256": BINDING_SET_SHA,
                 "otherEvents": 1,
                 "classificationDigestSha1": "4" * 40,
                 "group": {
-                    "exists": False,
+                    "exists": True,
                     "pending": 0,
-                    "consumers": 0,
-                    "lastDeliveredId": "",
-                    "entriesRead": -1,
-                    "lag": -1,
+                    "consumers": 1,
+                    "lastDeliveredId": "3-0",
+                    "entriesRead": 3,
+                    "lag": 0,
                 },
             },
             "postgresAfter": {
@@ -393,9 +398,7 @@ class GateTests(unittest.TestCase):
             expected_gitops_commit=GITOPS_COMMIT,
             policy_digest=file_sha256(self.path),
             evidence_digest=file_sha256(evidence_path),
-            generated_at=dt.datetime(
-                2026, 7, 18, 12, 0, 4, tzinfo=dt.timezone.utc
-            ),
+            generated_at=dt.datetime(2026, 7, 18, 12, 0, 4, tzinfo=dt.timezone.utc),
         )
         self.assertEqual(
             "faz24.transcriptReadyPreEnableVerdict.v2", verdict["schemaVersion"]
@@ -420,7 +423,9 @@ class GateTests(unittest.TestCase):
         self.assertEqual(8, verdict["binding"]["evidenceAgeSeconds"])
         self.assertTrue(all(item["remediation"] == "" for item in verdict["checks"]))
 
-    def test_committed_authorization_still_fails_closed_on_each_missing_gate(self) -> None:
+    def test_committed_authorization_still_fails_closed_on_each_missing_gate(
+        self,
+    ) -> None:
         committed = json.loads(
             (
                 ROOT / "config/faz24-transcript-ready-pre-enable-policy.v1.json"
@@ -698,8 +703,36 @@ class GateTests(unittest.TestCase):
 
     def test_cross_store_binding_mismatch_fails(self) -> None:
         value = copy.deepcopy(self.evidence)
+        value["live"]["redis"]["compatibleBindingUniqueSetSha256"] = "0" * 64
+        self.assertIn(
+            "cross_store_unique_compatible_bindings", self.failed_names(value)
+        )
+
+    def test_reactivation_accepts_duplicate_redis_occurrences(self) -> None:
+        value = copy.deepcopy(self.evidence)
+        value["live"]["redis"]["compatibleReady"] = 3
         value["live"]["redis"]["compatibleBindingSetSha256"] = "0" * 64
-        self.assertIn("cross_store_compatible_bindings", self.failed_names(value))
+        self.assertNotIn(
+            "cross_store_unique_compatible_bindings", self.failed_names(value)
+        )
+
+    def test_first_enable_retains_absent_group_and_occurrence_contract(self) -> None:
+        value = copy.deepcopy(self.evidence)
+        value["live"]["redis"]["group"].update(
+            {
+                "exists": False,
+                "consumers": 0,
+                "lastDeliveredId": "",
+                "entriesRead": -1,
+                "lag": -1,
+            }
+        )
+        policy_value = copy.deepcopy(self.policy)
+        policy_value["activationMode"] = "first-enable"
+        self.assertNotIn(
+            "redis_group_absent_before_enable",
+            self.failed_names(value, policy_value),
+        )
 
     def test_incomplete_or_truncated_redis_scan_fails(self) -> None:
         value = copy.deepcopy(self.evidence)
@@ -722,16 +755,8 @@ class GateTests(unittest.TestCase):
         value["live"]["redis"]["group"]["pending"] = 1
         self.assertIn("redis_group_pending", self.failed_names(value))
         value = copy.deepcopy(self.evidence)
-        value["live"]["redis"]["group"].update(
-            {
-                "exists": True,
-                "consumers": 7,
-                "lastDeliveredId": "3-0",
-                "entriesRead": 3,
-                "lag": 0,
-            }
-        )
-        self.assertIn("redis_group_absent_before_enable", self.failed_names(value))
+        value["live"]["redis"]["group"]["lag"] = 1
+        self.assertIn("redis_group_idle_before_reactivation", self.failed_names(value))
 
     def test_enabled_or_unbound_host_fails(self) -> None:
         value = copy.deepcopy(self.evidence)
@@ -838,7 +863,8 @@ class GateTests(unittest.TestCase):
         value["environment"]["postgresSchema"] = "public.schema"
         self.path.write_text(json.dumps(value), encoding="utf-8")
         with self.assertRaisesRegex(
-            collector.ContractError, "postgresSchema must be a simple lowercase identifier"
+            collector.ContractError,
+            "postgresSchema must be a simple lowercase identifier",
         ):
             collector.load_policy(self.path)
 
