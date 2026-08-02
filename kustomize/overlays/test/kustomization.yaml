@@ -318,7 +318,17 @@ images:
     # TEST-only local registry. Source raw-manifest SHA-256, registry PUT
     # response and destination manifest HEAD all returned the digest below.
     # Production manifests and the existing internal STT path are unchanged.
-    digest: sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe
+    # 2026-08-02 update: platform-backend#1069 adds the provider-neutral
+    # balanced|realtime session contract and a long-lived Speechmatics Realtime
+    # v2 WebSocket adapter. Realtime sessions forward bounded PCM16 frames and
+    # publish provider partial/final events; balanced sessions retain the
+    # durable REST window path. Canonical main merge
+    # e3b733ba59902e019c3a0fffeadfc5e4910fd312; image-build run 30725064798.
+    # While gitops#2876 remains open, the source OCI manifest and its one missing
+    # compressed blob were copied to the TEST-only local registry. Source raw
+    # manifest SHA-256, registry PUT response and destination manifest HEAD all
+    # returned the digest below. Production manifests remain unchanged.
+    digest: sha256:9d60f4c2243027df5472543b202a0adba00087cec6747eba04a08857e9a87120
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9349,7 +9359,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-01-3240-v8-speechmatics-enabled"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v9-speechmatics-realtime"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.

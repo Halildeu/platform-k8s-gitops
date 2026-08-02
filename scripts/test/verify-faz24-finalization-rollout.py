@@ -522,7 +522,7 @@ def main() -> None:
         # rendered config below still keeps internal as the default, while
         # selectable provider validation and missing credentials fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:6940e54e33273f6d5beaee30750826bc849ae6de5d7d7d82a2fecc583b72b3fe",
+        "sha256:9d60f4c2243027df5472543b202a0adba00087cec6747eba04a08857e9a87120",
     )
     pod_annotation(
         meeting_deploy,
