@@ -517,15 +517,15 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
-        # 2026-08-02 (backend#1086, gitops#3349): this exact image retains the
+        # 2026-08-02 (backend#1088, gitops#3349): this exact image retains the
         # immutable per-session internal|speechmatics provider contract and
-        # completes the outbound publisher after EndOfStream for transport
-        # flush, then prevents upload completion from cancelling the receive
-        # leg before EndOfTranscript is relayed. The rendered config below keeps
-        # internal as the default; disabled providers, missing credentials,
-        # incomplete receipts and missing provider terminal events fail closed.
+        # adds a delayed post-EndOfStream control write for a separate transport
+        # flush cycle, then prevents upload completion from cancelling the
+        # receive leg before EndOfTranscript is relayed. The rendered config
+        # below keeps internal as the default; disabled providers, missing
+        # credentials, incomplete receipts and terminal events fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:51cc4fdd588fc0486ab7da0d84855a11fd2659d06f4a6359b4acd1b60e77b430",
+        "sha256:be5551bd5af7ef802e82db4f9bc3d9f5160d95c26651c856c8b40074aa4eaf54",
     )
     pod_annotation(
         meeting_deploy,
