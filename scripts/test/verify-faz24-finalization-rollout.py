@@ -517,15 +517,16 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
-        # 2026-08-02 (backend#1083, gitops#3349): this exact image retains the
+        # 2026-08-02 (backend#1085, gitops#3349): this exact image retains the
         # immutable per-session internal|speechmatics provider contract and
-        # completes the Speechmatics outbound publisher after EndOfStream so
-        # Reactor Netty flushes it before the bridge waits separately for
-        # EndOfTranscript. The rendered config below still keeps
+        # keeps the outbound publisher open after EndOfStream while a delayed
+        # empty ping forces Reactor Netty to flush the terminal frame. The
+        # receive leg still must observe EndOfTranscript. The rendered config
+        # below keeps
         # internal as the default; disabled providers, missing credentials,
         # incomplete receipts and missing provider terminal events fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:72ebb173d161511706c4e506b316d9663dec4df5caa9fb138de404ca3933d384",
+        "sha256:64b2eac69ef91853c8325c09188e7898a7bbcb1a1bd6124a75c0a838005e2f7e",
     )
     pod_annotation(
         meeting_deploy,
