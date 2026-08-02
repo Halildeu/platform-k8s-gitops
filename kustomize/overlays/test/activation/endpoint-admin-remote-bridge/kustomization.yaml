@@ -223,6 +223,9 @@ images:
   # 2026-08-01 #2828 VIEW_START-before-delivery same-image co-bump: backend
   # 24cfa110, build run 30712943636, endpoint-admin job 91403581085.
   # Activation remains owner-gated; this pin alone does not activate the bridge.
+  # 2026-08-02 #2828 consent-trust/reconnect same-image co-bump: backend
+  # 1651f489, build run 30757059110, endpoint-admin job 91520931008.
+  # Activation remains owner-gated; this pin alone does not activate the bridge.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:d8a65f9bd0789c5728d806eaea39329adba205542c035d5cf47d22ad86944324
+    digest: sha256:66f38f9ef349b7a2dfe818020e160117bfe7318ff07983288d0980f3143995f1

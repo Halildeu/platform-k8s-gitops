@@ -6506,7 +6506,11 @@ images:
     # PR #1063, main 24cfa11042c8c4ea7c4a213e5076d62f4f4bcd9b. Image build
     # run 30712943636, endpoint-admin-service job 91403581085; GitHub-hosted
     # provenance verifies the immutable digest below.
-    digest: sha256:d8a65f9bd0789c5728d806eaea39329adba205542c035d5cf47d22ad86944324
+    # 2026-08-02 Faz 22.6 #2828 live consent-trust/reconnect repair: backend
+    # PR #1096, main 1651f489e0a3b76c645dd1e2c1593eed1cd4dda8. Image build
+    # run 30757059110, endpoint-admin-service job 91520931008; GitHub-hosted
+    # provenance verifies the immutable digest below.
+    digest: sha256:66f38f9ef349b7a2dfe818020e160117bfe7318ff07983288d0980f3143995f1
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
