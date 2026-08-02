@@ -163,6 +163,10 @@ TEMP_USER_ID=""
 TEMP_USER_CREATED="false"
 CLIENT_ROLE_ASSIGNED="false"
 REALTIME_TRANSCRIPT_ROLE_ASSIGNED="false"
+REALTIME_CLIENT_SCOPE_ROLE_ORIGINAL="false"
+REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED="false"
+REALTIME_CLIENT_SCOPE_ROLE_ADDED="false"
+REALTIME_CLIENT_SCOPE_ROLE_RESTORED="false"
 DIRECT_GRANTS_ORIGINAL=""
 DIRECT_GRANTS_TOGGLED="false"
 DIRECT_GRANTS_RESTORED="false"
@@ -971,6 +975,40 @@ assign_realtime_transcript_role() {
   REALTIME_TRANSCRIPT_ROLE_ASSIGNED="true"
 }
 
+ensure_realtime_client_scope_role() {
+  [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]] || return 0
+  local scope_file="${TMP_DIR}/realtime-client-realm-scope.json"
+  local role_file="${TMP_DIR}/realtime-client-scope-role.json"
+  local role_assign_file="${TMP_DIR}/realtime-client-scope-role-assign.json"
+  local role_assign_out="${TMP_DIR}/realtime-client-scope-role-assign.out"
+  local verify_file="${TMP_DIR}/realtime-client-realm-scope-verify.json"
+  local code
+  code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/scope-mappings/realm" "${scope_file}")"
+  [[ "${code}" == "200" ]] || die "realtime-client-realm-scope-read-failed"
+  if jq -e --arg role "${REALTIME_REQUIRED_ROLE}" \
+      'any(.[]?; .name == $role)' "${scope_file}" >/dev/null; then
+    REALTIME_CLIENT_SCOPE_ROLE_ORIGINAL="true"
+    REALTIME_CLIENT_SCOPE_ROLE_RESTORED="true"
+    die "unexpected-preexisting-realtime-client-scope-role:${REALTIME_REQUIRED_ROLE}"
+  fi
+  code="$(kc_admin_rest GET "/roles/${REALTIME_REQUIRED_ROLE}" "${role_file}")"
+  [[ "${code}" == "200" ]] \
+    || die "required-realtime-client-scope-role-missing:${REALTIME_REQUIRED_ROLE}"
+  jq '[.]' "${role_file}" > "${role_assign_file}"
+  REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED="true"
+  code="$(kc_admin_rest POST "/clients/${CLIENT_UUID}/scope-mappings/realm" \
+    "${role_assign_out}" "${role_assign_file}")"
+  [[ "${code}" == "204" ]] \
+    || die "realtime-client-scope-role-assign-failed:${REALTIME_REQUIRED_ROLE}"
+  REALTIME_CLIENT_SCOPE_ROLE_ADDED="true"
+  code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/scope-mappings/realm" "${verify_file}")"
+  if [[ "${code}" != "200" ]] \
+      || ! jq -e --arg role "${REALTIME_REQUIRED_ROLE}" \
+        'any(.[]?; .name == $role)' "${verify_file}" >/dev/null; then
+    die "realtime-client-scope-role-assign-verify-failed:${REALTIME_REQUIRED_ROLE}"
+  fi
+}
+
 create_temp_user() {
   local existing lookup_file
   lookup_file="${TMP_DIR}/temp-user-lookup.json"
@@ -1205,11 +1243,16 @@ run_token_contract_and_smoke() {
     return 1
   fi
 
+  local token_contract_args=(
+    --token-file "${TOKEN_FILE}"
+    --expected-issuer "${EXPECTED_ISSUER}"
+  )
+  if [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]]; then
+    token_contract_args+=(--additional-required-roles "${REALTIME_REQUIRED_ROLE}")
+  fi
   set +e
   python3 scripts/keycloak/validate_faz24_platform_desktop_token_contract.py \
-    --token-file "${TOKEN_FILE}" \
-    --expected-issuer "${EXPECTED_ISSUER}" \
-    > "${TOKEN_CONTRACT_JSON}"
+    "${token_contract_args[@]}" > "${TOKEN_CONTRACT_JSON}"
   TOKEN_CONTRACT_EXIT="$?"
   set -e
 
@@ -1358,7 +1401,9 @@ cleanup_live_state() {
   fi
   set +e
   if [[ "${KC_ADMIN_MODE}" == "rest" \
-      && ( "${DIRECT_GRANTS_TOGGLED}" == "true" || "${TEMP_USER_CREATED}" == "true" ) ]]; then
+      && ( "${DIRECT_GRANTS_TOGGLED}" == "true" \
+        || "${TEMP_USER_CREATED}" == "true" \
+        || "${REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED}" == "true" ) ]]; then
     # Emitted by write_evidence after cleanup_live_state returns.
     # shellcheck disable=SC2034
     CLEANUP_ADMIN_SESSION_REFRESH_ATTEMPTED="true"
@@ -1366,6 +1411,37 @@ cleanup_live_state() {
       # Emitted by write_evidence after cleanup_live_state returns.
       # shellcheck disable=SC2034
       CLEANUP_ADMIN_SESSION_REFRESHED="true"
+    fi
+  fi
+  if [[ -n "${CLIENT_UUID}" \
+      && "${REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED}" == "true" \
+      && "${REALTIME_CLIENT_SCOPE_ROLE_ORIGINAL}" == "false" \
+      && -s "${ADMIN_TOKEN_FILE}" ]]; then
+    local scope_current_file="${TMP_DIR}/realtime-client-scope-cleanup-current.json"
+    local role_file="${TMP_DIR}/realtime-client-scope-role-cleanup.json"
+    local role_delete_file="${TMP_DIR}/realtime-client-scope-role-delete.json"
+    local role_delete_out="${TMP_DIR}/realtime-client-scope-role-delete.out"
+    local scope_verify_file="${TMP_DIR}/realtime-client-scope-cleanup-verify.json"
+    local scope_code
+    scope_code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/scope-mappings/realm" \
+      "${scope_current_file}")"
+    if [[ "${scope_code}" == "200" ]]; then
+      if jq -e --arg role "${REALTIME_REQUIRED_ROLE}" \
+          'any(.[]?; .name == $role)' "${scope_current_file}" >/dev/null; then
+        scope_code="$(kc_admin_rest GET "/roles/${REALTIME_REQUIRED_ROLE}" "${role_file}")"
+        if [[ "${scope_code}" == "200" ]]; then
+          jq '[.]' "${role_file}" > "${role_delete_file}"
+          kc_admin_rest DELETE "/clients/${CLIENT_UUID}/scope-mappings/realm" \
+            "${role_delete_out}" "${role_delete_file}" >/dev/null
+        fi
+      fi
+      scope_code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/scope-mappings/realm" \
+        "${scope_verify_file}")"
+      if [[ "${scope_code}" == "200" ]] \
+          && ! jq -e --arg role "${REALTIME_REQUIRED_ROLE}" \
+            'any(.[]?; .name == $role)' "${scope_verify_file}" >/dev/null; then
+        REALTIME_CLIENT_SCOPE_ROLE_RESTORED="true"
+      fi
     fi
   fi
   if [[ -n "${CLIENT_UUID}" && "${DIRECT_GRANTS_TOGGLED}" == "true" && -n "${DIRECT_GRANTS_ORIGINAL}" ]]; then
@@ -1412,7 +1488,10 @@ cleanup_live_state() {
   [[ ! -e "${TOKEN_FILE}" ]] && TOKEN_FILE_REMOVED="true"
   if ! faz24_cleanup_state_proven \
       "${DIRECT_GRANTS_TOGGLED}" "${DIRECT_GRANTS_RESTORED}" \
-      "${TEMP_USER_CREATED}" "${TEMP_USER_DELETED}"; then
+      "${TEMP_USER_CREATED}" "${TEMP_USER_DELETED}" \
+      || [[ "${REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED}" == "true" \
+        && "${REALTIME_CLIENT_SCOPE_ROLE_ORIGINAL}" == "false" \
+        && "${REALTIME_CLIENT_SCOPE_ROLE_RESTORED}" != "true" ]]; then
     if [[ "${STATUS}" != "fail" ]]; then
       STATUS="fail"
       FAILURE_REASON="live-state-cleanup-not-proven"
@@ -1487,6 +1566,10 @@ write_diagnostic() {
     --argjson cleanupAdminSessionRefreshAttempted "${CLEANUP_ADMIN_SESSION_REFRESH_ATTEMPTED}" \
     --argjson cleanupAdminSessionRefreshed "${CLEANUP_ADMIN_SESSION_REFRESHED}" \
     --argjson realtimeTranscriptRoleAssigned "${REALTIME_TRANSCRIPT_ROLE_ASSIGNED}" \
+    --argjson realtimeClientScopeRoleOriginal "${REALTIME_CLIENT_SCOPE_ROLE_ORIGINAL}" \
+    --argjson realtimeClientScopeRoleMutationAttempted "${REALTIME_CLIENT_SCOPE_ROLE_MUTATION_ATTEMPTED}" \
+    --argjson realtimeClientScopeRoleAdded "${REALTIME_CLIENT_SCOPE_ROLE_ADDED}" \
+    --argjson realtimeClientScopeRoleRestored "${REALTIME_CLIENT_SCOPE_ROLE_RESTORED}" \
     --argjson existingUsersReconciled "${EXISTING_USERS_RECONCILED}" \
     --argjson existingUsersAlreadyCorrect "${EXISTING_USERS_ALREADY_CORRECT}" \
     --slurpfile kcSource "${KC_SOURCE_JSON}" \
@@ -1549,7 +1632,12 @@ write_diagnostic() {
           platformUserId: $platformUserId,
           transcriptRealmRole: $realtimeRequiredRole,
           transcriptRealmRoleAssigned: $realtimeTranscriptRoleAssigned,
-          openFgaGrantSource: "preseeded-test-recorder-persona"
+          clientScopeRoleOriginal: $realtimeClientScopeRoleOriginal,
+          clientScopeRoleMutationAttempted: $realtimeClientScopeRoleMutationAttempted,
+          clientScopeRoleAdded: $realtimeClientScopeRoleAdded,
+          clientScopeRoleRestored: $realtimeClientScopeRoleRestored,
+          openFgaGrantContract: "preseeded-test-recorder-persona",
+          openFgaGrantLiveCheckedByRunner: false
         }
       },
       cleanup: {
@@ -1619,6 +1707,7 @@ else
   converge_platform_desktop_mappers
 fi
 reconcile_existing_user_tenant_attributes
+ensure_realtime_client_scope_role
 create_temp_user
 capture_user_diagnostic
 enable_direct_grants_temporarily
