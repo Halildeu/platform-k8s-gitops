@@ -379,18 +379,19 @@ images:
     # return the pinned manifest below; source and destination config ID is
     # sha256:ab6adaa58da77bfb993f7d613c40492bc022800deb1cf55df69b6cebe6cbf24d.
     # Production manifests remain unchanged.
-    # 2026-08-02 update: platform-backend#1085 keeps the Speechmatics outbound
-    # publisher open after EndOfStream and emits a delayed empty WebSocket ping
-    # so Reactor Netty flushes the terminal frame without cancelling the receive
-    # leg. The bridge still requires the provider EndOfTranscript drain signal.
-    # Canonical main merge f41da2f634d9dfd7f8dcdd9e54287bd345699f92;
-    # image-build run 30738253130 (audio job 91470861278). GHCR source OCI
-    # digest sha256:398adeee7a0e6892a1e60c7eefd9d84f79e42837822a53a435fdd579454f00d3
+    # 2026-08-02 update: platform-backend#1086 completes the Speechmatics
+    # outbound publisher immediately after EndOfStream so Reactor Netty flushes
+    # the terminal frame, then keeps the client upload leg pending until the
+    # provider EndOfTranscript drain signal has been relayed. This prevents the
+    # upload completion from cancelling the provider receive leg.
+    # Canonical main merge 6375d9eb5e7f1fb30b483d7e13ed124b856a2e66;
+    # image-build run 30739562177 (audio job 91474397481). GHCR source OCI
+    # digest sha256:a755f1018d57524435c22f151c4c9898073f5947b0a4b6548bf7a6e5a0bf052d
     # was copied only to the TEST registry. The destination tag and digest HEAD
-    # return the pinned manifest below; source and destination config ID is
-    # sha256:8c9425aa92731a4501c68b6594802a2decf9911ae4c2ccebe5181ca87fbb607b.
+    # return the same pinned manifest below; source and destination config ID is
+    # sha256:78494dde7eb33e71536499ccaada845a1b395b22bf3df1284c92f505018fe193.
     # Production manifests remain unchanged.
-    digest: sha256:64b2eac69ef91853c8325c09188e7898a7bbcb1a1bd6124a75c0a838005e2f7e
+    digest: sha256:a755f1018d57524435c22f151c4c9898073f5947b0a4b6548bf7a6e5a0bf052d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9421,7 +9422,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v17-speechmatics-terminal-flush"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v18-speechmatics-terminal-drain"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
