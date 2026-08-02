@@ -86,7 +86,7 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
             "internal,speechmatics",
         )
         self.assertIn(
-            "2026-08-02-3349-v13-speechmatics-eof-signal", overlay
+            "2026-08-02-3349-v14-speechmatics-eof-marker", overlay
         )
         self.assertNotIn("2026-08-01-3240-v7-credential-failsafe", overlay)
 

@@ -347,16 +347,17 @@ images:
     # return the pinned manifest below and both source and destination read back
     # image config ID sha256:5792dd5494633064feae4f996e26d9e3d55eb40b303c31167a702668c374d0b9.
     # Production manifests remain unchanged.
-    # 2026-08-02 update: platform-backend#1079 keeps the Speechmatics provider
-    # upload subscribed after EndOfStream until the receive leg relays the
-    # provider EndOfTranscript as eof_ack + drained. Canonical main merge
-    # 6c938e413b13661eebf32e625152e0f65ba89676; image-build run 30730757453.
-    # GHCR source OCI digest sha256:2c9ec9644f23b2dc427179146defdf12de72bd96d2f294dc2f5c2af4ecc35277
+    # 2026-08-02 update: platform-backend#1081 completes the real Reactor Netty
+    # Speechmatics upload from an internal terminal marker in the same serialized
+    # publisher; the marker is consumed by the gateway and never reaches the
+    # provider. Canonical main merge 8934538bf79f298622ed00a280f23bf71cfcfd06;
+    # image-build run 30733804460. GHCR source OCI digest
+    # sha256:a58428e7f3adc44b70f60956ee2c6a742854b4e7c14043393361dfb0973fc99c
     # was copied only to the TEST registry. The destination tag and digest HEAD
-    # return the pinned manifest below; the destination config ID is
-    # sha256:031e248854525a7a83e0496b27adaf7e75b62e862f99b3973ec698ff27289bca.
+    # return the pinned manifest below; source and destination config ID is
+    # sha256:82ee723a2d166a99d3fccaa4de5c77ee898570deeb0d0625feec21e4e5cc4015.
     # Production manifests remain unchanged.
-    digest: sha256:c719d50d316a3e0a5ba062a2a3755c6cec173ef7e4ee2980ec8f523891bf6e49
+    digest: sha256:9a5f387f85e76d5fff2234f965204bc88aff1ad4ba9c10bc7fa89cf18204e324
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9387,7 +9388,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v13-speechmatics-eof-signal"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v14-speechmatics-eof-marker"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
