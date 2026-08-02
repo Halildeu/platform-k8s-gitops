@@ -85,7 +85,7 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
             selectable_patch.group("providers"),
             "internal,speechmatics",
         )
-        self.assertIn("2026-08-02-3349-v9-speechmatics-realtime", overlay)
+        self.assertIn("2026-08-02-3349-v10-speechmatics-eof", overlay)
         self.assertNotIn("2026-08-01-3240-v7-credential-failsafe", overlay)
 
 

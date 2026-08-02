@@ -328,7 +328,16 @@ images:
     # compressed blob were copied to the TEST-only local registry. Source raw
     # manifest SHA-256, registry PUT response and destination manifest HEAD all
     # returned the digest below. Production manifests remain unchanged.
-    digest: sha256:9d60f4c2243027df5472543b202a0adba00087cec6747eba04a08857e9a87120
+    # 2026-08-02 update: platform-backend#1074 fixes Speechmatics EndOfStream
+    # last_seq_no handling for both realtime and balanced sessions. Canonical
+    # main merge 5a931c3e28360deeff9a96ce6d960f3bd0f286eb; image-build run
+    # 30727258582. GHCR source index sha256:3ad15b879090c0c4cfdc96b28672e1fac6aa049d2115e4b1dfcf34882d8c5b24
+    # resolved to the linux/amd64 manifest below when copied to the TEST-only
+    # registry; both references read back the same image config ID
+    # sha256:659d417219e7369fe89eae3d1dec78d8407c3962e3bea5d137396551e1cf3e84.
+    # The tagged destination manifest and digest HEAD both return this pinned
+    # digest. Production manifests remain unchanged.
+    digest: sha256:9bc8719f000501c88f1f102e04596e51494e2ed293fb031d6e86153ea7f96332
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9359,7 +9368,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v9-speechmatics-realtime"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v10-speechmatics-eof"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.

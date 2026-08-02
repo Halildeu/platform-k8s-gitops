@@ -89,6 +89,9 @@ all of the following on the exact rolled pod:
 - a `realtime` session emits at least one provider partial before its canonical
   final/utterance event, while a separate `balanced` session still reaches the
   durable transcript path;
+- both `realtime` and `balanced` sessions receive the provider terminal
+  acknowledgement, report a drained terminal state and do not time out while
+  waiting for the final provider events;
 - one canonical transcript result is written for the test session;
 - the owner-scoped transcript events endpoint returns the expected synthetic
   sentence;
