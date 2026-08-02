@@ -86,7 +86,7 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
             "internal,speechmatics",
         )
         self.assertIn(
-            "2026-08-02-3349-v19-speechmatics-terminal-flush-drain",
+            "2026-08-02-3349-v20-speechmatics-immediate-terminal-flush",
             overlay,
         )
         self.assertNotIn("2026-08-01-3240-v7-credential-failsafe", overlay)
