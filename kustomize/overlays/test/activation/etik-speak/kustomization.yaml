@@ -73,11 +73,17 @@ images:
     # 2026-08-02 promosyon (#3354): tarayici imza yasi metrigi
     # (ethics_evidence_scanner_definition_age_seconds). Tarayicinin disa hatti
     # yok, o yuzden imzalar imajla gelir ve donar; bu metrik bayatlamayi gorunur
-    # kilan tek sinyal. Alarm kurallari 7c853a94c ile canlida, ama metrik bu
-    # promosyona kadar YOK — o sirada absent() SEV3 bekleniyor.
-    # Kaynak: 9dbd3fa4c (platform-backend#1075)
-    # Onceki: b0e40ac4 @ sha256:602df6a9affc8c3f02161c...
-    digest: sha256:ac5bba7668477c48fb968fc7142f66c45d820a2b87b053aa41e994ad3b185319
+    # kilan tek sinyal.
+    #
+    # Onceki promosyon (ac5bba76) metrigi CANLIYA GETIRMEDI: gauge
+    # @ConditionalOnBean ile isaretliydi ve component-scan sirasinda sessizce
+    # dustu. Pod Ready oldu, diger butun ethics_evidence_* metrikleri geldi, bu
+    # gauge yoktu, hicbir hata da yoktu — yani metrigin gorunur kilmak icin var
+    # oldugu sessiz bozulmanin ta kendisi. Kosul artik ClamAvScanner'in kendi
+    # ifadesini yansitiyor ve kosul-esitligi testi bunu tutuyor.
+    # Kaynak: a27ff2641 (platform-backend#1077)
+    # Onceki: 9dbd3fa4c @ sha256:ac5bba7668477c48fb968f...
+    digest: sha256:6ede2aeebc320a7a6ccc992d78e25874ca188e1c8138d6049c87686bc47cde0e
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
