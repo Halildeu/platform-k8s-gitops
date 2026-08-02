@@ -185,7 +185,16 @@ images:
     # Kaynak: 6f9ee66d8d3b7a8f4c1f4cc971b4a17edc854bd1 (etiket TAM sha).
     # Digest gercek cekisle dogrulandi (syft registry pull, aiserver).
     # Onceki: 72213c91 (#1106) @ sha256:9807b816b7369c3b66c...
-    digest: sha256:7cca4fb895c569061377b80ce2d43fa060502d83dffa388dc60f8a8ccbd4ee01
+    # 2026-08-02 bump 4: platform-web #1114-#1117 — vaka yasam dongusunun son
+    # iki halkasi arayuze cikti: yaptirim kaydi (ihlal agirlik puani -> band,
+    # otomatik eskalasyon) ve misilleme takibi (3/6/12 ay, Direktif 2019/1937
+    # md. 19'un 15 bicimi kapali sozluk olarak). Bu bump'a kadar panel kodu
+    # merged'ti ama test hucresinde kosmuyordu — yani (b) dongusunun yaptirim
+    # ve misilleme ucu kullanicida YOKTU.
+    # Kaynak: 055c259663dab99d64f213d03ad4441972531f12 (etiket TAM sha).
+    # Digest gercek cekisle okundu (smoke-dig-b pod, k3d-test).
+    # Onceki: 6f9ee66d (#1112) @ sha256:7cca4fb895c569061...
+    digest: sha256:1687dab5f5e37e3a70399f374f74d7d9220fb6135346204bc7d4896685407e9c
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
