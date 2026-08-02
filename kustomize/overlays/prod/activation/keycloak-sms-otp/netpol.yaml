@@ -1,0 +1,60 @@
+# gitops#3379 — narrow ingress admits for the SMS OTP lane (PROD).
+#
+# platform-prod carries default-deny-ingress and default-deny-egress (verified
+# 2026-08-02, 13 policies in the namespace), so without these two the NodePort
+# traffic from the KC container would be silently DROPPED once the lane is
+# activated — the same failure the test side measured on 2026-07-31, where a
+# TCP connect to 31088 timed out with healthy endpoints present. The policy
+# layer, not the port.
+#
+# ipBlock 172.21.0.3/32 is the measured address of platform-kc-prod on
+# platform-prod-net. It only matches because the NodePort services set
+# externalTrafficPolicy Local and preserve the source address; Cluster mode
+# would SNAT and these allows would go dark — see nodeport-services.yaml.
+#
+# Adding an allow to a default-deny namespace widens nothing else: it grants
+# exactly one source address, on exactly one port, per target. Nothing sends
+# traffic on this path until the SPI is installed and the flow is wired, both
+# of which are deliberately absent — see README.md.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak-sms-otp-to-auth-service
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 172.21.0.3/32
+      ports:
+        - protocol: TCP
+          port: 8088
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak-sms-otp-to-notification-orchestrator
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 172.21.0.3/32
+      ports:
+        - protocol: TCP
+          port: 8089

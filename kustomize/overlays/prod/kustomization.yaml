@@ -76,6 +76,18 @@ resources:
   # mitigation #6) + Teams #perf-alerts channel.
   - cronjob-r29-teams-smoke.yaml
 
+  # gitops#3379 — SMS OTP lane, wired but DARK. Three additive objects only:
+  # the auth-service credential Secret (ESO), the KC->cluster NodePort lane and
+  # its narrow NetworkPolicy admits. Applying them restarts nothing and mutates
+  # no existing object; nothing dials the ports and nothing mounts the Secret.
+  #
+  # The lane cannot carry a login: the SPI jar is not mounted, the auth-service
+  # env is not wired, the running auth-service image answers 404 on
+  # /oauth2/mfa-delivery-grant, and the serban browser flow is untouched stock
+  # conditional TOTP. Owner approval 2026-08-02 was scoped to exactly this —
+  # wire it, leave it off. Activation order in the directory's README.md.
+  - activation/keycloak-sms-otp
+
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
   # Prod için sha-60611fa tag (runtime rolling). Canlı cutover öncesi CI'nın

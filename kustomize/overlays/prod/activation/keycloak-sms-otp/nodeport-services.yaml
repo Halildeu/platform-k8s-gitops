@@ -1,0 +1,62 @@
+# gitops#3379 — the KC container -> cluster lane for the SMS OTP SPI (PROD).
+#
+# Measured prod topology (2026-08-02), the sister of the test note:
+#   platform-kc-prod    172.21.0.3   on docker network platform-prod-net
+#   k3d-prod-server-0   172.21.0.6   on the same network
+# ClusterIP services are unreachable from the KC container; NodePorts on the
+# node are (subject to NetworkPolicy — see netpol.yaml). Once activated the SPI
+# will call
+#   http://k3d-prod-server-0:31088/oauth2/token
+#   http://k3d-prod-server-0:31089/api/v1/internal/notify/intents
+# by docker DNS name rather than address: the name survives node-container
+# recreation, an IP does not (the KC .5->.7 drift class on the test side).
+#
+# 31088/31089 were verified free in this cluster — prod had no NodePort at all
+# before this, so the numbers match test purely for operator symmetry.
+#
+# externalTrafficPolicy Local is load-bearing twice, exactly as in test:
+#   1. it preserves the source IP, so the NetworkPolicies can admit precisely
+#      172.21.0.3/32 and nothing else;
+#   2. Cluster mode would SNAT to the node address and force a node-wide
+#      ipBlock allow, which any process on the docker network could then use.
+# Single-node cluster, so Local's same-node-endpoint requirement is moot.
+#
+# These ports are not published to the LAN: the node container publishes
+# nothing on the host for them. App-layer auth still applies end to end.
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service-nodeport
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: auth-service
+  ports:
+    - name: http
+      port: 8088
+      targetPort: 8088
+      nodePort: 31088
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-orchestrator-nodeport
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: notification-orchestrator
+  ports:
+    - name: http
+      port: 8089
+      targetPort: 8089
+      nodePort: 31089
