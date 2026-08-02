@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -247,6 +250,60 @@ class Faz35EvidenceCustodyContractTests(unittest.TestCase):
             "./0048-faz35-evidence-dual-artifact-custody.md",
             self.compartment_adr,
         )
+
+    def test_worker_object_store_identity_is_not_decided_by_list_order(self) -> None:
+        """ES-104G (#2860) — the worker must keep its OWN object-store credentials.
+
+        The API and the worker each get a secret, and both secrets use the same key
+        names (`ETHICS_EVIDENCE_S3_ACCESS_KEY` / `_SECRET_KEY`). The worker mounts both
+        via `envFrom`, where a duplicate key is resolved by POSITION: the last entry
+        wins. Measured live on 2026-08-02 the worker does use its own identity — but
+        only because its secret happens to be listed last.
+
+        That is a separation held up by list order and nothing else. Reorder the list —
+        by hand, by a merge, by a formatter — and the worker silently runs as the API
+        identity: no error, no log line, no failed probe, and the "separate API and
+        worker credentials" acceptance quietly becomes false. This test is the thing
+        that would notice.
+        """
+        rendered = subprocess.run(
+            ["kustomize", "build", str(ROOT / "kustomize/overlays/test/activation/etik-speak")],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+        worker = None
+        for document in yaml.safe_load_all(rendered):
+            if (
+                document
+                and document.get("kind") == "Deployment"
+                and document["metadata"]["name"] == "ethics-evidence-worker"
+            ):
+                worker = document
+                break
+        self.assertIsNotNone(worker, "ethics-evidence-worker is missing from the rendered overlay")
+
+        containers = worker["spec"]["template"]["spec"]["containers"]
+        self.assertEqual(len(containers), 1, "unexpected container count on the evidence worker")
+        sources = [
+            entry["secretRef"]["name"]
+            for entry in containers[0].get("envFrom", [])
+            if "secretRef" in entry
+        ]
+        self.assertIn(
+            "ethics-evidence-worker-secrets",
+            sources,
+            "the worker must be given its own object-store credentials",
+        )
+        if "ethics-service-secrets" in sources:
+            self.assertGreater(
+                sources.index("ethics-evidence-worker-secrets"),
+                sources.index("ethics-service-secrets"),
+                "the worker's own secret must come AFTER the API secret in envFrom, because "
+                "the two share key names and the later entry wins; listed the other way round "
+                "the worker would run as the API identity with no visible symptom",
+            )
 
 
 if __name__ == "__main__":
