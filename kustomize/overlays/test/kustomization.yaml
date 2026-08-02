@@ -354,9 +354,9 @@ images:
     # GHCR source OCI digest sha256:2c9ec9644f23b2dc427179146defdf12de72bd96d2f294dc2f5c2af4ecc35277
     # was copied only to the TEST registry. The destination tag and digest HEAD
     # return the pinned manifest below; the destination config ID is
-    # sha256:bee7cf9b41a7bb7ef5dc930cd53fe1dcef4aec4e33d61226d5ccd34bcc06ea95.
+    # sha256:031e248854525a7a83e0496b27adaf7e75b62e862f99b3973ec698ff27289bca.
     # Production manifests remain unchanged.
-    digest: sha256:a4f7b2257412dbeba92ad28ce88c1aaeac5ab9b889b14e0d740e64eebd209de4
+    digest: sha256:c719d50d316a3e0a5ba062a2a3755c6cec173ef7e4ee2980ec8f523891bf6e49
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9387,7 +9387,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v12-speechmatics-provider-terminal"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v13-speechmatics-eof-signal"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
