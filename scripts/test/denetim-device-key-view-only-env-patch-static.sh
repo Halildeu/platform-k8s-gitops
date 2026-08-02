@@ -813,25 +813,30 @@ JSON
   printf '\''session="%s" granted=true\n'\'' "$sid" >"$d/endpoint-agent-relevant.log"
   write_valid_broker_proof() {
     local session_id="$1"
-    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n'\'' "$session_id" >"$d/broker-relevant.log"
-    printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n'\'' "$session_id" >>"$d/broker-relevant.log"
+    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false ts=1785542923000\n'\'' "$session_id" >"$d/broker-relevant.log"
+    printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified ts=1785542924000\n'\'' "$session_id" >>"$d/broker-relevant.log"
   }
   write_valid_broker_proof "$sid"
   validate_product_evidence "$d" "$sid" "$marker" >/dev/null
-  printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n'\'' "$sid" >"$d/broker-relevant.log"
+  sed "s/ ts=[0-9][0-9]*$//" "$d/broker-relevant.log" >"$d/broker-relevant.log.tmp"
+  mv "$d/broker-relevant.log.tmp" "$d/broker-relevant.log"
+  if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
+    echo "orchestrator accepted broker evidence without canonical audit timestamps" >&2; exit 1
+  fi
+  printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified ts=1785542924000\n'\'' "$sid" >"$d/broker-relevant.log"
   if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
     echo "orchestrator accepted broker evidence without consent cert/attestation refresh" >&2; exit 1
   fi
   for invalid_consent_refresh in \
     "cert=false,attestation=true,device=false" \
     "cert=true,attestation=false,device=false"; do
-    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:%s\n'\'' "$sid" "$invalid_consent_refresh" >"$d/broker-relevant.log"
-    printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n'\'' "$sid" >>"$d/broker-relevant.log"
+    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:%s ts=1785542923000\n'\'' "$sid" "$invalid_consent_refresh" >"$d/broker-relevant.log"
+    printf '\''session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified ts=1785542924000\n'\'' "$sid" >>"$d/broker-relevant.log"
     if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
       echo "orchestrator accepted invalid consent trust refresh: $invalid_consent_refresh" >&2; exit 1
     fi
   done
-  printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n'\'' "$sid" >"$d/broker-relevant.log"
+  printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false ts=1785542923000\n'\'' "$sid" >"$d/broker-relevant.log"
   if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
     echo "orchestrator accepted broker evidence without a hardware-key decision" >&2; exit 1
   fi
@@ -839,8 +844,8 @@ JSON
     "trusted=false,basis=NONE,effective_trusted=false,effective_basis=NONE,identity=true,reason=device-untrusted" \
     "trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=false,effective_basis=NONE,identity=true,reason=hardware-key-attestation-verified" \
     "trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=false,reason=hardware-key-attestation-verified"; do
-    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n'\'' "$sid" >"$d/broker-relevant.log"
-    printf '\''session=%s type=DEVICE_TRUST_DECISION:%s\n'\'' "$sid" "$invalid_device_decision" >>"$d/broker-relevant.log"
+    printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false ts=1785542923000\n'\'' "$sid" >"$d/broker-relevant.log"
+    printf '\''session=%s type=DEVICE_TRUST_DECISION:%s ts=1785542924000\n'\'' "$sid" "$invalid_device_decision" >>"$d/broker-relevant.log"
     if validate_product_evidence "$d" "$sid" "$marker" >/dev/null 2>&1; then
       echo "orchestrator accepted invalid hardware-key decision: $invalid_device_decision" >&2; exit 1
     fi
@@ -1057,8 +1062,8 @@ cat >"$EVIDENCE_DIR/browser.json" <<JSON
 {"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"$SOURCE_REVISION","producer":{"kind":"browser-harness","toolVersion":"v3-ack-drain"},"binding":{"sessionSha256":"$SESSION_SHA256"},"payload":{"pilotEndedAt":"2026-07-18T00:00:00Z","ackDrainCompleted":true,"ackDrainCutoffAt":"2026-07-18T00:00:00Z","ackDrainNonceSha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ackDrainClosureKind":"none","renderAckAcceptedCount":100,"renderAckAttemptedCount":100,"renderAckRejectedCount":0,"renderAckPendingCount":0}}
 JSON
 printf 'session="%s" granted=true\n' "$SESSION_ID" >"$EVIDENCE_DIR/endpoint-agent-relevant.log"
-printf 'session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false\n' "$SESSION_ID" >"$EVIDENCE_DIR/broker-relevant.log"
-printf 'session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified\n' "$SESSION_ID" >>"$EVIDENCE_DIR/broker-relevant.log"
+printf 'session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false ts=1785542923000\n' "$SESSION_ID" >"$EVIDENCE_DIR/broker-relevant.log"
+printf 'session=%s type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified ts=1785542924000\n' "$SESSION_ID" >>"$EVIDENCE_DIR/broker-relevant.log"
 SH
 chmod +x "$orchestrator_harness/bin/product-proof"
 mkdir -p "$orchestrator_harness/product-evidence"
