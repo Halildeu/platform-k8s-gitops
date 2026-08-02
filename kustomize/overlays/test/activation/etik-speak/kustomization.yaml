@@ -83,7 +83,15 @@ images:
     # ifadesini yansitiyor ve kosul-esitligi testi bunu tutuyor.
     # Kaynak: a27ff2641 (platform-backend#1077)
     # Onceki: 9dbd3fa4c @ sha256:ac5bba7668477c48fb968f...
-    digest: sha256:6ede2aeebc320a7a6ccc992d78e25874ca188e1c8138d6049c87686bc47cde0e
+    #
+    # 2026-08-02 ACIL: 6ede2aee kanit iscisini CrashLoopBackOff'a soktu.
+    # ScannerDefinitionFreshness'te iki kurucu vardi ve hicbiri @Autowired
+    # degildi; Spring varsayilan kurucu arayip bulamayinca baglam dustu.
+    # Ihbarci yolu etkilenmedi (API pod'u bu bean'i yuklemiyor) ve bekleyen ek
+    # dosya 0 idi, o yuzden geri alma yerine ileri duzeltme secildi.
+    # Kaynak: d75b5fc9887e3773725424c81b923e1ae3850d33 (platform-backend#1078)
+    # Onceki: a27ff2641 @ sha256:6ede2aeebc320a7a6ccc99...
+    digest: sha256:0e2ad2c5433bacae0e29072639b44b9dfd08d8545ce9e3d855e67facf356d1d2
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
