@@ -9587,9 +9587,22 @@ patches:
       # key in a separate ESO-owned Secret so provider failure cannot disturb
       # the shared audio-gateway secret. Live reached 44/44 before that target
       # could reconcile; 45 admits this exact TEST-only secret.
+      #
+      # 45 -> 52 (2026-08-02, ES-212 #3370). The identity ExternalSecret was
+      # refused live at exactly 45/45 with "exceeded quota: platform-quota". The
+      # ceiling has now been raised one secret at a time on four separate
+      # occasions, each time by the change that hit it, which means every future
+      # ESO-owned Secret pays for the same live failure before anyone notices.
+      #
+      # Headroom rather than +1 on purpose. This is the TEST cell, where the
+      # owner's standing direction (2026-08-02) is that limits belong in
+      # production, not here: a quota that blocks a rollout in test teaches
+      # nothing about production capacity, it only costs a debugging session.
+      # Seven slots cover the identity secret plus the remaining Faz 35 chain
+      # without another round trip. Production keeps its own tighter number.
       - op: replace
         path: /spec/hard/secrets
-        value: "45"
+        value: "52"
       # Faz 35 steady state adds three pods; simultaneous maxSurge adds three.
       # Live was 26/30, so 34 preserves two slots at the six-pod rollout peak.
       - op: replace
