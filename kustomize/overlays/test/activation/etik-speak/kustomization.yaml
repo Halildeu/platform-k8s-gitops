@@ -69,9 +69,15 @@ images:
     # dagitimda yamasi yok, ethics-service PostgreSQL konusur ve hicbir kod
     # yolu SQLite acmaz (kapinin ACCEPTED_IDS'inde son-kullanma tarihli kabul).
     # Imajda dogrulandi: netty 4.1.136, pgjdbc 42.7.12, p11-kit 0.26.2-r0.
-    # Kaynak: b0e40ac4c398edf03c65d1f06f322251c8a0da79
-    # Onceki: a895ed83 @ sha256:d165a0fcae271696549cb...
-    digest: sha256:602df6a9affc8c3f02161c46d3745d7ec6176bda0e33fde7ffc9ea0a3544665a
+    #
+    # 2026-08-02 promosyon (#3354): tarayici imza yasi metrigi
+    # (ethics_evidence_scanner_definition_age_seconds). Tarayicinin disa hatti
+    # yok, o yuzden imzalar imajla gelir ve donar; bu metrik bayatlamayi gorunur
+    # kilan tek sinyal. Alarm kurallari 7c853a94c ile canlida, ama metrik bu
+    # promosyona kadar YOK — o sirada absent() SEV3 bekleniyor.
+    # Kaynak: 9dbd3fa4c (platform-backend#1075)
+    # Onceki: b0e40ac4 @ sha256:602df6a9affc8c3f02161c...
+    digest: sha256:ac5bba7668477c48fb968fc7142f66c45d820a2b87b053aa41e994ad3b185319
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
