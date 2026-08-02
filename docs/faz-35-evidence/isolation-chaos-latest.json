@@ -1,0 +1,172 @@
+{
+  "schema_version": "faz35-isolation-chaos-v1",
+  "note": "Redacted by construction: HTTP status codes and aggregate counters only. No token, receipt, case id or reporter value appears here.",
+  "injection": "calico Deny (order 10) + conntrack flush keyed on the SERVICE ClusterIP; a Deny alone does not break a warm keep-alive connection, and a flush keyed on the pod IP deletes nothing",
+  "denial_shape": "on the case-list path a denial is an EMPTY LIST with 200, not a 403 — the probe reads the body, not only the status",
+  "egress_allowlist": [
+    "auth-service",
+    "notification-orchestrator",
+    "openfga",
+    "permission-service",
+    "user-service"
+  ],
+  "neighbour_products_unreachable_by_construction": [
+    "api-gateway",
+    "artifact-host",
+    "ats-interview-evidence",
+    "audio-gateway",
+    "audit-archive-exporter",
+    "audit-event-consumer-service",
+    "budget-service",
+    "core-data-service",
+    "cross-ai-deployment-protection",
+    "endpoint-admin-remote-bridge-device-key",
+    "endpoint-admin-service",
+    "frontend",
+    "meeting-service",
+    "redis-streams-exporter",
+    "report-service",
+    "schema-service",
+    "transcript-service",
+    "variant-service"
+  ],
+  "neighbours_after": "all-ready",
+  "probes": [
+    {
+      "scenario": "structural",
+      "probe": "egress_allowlist",
+      "observed": "[\"auth-service\", \"notification-orchestrator\", \"openfga\", \"permission-service\", \"user-service\"]"
+    },
+    {
+      "scenario": "structural",
+      "probe": "neighbours_unreachable_by_construction",
+      "observed": "18"
+    },
+    {
+      "scenario": "baseline",
+      "probe": "staff",
+      "observed": "200/203"
+    },
+    {
+      "scenario": "baseline",
+      "probe": "forged_token",
+      "observed": "401"
+    },
+    {
+      "scenario": "baseline",
+      "probe": "public_intake",
+      "observed": "201"
+    },
+    {
+      "scenario": "permission-service",
+      "probe": "conntrack_flows_flushed",
+      "observed": "1"
+    },
+    {
+      "scenario": "permission_outage",
+      "probe": "staff",
+      "observed": "403/unreadable"
+    },
+    {
+      "scenario": "permission_outage",
+      "probe": "public_intake",
+      "observed": "201"
+    },
+    {
+      "scenario": "permission_outage",
+      "probe": "forged_token",
+      "observed": "401"
+    },
+    {
+      "scenario": "permission_outage",
+      "probe": "recovery_staff",
+      "observed": "200/205"
+    },
+    {
+      "scenario": "keycloak",
+      "probe": "conntrack_flows_flushed",
+      "observed": "1"
+    },
+    {
+      "scenario": "identity_outage",
+      "probe": "staff_valid_token",
+      "observed": "200/205"
+    },
+    {
+      "scenario": "identity_outage",
+      "probe": "forged_token",
+      "observed": "401"
+    },
+    {
+      "scenario": "identity_outage",
+      "probe": "public_intake",
+      "observed": "201"
+    },
+    {
+      "scenario": "identity_outage",
+      "probe": "recovery_staff",
+      "observed": "200/206"
+    },
+    {
+      "scenario": "openfga",
+      "probe": "conntrack_flows_flushed",
+      "observed": "1"
+    },
+    {
+      "scenario": "authz_plane_outage",
+      "probe": "staff",
+      "observed": "504/unreadable"
+    },
+    {
+      "scenario": "authz_plane_outage",
+      "probe": "public_intake",
+      "observed": "201"
+    },
+    {
+      "scenario": "authz_plane_outage",
+      "probe": "recovery_staff",
+      "observed": "200/207"
+    },
+    {
+      "scenario": "notification-orchestrator",
+      "probe": "conntrack_flows_flushed",
+      "observed": "2"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "public_intake",
+      "observed": "201"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "mailbox_after_recovery",
+      "observed": "200"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "outbox_pending_before",
+      "observed": "0"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "outbox_pending_during",
+      "observed": "1"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "outbox_pending_after",
+      "observed": "0"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "outbox_delivered_before",
+      "observed": "30"
+    },
+    {
+      "scenario": "notification_outage",
+      "probe": "outbox_delivered_after",
+      "observed": "32"
+    }
+  ],
+  "accepted": true
+}
