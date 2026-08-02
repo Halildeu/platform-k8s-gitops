@@ -1018,9 +1018,19 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 f"/authorization-models/{model_id}"
             )
         )
-        self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 3)
-        self.assertEqual(self.external_secret.count("kind: SecretStore"), 3)
-        self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 3)
+        # Four since ES-212 (#3370): the reporter-identity envelope key gets an
+        # ExternalSecret of its own. The count is pinned rather than loosened because the
+        # isolation below is the point — a fifth appearing silently would mean someone
+        # added a secret surface without deciding who mounts it.
+        self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 4)
+        # These two count secretStoreRef occurrences — one per ExternalSecret — not
+        # SecretStore resources; those live in secretstore.yaml. All four point at the
+        # same etik-speak-vault store, because isolating the identity key is a
+        # Kubernetes-workload boundary, not a Vault one: KV policy is per path, so this
+        # token still reads the whole kv/platform/etik-speak document. A separate Vault
+        # path/policy is the stronger boundary and is deliberately not claimed here.
+        self.assertEqual(self.external_secret.count("kind: SecretStore"), 4)
+        self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 4)
         self.assertNotIn("ClusterSecretStore", self.external_secret)
         # ES-104G separation of duties. The worker's Secret must resolve the
         # WORKER Vault properties: the two ExternalSecrets deliberately expose
@@ -2271,6 +2281,69 @@ spec:
                     + re.escape(value)
                     + r"\"?",
                 )
+
+
+class Faz35ReporterIdentityKeyIsolationTests(unittest.TestCase):
+    """ES-212 (#3370) — who can decrypt the reporter, and who cannot.
+
+    The first version of this change put the identity envelope key into
+    ``ethics-service-secrets``. That Secret is mounted by three deployments, not
+    one: the API and both attachment workers. The workers open files; they have
+    no business learning who filed the report, and had the key stayed there an
+    attachment-processing compromise would have reached every confidential
+    reporter without either worker showing a symptom.
+
+    Nothing about that failure is visible at runtime — the product works exactly
+    the same either way — so it is pinned here instead.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.external_secret = (
+            ROOT / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
+        ).read_text()
+        cls.api = (
+            ROOT / "kustomize/base/apps/etik-speak/ethics-service-deployment.yaml"
+        ).read_text()
+        cls.evidence_worker = (
+            ROOT / "kustomize/base/apps/etik-speak/evidence-worker-deployment.yaml"
+        ).read_text()
+        cls.cdr_worker = (
+            ROOT / "kustomize/base/apps/etik-speak/cdr-worker-deployment.yaml"
+        ).read_text()
+
+    def test_identity_key_lives_in_its_own_secret(self):
+        self.assertEqual(self.external_secret.count("name: ethics-identity-secrets"), 2,
+                         "expected one ExternalSecret and its target, both named "
+                         "ethics-identity-secrets")
+        for prop in ("ETHICS_IDENTITY_ACTIVE_KEY_ID", "ETHICS_IDENTITY_KEY_V1"):
+            self.assertEqual(self.external_secret.count(f"property: {prop}"), 1,
+                             f"{prop} must be bound exactly once")
+
+    def test_the_shared_secret_carries_no_identity_material(self):
+        # ethics-service-secrets is the one three deployments mount. Anything
+        # ETHICS_IDENTITY_* appearing inside its data block would silently undo the
+        # split, because the workers would keep working and say nothing.
+        shared = self.external_secret.split("name: ethics-identity-secrets")[0]
+        self.assertNotIn("secretKey: ETHICS_IDENTITY", shared,
+                         "identity material leaked back into the Secret the attachment "
+                         "workers mount")
+
+    def test_only_the_api_mounts_the_identity_secret(self):
+        self.assertIn("secretRef: {name: ethics-identity-secrets, optional: true}", self.api,
+                      "the API must mount the identity Secret, and optionally")
+        for name, manifest in (("evidence worker", self.evidence_worker),
+                               ("cdr worker", self.cdr_worker)):
+            self.assertNotIn("ethics-identity-secrets", manifest,
+                             f"the {name} must not be able to decrypt reporter identities")
+
+    def test_the_identity_mount_is_optional_so_anonymous_intake_survives_it(self):
+        # optional: true is the anonymous floor expressed in the manifest. Required
+        # would turn missing key material into a pod that will not start, closing the
+        # reporting channel over a secret that only the two identity-bearing modes need.
+        self.assertNotIn("secretRef: {name: ethics-identity-secrets, optional: false}", self.api)
+        self.assertIn("secretRef: {name: ethics-service-secrets, optional: false}", self.api,
+                      "the credentials the service genuinely cannot start without stay required")
 
 
 if __name__ == "__main__":

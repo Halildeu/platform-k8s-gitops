@@ -45,6 +45,18 @@ spec:
           envFrom:
             - configMapRef: {name: ethics-service-config}
             - secretRef: {name: ethics-service-secrets, optional: false}
+            # ES-212 (#3370): the reporter-identity envelope key, only here. The two
+            # attachment workers share ethics-service-secrets with this pod but must not
+            # be able to decrypt who filed a report, so the key lives in its own Secret
+            # that only this deployment mounts.
+            #
+            # optional: true is the anonymous floor expressed in the manifest. Absent key
+            # material means the service starts, keeps taking anonymous reports, and
+            # refuses CONFIDENTIAL/NAMED with a 503 while omitting them from
+            # /intake-options. Marking it required would turn a missing key into a pod
+            # that will not start — closing the reporting channel entirely, which is the
+            # one failure this product exists to prevent.
+            - secretRef: {name: ethics-identity-secrets, optional: true}
           resources:
             # Matches permission-service, the closest sibling ("Spring Boot 3 + Flyway +
             # Tomcat"). This service carries more than that one does — JPA, the OpenFGA SDK,
