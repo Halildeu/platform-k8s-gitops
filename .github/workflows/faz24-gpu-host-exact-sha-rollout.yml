@@ -30,7 +30,14 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, aiserver, testai-deploy]
     environment: testai-product-acceptance
-    timeout-minutes: 30
+    # Budget derivation: update.ps1 acceptance ceiling is 1800s
+    # (LiveSttReadinessDeadlineSec) + observed update overhead (~8 min)
+    # + a FULL restore acceptance cycle on the failure path. Killing the
+    # remote controller mid-restore strands the host between revisions
+    # (observed 2026-08-02, run 30769438285: remote-rollout-timeout at
+    # 1200s left the target checkout behind without a verdict). The remote
+    # budget must cover forward + restore; the job adds verify/artifact margin.
+    timeout-minutes: 80
     env:
       EVIDENCE_DIR: /tmp/faz24-gpu-rollout-${{ github.run_id }}
       EVIDENCE_JSON: >-
@@ -164,7 +171,7 @@ jobs:
             --ssh-config "${SSH_CONFIG_PATH}" \
             --ssh-known-hosts "${SSH_KNOWN_HOSTS_PATH}" \
             --output "${EVIDENCE_JSON}" \
-            --timeout-seconds 1200
+            --timeout-seconds 4200
           exit_code="$?"
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
           exit 0
