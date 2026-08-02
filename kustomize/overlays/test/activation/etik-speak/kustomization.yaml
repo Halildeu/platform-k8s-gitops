@@ -204,7 +204,14 @@ images:
     # Kaynak: 055c259663dab99d64f213d03ad4441972531f12 (etiket TAM sha).
     # Digest gercek cekisle okundu (smoke-dig-b pod, k3d-test).
     # Onceki: 6f9ee66d (#1112) @ sha256:7cca4fb895c569061...
-    digest: sha256:1687dab5f5e37e3a70399f374f74d7d9220fb6135346204bc7d4896685407e9c
+    # 2026-08-03 bump: platform-web#1122 — vaka calisma alani. Kart listesi
+    # yerine platformun varsayilan izgarasi (EntityGridTemplate): 4 tiklanabilir
+    # KPI + filtre araç cubugu + siralanabilir sutunlar; detay tam genislik.
+    # Sahip talebi: "ATS'deki gibi grid + ustte filtreler; NAVEX gibi."
+    # Kaynak: 0586b7d7bdfe2ac71c7a5f6cee2a84bc975a2917 (etiket TAM sha).
+    # Digest gercek cekisle okundu (smoke-dig-w2 pod, k3d-test).
+    # Onceki: 055c2596 @ sha256:1687dab5f5e37e3a7...
+    digest: sha256:b82142fb5e2fbc0b867377a1bc5e50ad25df87fad912f1d7bd9c3ceac6d5ce58
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
