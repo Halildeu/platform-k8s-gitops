@@ -240,14 +240,14 @@ validate_product_evidence() {
     }
   local consent_proof_line device_proof_line
   consent_proof_line="$(grep -F "session=${expected_session_id} " "$evidence_dir/broker-relevant.log" \
-    | grep -E 'type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=(true|false)$' \
+    | grep -E 'type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=(true|false) ts=[0-9]{13}$' \
     | tail -1 || true)"
   [[ -n "$consent_proof_line" ]] || {
     echo "denetim-attestation-migration: transaction-bound consent cert/attestation refresh is absent from captured product evidence" >&2
     return 1
   }
   device_proof_line="$(grep -F "session=${expected_session_id} " "$evidence_dir/broker-relevant.log" \
-    | grep -E 'type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified$' \
+    | grep -E 'type=DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified ts=[0-9]{13}$' \
     | tail -1 || true)"
   [[ -n "$device_proof_line" ]] || {
     echo "denetim-attestation-migration: transaction-bound hardware-key device-trust decision is absent from captured product evidence" >&2
