@@ -240,3 +240,64 @@ spec:
               audit koruma gecikir; downstream signer/sink outage olabilir.
               (Metric adı backend implementation ile birlikte publish edilir;
               ilk deploy'ta metric yoksa alert no-data → auto-skip.)
+
+    # -------------------------------------------------------------------------
+    # 6. Tarayıcı imza tazeliği (#3354).
+    #
+    # Tarayıcının dışa hattı yoktur ve olmamalıdır — düşman girdisini ayrıştıran
+    # bileşen dışarı çıkamamalı. Bedeli, imzaların çalışma anında
+    # güncellenememesi: sabitlenmiş imajla gelir, imaj yeniden pinlenene kadar
+    # donarlar. Bu, ES-306 haftalık zafiyet kapısıyla aynı kadansta yenilenmeyi
+    # gerektirir; aşağıdaki eşikler o kadansın kaçırıldığını söyler.
+    #
+    # Bu bir "tarayıcı bozuk" alarmı DEĞİL: bozuk olsa zaten SEV1 pod alarmı
+    # verirdi. Bu, sağlıklı görünen bir tarayıcının giderek daha azını
+    # yakalamasının tek görünür işareti.
+    # -------------------------------------------------------------------------
+    - name: faz35.etik-speak.scanner-freshness
+      interval: 5m
+      rules:
+        - alert: EtikSpeakScannerDefinitionsStale
+          expr: ethics_evidence_scanner_definition_age_seconds > 14 * 24 * 3600
+          for: 30m
+          labels:
+            severity: SEV2
+            product: etik-speak
+            runbook: RB-faz35-incident-response
+          annotations:
+            summary: "Tarayıcı imzaları 14 günden eski ({{ $value | humanizeDuration }})"
+            description: |
+              Kanıt tarayıcısının imza seti iki haftadır tazelenmedi. Tarayıcı
+              çalışıyor ve "Database status OK" diyor; yalnızca giderek daha
+              azını yakalıyor. Tanımlar sabitlenmiş imajla geldiği için çözüm
+              imajı yeniden pinlemektir (ES-306 zafiyet kapısıyla aynı akış).
+        - alert: EtikSpeakScannerDefinitionsVeryStale
+          expr: ethics_evidence_scanner_definition_age_seconds > 30 * 24 * 3600
+          for: 30m
+          labels:
+            severity: SEV1
+            product: etik-speak
+            runbook: RB-faz35-incident-response
+          annotations:
+            summary: "Tarayıcı imzaları 30 günden eski ({{ $value | humanizeDuration }})"
+            description: |
+              Bir aydır tazelenmemiş imzalarla ek dosya kabul ediliyor. Bu
+              sürede yayımlanan hiçbir imza bilinmiyor. İhbarcı eki doğrudan
+              düşman girdisidir; imaj yeniden pinlenmeli.
+        - alert: EtikSpeakScannerDefinitionAgeUnknown
+          # NaN/metric-absent = "soramadık", "taze" DEĞİL. Bu ayrımın kendisi
+          # önemli: yaş bilinmiyorsa yukarıdaki iki alarm da sessiz kalır, yani
+          # bayatlık alarmı susmuş olur. `for: 6h` imaj promosyonu sırasındaki
+          # geçici yokluğu tolere eder — metric backend ile birlikte yayımlanır.
+          expr: absent(ethics_evidence_scanner_definition_age_seconds)
+          for: 6h
+          labels:
+            severity: SEV3
+            product: etik-speak
+            runbook: RB-faz35-incident-response
+          annotations:
+            summary: "Tarayıcı imza yaşı ölçülemiyor"
+            description: |
+              Tanım yaşı metriği 6 saattir yok. Bu "imzalar taze" demek değil,
+              "sorabilecek durumda değiliz" demek — ve bu sürede bayatlık
+              alarmları da sessizdir.
