@@ -517,15 +517,16 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
-        # 2026-08-02 (backend#1079, gitops#3349): this exact image retains the
+        # 2026-08-02 (backend#1081, gitops#3349): this exact image retains the
         # immutable per-session internal|speechmatics provider contract and
-        # waits for contiguous provider audio receipts before EndOfStream, then
-        # keeps the provider socket subscribed until EndOfTranscript reaches the
+        # completes the provider upload using a gateway-only marker in the same
+        # serialized Reactor Netty stream. The marker cannot reach Speechmatics;
+        # the receive leg remains subscribed until EndOfTranscript reaches the
         # desktop as eof_ack + drained. The rendered config below still keeps
         # internal as the default; disabled providers, missing credentials,
         # incomplete receipts and missing provider terminal events fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:c719d50d316a3e0a5ba062a2a3755c6cec173ef7e4ee2980ec8f523891bf6e49",
+        "sha256:9a5f387f85e76d5fff2234f965204bc88aff1ad4ba9c10bc7fa89cf18204e324",
     )
     pod_annotation(
         meeting_deploy,
