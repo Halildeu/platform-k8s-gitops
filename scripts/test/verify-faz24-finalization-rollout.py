@@ -517,14 +517,15 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
-        # 2026-08-02 (backend#1076, gitops#3349): this exact image retains the
+        # 2026-08-02 (backend#1079, gitops#3349): this exact image retains the
         # immutable per-session internal|speechmatics provider contract and
-        # waits for contiguous provider audio receipts before terminal drain in
-        # realtime and balanced sessions. The rendered config below still keeps
-        # internal as the default; disabled providers, missing credentials and
-        # incomplete provider receipts fail closed.
+        # waits for contiguous provider audio receipts before EndOfStream, then
+        # keeps the provider socket subscribed until EndOfTranscript reaches the
+        # desktop as eof_ack + drained. The rendered config below still keeps
+        # internal as the default; disabled providers, missing credentials,
+        # incomplete receipts and missing provider terminal events fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:de92935ab59c0b52128e5d3851fa33190cfe78ebd33828183000a9b97e79b4ba",
+        "sha256:a4f7b2257412dbeba92ad28ce88c1aaeac5ab9b889b14e0d740e64eebd209de4",
     )
     pod_annotation(
         meeting_deploy,
