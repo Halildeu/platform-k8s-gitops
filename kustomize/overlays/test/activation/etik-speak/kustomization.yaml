@@ -108,7 +108,17 @@ images:
     # SIRADAN gonderim (yalniz ad soyad) dusuyordu. Canli arizadan sonra
     # duzeltildi; kaynak a57c25125937bd6780c31ede1a20fcefab68682c.
     # Onceki: dbfa1e70a @ sha256:dbfa1e70a86bf5d6d9...
-    digest: sha256:5236e716d7e12281fe4c32cafaf0e8827f7e042887bdd9be36578be81ceeae85
+    # 2026-08-02 bump: platform-backend#1093 — cetvelin otomatik eskalasyon listesi
+    # yaziliydi ama hicbir karar yolunda okunmuyordu; kayit API'sinde ihlal kategorisi
+    # alani yoktu, yani kuralin tetiklenecegi girdi yoktu. Canli sondada listedeki bir
+    # kategori icin istenen bantta fesih kaydedilebiliyordu. Kategori kayda girdi, taban
+    # hem varlikta hem V24'te duruyor. V24 provasi canli tablonun gecici kopyasinda
+    # kosuldu: iki mevcut satir UNSPECIFIED'a tasindi, kisit HAFIF bantli listelenmis
+    # kategoriyi reddetti.
+    # Kaynak: d4df8d1063716e820e6311bf45853bbf586c98f8 (etiket KISA sha — backend hatti).
+    # Digest gercek cekisle okundu (smoke-dig-c pod, k3d-test).
+    # Onceki: a57c2512 @ sha256:5236e716d7e12281f...
+    digest: sha256:9619cfc7a1f30df0d5dd02b8ee1dc7b71b23ec7ac6911a105943c0342af5a101
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
