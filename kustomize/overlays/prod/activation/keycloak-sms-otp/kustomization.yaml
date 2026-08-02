@@ -1,0 +1,15 @@
+# gitops#3379 — SMS OTP lane, PROD, wired but DARK.
+#
+# Sister of overlays/test/activation/keycloak-sms-otp. Contains only the three
+# additive pieces: the auth-service credential Secret (ESO), the KC->cluster
+# NodePort lane, and its narrow NetworkPolicy admits. Applying all three
+# restarts nothing and changes no existing object.
+#
+# What is deliberately NOT here, and why, is in README.md. Read it before
+# assuming this lane can carry a login.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - externalsecret.yaml
+  - nodeport-services.yaml
+  - netpol.yaml
