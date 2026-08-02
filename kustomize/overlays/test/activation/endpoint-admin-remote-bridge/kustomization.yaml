@@ -231,4 +231,6 @@ images:
     # 2026-08-02: platform-backend#1097 ile birlikte tasindi (ayni-imaj pilot
     # topolojisi: birincil overlay ile bu iki bridge overlay'i esit olmali).
     # Kaynak 01e0fde — #1096 consent-trust onarimini DA icerir (1651f489 atasi).
-    digest: sha256:3775ac0ee4a1463b1aad0553ff4ef20ed1f29be805cae03703f08ec85ab2cde8
+    # 2026-08-02: platform-backend#1098 stale CONTROL stream liveness repair.
+    # Source 58ccbed4, build run 30766730747, endpoint-admin job 91546668965.
+    digest: sha256:260bec36e7f44999394e8fb84bb61b3f3d079123ce5660641e92b358a3292dba
