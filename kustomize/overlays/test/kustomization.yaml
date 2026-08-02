@@ -512,7 +512,18 @@ images:
     # merge 74f6b9c preserves the #872 finalization state machine while aligning
     # meeting-service with the exact audio/transcript/auth rollout family.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:8265d161a7076f128513a905842d2026c57e6e550f2465225c5043b977f267c5
+    # 2026-08-02: platform-backend#1097 — eski sayisal companyId, kanonik org_id ile
+    # KARSILASTIRILMIYOR artik. Cozumleyici companyId'yi
+    # UUID.nameUUIDFromBytes("company:<n>") ile sentetik bir UUID'ye cevirip kanonik
+    # org UUID'siyle kiyasliyordu; bunlar farkli isim uzaylari ve ancak org'lari o
+    # hash'ten tohumlanmis bir kurulumda esitler. Burada tutmuyordu, dolayisiyla
+    # /api/v1/admin/meetings her istekte 401 "Conflicting tenant claims" veriyordu —
+    # hicbir seyi yanlis olmayan bir token icin, kalici olarak.
+    # org_id <-> tenant_id kontrolu DOKUNULMADI (ayni isim uzayi, gercek sinyal).
+    # Kaynak: 01e0fde9460757eef519344e4f292da615df9e4e (etiket KISA sha).
+    # Digest gercek cekisle okundu (smoke-dig-t1/t2/t3 podlari, k3d-test).
+    # Onceki: sha256:8265d161a7076f12851...
+    digest: sha256:a6b2bb8cba25d90f727cf3d7297527abd6f53932b5be4e40a30a333016969812
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -551,7 +562,18 @@ images:
     # JPA, after migration fails closed on any legacy null row. Source merge
     # 619378ad2c0e; image run 30706821227, transcript job 91387262813.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:6f930cec0ba1de575c9ce6f9779d4913e50ebe4bc47c1e82eb7fcd42eea53884
+    # 2026-08-02: platform-backend#1097 — eski sayisal companyId, kanonik org_id ile
+    # KARSILASTIRILMIYOR artik. Cozumleyici companyId'yi
+    # UUID.nameUUIDFromBytes("company:<n>") ile sentetik bir UUID'ye cevirip kanonik
+    # org UUID'siyle kiyasliyordu; bunlar farkli isim uzaylari ve ancak org'lari o
+    # hash'ten tohumlanmis bir kurulumda esitler. Burada tutmuyordu, dolayisiyla
+    # /api/v1/admin/meetings her istekte 401 "Conflicting tenant claims" veriyordu —
+    # hicbir seyi yanlis olmayan bir token icin, kalici olarak.
+    # org_id <-> tenant_id kontrolu DOKUNULMADI (ayni isim uzayi, gercek sinyal).
+    # Kaynak: 01e0fde9460757eef519344e4f292da615df9e4e (etiket KISA sha).
+    # Digest gercek cekisle okundu (smoke-dig-t1/t2/t3 podlari, k3d-test).
+    # Onceki: sha256:6f930cec0ba1de575c9...
+    digest: sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -6510,7 +6532,23 @@ images:
     # PR #1096, main 1651f489e0a3b76c645dd1e2c1593eed1cd4dda8. Image build
     # run 30757059110, endpoint-admin-service job 91520931008; GitHub-hosted
     # provenance verifies the immutable digest below.
-    digest: sha256:66f38f9ef349b7a2dfe818020e160117bfe7318ff07983288d0980f3143995f1
+    #
+    # 2026-08-02 (paralel oturum ile birlestirildi): platform-backend#1097 —
+    # eski sayisal companyId artik kanonik org_id ile KARSILASTIRILMIYOR.
+    # Cozumleyici companyId'yi UUID.nameUUIDFromBytes("company:<n>") ile sentetik
+    # bir UUID'ye cevirip kanonik org UUID'siyle kiyasliyordu; bunlar farkli isim
+    # uzaylari ve ancak org'lari o hash'ten tohumlanmis bir kurulumda esitler.
+    # Burada tutmuyordu: /api/v1/admin/meetings her istekte 401 "Conflicting
+    # tenant claims" veriyordu, hicbir seyi yanlis olmayan bir token icin.
+    # org_id <-> tenant_id kontrolu DOKUNULMADI (ayni isim uzayi, gercek sinyal).
+    #
+    # Iki promosyon ayni bloga carpti. Kaynak GERIYE GITMIYOR: 1651f489 (yukarisi)
+    # 01e0fde'nin atasi ve aradaki tek commit #1097 — yani asagidaki digest her
+    # iki duzeltmeyi de tasiyor. `git merge-base --is-ancestor` ile dogrulandi.
+    # Kaynak: 01e0fde9460757eef519344e4f292da615df9e4e (etiket KISA sha).
+    # Digest gercek cekisle okundu (smoke-dig-t3 pod, k3d-test).
+    # Onceki: 66f38f9ef349b7a2dfe8180... (#1096) / d8a65f9bd0789c5728d...
+    digest: sha256:3775ac0ee4a1463b1aad0553ff4ef20ed1f29be805cae03703f08ec85ab2cde8
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
