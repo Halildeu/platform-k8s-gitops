@@ -1,0 +1,51 @@
+# Faz 35 — kanıt işçisinin metriklerini gerçekten toplayan parça (#3354).
+#
+# İşçinin NetworkPolicy'si monitoring namespace'inden 8081'e scrape'e zaten izin
+# veriyordu — niyet oradaydı — ama ne Service'i ne ServiceMonitor'ı vardı, yani
+# yayımladığı hiçbir metrik kimseye ulaşmıyordu. 2026-08-02'de tarayıcı imza yaşı
+# gauge'u tam bu yüzden görünmedi: gauge yalnız `mode=clamav-reference` olan
+# işçide oluşabiliyor (API pod'u `disabled` ve clamd'ye egress'i de yok), ve o pod
+# scrape edilmiyordu.
+#
+# Headless Service: yük dengeleme istemiyoruz, yalnız ServiceMonitor'ın seçebileceği
+# bir endpoint kaydı. İşçinin istek yüzeyi yok ve öyle kalmalı — bu Service ona bir
+# çağrı yolu açmaz, sadece mevcut management portunu keşfedilebilir kılar.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ethics-evidence-worker
+  labels:
+    app.kubernetes.io/name: ethics-evidence-worker
+    app.kubernetes.io/part-of: etik-speak
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: ethics-evidence-worker
+  ports:
+    - name: management
+      port: 8081
+      targetPort: management
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ethics-evidence-worker
+  labels:
+    app.kubernetes.io/name: ethics-evidence-worker
+    app.kubernetes.io/part-of: etik-speak
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ethics-evidence-worker
+  namespaceSelector:
+    matchNames:
+      - platform-test
+      - platform-prod
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
