@@ -91,7 +91,17 @@ images:
     # dosya 0 idi, o yuzden geri alma yerine ileri duzeltme secildi.
     # Kaynak: d75b5fc9887e3773725424c81b923e1ae3850d33 (platform-backend#1078)
     # Onceki: a27ff2641 @ sha256:6ede2aeebc320a7a6ccc99...
-    digest: sha256:0e2ad2c5433bacae0e29072639b44b9dfd08d8545ce9e3d855e67facf356d1d2
+    #
+    # 2026-08-02 ES-212 (#3370): CONFIDENTIAL ve NAMED bildirim modlari acildi.
+    # sha-6375d9e, merge f41edc88a'nin torunu; V21 migrasyonunu (org bazli mod
+    # politikasi + zarf sifreli reporter_identities) ve /intake-options ucunu
+    # tasiyor. Politika satiri olmayan org yalniz ANONYMOUS alir, yani bu imaj
+    # tek basina hicbir tenant'in davranisini degistirmez.
+    #
+    # Digest build log'undan DEGIL, registry'nin Docker-Content-Digest
+    # basligindan okundu (ghcr-pull kimligiyle, hedef kumeden).
+    # Onceki: 0e2ad2c54 @ sha256:0e2ad2c5433bacae0e290726...
+    digest: sha256:dbfa1e70a86bf5d6d92c3bd4cadaba5be4508d0428891daafcd11cb338f4e4d4
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
@@ -133,7 +143,15 @@ images:
     # Kaynak: 6f9ee66d8d3b7a8f4c1f4cc971b4a17edc854bd1 (etiket TAM sha).
     # Digest gercek cekisle dogrulandi (syft registry pull, aiserver).
     # Onceki: fa04b687 (#1109) @ sha256:f2abcee52bbefa4b805...
-    digest: sha256:eea78ec3c83abbb34f8d76aad8e73f4b0bb28bd268236c71e03736fb5c50a931
+    # 2026-08-02 ES-212 (#3370): form artik /intake-options'i okuyup bu kurumun
+    # gercekten kostugu modlari gosteriyor. Kapali mod pasiflestirilmiyor, hic
+    # gosterilmiyor — gri bir secenek ekran okuyucuya hala duyurulur ve
+    # ihbarciya "gizli bildirim var ama benden esirgeniyor" dedirtir.
+    # Kaynak: 2c4dc702594b2ff9766c4ec2c71ca1c0b35ae39b (platform-web#1113)
+    # Digest registry'nin Docker-Content-Digest basligindan okundu; etiket TAM
+    # 40 karakterlik sha (kisa sha ile HEAD 404 doner).
+    # Onceki: sha256:eea78ec3c83abbb34f8d76...
+    digest: sha256:6e3f9fe1398860087b52540c6b1dc488a62cfb49587c3d28921436a3b7002f16
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:

@@ -2268,7 +2268,11 @@ spec:
         expected = {
             "/spec/hard/limits.cpu": "17",
             "/spec/hard/services": "40",
-            "/spec/hard/secrets": "45",
+            # 45 -> 52 (ES-212 #3370): the identity ExternalSecret was refused live at
+            # exactly 45/45. Raised with headroom rather than +1 because this ceiling has
+            # been bumped one secret at a time on four separate occasions, each by the
+            # change that hit it.
+            "/spec/hard/secrets": "52",
             "/spec/hard/pods": "34",
             "/spec/hard/configmaps": "35",
         }
