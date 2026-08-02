@@ -445,6 +445,12 @@ jobs:
               realtime = json.load(realtime_path.open(encoding="utf-8"))
               assert data["status"] == "pass"
               assert data["results"]["speechmaticsRealtimeLifecycle"]["status"] == "pass"
+              assert data["results"]["speechmaticsRealtimePersona"] == {
+                  "platformUserId": "990001",
+                  "transcriptRealmRole": "TRANSCRIPT_ADMIN",
+                  "transcriptRealmRoleAssigned": True,
+                  "openFgaGrantSource": "preseeded-test-recorder-persona",
+              }
               assert realtime["schemaVersion"] == "faz24.speechmaticsRealtimeLifecycleAcceptance.v1"
               assert realtime["status"] == "pass"
               assert realtime["tokenIncluded"] is False

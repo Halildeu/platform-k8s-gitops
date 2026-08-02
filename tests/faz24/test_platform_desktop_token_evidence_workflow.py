@@ -138,12 +138,32 @@ def test_runner_contract_restores_and_redacts():
 def test_realtime_helper_and_runner_keep_private_media_out_of_evidence():
     runner = SCRIPT.read_text(encoding="utf-8")
     helper = REALTIME_HELPER.read_text(encoding="utf-8")
+    realtime_role_function = runner.split(
+        "assign_realtime_transcript_role() {", 1
+    )[1].split("\n}\n\ncreate_temp_user()", 1)[0]
+    realtime_preflight = runner.split(
+        'if [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]]; then', 1
+    )[1].split("\nfi", 1)[0]
 
     assert REALTIME_FIXTURE.is_file()
     assert "RUN_SPEECHMATICS_REALTIME" in runner
     assert "speechmatics-realtime.stdout" in runner
     assert "speechmatics-realtime.stderr" in runner
     assert 'status: $speechmaticsRealtimeStatus' in runner
+    assert 'REALTIME_REQUIRED_ROLE="${REALTIME_REQUIRED_ROLE:-TRANSCRIPT_ADMIN}"' in runner
+    assert 'PLATFORM_USER_ID="${PLATFORM_USER_ID:-990001}"' in runner
+    assert 'REALTIME_TRANSCRIPT_ROLE_ASSIGNED="true"' in runner
+    assert 'openFgaGrantSource: "preseeded-test-recorder-persona"' in runner
+    assert '[[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]] || return 0' in realtime_role_function
+    assert 'kc_admin_rest GET "/roles/${REALTIME_REQUIRED_ROLE}"' in realtime_role_function
+    assert (
+        'kc_admin_rest POST "/users/${TEMP_USER_ID}/role-mappings/realm"'
+        in realtime_role_function
+    )
+    assert '"${PLATFORM_USER_ID}" != "990001"' in realtime_preflight
+    assert '"${REQUIRED_ROLE}" != "MEETING_ADMIN"' in realtime_preflight
+    assert '"${REALTIME_REQUIRED_ROLE}" != "TRANSCRIPT_ADMIN"' in realtime_preflight
+    assert "assign_realtime_transcript_role\n  assign_capability_role" in runner
     assert '"transcriptIncluded": False' in helper
     assert '"audioIncluded": False' in helper
     assert '"tokenIncluded": False' in helper
@@ -509,6 +529,9 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert 'realtime["stream"]["eofAck"] is True' in workflow
     assert 'realtime["stream"]["drained"] is True' in workflow
     assert 'realtime["durable"]["durableApiReadBackProven"] is True' in workflow
+    assert '"platformUserId": "990001"' in workflow
+    assert '"transcriptRealmRole": "TRANSCRIPT_ADMIN"' in workflow
+    assert '"transcriptRealmRoleAssigned": True' in workflow
     assert 'failureReason: "evidence-chain-exited-before-diagnostic"' in workflow
     assert "Free-form runner logs are ephemeral and never uploaded" in workflow
     assert "does not claim production or physical desktop mic/loopback acceptance" in workflow

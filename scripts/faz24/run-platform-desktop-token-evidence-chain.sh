@@ -50,6 +50,7 @@ TENANT_ID="${TENANT_ID:-1}"
 COMPANY_ID="${COMPANY_ID:-1}"
 PLATFORM_USER_ID="${PLATFORM_USER_ID:-990001}"
 REQUIRED_ROLE="${REQUIRED_ROLE:-MEETING_ADMIN}"
+REALTIME_REQUIRED_ROLE="${REALTIME_REQUIRED_ROLE:-TRANSCRIPT_ADMIN}"
 CANONICAL_TENANT_ID="${CANONICAL_TENANT_ID:-}"
 RECONCILE_EXISTING_USERNAMES="${RECONCILE_EXISTING_USERNAMES:-}"
 CONFIRM_EXISTING_USER_RECONCILE="${CONFIRM_EXISTING_USER_RECONCILE:-NO}"
@@ -73,6 +74,12 @@ fi
 if [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]]; then
   if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
     echo "ERROR: Speechmatics realtime and session-expiry smokes cannot share one dispatch" >&2
+    exit 2
+  fi
+  if [[ "${PLATFORM_USER_ID}" != "990001" \
+      || "${REQUIRED_ROLE}" != "MEETING_ADMIN" \
+      || "${REALTIME_REQUIRED_ROLE}" != "TRANSCRIPT_ADMIN" ]]; then
+    echo "ERROR: Speechmatics realtime TEST persona allowlist mismatch" >&2
     exit 2
   fi
   if [[ "${BASE_URL}" != "https://testai.acik.com" \
@@ -155,6 +162,7 @@ RESOURCE_CLIENT_UUID=""
 TEMP_USER_ID=""
 TEMP_USER_CREATED="false"
 CLIENT_ROLE_ASSIGNED="false"
+REALTIME_TRANSCRIPT_ROLE_ASSIGNED="false"
 DIRECT_GRANTS_ORIGINAL=""
 DIRECT_GRANTS_TOGGLED="false"
 DIRECT_GRANTS_RESTORED="false"
@@ -946,6 +954,23 @@ assign_capability_role() {
   CLIENT_ROLE_ASSIGNED="true"
 }
 
+assign_realtime_transcript_role() {
+  [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]] || return 0
+  local role_file="${TMP_DIR}/realtime-transcript-role.json"
+  local role_assign_file="${TMP_DIR}/realtime-transcript-role-assign.json"
+  local role_assign_out="${TMP_DIR}/realtime-transcript-role-assign.out"
+  local code
+  code="$(kc_admin_rest GET "/roles/${REALTIME_REQUIRED_ROLE}" "${role_file}")"
+  [[ "${code}" == "200" ]] \
+    || die "required-realtime-realm-role-missing:${REALTIME_REQUIRED_ROLE}"
+  jq '[.]' "${role_file}" > "${role_assign_file}"
+  code="$(kc_admin_rest POST "/users/${TEMP_USER_ID}/role-mappings/realm" \
+    "${role_assign_out}" "${role_assign_file}")"
+  [[ "${code}" == "204" ]] \
+    || die "required-realtime-realm-role-assign-failed:${REALTIME_REQUIRED_ROLE}"
+  REALTIME_TRANSCRIPT_ROLE_ASSIGNED="true"
+}
+
 create_temp_user() {
   local existing lookup_file
   lookup_file="${TMP_DIR}/temp-user-lookup.json"
@@ -1017,6 +1042,7 @@ create_temp_user() {
     code="$(kc_admin_rest POST "/users/${TEMP_USER_ID}/role-mappings/realm" "${role_assign_out}" "${role_assign_file}")"
     [[ "${code}" == "204" ]] || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
   fi
+  assign_realtime_transcript_role
   assign_capability_role
 }
 
@@ -1059,6 +1085,8 @@ capture_user_diagnostic() {
     --arg requiredRole "${REQUIRED_ROLE}" \
     --arg resourceClientId "${RESOURCE_CLIENT_ID}" \
     --arg capabilityRole "${CAPABILITY_ROLE}" \
+    --arg platformUserId "${PLATFORM_USER_ID}" \
+    --arg realtimeRequiredRole "${REALTIME_REQUIRED_ROLE}" \
     --argjson clientRoleAssigned "${CLIENT_ROLE_ASSIGNED}" \
     '($user[0] // {}) as $u
       | {
@@ -1075,6 +1103,11 @@ capture_user_diagnostic() {
           },
           credentialTypes: [($creds[0] // [])[]? | .type],
           realmRolePresent: any(($roles[0] // [])[]?; .name == $requiredRole),
+          realtimePersona: {
+            platformUserId: $platformUserId,
+            transcriptRealmRole: $realtimeRequiredRole,
+            transcriptRealmRolePresent: any(($roles[0] // [])[]?; .name == $realtimeRequiredRole)
+          },
           clientRole: {
             resourceClientId: $resourceClientId,
             capabilityRole: $capabilityRole,
@@ -1426,6 +1459,8 @@ write_diagnostic() {
     --arg clientId "${CLIENT_ID}" \
     --arg resourceClientId "${RESOURCE_CLIENT_ID}" \
     --arg capabilityRole "${CAPABILITY_ROLE}" \
+    --arg platformUserId "${PLATFORM_USER_ID}" \
+    --arg realtimeRequiredRole "${REALTIME_REQUIRED_ROLE}" \
     --arg baseUrl "${BASE_URL}" \
     --arg expectedIssuer "${EXPECTED_ISSUER}" \
     --arg tokenPresent "${TOKEN_PRESENT}" \
@@ -1451,6 +1486,7 @@ write_diagnostic() {
     --argjson staleTempUsersRemaining "${STALE_TEMP_USERS_REMAINING}" \
     --argjson cleanupAdminSessionRefreshAttempted "${CLEANUP_ADMIN_SESSION_REFRESH_ATTEMPTED}" \
     --argjson cleanupAdminSessionRefreshed "${CLEANUP_ADMIN_SESSION_REFRESHED}" \
+    --argjson realtimeTranscriptRoleAssigned "${REALTIME_TRANSCRIPT_ROLE_ASSIGNED}" \
     --argjson existingUsersReconciled "${EXISTING_USERS_RECONCILED}" \
     --argjson existingUsersAlreadyCorrect "${EXISTING_USERS_ALREADY_CORRECT}" \
     --slurpfile kcSource "${KC_SOURCE_JSON}" \
@@ -1468,6 +1504,8 @@ write_diagnostic() {
         clientId: $clientId,
         resourceClientId: $resourceClientId,
         capabilityRole: $capabilityRole,
+        platformUserId: $platformUserId,
+        realtimeRequiredRole: $realtimeRequiredRole,
         baseUrl: $baseUrl,
         expectedIssuer: $expectedIssuer
       },
@@ -1506,6 +1544,12 @@ write_diagnostic() {
         speechmaticsRealtimeLifecycle: {
           exitCode: $speechmaticsRealtimeExit,
           status: $speechmaticsRealtimeStatus
+        },
+        speechmaticsRealtimePersona: {
+          platformUserId: $platformUserId,
+          transcriptRealmRole: $realtimeRequiredRole,
+          transcriptRealmRoleAssigned: $realtimeTranscriptRoleAssigned,
+          openFgaGrantSource: "preseeded-test-recorder-persona"
         }
       },
       cleanup: {
