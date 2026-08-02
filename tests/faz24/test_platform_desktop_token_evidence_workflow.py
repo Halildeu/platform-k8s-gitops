@@ -10,6 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts/faz24/run-platform-desktop-token-evidence-chain.sh"
 REST_LIB = REPO_ROOT / "scripts/faz24/lib/keycloak_admin_rest.sh"
 WORKFLOW = REPO_ROOT / ".github/workflows/faz24-platform-desktop-token-evidence.yml"
+REALTIME_HELPER = REPO_ROOT / "scripts/faz24/run_speechmatics_realtime_lifecycle_acceptance.py"
+REALTIME_FIXTURE = REPO_ROOT / "scripts/faz24/fixtures/speechmatics-realtime-tr-v1.wav"
 
 
 def test_runner_script_is_shell_syntax_valid():
@@ -131,6 +133,30 @@ def test_runner_contract_restores_and_redacts():
     }
     assert "path:" not in text
     assert "set -x" not in text
+
+
+def test_realtime_helper_and_runner_keep_private_media_out_of_evidence():
+    runner = SCRIPT.read_text(encoding="utf-8")
+    helper = REALTIME_HELPER.read_text(encoding="utf-8")
+
+    assert REALTIME_FIXTURE.is_file()
+    assert "RUN_SPEECHMATICS_REALTIME" in runner
+    assert "speechmatics-realtime.stdout" in runner
+    assert "speechmatics-realtime.stderr" in runner
+    assert 'status: $speechmaticsRealtimeStatus' in runner
+    assert '"transcriptIncluded": False' in helper
+    assert '"audioIncluded": False' in helper
+    assert '"tokenIncluded": False' in helper
+    assert '"durableApiReadBackProven": result_session_match' in helper
+    assert "import websockets" not in helper.split("async def stream_audio", 1)[0]
+    assert "except (TimeoutError, asyncio.TimeoutError)" in helper
+    assert "transcript_fragments.clear()" in helper
+    assert "NoRedirectHandler" in helper
+    assert "token-file-permissions-too-open" in helper
+    assert "audio-fixture-sha256-mismatch" in helper
+    assert "print(token)" not in helper
+    assert "print(pcm)" not in helper
+    assert "print(transcript_fragments)" not in helper
 
 
 @pytest.mark.parametrize("method", ["PUT", "DELETE"])
@@ -438,6 +464,7 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert "run_session_expiry_smoke:" in workflow
+    assert "run_speechmatics_realtime:" in workflow
     assert "recover_stale_run_id:" in workflow
     assert "expected_audio_gateway_image:" in workflow
     assert "run_audio_gateway_session_expiry_transient_smoke.sh" in workflow
@@ -474,10 +501,17 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "RUNNER_STDERR: /tmp/faz24-platform-desktop-token-runner-" in workflow
     assert '"${EVIDENCE_DIR}/runner.stdout"' not in workflow
     assert '"${EVIDENCE_DIR}/runner.stderr"' not in workflow
-    assert 'trap \'rm -f -- "${RUNNER_STDOUT}" "${RUNNER_STDERR}"\' EXIT' in workflow
+    assert 'rm -f -- "${RUNNER_STDOUT}" "${RUNNER_STDERR}"' in workflow
+    assert 'rm -rf -- "${realtime_deps_dir}"' in workflow
+    assert "websockets-15.0.1-py3-none-any.whl" in workflow
+    assert "f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f" in workflow
+    assert 'realtime["stream"]["partialWhileSpeaking"] is True' in workflow
+    assert 'realtime["stream"]["eofAck"] is True' in workflow
+    assert 'realtime["stream"]["drained"] is True' in workflow
+    assert 'realtime["durable"]["durableApiReadBackProven"] is True' in workflow
     assert 'failureReason: "evidence-chain-exited-before-diagnostic"' in workflow
     assert "Free-form runner logs are ephemeral and never uploaded" in workflow
-    assert "no production or desktop mic/loopback closure claim" in workflow
+    assert "does not claim production or physical desktop mic/loopback acceptance" in workflow
     assert 'sed -n' not in workflow
     assert "cancel-in-progress: false" in workflow
 

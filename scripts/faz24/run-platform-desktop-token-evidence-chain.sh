@@ -25,6 +25,7 @@ BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
 RUN_SESSION_EXPIRY_SMOKE="${RUN_SESSION_EXPIRY_SMOKE:-0}"
+RUN_SPEECHMATICS_REALTIME="${RUN_SPEECHMATICS_REALTIME:-0}"
 RECOVER_STALE_RUN_ID="${RECOVER_STALE_RUN_ID:-}"
 SESSION_EXPIRY_AUDIO_BASE_URL="${SESSION_EXPIRY_AUDIO_BASE_URL:-}"
 SESSION_EXPIRY_METRICS_BASE_URL="${SESSION_EXPIRY_METRICS_BASE_URL:-}"
@@ -35,6 +36,10 @@ SMOKE_STT_PROVIDER="${SMOKE_STT_PROVIDER:-}"
 SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
 SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
 SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
+REALTIME_PYTHON="${REALTIME_PYTHON:-python3}"
+REALTIME_HELPER="${REALTIME_HELPER:-}"
+REALTIME_AUDIO_FILE="${REALTIME_AUDIO_FILE:-}"
+REALTIME_DURABLE_TIMEOUT_SECONDS="${REALTIME_DURABLE_TIMEOUT_SECONDS:-720}"
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ATTEMPT_SAFE="${GITHUB_RUN_ATTEMPT:-1}"
@@ -60,6 +65,26 @@ fi
 if [[ -n "${RECOVER_STALE_RUN_ID}" && "${RUN_SESSION_EXPIRY_SMOKE}" != "1" ]]; then
   echo "ERROR: stale test-state recovery requires session-expiry smoke mode" >&2
   exit 2
+fi
+if [[ "${RUN_SPEECHMATICS_REALTIME}" != "0" && "${RUN_SPEECHMATICS_REALTIME}" != "1" ]]; then
+  echo "ERROR: RUN_SPEECHMATICS_REALTIME must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]]; then
+  if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
+    echo "ERROR: Speechmatics realtime and session-expiry smokes cannot share one dispatch" >&2
+    exit 2
+  fi
+  if [[ "${BASE_URL}" != "https://testai.acik.com" \
+      || ! -x "$(command -v "${REALTIME_PYTHON}" 2>/dev/null || true)" \
+      || ! -r "${REALTIME_HELPER}" \
+      || ! -r "${REALTIME_AUDIO_FILE}" \
+      || ! "${REALTIME_DURABLE_TIMEOUT_SECONDS}" =~ ^[0-9]{2,4}$ \
+      || "${REALTIME_DURABLE_TIMEOUT_SECONDS}" -lt 60 \
+      || "${REALTIME_DURABLE_TIMEOUT_SECONDS}" -gt 1200 ]]; then
+    echo "ERROR: Speechmatics realtime TEST acceptance preflight failed" >&2
+    exit 2
+  fi
 fi
 
 if [[ "${KC_REALM}" != "platform-test" ]]; then
@@ -104,6 +129,7 @@ TOKEN_CONTRACT_JSON="${OUT_DIR}/faz24-platform-desktop-token-contract.json"
 SMOKE_JSON="${OUT_DIR}/faz24-external-recorder-smoke.json"
 SMOKE_VERIFY_JSON="${OUT_DIR}/faz24-external-recorder-smoke.verify.json"
 SESSION_EXPIRY_SMOKE_JSON="${OUT_DIR}/faz24-audio-gateway-session-expiry-smoke.json"
+REALTIME_ACCEPTANCE_JSON="${OUT_DIR}/faz24-speechmatics-realtime-lifecycle-acceptance.json"
 CLIENT_BEFORE_JSON="${TMP_DIR}/client-before.json"
 CLIENT_AFTER_JSON="${TMP_DIR}/client-after.json"
 USER_DIAG_JSON="${TMP_DIR}/user-diagnostic.json"
@@ -145,6 +171,7 @@ TOKEN_CONTRACT_EXIT="not-run"
 SMOKE_EXIT="not-run"
 SMOKE_VERIFY_EXIT="not-run"
 SESSION_EXPIRY_SMOKE_EXIT="not-run"
+REALTIME_ACCEPTANCE_EXIT="not-run"
 DIAGNOSTIC_WRITTEN="false"
 CLEANUP_DONE="false"
 KC_ADMIN_MODE=""
@@ -1264,6 +1291,34 @@ PY
   return 0
 }
 
+run_speechmatics_realtime_acceptance() {
+  if [[ "${RUN_SPEECHMATICS_REALTIME}" != "1" ]]; then
+    return 0
+  fi
+  if [[ "${STATUS}" != "pass" || "${TOKEN_PRESENT}" != "true" || ! -s "${TOKEN_FILE}" ]]; then
+    STATUS="fail"
+    FAILURE_REASON="speechmatics-realtime-prerequisite-failed"
+    return 1
+  fi
+
+  set +e
+  "${REALTIME_PYTHON}" "${REALTIME_HELPER}" \
+    --token-file "${TOKEN_FILE}" \
+    --audio-file "${REALTIME_AUDIO_FILE}" \
+    --output-file "${REALTIME_ACCEPTANCE_JSON}" \
+    --base-url "${BASE_URL}" \
+    --durable-timeout-seconds "${REALTIME_DURABLE_TIMEOUT_SECONDS}" \
+    > "${TMP_DIR}/speechmatics-realtime.stdout" \
+    2> "${TMP_DIR}/speechmatics-realtime.stderr"
+  REALTIME_ACCEPTANCE_EXIT="$?"
+  set -e
+  if [[ "${REALTIME_ACCEPTANCE_EXIT}" != "0" ]]; then
+    STATUS="fail"
+    FAILURE_REASON="speechmatics-realtime-acceptance-failed"
+    return 1
+  fi
+}
+
 cleanup_live_state() {
   if [[ "${CLEANUP_DONE}" == "true" ]]; then
     return 0
@@ -1339,6 +1394,7 @@ write_diagnostic() {
   local smoke_status="not-run"
   local smoke_verify_status="not-run"
   local session_expiry_smoke_status="not-run"
+  local speechmatics_realtime_status="not-run"
   local grant_attempts_array="${TMP_DIR}/grant-attempts-array.json"
   if [[ -s "${TOKEN_CONTRACT_JSON}" ]]; then
     token_contract_status="$(jq -r '.status // "unknown"' "${TOKEN_CONTRACT_JSON}" 2>/dev/null || printf 'unknown')"
@@ -1351,6 +1407,9 @@ write_diagnostic() {
   fi
   if [[ -s "${SESSION_EXPIRY_SMOKE_JSON}" ]]; then
     session_expiry_smoke_status="$(jq -r '.status // "unknown"' "${SESSION_EXPIRY_SMOKE_JSON}" 2>/dev/null || printf 'unknown')"
+  fi
+  if [[ -s "${REALTIME_ACCEPTANCE_JSON}" ]]; then
+    speechmatics_realtime_status="$(jq -r '.status // "unknown"' "${REALTIME_ACCEPTANCE_JSON}" 2>/dev/null || printf 'unknown')"
   fi
   if [[ -s "${GRANT_ATTEMPTS_JSONL}" ]]; then
     jq -s '.' "${GRANT_ATTEMPTS_JSONL}" > "${grant_attempts_array}" \
@@ -1378,6 +1437,8 @@ write_diagnostic() {
     --arg smokeVerifyStatus "${smoke_verify_status}" \
     --arg sessionExpirySmokeExit "${SESSION_EXPIRY_SMOKE_EXIT}" \
     --arg sessionExpirySmokeStatus "${session_expiry_smoke_status}" \
+    --arg speechmaticsRealtimeExit "${REALTIME_ACCEPTANCE_EXIT}" \
+    --arg speechmaticsRealtimeStatus "${speechmatics_realtime_status}" \
     --argjson directGrantsToggled "${DIRECT_GRANTS_TOGGLED}" \
     --argjson directGrantsRestored "${DIRECT_GRANTS_RESTORED}" \
     --argjson tempUserCreated "${TEMP_USER_CREATED}" \
@@ -1441,6 +1502,10 @@ write_diagnostic() {
         audioGatewaySessionExpirySmoke: {
           exitCode: $sessionExpirySmokeExit,
           status: $sessionExpirySmokeStatus
+        },
+        speechmaticsRealtimeLifecycle: {
+          exitCode: $speechmaticsRealtimeExit,
+          status: $speechmaticsRealtimeStatus
         }
       },
       cleanup: {
@@ -1495,7 +1560,7 @@ on_exit() {
 trap 'on_exit "$?"' EXIT
 
 echo "Faz 24 platform-desktop token evidence chain started"
-echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE} run_session_expiry_smoke=${RUN_SESSION_EXPIRY_SMOKE}"
+echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE} run_session_expiry_smoke=${RUN_SESSION_EXPIRY_SMOKE} run_speechmatics_realtime=${RUN_SPEECHMATICS_REALTIME}"
 
 kcadm_login
 resolve_client_uuid
@@ -1516,6 +1581,7 @@ enable_direct_grants_temporarily
 
 if mint_platform_desktop_token; then
   run_token_contract_and_smoke || true
+  run_speechmatics_realtime_acceptance || true
 else
   STATUS="fail"
   FAILURE_REASON="platform-desktop-token-mint-failed"
@@ -1537,6 +1603,9 @@ if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
 fi
 if [[ -s "${SESSION_EXPIRY_SMOKE_JSON}" ]]; then
   echo "session_expiry_smoke=${SESSION_EXPIRY_SMOKE_JSON}"
+fi
+if [[ -s "${REALTIME_ACCEPTANCE_JSON}" ]]; then
+  echo "speechmatics_realtime_acceptance=${REALTIME_ACCEPTANCE_JSON}"
 fi
 echo "status=${STATUS}"
 
