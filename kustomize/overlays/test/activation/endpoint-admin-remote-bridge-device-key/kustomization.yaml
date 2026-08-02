@@ -87,4 +87,7 @@ images:
   # Activation remains owner-gated; this pin alone does not activate the bridge.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:66f38f9ef349b7a2dfe818020e160117bfe7318ff07983288d0980f3143995f1
+    # 2026-08-02: platform-backend#1097 ile birlikte tasindi (ayni-imaj pilot
+    # topolojisi: birincil overlay ile bu iki bridge overlay'i esit olmali).
+    # Kaynak 01e0fde — #1096 consent-trust onarimini DA icerir (1651f489 atasi).
+    digest: sha256:3775ac0ee4a1463b1aad0553ff4ef20ed1f29be805cae03703f08ec85ab2cde8
