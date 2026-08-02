@@ -525,7 +525,7 @@ def main() -> None:
         # internal as the default; disabled providers, missing credentials,
         # incomplete receipts and missing provider terminal events fail closed.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:a4f7b2257412dbeba92ad28ce88c1aaeac5ab9b889b14e0d740e64eebd209de4",
+        "sha256:c719d50d316a3e0a5ba062a2a3755c6cec173ef7e4ee2980ec8f523891bf6e49",
     )
     pod_annotation(
         meeting_deploy,
