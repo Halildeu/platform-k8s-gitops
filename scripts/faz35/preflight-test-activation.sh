@@ -183,7 +183,12 @@ else
   # ES-104K's HEIC converter still renders a Service (the workload manifest is
   # kept so re-enabling is one line) but runs zero replicas after the ES-306
   # image finding, so it costs a Service slot and no pod.
-  check_object_headroom services 5 2
+  # #3354 gave the evidence worker a HEADLESS Service so a ServiceMonitor has
+  # endpoints to select. It opens no request path — the worker's NetworkPolicy
+  # still admits only the monitoring namespace on 8081 — and exists because the
+  # worker was publishing metrics that nothing collected, which left the
+  # scanner-freshness gauge permanently invisible.
+  check_object_headroom services 6 2
   check_object_headroom configmaps 4 2
   check_object_headroom secrets 3 2
   check_object_headroom pods 9 2

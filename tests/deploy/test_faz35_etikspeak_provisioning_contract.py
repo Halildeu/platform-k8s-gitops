@@ -1429,7 +1429,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             # and rejects a compliant 25 MiB attachment before reading the body,
             # while the ingress annotation looks correct.
             "client_max_body_size 26m;",
-            "check_object_headroom services 5 2",
+            "check_object_headroom services 6 2",
             "check_object_headroom configmaps 4 2",
             "check_object_headroom secrets 3 2",
             "check_object_headroom pods 9 2",
@@ -2170,10 +2170,17 @@ spec:
 
         repair_reserve = 2
         # Three request-facing Deployments plus the ES-104G evidence worker, its
-        # scanner, the ES-104J PDF CDR worker and the ES-104K HEIC converter; the
-        # two workers answer no traffic and have no Service, the converter does.
+        # scanner, the ES-104J PDF CDR worker and the ES-104K HEIC converter.
+        #
+        # The evidence worker carries a Service but still answers no traffic: it is
+        # HEADLESS (clusterIP: None) and exists only so a ServiceMonitor has endpoints
+        # to select. Its NetworkPolicy admits nothing but the monitoring namespace on
+        # 8081, so this opens no request path. It was added because the worker was
+        # publishing metrics that nothing collected — the scanner-freshness gauge lives
+        # only there (the API pod runs with processor mode `disabled` and has no clamd
+        # egress), so an unscraped worker made that metric permanently invisible (#3354).
         self.assertEqual(len(deployment_documents), 7)
-        self.assertEqual(service_count, 5)
+        self.assertEqual(service_count, 6)
         self.assertIn(f'pods: "{rollout_peak + repair_reserve}"', self.product_quota)
         self.assertIn(
             f"check_object_headroom pods {rollout_peak} {repair_reserve}",
