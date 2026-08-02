@@ -93,6 +93,12 @@ def test_runner_contract_restores_and_redacts():
     assert 'write_kc_source_diagnostic "host-file"' in text
     assert 'write_kc_source_diagnostic "host-file-sudo"' in text
     assert 'write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"' in text
+    assert "normalize_keycloak_admin_password_file" in text
+    assert 'normalized = raw.rstrip(b"\\r\\n")' in text
+    assert 'b"\\x00" in normalized' in text
+    assert 'b"\\r" in normalized or b"\\n" in normalized' in text
+    assert "os.chmod(temporary, 0o600)" in text
+    assert "os.replace(temporary, path)" in text
     assert "sudo -n cat" in text
     assert 'rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}"' in text
     assert '--config "${ADMIN_CURL_CONFIG}"' in rest_text

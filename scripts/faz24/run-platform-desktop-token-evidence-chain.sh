@@ -275,10 +275,29 @@ write_kc_source_diagnostic() {
     }' > "${KC_SOURCE_JSON}"
 }
 
+normalize_keycloak_admin_password_file() {
+  python3 - "${ADMIN_PASS_FILE}" <<'PY'
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+raw = path.read_bytes()
+normalized = raw.rstrip(b"\r\n")
+if not normalized or b"\x00" in normalized or b"\r" in normalized or b"\n" in normalized:
+    raise SystemExit(1)
+
+temporary = path.with_name(path.name + ".normalized")
+temporary.write_bytes(normalized)
+os.chmod(temporary, 0o600)
+os.replace(temporary, path)
+PY
+}
+
 read_keycloak_admin_password() {
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
     printf '%s' "${KC_ADMIN_PASSWORD}" > "${ADMIN_PASS_FILE}"
-    chmod 0600 "${ADMIN_PASS_FILE}"
+    normalize_keycloak_admin_password_file || return 1
     unset KC_ADMIN_PASSWORD
     write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"
     return 0
@@ -287,15 +306,17 @@ read_keycloak_admin_password() {
   if command -v docker >/dev/null 2>&1; then
     if docker exec "${KC_CONTAINER}" sh -c 'cat /run/secrets/kc_admin_password' \
         > "${ADMIN_PASS_FILE}" 2>/dev/null && [[ -s "${ADMIN_PASS_FILE}" ]]; then
-      chmod 0600 "${ADMIN_PASS_FILE}"
-      write_kc_source_diagnostic "docker-run-secret" "run-secret"
-      return 0
+      if normalize_keycloak_admin_password_file; then
+        write_kc_source_diagnostic "docker-run-secret" "run-secret"
+        return 0
+      fi
     fi
     if docker exec "${KC_CONTAINER}" sh -c 'p="${KEYCLOAK_ADMIN_PASSWORD_FILE:-}"; [ -n "$p" ] && cat "$p"' \
         > "${ADMIN_PASS_FILE}" 2>/dev/null && [[ -s "${ADMIN_PASS_FILE}" ]]; then
-      chmod 0600 "${ADMIN_PASS_FILE}"
-      write_kc_source_diagnostic "docker-env-secret" "env-secret"
-      return 0
+      if normalize_keycloak_admin_password_file; then
+        write_kc_source_diagnostic "docker-env-secret" "env-secret"
+        return 0
+      fi
     fi
   fi
 
@@ -303,16 +324,18 @@ read_keycloak_admin_password() {
   while IFS=$'\t' read -r label candidate; do
     if [[ -r "${candidate}" ]]; then
       cp "${candidate}" "${ADMIN_PASS_FILE}"
-      chmod 0600 "${ADMIN_PASS_FILE}"
-      write_kc_source_diagnostic "host-file" "${label}"
-      return 0
+      if normalize_keycloak_admin_password_file; then
+        write_kc_source_diagnostic "host-file" "${label}"
+        return 0
+      fi
     fi
     if command -v sudo >/dev/null 2>&1 \
         && { sudo -n cat "${candidate}" 2>/dev/null | tee "${ADMIN_PASS_FILE}" >/dev/null; } \
         && [[ -s "${ADMIN_PASS_FILE}" ]]; then
-      chmod 0600 "${ADMIN_PASS_FILE}"
-      write_kc_source_diagnostic "host-file-sudo" "${label}"
-      return 0
+      if normalize_keycloak_admin_password_file; then
+        write_kc_source_diagnostic "host-file-sudo" "${label}"
+        return 0
+      fi
     fi
     : > "${ADMIN_PASS_FILE}"
   done < <(keycloak_admin_password_candidates)
