@@ -387,11 +387,12 @@ images:
     # Canonical main merge 6375d9eb5e7f1fb30b483d7e13ed124b856a2e66;
     # image-build run 30739562177 (audio job 91474397481). GHCR source OCI
     # digest sha256:a755f1018d57524435c22f151c4c9898073f5947b0a4b6548bf7a6e5a0bf052d
-    # was copied only to the TEST registry. The destination tag and digest HEAD
-    # return the same pinned manifest below; source and destination config ID is
+    # was copied only to the TEST registry. The destination registry converted
+    # the manifest representation and returned the pinned destination digest
+    # below; source and destination config ID remains
     # sha256:78494dde7eb33e71536499ccaada845a1b395b22bf3df1284c92f505018fe193.
     # Production manifests remain unchanged.
-    digest: sha256:a755f1018d57524435c22f151c4c9898073f5947b0a4b6548bf7a6e5a0bf052d
+    digest: sha256:51cc4fdd588fc0486ab7da0d84855a11fd2659d06f4a6359b4acd1b60e77b430
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9422,7 +9423,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v18-speechmatics-terminal-drain"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v18-speechmatics-terminal-drain-registry-reconcile"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
