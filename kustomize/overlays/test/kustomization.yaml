@@ -439,7 +439,22 @@ images:
     # config ID remains
     # sha256:3bb0296c5ea4710a5e18918cbdf87aeba9ac45f1531b6d1b17550ddb12a0f413.
     # Production manifests remain unchanged.
-    digest: sha256:c6be502f90607ce626bac969f1c24e9f5db8f7ac96c30a225c84a7db68981c14
+    # 2026-08-03 update: platform-backend#1100 (gitops#3419 RT-5) makes the
+    # Speechmatics max_delay_mode configurable and replaces the old hardcoded
+    # "fixed" with the vendor-default "flexible", so the engine may keep a
+    # formatted entity intact instead of hard-cutting at the cap. Pairs with
+    # the overlay env max_delay 2.0->1.0 (gitops#3424, already live) as the
+    # RT-5 latency profile: finals commit ~2x faster and the visible tail
+    # tracks the speaker. Canonical main merge
+    # df6d909402072df54ec5330eb7bea8525cde873f; image-build run 30828742275
+    # (audio job 91737017970). GHCR source OCI digest
+    # sha256:4ed6e98a74eba6122d021df6b13b210287d57806264de942bca2492681d499d8
+    # was copied only to the TEST registry. Registry read-back returned HTTP
+    # 200 and the pinned destination digest below; source and destination
+    # config ID remains
+    # sha256:78a5aacdc879ad4d27b81fb3b191a04eaef4dad9ced6fe0f096e16cc6173f65d.
+    # Production manifests remain unchanged.
+    digest: sha256:74dd0bdbfaafb72f17d0c253c1b9dec39d8dc84bdf26488dcb034e03c33546a5
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
