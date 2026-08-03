@@ -454,7 +454,20 @@ images:
     # config ID remains
     # sha256:78a5aacdc879ad4d27b81fb3b191a04eaef4dad9ced6fe0f096e16cc6173f65d.
     # Production manifests remain unchanged.
-    digest: sha256:74dd0bdbfaafb72f17d0c253c1b9dec39d8dc84bdf26488dcb034e03c33546a5
+    # 2026-08-04 update: platform-backend#1101 (gitops#3419 RT-5 saha raporu 5)
+    # adds optional stage-timing fields (audio_sent_ms, emitted_at_ms) to live
+    # partial/final events so the latency study can split spoken->engine vs
+    # gateway->display lag; the proxy validators accept them as optional and
+    # the internal live-stt lane stays valid without them. Canonical main
+    # merge f5f1fe29098c82a97d18e28c5b4f6c951b12a983; image-build run
+    # 30857636072 (audio job 91832252186). GHCR source OCI digest
+    # sha256:15a9315db1674ce4fa403287cfdcf3d03c464ac447237ffcc2434cc521d08e9b
+    # was copied only to the TEST registry. Registry read-back returned HTTP
+    # 200 and the pinned destination digest below; source and destination
+    # config ID remains
+    # sha256:bf32c19372372314252979dec0b1a62f281f1489b73549daab860693af49d3d0.
+    # Production manifests remain unchanged.
+    digest: sha256:52a465a6751ff94f74493bf474eb4d3ab49967a9cce0072507f942ccab5dd0cf
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
