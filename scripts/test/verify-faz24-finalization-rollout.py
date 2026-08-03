@@ -517,16 +517,16 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
-        # 2026-08-02 (backend#1095, gitops#3349): this exact image retains the
-        # immutable per-session internal|speechmatics provider contract and
-        # serializes frames and EndOfStream through a bounded upload queue. The
-        # client receive leg stays subscribed while the provider drains, and
-        # only the real EndOfTranscript signal completes the terminal path.
-        # The rendered config below keeps internal as the default; disabled
+        # 2026-08-03 (backend#1100, gitops#3419 RT-5): superset of backend#1095
+        # (bounded two-phase Speechmatics terminal drain; per-session
+        # internal|speechmatics provider contract; fail-closed on disabled
         # providers, missing credentials, queue overflow, incomplete receipts
-        # and terminal events fail closed.
+        # and terminal events). Adds configurable Speechmatics max_delay_mode
+        # with the vendor-default "flexible" replacing the old hardcoded
+        # "fixed", pairing with the overlay's max_delay 1.0 (gitops#3424) so
+        # live finals commit fast without mid-word cuts.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:c6be502f90607ce626bac969f1c24e9f5db8f7ac96c30a225c84a7db68981c14",
+        "sha256:74dd0bdbfaafb72f17d0c253c1b9dec39d8dc84bdf26488dcb034e03c33546a5",
     )
     pod_annotation(
         meeting_deploy,
