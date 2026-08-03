@@ -1,0 +1,40 @@
+# audio-gateway canlı WebSocket ingress'i (Faz 24 RT revizyonu, gitops#3419)
+#
+# Neden ayrı Ingress: /api/v1/audio-gateway uzun-ömürlü WebSocket taşır
+# (desktop canlı transkript akışı). ingress-nginx'in proxy-read/send-timeout
+# default'u 60s — EOF sonrası drain beklemesinde GPU tarafı 60s'den uzun
+# sessiz kalınca nginx tüneli kesiyordu; desktop bunu "socket-close" olarak
+# görüyor ve canlı transkriptin son onayı kayboluyordu. Annotation'lar Ingress
+# kaynağı bazında uygulandığı için timeout'u tüm /api yüzeyine yaymak yerine
+# yalnız bu path'i ayırıyoruz. Host nginx edge katmanı zaten 3600s
+# (srv/platform/web/nginx/default.conf #184) — iki katman artık hizalı.
+#
+# Host: overlays'de override (test: testai.acik.com, prod: ai.acik.com).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-audio-gateway
+  annotations:
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    # WebSocket uzun-ömür: sessiz drain pencereleri 60s default'u aşar.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - PLACEHOLDER_HOST          # overlays'de override; cert SAN *.acik.com kapsıyor
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: PLACEHOLDER_HOST       # overlays'de override: ai.acik.com / testai.acik.com
+      http:
+        paths:
+          # audio-gateway kendi JWT validation'ını fail-closed yapar
+          # (api-gateway auth filter'ına bağımlı değil) — platform-ai#151.
+          - path: /api/v1/audio-gateway
+            pathType: Prefix
+            backend:
+              service:
+                name: audio-gateway
+                port: { number: 8210 }

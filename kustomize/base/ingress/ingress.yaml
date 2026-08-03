@@ -42,18 +42,12 @@ spec:
               service:
                 name: api-gateway
                 port: { number: 8080 }
-          # Faz 24 Aşama-2: audio-gateway doğrudan path (platform-ai#151).
-          # nginx longest-prefix → /api/v1/audio-gateway buraya, kalan /api
-          # api-gateway'e. audio-gateway kendi JWT validation'ını fail-closed
-          # yapar (api-gateway auth filter'ına bağımlı değil). Canonical
-          # api-gateway route'u client'lar (24.11/24.12/24.13) gelirken
-          # değerlendirilir — bkz docs/runbooks/redis-streams-staging-sw.md.
-          - path: /api/v1/audio-gateway
-            pathType: Prefix
-            backend:
-              service:
-                name: audio-gateway
-                port: { number: 8210 }
+          # Faz 24: /api/v1/audio-gateway artık AYRI Ingress kaynağında
+          # (ingress-audio-gateway.yaml) — canlı WebSocket akışı için
+          # proxy-read/send-timeout 3600s gerekiyor ve annotation'lar Ingress
+          # kaynağı bazında uygulanıyor; buradaki genel API path'leri 60s
+          # default'ta kalır. nginx longest-prefix eşleşmesi resource'lar
+          # arasında da geçerli: /api/v1/audio-gateway oraya, kalan /api buraya.
           - path: /api
             pathType: Prefix
             backend:

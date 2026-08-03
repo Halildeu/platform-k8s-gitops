@@ -10,3 +10,4 @@ labels:
 
 resources:
   - ingress.yaml
+  - ingress-audio-gateway.yaml
