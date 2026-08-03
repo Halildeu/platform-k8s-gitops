@@ -148,8 +148,17 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("function Invoke-PowerShellChild", script)
         self.assertIn("function ConvertTo-PowerShellLiteral", script)
         self.assertIn("$Value.Replace(\"'\", \"''\")", script)
-        self.assertIn("$Command | & powershell.exe @arguments", script)
-        self.assertIn("'-Command', '-'", script)
+        # The child command still stays out of argv, but it must not be piped
+        # into a native powershell.exe call: under PowerShell 5.1 the child's
+        # stderr becomes ErrorRecords before the redirection applies, and the
+        # updater's stderr progress killed the parent mid-format so no evidence
+        # line was emitted at all. The command travels through a temp .ps1
+        # (argv carries only its path) and the child runs isolated.
+        self.assertNotIn("$Command | & powershell.exe", script)
+        self.assertIn("Start-Process -FilePath 'powershell.exe'", script)
+        self.assertIn("-RedirectStandardOutput $StdoutPath", script)
+        self.assertIn("-RedirectStandardError $StderrPath", script)
+        self.assertIn("Remove-Item -LiteralPath $scriptPath", script)
         self.assertIn("$ConfirmPreference = ''None''; &", script)
         self.assertIn("' -Confirm:$false'", script)
         self.assertNotIn("'-File', $UpdateScript", script)

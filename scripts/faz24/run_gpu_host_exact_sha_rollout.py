@@ -244,17 +244,32 @@ function Invoke-PowerShellChild {
     [Parameter(Mandatory = $true)][string]$StdoutPath,
     [Parameter(Mandatory = $true)][string]$StderrPath
   )
-  $arguments = @(
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-    '-InputFormat', 'Text', '-OutputFormat', 'Text', '-Command', '-'
+  # Start-Process, not the previous pipe-into-a-native-powershell call with
+  # inline stream redirection. Under PowerShell 5.1 a native command's stderr
+  # becomes ErrorRecords BEFORE the redirection applies, so a chatty child
+  # turns every stderr line into an error
+  # record this parent must format. The updater prints its progress on stderr,
+  # and the resulting cascade killed this process mid-render: the rollout emitted
+  # no evidence line at all and the driver classified it remote-evidence-unavailable
+  # (measured 2026-08-03 on the Denetim host — a Set-PSDebug trace ends inside the
+  # error-formatting frames right after this call, and every run since 2026-08-01
+  # failed the same way). Start-Process writes both streams straight to the files,
+  # so the child's stderr never enters this runspace's error stream.
+  $scriptPath = Join-Path $env:TEMP (
+    'faz24-gpu-rollout-child-' + [Guid]::NewGuid().ToString('N') + '.ps1'
   )
-  $oldEap = $ErrorActionPreference
   try {
-    $ErrorActionPreference = 'Continue'
-    $Command | & powershell.exe @arguments 1> $StdoutPath 2> $StderrPath
-    return [int]$LASTEXITCODE
+    [IO.File]::WriteAllText(
+      $scriptPath, $Command, (New-Object Text.UTF8Encoding($false))
+    )
+    $child = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', $scriptPath
+    ) -NoNewWindow -Wait -PassThru `
+      -RedirectStandardOutput $StdoutPath -RedirectStandardError $StderrPath
+    return [int]$child.ExitCode
   } finally {
-    $ErrorActionPreference = $oldEap
+    Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
   }
 }
 
