@@ -517,7 +517,9 @@ def main() -> None:
     container_image(
         audio_deploy,
         "audio-gateway",
-        # 2026-08-03 (backend#1100, gitops#3419 RT-5): superset of backend#1095
+        # 2026-08-04 (backend#1101, gitops#3419 RT-5): superset of backend#1100
+        # (configurable max_delay_mode, vendor-default flexible) which is a
+        # superset of backend#1095
         # (bounded two-phase Speechmatics terminal drain; per-session
         # internal|speechmatics provider contract; fail-closed on disabled
         # providers, missing credentials, queue overflow, incomplete receipts
@@ -526,7 +528,7 @@ def main() -> None:
         # "fixed", pairing with the overlay's max_delay 1.0 (gitops#3424) so
         # live finals commit fast without mid-word cuts.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:74dd0bdbfaafb72f17d0c253c1b9dec39d8dc84bdf26488dcb034e03c33546a5",
+        "sha256:52a465a6751ff94f74493bf474eb4d3ab49967a9cce0072507f942ccab5dd0cf",
     )
     pod_annotation(
         meeting_deploy,
