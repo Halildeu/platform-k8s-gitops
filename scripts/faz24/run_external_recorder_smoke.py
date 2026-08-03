@@ -182,6 +182,9 @@ def _load_json_file(path: str | None, default: dict[str, Any]) -> dict[str, Any]
 
 
 def _default_chunk() -> bytes:
+    # 512 bytes = 256 whole PCM16 mono frames. The accountant rejects a byte
+    # length that is not a whole number of frames, so this length is load
+    # bearing for the default (PCM16) format.
     return bytes((idx % 251 for idx in range(512)))
 
 
@@ -583,7 +586,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--device-id", default="codex-faz24-smoke")
     parser.add_argument("--language", default="tr")
     parser.add_argument("--stt-provider", choices=("internal", "speechmatics"))
-    parser.add_argument("--audio-format", default="WAV")
+    # PCM16, not WAV: the smoke opens a session without transcriptionMode, so the
+    # gateway routes it through DirectSttForwardingDispatcher, and the #257 contract
+    # makes direct-STT PCM16-only — a container format's duration cannot be derived
+    # without a parser, so the accountant returns Unmeterable and the dispatcher
+    # answers 503 AUDIO_GATEWAY_STT_UNAVAILABLE before the chunk is ever forwarded.
+    # WAV stays valid on the global API surface; it is simply not a direct-STT input.
+    parser.add_argument("--audio-format", default="PCM16")
     parser.add_argument("--sample-rate-hz", type=int, default=16000)
     parser.add_argument("--channels", type=int, default=1)
     parser.add_argument("--consent-version", default="recorder-consent-v1")
