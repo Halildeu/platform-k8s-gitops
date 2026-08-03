@@ -53,8 +53,21 @@ if grep -Fq "'-File', \$UpdateScript" "${RUNNER}" || \
   grep -Fq "'-File', \$MigrationScript" "${RUNNER}"; then
   fail 'Windows PowerShell child scripts must not use -File switch binding'
 fi
-grep -Fq '$Command | & powershell.exe @arguments' "${RUNNER}" || \
-  fail 'Windows PowerShell child stdin transport missing'
+# The child command must stay out of argv, but it must NOT be piped into
+# powershell.exe either: under PowerShell 5.1 a native command's stderr becomes
+# ErrorRecords before the redirection applies, and the updater's stderr progress
+# killed the parent mid-format so no evidence line was ever emitted. The command
+# now travels through a temp .ps1 (argv carries only its path) and the child runs
+# under Start-Process with both streams redirected straight to files.
+if grep -Fq '$Command | & powershell.exe' "${RUNNER}"; then
+  fail 'Windows PowerShell child must not pipe into a native powershell.exe call'
+fi
+grep -Fq "Start-Process -FilePath 'powershell.exe'" "${RUNNER}" || \
+  fail 'Windows PowerShell child process isolation missing'
+grep -Fq '-RedirectStandardError $StderrPath' "${RUNNER}" || \
+  fail 'Windows PowerShell child stderr file redirection missing'
+grep -Fq 'Remove-Item -LiteralPath $scriptPath' "${RUNNER}" || \
+  fail 'Windows PowerShell child temp-script cleanup missing'
 grep -Fq 'function ConvertTo-PowerShellLiteral' "${RUNNER}" || \
   fail 'Windows PowerShell child literal escaping helper missing'
 grep -Fq "\$ConfirmPreference = ''None''; &" "${RUNNER}" || \

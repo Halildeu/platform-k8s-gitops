@@ -244,9 +244,10 @@ function Invoke-PowerShellChild {
     [Parameter(Mandatory = $true)][string]$StdoutPath,
     [Parameter(Mandatory = $true)][string]$StderrPath
   )
-  # Start-Process, not `$Command | & powershell.exe ... 2> $StderrPath`. Under
-  # PowerShell 5.1 a native command's stderr becomes ErrorRecords BEFORE the
-  # redirection applies, so a chatty child turns every stderr line into an error
+  # Start-Process, not the previous pipe-into-a-native-powershell call with
+  # inline stream redirection. Under PowerShell 5.1 a native command's stderr
+  # becomes ErrorRecords BEFORE the redirection applies, so a chatty child
+  # turns every stderr line into an error
   # record this parent must format. The updater prints its progress on stderr,
   # and the resulting cascade killed this process mid-render: the rollout emitted
   # no evidence line at all and the driver classified it remote-evidence-unavailable
