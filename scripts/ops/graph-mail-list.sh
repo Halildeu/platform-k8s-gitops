@@ -36,6 +36,7 @@ set -euo pipefail
 MAILBOX="ai@acik.com"
 TOP=5
 INCLUDE_BODY=0
+FULL_BODY=0
 SEARCH=""
 FILTER=""
 SSH_HOST="aiadmin@aiserver"
@@ -49,6 +50,7 @@ Options:
   --top N             Number of messages (default: 5; max: 50)
   --mailbox EMAIL     Mailbox to read (default: ai@acik.com)
   --include-body      Include bodyPreview (truncated 500 chars)
+  --full-body         Include full plain-text body (body_text, 6000 chars max)
   --search QUERY      Graph $search filter (e.g., "alert", "subject:bounce")
   --filter EXPR       Graph $filter expression (OData)
   --ssh-host HOST     SSH host for Vault access (default: aiadmin@aiserver)
@@ -68,6 +70,7 @@ while [[ $# -gt 0 ]]; do
         --top) TOP="$2"; shift 2 ;;
         --mailbox) MAILBOX="$2"; shift 2 ;;
         --include-body) INCLUDE_BODY=1; shift ;;
+        --full-body) FULL_BODY=1; INCLUDE_BODY=1; shift ;;
         --search) SEARCH="$2"; shift 2 ;;
         --filter) FILTER="$2"; shift 2 ;;
         --ssh-host) SSH_HOST="$2"; shift 2 ;;
@@ -81,11 +84,15 @@ if [[ $TOP -lt 1 || $TOP -gt 50 ]]; then
     exit 1
 fi
 
-# Build $select fields based on --include-body
-if [[ $INCLUDE_BODY -eq 1 ]]; then
-    SELECT_FIELDS="id,subject,from,toRecipients,receivedDateTime,hasAttachments,bodyPreview"
+# Build $select fields based on --include-body / --full-body.
+# ccRecipients is always selected: whether a thread keeps its stakeholder in the
+# loop is a property of the message, and without it a missing CC is invisible.
+if [[ $FULL_BODY -eq 1 ]]; then
+    SELECT_FIELDS="id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,bodyPreview,body"
+elif [[ $INCLUDE_BODY -eq 1 ]]; then
+    SELECT_FIELDS="id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,bodyPreview"
 else
-    SELECT_FIELDS="id,subject,from,toRecipients,receivedDateTime,hasAttachments"
+    SELECT_FIELDS="id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments"
 fi
 
 # Build Graph query
@@ -228,6 +235,7 @@ GRAPH_RESPONSE=$(curl -sS \
     "https://graph.microsoft.com/v1.0${GRAPH_QUERY}" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     -H "Accept: application/json" \
+    -H 'Prefer: outlook.body-content-type="text"' \
     -H "ConsistencyLevel: eventual")
 
 # Sanitize output — strip @odata.context noise + flatten
@@ -241,9 +249,11 @@ echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
         from: (.from.emailAddress.address // null),
         from_name: (.from.emailAddress.name // null),
         to: [.toRecipients[]?.emailAddress.address],
+        cc: [.ccRecipients[]?.emailAddress.address],
         received: .receivedDateTime,
         has_attachments: .hasAttachments,
-        body_preview: (if .bodyPreview then (.bodyPreview | .[0:500]) else null end)
+        body_preview: (if .bodyPreview then (.bodyPreview | .[0:500]) else null end),
+        body_text: (if .body.content then (.body.content | .[0:6000]) else null end)
     }]
 }'
 
