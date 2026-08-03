@@ -99,7 +99,10 @@ data:
   # ConfigMap; Deployment reads it from the isolated optional Secret below.
   AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_REALTIME_URL: "wss://eu2.rt.speechmatics.com/v2"
   AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_LANGUAGE: "tr"
-  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_MAX_DELAY_SECONDS: "2.0"
+  # 2.0 -> 1.0 (#3419): finals commit ~2x faster so the live tail tracks the
+  # speaker; 0.7 floor deferred until max_delay_mode=flexible is configurable
+  # (adapter hardcodes "fixed", which risks mid-word cuts at the floor).
+  AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_MAX_DELAY_SECONDS: "1.0"
   AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_AUDIO_CHUNK_BYTES: "32768"
   AUDIO_GATEWAY_DIRECT_STT_SPEECHMATICS_ALLOW_INSECURE: "false"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED: "true"
