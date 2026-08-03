@@ -33,8 +33,14 @@ SESSION_EXPIRY_EXPECTED_IMAGE="${SESSION_EXPIRY_EXPECTED_IMAGE:-}"
 SESSION_EXPIRY_POD_UID="${SESSION_EXPIRY_POD_UID:-}"
 SMOKE_CHUNK_FILE="${SMOKE_CHUNK_FILE:-}"
 SMOKE_STT_PROVIDER="${SMOKE_STT_PROVIDER:-}"
-SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
-SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
+# PCM16, not WAV: the smoke opens its session without transcriptionMode, so the
+# gateway routes the chunk through DirectSttForwardingDispatcher, and the #257
+# contract makes direct-STT PCM16-only — a container format's duration cannot be
+# derived without a parser, so DirectSttAudioAccountant returns Unmeterable and
+# the dispatcher answers 503 AUDIO_GATEWAY_STT_UNAVAILABLE before forwarding.
+# WAV remains valid on the global API surface; it is not a direct-STT input.
+SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-PCM16}"
+SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-16000}"
 SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
 REALTIME_PYTHON="${REALTIME_PYTHON:-python3}"
 REALTIME_HELPER="${REALTIME_HELPER:-}"
