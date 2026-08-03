@@ -1234,6 +1234,19 @@ patches:
               port:
                 number: 80
 
+  # audio-gateway WS ingress'i (gitops#3419) — host override, timeout
+  # annotation'ları base'de (proxy-read/send-timeout 3600s).
+  - target:
+      kind: Ingress
+      name: platform-audio-gateway
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: ai.acik.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: ai.acik.com
+
   # Host bridge prod portları (D20)
   # 2026-05-20 vault-prod network-drift class — see docs/RB-vault-ops.md
   # §"Network drift" and host-compose/{postgres,keycloak,vault}/prod/

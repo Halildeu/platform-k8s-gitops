@@ -9397,6 +9397,20 @@ patches:
               port:
                 number: 80
 
+  # audio-gateway WS ingress'i (gitops#3419) — host override, timeout
+  # annotation'ları base'de (proxy-read/send-timeout 3600s). Canlı WebSocket
+  # drain'i 60s ingress default'unda kesiliyordu (desktop "socket-close").
+  - target:
+      kind: Ingress
+      name: platform-audio-gateway
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: testai.acik.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: testai.acik.com
+
   # Faz 22.6 A1 — test Vault HTTPS host-bridge egress.
   # Base keeps legacy Vault HTTP :8200. Test overlay adds the :8202 HTTPS
   # plane used by the TPM-attestation Vault PKI path without widening prod.
