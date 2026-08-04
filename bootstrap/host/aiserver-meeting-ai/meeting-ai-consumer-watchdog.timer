@@ -1,0 +1,11 @@
+[Unit]
+Description=Ten-minute Faz 24 meeting-ai ready-consumer health check
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/3437
+
+[Timer]
+OnCalendar=*-*-* *:0/10:00 UTC
+Persistent=true
+Unit=meeting-ai-consumer-watchdog.service
+
+[Install]
+WantedBy=timers.target
