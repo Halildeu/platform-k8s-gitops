@@ -754,9 +754,33 @@ class GateTests(unittest.TestCase):
         value = copy.deepcopy(self.evidence)
         value["live"]["redis"]["group"]["pending"] = 1
         self.assertIn("redis_group_pending", self.failed_names(value))
+
+    def test_reactivation_accepts_classified_undelivered_backlog(self) -> None:
+        # gitops#3437: lag drains only while the consumer runs, so demanding
+        # lag == 0 made the gate unrecoverable after an outage. Undelivered
+        # entries stay acceptable while the complete retained scan classifies
+        # every ready row as compatible.
         value = copy.deepcopy(self.evidence)
         value["live"]["redis"]["group"]["lag"] = 1
+        self.assertNotIn(
+            "redis_group_idle_before_reactivation", self.failed_names(value)
+        )
+
+    def test_reactivation_rejects_backlog_outside_the_scanned_window(self) -> None:
+        value = copy.deepcopy(self.evidence)
+        value["live"]["redis"]["group"]["lag"] = (
+            int(value["live"]["redis"]["length"]) + 1
+        )
         self.assertIn("redis_group_idle_before_reactivation", self.failed_names(value))
+
+    def test_reactivation_rejects_missing_or_negative_lag(self) -> None:
+        for lag in (None, -1, "1"):
+            with self.subTest(lag=lag):
+                value = copy.deepcopy(self.evidence)
+                value["live"]["redis"]["group"]["lag"] = lag
+                self.assertIn(
+                    "redis_group_idle_before_reactivation", self.failed_names(value)
+                )
 
     def test_enabled_or_unbound_host_fails(self) -> None:
         value = copy.deepcopy(self.evidence)

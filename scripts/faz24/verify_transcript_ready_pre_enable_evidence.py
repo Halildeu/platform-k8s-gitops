@@ -931,6 +931,16 @@ def validate(
             "DLQ_ACK_XDEL",
         )
     else:
+        # Undelivered entries (lag) are not a safety condition on their own: the
+        # atomic scan above already classifies the complete retained stream and
+        # rejects the evidence unless every retained ready row is compatible
+        # (legacy and malformed counts must be zero). Requiring lag == 0 here
+        # only added operational quiescence, and it made the gate unrecoverable
+        # after any consumer outage: lag drains only while the consumer runs,
+        # the consumer runs only with a permit, and the permit required lag == 0.
+        # The empty PEL stays required — a non-empty PEL means half-processed
+        # deliveries whose outcome this evidence cannot describe.
+        group_lag = integer(group.get("lag"))
         add(
             checks,
             "redis_group_idle_before_reactivation",
@@ -942,8 +952,12 @@ def validate(
             and bool(group.get("lastDeliveredId"))
             and integer(group.get("entriesRead")) is not None
             and integer(group.get("entriesRead")) >= 0
-            and zero(group.get("lag")),
-            "existing ready group must be fully caught up with an empty PEL",
+            and group_lag is not None
+            and group_lag >= 0
+            and length is not None
+            and group_lag <= length,
+            "existing ready group must have an empty PEL and keep every "
+            "undelivered entry inside the classified retained window",
             "KEEP_CONSUMER_DISABLED",
         )
 
