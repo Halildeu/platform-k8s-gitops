@@ -1,0 +1,22 @@
+[Unit]
+Description=Faz 24 meeting-ai ready-consumer watchdog (gitops#3437)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/3437
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/meeting-ai-consumer-watchdog
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/platform
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
