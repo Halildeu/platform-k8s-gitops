@@ -12,9 +12,11 @@
 Policy iki açık aktivasyon modu taşır. `first-enable`, consumer group'un henüz
 oluşmadığını ve retained Redis stream'inin ilk kez güvenli biçimde tüketileceğini
 kanıtlar. `reactivation`, daha önce kurulmuş group'u silmeden veya `0-0` replay
-yapmadan yalnız `pending=0`, `lag=0` ve PostgreSQL/Redis benzersiz occurrence
-binding setleri birebir eşleştiğinde yeniden açılmasına izin verir. Her iki modda
-da aşağıdaki eski işlerin hiçbirinin consumer'a ulaşamayacağı kanıtlanır:
+yapmadan yalnız `pending=0`, teslim edilmemiş girdilerin tamamı sınıflandırılmış
+retained pencerenin içinde (`lag <= length`) ve PostgreSQL/Redis benzersiz
+occurrence binding setleri birebir eşleştiğinde yeniden açılmasına izin verir.
+Her iki modda da aşağıdaki eski işlerin hiçbirinin consumer'a ulaşamayacağı
+kanıtlanır:
 
 - `meeting.event.v1` olup `analysisRunId` alanı eksik veya `null` kalan
   `meeting.transcript.ready` outbox kayıtları;
@@ -127,8 +129,9 @@ Kabul için tüm koşullar birlikte gerekir:
 - PENDING, active/stale CLAIMED, DEAD ve PUBLISHED legacy outbox sınıflarının
   her biri sıfırdır; PUBLISHED satır elle replay edilebileceği için istisna yoktur;
 - atomik Redis scan `scanned == length`, truncation false olur; `first-enable`
-  modunda target group yoktur; `reactivation` modunda group vardır, PEL ve lag
-  sıfırdır, last-delivered/entries-read metadata'sı geçerlidir;
+  modunda target group yoktur; `reactivation` modunda group vardır, PEL sıfırdır,
+  teslim edilmemiş girdi sayısı sınıflandırılmış pencerenin içindedir
+  (`0 <= lag <= length`), last-delivered/entries-read metadata'sı geçerlidir;
 - PostgreSQL sayaçları Redis scan öncesi ve sonrasında aynıdır;
 - GPU host live health consumer'ı `disabled`, worker/group'u kapalı gösterir;
 - effective env dosyasında ready flag ya hiç yoktur (`matchCount=0`) ya da tek
@@ -144,8 +147,19 @@ Bu koşullardan biri eksikse verifier `enableAuthorized=false` döndürür.
 
 Group'u silmek, yeniden oluşturmak veya retained stream'i zorla replay etmek bu
 runbook'un remediation adımı değildir. Reactivation kapısı başarısızsa consumer
-kapalı tutulur ve PEL/lag ya da cross-store binding drift'i kök nedeninde
-düzeltilir.
+kapalı tutulur ve PEL ya da cross-store binding drift'i kök nedeninde düzeltilir.
+
+**Neden `lag=0` şartı kaldırıldı (gitops#3437).** Teslim edilmemiş girdi sayısı
+tek başına bir güvenlik koşulu değildir: aynı verdict retained pencerenin
+tamamını atomik olarak sınıflandırır ve legacy/malformed ready satırı bulursa
+zaten reddeder. Buna karşılık `lag` yalnız consumer çalışırken düşer, consumer
+yalnız permit ile çalışır ve permit `lag=0` isterdi; bu üçlü, herhangi bir
+consumer kesintisi backlog biriktirdiği anda kapıyı geri dönülemez hale
+getiriyordu (2026-08-04 canlı olayı: platform-ai deploy'u permit'i geçersiz
+kıldı, üç toplantının ready event'i teslim edilmeden bekledi ve tek "çıkış"
+`XGROUP SETID` ile o toplantıları atmak olurdu). PEL'in boş olması gerçek bir
+güvenlik koşuludur ve zorunlu kalmıştır: dolu PEL, sonucu bu evidence'ın
+tarif edemediği yarım işlenmiş teslimat demektir.
 
 ## 6. TEST mTLS İstemci Sertifikası Yenileme Sınırı
 
