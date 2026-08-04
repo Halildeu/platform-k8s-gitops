@@ -1,11 +1,14 @@
-# GitOps tombstone for the #2777 audio-gateway -> meeting-ai allow policy.
+# Faz 24 İ4 (gitops#3440): audio-gateway -> meeting-ai live-analyze allow.
 #
-# The platform-test Argo Application intentionally has automated prune disabled.
-# Removing the original manifest therefore left its live allow rule behind. Keep
-# the same object name under desired-state control with no egress rules so Argo
-# revokes that rule without an imperative cluster mutation. Other independently
-# managed audio-gateway NetworkPolicies continue to supply their own narrow
-# allows through Kubernetes NetworkPolicy's additive semantics.
+# History: the original #2777 allow was reverted (#2779) because the bridge was
+# plain HTTP; this object then lived as a rule-less tombstone so Argo (automated
+# prune disabled) would revoke the stale live allow without an imperative
+# mutation. With platform-backend#1102 the hop carries mutual TLS, so the same
+# object name now grants the narrow egress again: only the Denetim PC's Caddy
+# mTLS front (10.99.0.2:8244 -> 127.0.0.1:8300), nothing else. The filename
+# keeps the tombstone suffix on purpose — same desired-state object, and the
+# rollback IS the tombstone: restore `egress: []`, drop the 8244 rule, set the
+# policy-state label back to `tombstone`.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -14,11 +17,17 @@ metadata:
     app.kubernetes.io/name: audio-gateway
     app.kubernetes.io/part-of: platform
     platform.acik.com/faz: "24"
-    platform.acik.com/policy-state: tombstone
+    platform.acik.com/policy-state: active
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: audio-gateway
   policyTypes:
     - Egress
-  egress: []
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.99.0.2/32
+      ports:
+        - port: 8244
+          protocol: TCP

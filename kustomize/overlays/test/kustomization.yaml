@@ -78,7 +78,7 @@ resources:
   # MAI_READY_CONSUMER_ENABLED flag remains absent/default-off. A later enable
   # requires the fresh machine-bound gate in
   # RB-faz24-transcript-ready-legacy-pre-enable.md; this overlay cannot turn it on.
-  - netpol-audio-gateway-egress-meeting-ai-tombstone.yaml  # Faz 24: revoke stale #2777 allow while Argo automated prune=false
+  - netpol-audio-gateway-egress-meeting-ai-tombstone.yaml  # Faz 24 İ4: mTLS'li 8244 allow (gitops#3440); rollback = tombstone'a dondur
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
@@ -467,7 +467,14 @@ images:
     # config ID remains
     # sha256:bf32c19372372314252979dec0b1a62f281f1489b73549daab860693af49d3d0.
     # Production manifests remain unchanged.
-    digest: sha256:52a465a6751ff94f74493bf474eb4d3ab49967a9cce0072507f942ccab5dd0cf
+    # 2026-08-05 update: sha-1459263 — platform-backend#1102 pins the İ4
+    # live-analyze hop to mutual TLS (applyMutualTls on the meeting-ai
+    # WebClient; plaintext base-url fail-closed while direct-stt TLS is on).
+    # This bump + the flag flips below re-enable the #2779-reverted live
+    # analysis chain over the pinned-identity 8244 bridge (gitops#3440).
+    # Pulled from GHCR, pushed to the TEST-only local registry with digest
+    # read-back, containerd-imported + digest-tagged on k3d-test-server-0.
+    digest: sha256:0753911519fcc912ad39520a88668a77624d81d292a7055afcc58558d8a52886
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9558,7 +9565,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-02-3349-v22-two-phase-terminal-drain"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-05-3440-v23-i4-live-analyze-mtls"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -9613,6 +9620,36 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_SELECTABLE_PROVIDERS
         value: "internal,speechmatics"
+      # --- Faz 24 İ4 canli analiz (gitops#3440, platform-backend#1102) ---
+      #
+      # KULLANICI TALEBI (2026-08-04): karar/aksiyon toplanti SURERKEN
+      # cikarilsin ve toplanti aninda gorulsun. Ilk enable (#2777) düz-HTTP
+      # kopru ADR-0031 pinned-identity'yi karsilamadigi icin #2779 ile geri
+      # alinmisti. sha-1459263 imaji live-analyze WebClient'ini ayni pod'daki
+      # direct-stt mTLS materyaline bagliyor; TLS acikken http base-url
+      # fail-closed reddediliyor. Base URL, Denetim PC Caddy'sindeki ikinci
+      # mTLS site'ina gider (8244 -> 127.0.0.1:8300; 8243'un ikizi, ayni CA;
+      # WFP kurali yalniz 10.99.0.1). Canli kanit 2026-08-05: gateway'in kendi
+      # istemci sertifikasiyla POST /analyze/live -> HTTP 200 (soguk 58s model
+      # yuklemesi, sicak 12.7s) — timeout bu yuzden 60s: trigger fire-and-forget
+      # (STT yolunu bloklamaz), soguk ilk cagriyi da kapsasin.
+      # ROLLBACK: uc degeri base default'una dondur ("false"/""/"5000") +
+      # broadcast'i "false" yap + rev bump. NetPol tarafinin rollback'i icin
+      # tombstone deseni netpol dosyasindaki nota bakin.
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_BASE_URL
+        value: "https://live-stt.denetim:8244"
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS
+        value: "60000"
+      # I2-T web izleyici canli transkript SSE hub'i — ayni pakette acilir;
+      # ephemeral pub/sub, kalicilik yok, drop-oldest back-pressure.
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_TRANSCRIPT_BROADCAST_ENABLED
+        value: "true"
       # --- Faz 24 cumle birlestirme (platform-backend#918) ---
       #
       # SORUN: kullanicinin bildirdigi "ayni cumleyi on satirda okuyorsun".
