@@ -86,7 +86,7 @@ class SpeechmaticsSecretPolicyContractTest(unittest.TestCase):
             "internal,speechmatics",
         )
         self.assertIn(
-            "2026-08-05-3440-v23-i4-live-analyze-mtls",
+            "2026-08-05-3435-v24-speechmatics-vocab",
             overlay,
         )
         self.assertNotIn("2026-08-01-3240-v7-credential-failsafe", overlay)

@@ -474,7 +474,7 @@ images:
     # analysis chain over the pinned-identity 8244 bridge (gitops#3440).
     # Pulled from GHCR, pushed to the TEST-only local registry with digest
     # read-back, containerd-imported + digest-tagged on k3d-test-server-0.
-    digest: sha256:0753911519fcc912ad39520a88668a77624d81d292a7055afcc58558d8a52886
+    digest: sha256:e038e52addc23cba9192e9c046469f8c7b08222f004f83b766a434e8dfa15a07
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9565,7 +9565,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-05-3440-v23-i4-live-analyze-mtls"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-05-3435-v24-speechmatics-vocab"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
