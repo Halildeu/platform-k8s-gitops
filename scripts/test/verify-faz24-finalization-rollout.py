@@ -528,7 +528,7 @@ def main() -> None:
         # "fixed", pairing with the overlay's max_delay 1.0 (gitops#3424) so
         # live finals commit fast without mid-word cuts.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:0753911519fcc912ad39520a88668a77624d81d292a7055afcc58558d8a52886",
+        "sha256:e038e52addc23cba9192e9c046469f8c7b08222f004f83b766a434e8dfa15a07",
     )
     pod_annotation(
         meeting_deploy,
