@@ -69,11 +69,24 @@ POLICY_SHA256="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.ar
 PRODUCER_DIGEST="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["producerCapabilities"][0]["transcriptImageDigest"])' "$POLICY")"
 
 if [ -z "$TRUST_ROOT" ]; then
+  # The host keeps EVERY trust root it has ever pinned, so "pick the first
+  # file" is wrong: on 2026-08-05 the directory held four and the alphabetically
+  # first one (417e06fe...) was not the active one (f09351c4...). Signing against
+  # a stale root produces a permit the host then refuses, with an error that
+  # points at the permit rather than at this selection. Read the ACTIVE root's
+  # fingerprint from the host's own runtime env pin and fetch exactly that file.
   TRUST_ROOT="${WORK}/trust-root.json"
+  ACTIVE_TRUST_SHA="$(ssh -F "$HOME/.ssh/config" -o BatchMode=yes -o StrictHostKeyChecking=yes denetim-pc \
+    "powershell -NoProfile -Command \"(Select-String -Path 'C:\\ProgramData\\Acik\\platform-ai\\meeting-ai.env' -Pattern '^MAI_READY_EXPECTED_PERMIT_TRUST_ROOT_SHA256=' | ForEach-Object { \$_.Line }) -replace '^[^=]+=',''\"" \
+    2>/dev/null | tr -d '\r' | grep -E '^[0-9a-f]{64}$' | head -1)"
+  [ -n "$ACTIVE_TRUST_SHA" ] || die "could not read the active trust-root pin from the GPU host env; pass --trust-root"
   ssh -F "$HOME/.ssh/config" -o BatchMode=yes -o StrictHostKeyChecking=yes denetim-pc \
-    "powershell -NoProfile -Command \"Get-ChildItem 'C:\\ProgramData\\Acik\\platform-ai\\permits\\trust\\transcript-ready-trust-root-*.json' | Select-Object -First 1 | ForEach-Object { [Convert]::ToBase64String([IO.File]::ReadAllBytes(\$_.FullName)) }\"" \
+    "powershell -NoProfile -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\\ProgramData\\Acik\\platform-ai\\permits\\trust\\transcript-ready-trust-root-${ACTIVE_TRUST_SHA}.json'))\"" \
     2>/dev/null | tr -d '\r' | grep -E '^[A-Za-z0-9+/=]+$' | head -1 | base64 -d > "$TRUST_ROOT"
   [ -s "$TRUST_ROOT" ] || die "could not fetch the pinned trust root from the GPU host; pass --trust-root"
+  FETCHED_TRUST_SHA="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$TRUST_ROOT")"
+  [ "$FETCHED_TRUST_SHA" = "$ACTIVE_TRUST_SHA" ] \
+    || die "fetched trust root does not match the host's active pin; refusing to sign"
 fi
 TRUST_ROOT_SHA256="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$TRUST_ROOT")"
 

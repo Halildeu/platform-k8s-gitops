@@ -44,7 +44,7 @@
   ],
   "hostStartupGuards": [
     {
-      "platformAiCommit": "c14905273efcaba216a08bdc9f522fd6cb7b1b48",
+      "platformAiCommit": "8c143ddcff0c119c8bf071c820a2c3fe8f923d1f",
       "startupScriptSha256": "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
       "permitRequired": true
     }
