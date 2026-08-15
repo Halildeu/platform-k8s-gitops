@@ -118,7 +118,20 @@ images:
     # Kaynak: d4df8d1063716e820e6311bf45853bbf586c98f8 (etiket KISA sha — backend hatti).
     # Digest gercek cekisle okundu (smoke-dig-c pod, k3d-test).
     # Onceki: a57c2512 @ sha256:5236e716d7e12281f...
-    digest: sha256:9619cfc7a1f30df0d5dd02b8ee1dc7b71b23ec7ac6911a105943c0342af5a101
+    # 2026-08-15 bump: platform-backend#1107 — JRE tabani vendor degisimi.
+    # Yuzen eclipse-temurin:21-jre-alpine etiketi Temmuz 2026 OpenJDK CPU'sundan
+    # (advisory 2026-07-21) bir ay sonra hala Nisan JDK'sindaydi (21.0.11+10) ve
+    # grype DB yetisince tarama kapisi CVE-2026-41254 + CVE-2026-47063 ile
+    # kirmiziya dustu (bu PR'in ilk kosusu). Kabul listesi meshru degil:
+    # CVE-2026-41254 JDK goruntu-ayristirma tasmasi ve bu servis ihbarci
+    # yuklemelerini JVM'de decode ediyor — kapinin yazilma sebebi olan yol.
+    # Temurin'de 21.0.12 alpine artefakti yok; taban TAM surume sabitli
+    # bellsoft/liberica-openjre-alpine-musl:21.0.12-10 oldu. Pod ici kanit:
+    # "openjdk version 21.0.12 2026-07-21 LTS, build 21.0.12+10-LTS" (smoke-jre-ver).
+    # Kaynak: f35a3161dde8e2946c00134c7e3ad0f50f35fd6e (etiket sha-f35a316).
+    # Digest gercek cekisle okundu (smoke-dig-jre pod, k3d-test).
+    # Onceki: d4df8d10 @ sha256:9619cfc7a1f30df0d5...
+    digest: sha256:3c1064b593bf8ea280897ad6c629409dbb7c0f8381f1b02d9b8d65f245ab49e8
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
@@ -211,7 +224,17 @@ images:
     # Kaynak: 0586b7d7bdfe2ac71c7a5f6cee2a84bc975a2917 (etiket TAM sha).
     # Digest gercek cekisle okundu (smoke-dig-w2 pod, k3d-test).
     # Onceki: 055c2596 @ sha256:1687dab5f5e37e3a7...
-    digest: sha256:b82142fb5e2fbc0b867377a1bc5e50ad25df87fad912f1d7bd9c3ceac6d5ce58
+    # 2026-08-15 bump: platform-web#1125 — ModuleHome tamamlayicilari:
+    # "Siradaki is" bandi (gerekce grid hucresiyle AYNI turetimden), tazelik
+    # satiri (Son guncelleme + Yenile, aria-busy), dort durum yuzeyi (iskelet /
+    # iki bos durum / hata+Tekrar dene). Codex D2 kontrol listesi kapandi.
+    # NOT: promosyon gecikti (oturum arasi); ileri-hareket dogrulandi:
+    # 0586b7d7, 2d9e77b6'nin atasi (merge-base --is-ancestor EVET) ve 2d9e77b6
+    # su an web main HEAD — hucre bununla tam guncel.
+    # Kaynak: 2d9e77b6b248d312c0b6d9ede81c2f951b643372 (etiket TAM sha).
+    # Digest gercek cekisle okundu (smoke-dig-m2 pod, k3d-test).
+    # Onceki: 0586b7d7 @ sha256:b82142fb5e2fbc0b8...
+    digest: sha256:e96e172fcd20362e77e15d1abc25edbf8c2f2089edd569e7eb65705d66230244
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
