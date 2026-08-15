@@ -281,8 +281,12 @@ if [ "$VERIFY_ONLY" != "1" ]; then
   }
 }
 JSON
-  docker cp "$USERID_MAPPER_HOST" "$KC_CONTAINER:$USERID_MAPPER_CONTAINER" >/dev/null 2>&1 \
-    || { echo "ERROR: docker cp userId mapper JSON failed" >&2; rm -f "$USERID_MAPPER_HOST"; exit 1; }
+  # `docker cp` into a running container whose /tmp is a tmpfs mount silently
+  # lands the file in the underlying image layer, not the tmpfs the KC process
+  # sees — kcadm then reports "File not found". Pipe through the container's own
+  # shell so the write happens inside the same mount namespace kcadm reads from.
+  docker exec -i "$KC_CONTAINER" sh -c "cat > '$USERID_MAPPER_CONTAINER'" < "$USERID_MAPPER_HOST" \
+    || { echo "ERROR: userId mapper JSON write into container failed" >&2; rm -f "$USERID_MAPPER_HOST"; exit 1; }
   if [ -n "$USERID_MAPPER_ID" ]; then
     $KC update "clients/$AUDIENCE_ID/protocol-mappers/models/$USERID_MAPPER_ID" -r "$REALM" \
       -f "$USERID_MAPPER_CONTAINER" >/dev/null \
@@ -404,8 +408,10 @@ with open(out_path, "w") as f:
     json.dump(perm, f)
 PYEOF
 
-  docker cp "$ATTACH_JSON_HOST" "$KC_CONTAINER:$ATTACH_JSON_CONTAINER" >/dev/null 2>&1 \
-    || { echo "ERROR: docker cp policy attach JSON failed" >&2; exit 2; }
+  # See userId-mapper note above: tmpfs /tmp makes `docker cp` unreliable on the
+  # migrated host. Write through the container shell instead.
+  docker exec -i "$KC_CONTAINER" sh -c "cat > '$ATTACH_JSON_CONTAINER'" < "$ATTACH_JSON_HOST" \
+    || { echo "ERROR: policy attach JSON write into container failed" >&2; exit 2; }
 
   ATTACH_OUT=$($KC update "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$TE_PERM_ID" -r "$REALM" \
     -f "$ATTACH_JSON_CONTAINER" 2>&1 || true)

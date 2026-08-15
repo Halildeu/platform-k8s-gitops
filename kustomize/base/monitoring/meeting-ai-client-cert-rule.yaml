@@ -1,0 +1,93 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: meeting-ai-client-cert
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: meeting-ai.client-cert
+      interval: 1m
+      rules:
+        - alert: MeetingAIClientCertRotationFailed
+          expr: meeting_ai_client_cert_rotation_last_run_success == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: meeting-ai-client-cert
+          annotations:
+            summary: Meeting-AI mTLS client leaf rotation failed
+            description: The latest GPU-host CSR issuance or in-place certificate install failed (gitops#3432).
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+        - alert: MeetingAIClientCertRotationStale
+          expr: time() - meeting_ai_client_cert_rotation_last_success_timestamp_seconds > 43200
+          for: 15m
+          labels:
+            severity: critical
+            component: meeting-ai-client-cert
+          annotations:
+            summary: Meeting-AI mTLS client leaf rotation is stale
+            description: No successful client-leaf install for more than 12 hours (schedule is 3x/day); at least one rotation window was missed.
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+        - alert: MeetingAIClientCertExpiring
+          expr: meeting_ai_client_cert_not_after_timestamp_seconds - time() < 21600
+          for: 5m
+          labels:
+            severity: critical
+            component: meeting-ai-client-cert
+          annotations:
+            summary: Meeting-AI mTLS client leaf expires within 6 hours
+            description: The 24h client leaf is inside the fail-closed window; expiry turns every analysis delivery into processing_SSLError DEAD letters (gitops#3432).
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+        - alert: MeetingAIClientCertTelemetryAbsent
+          expr: absent_over_time(meeting_ai_client_cert_rotation_last_attempt_timestamp_seconds[30m]) == 1
+          for: 10m
+          labels:
+            severity: critical
+            component: meeting-ai-client-cert
+          annotations:
+            summary: Meeting-AI client-cert rotation telemetry is absent
+            description: staging-sw node-exporter has not exposed the client-cert textfile metric for 30 minutes; the rotation timer or exporter is broken.
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+    - name: meeting-ai.trust-root
+      interval: 1m
+      rules:
+        - alert: MeetingAITrustRootExpiring
+          expr: meeting_ai_trust_root_not_after_timestamp_seconds - time() < 172800
+          for: 15m
+          labels:
+            severity: critical
+            component: meeting-ai-trust-root
+          annotations:
+            summary: Transcript-ready trust root expires within 48 hours
+            description: The 7-day permit trust root is near expiry; after it lapses, any meeting-ai restart fail-closes with a single silent log line and port 8300 never opens. Re-run the permit ceremony (gitops#3432, 2026-08-12 incident class).
+            runbook_url: docs/runbooks/RB-faz24-transcript-ready-legacy-pre-enable.md
+
+        - alert: MeetingAITrustRootProbeFailed
+          expr: meeting_ai_trust_root_probe_success == 0
+          for: 30m
+          labels:
+            severity: warning
+            component: meeting-ai-trust-root
+          annotations:
+            summary: Trust-root expiry probe cannot read the active trust root
+            description: The hourly probe over the WireGuard hop failed; the tunnel or the GPU-host trust store is unreachable.
+            runbook_url: docs/runbooks/RB-faz24-transcript-ready-legacy-pre-enable.md
+
+        - alert: MeetingAITrustRootTelemetryAbsent
+          expr: absent_over_time(meeting_ai_trust_root_probe_last_attempt_timestamp_seconds[2h]) == 1
+          for: 10m
+          labels:
+            severity: warning
+            component: meeting-ai-trust-root
+          annotations:
+            summary: Trust-root expiry telemetry is absent
+            description: staging-sw node-exporter has not exposed the trust-root textfile metric for 2 hours; the hourly probe timer is broken.
+            runbook_url: docs/runbooks/RB-faz24-transcript-ready-legacy-pre-enable.md
