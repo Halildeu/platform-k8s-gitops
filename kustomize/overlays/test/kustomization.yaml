@@ -1728,8 +1728,13 @@ images:
     # paginated, hash-signed rows consumed by budget-service import. Signed
     # main build run 31901041026; digest read back from GHCR by tag
     # sha-d1241d5 (never from build logs).
-    newTag: sha-d1241d5
-    digest: sha256:9368c39167f1c1745fff71de194e890fcdc325c9567ad8bbea88b7de273b0092
+    # 2026-08-15 dual-subject ScopeContext fix (#3468): platform-backend
+    # PR #1113, merge a5f9cbe8a. ScopeContextFilter now passes the KC-subject
+    # alias so UUID-keyed data-access tuples stay visible after a principal
+    # gains its numeric users_db identity. Signed main build run 31904170001;
+    # digest read back from GHCR by tag sha-a5f9cbe (never from build logs).
+    newTag: sha-a5f9cbe
+    digest: sha256:53651a347c6caa601753e0b5277bc0e7659f28c6da75b799bcde09dd896c2cc7
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
