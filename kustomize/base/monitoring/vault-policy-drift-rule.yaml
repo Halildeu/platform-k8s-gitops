@@ -1,0 +1,51 @@
+# PrometheusRule — Vault Policy Drift Alert (gitops#3227)
+#
+# The live Vault copy of an ACL policy is a separate artifact from its file in
+# bootstrap/vault-policies/**: merging a policy PR and applying it to Vault are
+# two acts, and a stale live policy stays silent until some workload needs the
+# missing path. Measured cost of that silence so far: an 11-day and a 40-hour
+# outage, each ending in CreateContainerConfigError with a green-looking
+# Deployment in front of it.
+#
+# Metric source: `vault-policy-reconcile.sh --check` (host cron), writing
+# vault_policy_drift{policy,reason} into the k3d node's node_exporter textfile
+# dir — the exact backup_freshness.prom pattern next door.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vault-policy-drift
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: vault.policy.drift
+      interval: 5m
+      rules:
+        - alert: VaultPolicyDrift
+          expr: vault_policy_drift == 1
+          for: 10m
+          labels:
+            severity: critical
+            component: vault
+          annotations:
+            summary: "Vault policy '{{ $labels.policy }}' drifted from its repo file ({{ $labels.reason }})"
+            description: "Canlı Vault policy repo dosyasından farklı (reason={{ $labels.reason }}). ESO bu policy'ye dayanan bir secret'ı bir SONRAKİ ihtiyaçta 403 ile kaybeder; pod CreateContainerConfigError'a düşer. Onarım: aiserver'da scripts/ops/vault-policy-reconcile.sh (apply modu, reconciler AppRole)."
+            runbook_url: "bootstrap/vault-policies/README.md"
+
+        - alert: VaultPolicyDriftCheckStale
+          # The check itself going quiet is the same failure class as the drift:
+          # the bridge that renews device certs died silently in a host move and
+          # nobody noticed for 12 days. Alert when the last completed check is
+          # older than 13h (cron runs 4x/day; one missed run tolerated).
+          expr: (time() - vault_policy_drift_last_check_timestamp_seconds) > 46800 or absent(vault_policy_drift_last_check_timestamp_seconds)
+          for: 30m
+          labels:
+            severity: warning
+            component: vault
+          annotations:
+            summary: "Vault policy drift check has not completed in >13h"
+            description: "vault_policy_drift.prom bayat veya hiç yok — host cron ölmüş olabilir (host göçü sınıfı). Kontrol: aiserver 'crontab -l | grep vault-policy', log: ~/platform/logs/vault-policy-drift-check.log"
+            runbook_url: "bootstrap/vault-policies/README.md"

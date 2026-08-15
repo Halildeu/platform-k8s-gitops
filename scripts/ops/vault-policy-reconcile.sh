@@ -13,7 +13,12 @@
 # Usage (on aiserver, where platform-vault-test :8201 is reachable):
 #   VAULT_RECONCILER_ROLE_ID_FILE="$HOME/.vault/reconciler-role-id" \
 #   VAULT_RECONCILER_SECRET_ID_FILE="$HOME/.vault/reconciler-secret-id" \
-#   scripts/ops/vault-policy-reconcile.sh [--dry-run] [--emit-seed-secret-id <approle>]
+#   scripts/ops/vault-policy-reconcile.sh [--dry-run] [--check] [--emit-seed-secret-id <approle>]
+#
+# --check (gitops#3227): read-only drift detection — diffs every live policy
+# against its repo file (whitespace-normalized), emits vault_policy_drift
+# textfile metrics for Prometheus, exit 8 on any drift/missing. Scheduled on
+# the host (cron) so a stale live policy alerts BEFORE a pod fails to start.
 #
 # Scope: TEST Vault only. Applies common/*.hcl + test/*.hcl. NEVER prod/*.
 
@@ -24,10 +29,12 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null 
 POLDIR="$REPO_ROOT/bootstrap/vault-policies"
 DRY_RUN=0
 EMIT_SEED=""
+CHECK=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --check) CHECK=1; shift ;;
     --emit-seed-secret-id) EMIT_SEED="$2"; shift 2 ;;
     *) echo "ERROR: unknown flag $1" >&2; exit 2 ;;
   esac
@@ -145,7 +152,81 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== reconcile @ $VAULT_ADDR (dry-run=$DRY_RUN) ==="
+echo "=== reconcile @ $VAULT_ADDR (dry-run=$DRY_RUN check=$CHECK) ==="
+
+# ── --check: read-only drift detection (gitops#3227) ─────────────────────────
+# The live Vault copy of a policy is a SEPARATE artifact from the repo file:
+# applying is a distinct act, and a stale live policy stays silent until some
+# workload needs the missing path — measured cost so far: an 11-day and a 40-hour
+# silent outage, each ending in CreateContainerConfigError. This mode makes the
+# gap loud on a schedule instead.
+#
+# Comparison is whitespace-normalized (collapse runs, trim, drop blank lines):
+# Vault stores the submitted text verbatim, so a byte-diff would also work today,
+# but normalization keeps the check honest across editors and heredoc re-indents
+# without hiding any semantic change.
+#
+# Emits node_exporter textfile metrics (the backup_freshness.prom pattern) into
+# the k3d node container when reachable, so drift becomes a Prometheus alert
+# rather than a log line nobody reads. Metric write failure never masks the
+# exit code — the cron caller and the alert are independent witnesses.
+if [[ "$CHECK" == "1" ]]; then
+  DRIFT=0
+  METRICS=$(mktemp)
+  {
+    echo "# HELP vault_policy_drift 1 when the live Vault policy differs from its repo file (0 converged)."
+    echo "# TYPE vault_policy_drift gauge"
+  } > "$METRICS"
+  norm() { sed -e 's/[[:space:]]\+/ /g' -e 's/^ //' -e 's/ $//' -e '/^[[:space:]]*$/d'; }
+  for row in "${POLICIES[@]}"; do
+    f="${row%%|*}"; name="${row##*|}"; path="$POLDIR/$f"
+    live=$(api GET "sys/policies/acl/$name" 2>/dev/null \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["policy"])' 2>/dev/null || true)
+    if [[ ! -f "$path" ]]; then
+      echo "  CHECK $name : REPO FILE MISSING ($f)"; DRIFT=1
+      echo "vault_policy_drift{policy=\"$name\",reason=\"repo_file_missing\"} 1" >> "$METRICS"
+      continue
+    fi
+    if [[ -z "$live" ]]; then
+      echo "  CHECK $name : LIVE POLICY MISSING"; DRIFT=1
+      echo "vault_policy_drift{policy=\"$name\",reason=\"live_missing\"} 1" >> "$METRICS"
+      continue
+    fi
+    # printf '%s\n' on the live side: the file side always ends in a newline,
+    # and without this every policy "drifts" by exactly its own last line —
+    # the trailing-newline artifact, not a content difference.
+    if diff <(printf '%s\n' "$live" | norm) <(norm < "$path") >/dev/null 2>&1; then
+      echo "  CHECK $name : convergent"
+      echo "vault_policy_drift{policy=\"$name\",reason=\"\"} 0" >> "$METRICS"
+    else
+      lines=$(diff <(printf '%s\n' "$live" | norm) <(norm < "$path") | grep -cE '^[<>]')
+      echo "  CHECK $name : DRIFT ($lines normalized line(s) differ)"; DRIFT=1
+      echo "vault_policy_drift{policy=\"$name\",reason=\"content\"} 1" >> "$METRICS"
+    fi
+  done
+  {
+    echo "# HELP vault_policy_drift_last_check_timestamp_seconds Unix time of the last completed drift check."
+    echo "# TYPE vault_policy_drift_last_check_timestamp_seconds gauge"
+    echo "vault_policy_drift_last_check_timestamp_seconds $(date -u +%s)"
+  } >> "$METRICS"
+  NODE_CONTAINER="${DRIFT_METRIC_NODE:-k3d-test-server-0}"
+  if command -v docker >/dev/null 2>&1 && docker inspect "$NODE_CONTAINER" >/dev/null 2>&1; then
+    if docker exec -i "$NODE_CONTAINER" sh -c 'mkdir -p /var/lib/node_exporter && cat > /var/lib/node_exporter/vault_policy_drift.prom.tmp && mv /var/lib/node_exporter/vault_policy_drift.prom.tmp /var/lib/node_exporter/vault_policy_drift.prom && chmod 0644 /var/lib/node_exporter/vault_policy_drift.prom' < "$METRICS"; then
+      echo "  METRIC vault_policy_drift.prom written to $NODE_CONTAINER textfile dir"
+    else
+      echo "  WARN metric write failed ($NODE_CONTAINER) — exit code still authoritative" >&2
+    fi
+  else
+    echo "  WARN $NODE_CONTAINER not reachable — metrics skipped, exit code still authoritative" >&2
+  fi
+  rm -f "$METRICS"
+  if [[ "$DRIFT" == "1" ]]; then
+    echo "=== CHECK RESULT: DRIFT DETECTED ===" >&2
+    exit 8
+  fi
+  echo "=== CHECK RESULT: all policies convergent ==="
+  exit 0
+fi
 
 # ── apply ACL policies (git content → sys/policies/acl/<name>) ───────────────
 LINT_FAIL=0
