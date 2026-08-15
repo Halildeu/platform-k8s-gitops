@@ -79,6 +79,7 @@ resources:
   # absent()-free → inert in prod (services D30-deferred → no Service → SM empty).
   - meeting-transcript-rule.yaml
   - meeting-ai-gateway-rule.yaml      # Faz 24 #2321: host cert rotation failure/staleness/expiry
+  - meeting-ai-client-cert-rule.yaml  # Faz 24 #3432: GPU-host client leaf + trust-root expiry
   - faz24-gpu-host-reachability-rule.yaml  # Faz 24: GPU host 8243/8300 TCP erişilebilirlik (2026-07-24 sessiz kesinti)
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
