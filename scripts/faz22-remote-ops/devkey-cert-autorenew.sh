@@ -23,11 +23,24 @@ RENEW_INTERVAL_HOURS="${RENEW_INTERVAL_HOURS:-16}"      # 24h TTL → renew ever
 FORCE="${FORCE:-0}"                                     # FORCE=1 → skip interval check
 REALM="platform-test"; KC="http://127.0.0.1:8082"; GW="https://testai.acik.com"
 PERSONA="${PERSONA:-c5persona-admin-9001}"
-DENSSH="ssh -F /home/runner/faz22-6-denetim-ssh/config -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 denetim-pc"
-LOG=/home/halil/platform/logs/devkey-cert-autorenew.log
-LOCK=/home/halil/platform/locks/devkey-cert-autorenew.lock
-MARK=/home/halil/platform/state/devkey-cert-autorenew.epoch     # last successful renew epoch
-STATUS=/home/halil/platform/state/devkey-cert-autorenew.status
+# Host 53->15: the old staging-sw runner's SSH config and /home/halil state
+# dirs did not survive the migration — this bridge silently stopped with them
+# and the device cert sat expired for 12 days (found 2026-08-15; the device
+# still showed ONLINE because ordinary heartbeats ride HMAC, not this cert).
+# Prefer the legacy config when it exists; otherwise go direct over WireGuard
+# (the aiserver key for denetimpc@10.99.0.2 is provisioned). State lives under
+# the invoking user's HOME so the script owns no other user's paths.
+DEN_SSH_CONFIG="/home/runner/faz22-6-denetim-ssh/config"
+if [ -r "$DEN_SSH_CONFIG" ]; then
+  DENSSH="ssh -F $DEN_SSH_CONFIG -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 denetim-pc"
+else
+  DENSSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 ${DENETIM_SSH_TARGET:-denetimpc@10.99.0.2}"
+fi
+STATE_ROOT="${STATE_ROOT:-$HOME/platform}"
+LOG=$STATE_ROOT/logs/devkey-cert-autorenew.log
+LOCK=$STATE_ROOT/locks/devkey-cert-autorenew.lock
+MARK=$STATE_ROOT/state/devkey-cert-autorenew.epoch     # last successful renew epoch
+STATUS=$STATE_ROOT/state/devkey-cert-autorenew.status
 mkdir -p "$(dirname "$LOG")" "$(dirname "$LOCK")" "$(dirname "$MARK")"
 exec >>"$LOG" 2>&1
 say() { echo "[$(date -u +%FT%TZ)] $*"; }
@@ -91,12 +104,20 @@ echo "$ENOUT" | grep -q "EXITCODE=0" || { say "FAIL agent-enroll"; echo "$(date 
 # --- restart agent + verify device-key stream started (fresh cert loaded) ---
 $DENSSH 'powershell -NoProfile -Command "Restart-Service EndpointAgent -Force"' >/dev/null 2>&1
 sleep 12
-STREAM=$($DENSSH 'powershell -NoProfile -Command "Get-Content C:\ProgramData\EndpointAgent\logs\endpoint-agent.log -Tail 25"' 2>/dev/null | grep -aE "harness started|device cert expired" | tail -1)
-if echo "$STREAM" | grep -qi "harness started" && ! echo "$STREAM" | grep -qi "expired"; then
-  say "=== RENEW OK: fresh cert + device-key session started ==="
+# Success = the persisted cert is genuinely fresh (>20h of its 24h TTL left)
+# and the service is back up. The old check grepped the log for "harness
+# started", but that line only appears when the remote-bridge lane is enabled —
+# measured 2026-08-15 with the bridge config-disabled, a successful renew would
+# have WARNed forever. The cert's own NotAfter is deterministic either way; the
+# stream line is reported as a bonus when the bridge happens to be on.
+CERT_EXP=$($DENSSH 'powershell -NoProfile -Command "$c=New-Object Security.Cryptography.X509Certificates.X509Certificate2(\"C:\ProgramData\EndpointAgent\tpm-client-cert.pem\"); [int][double]::Parse((Get-Date $c.NotAfter.ToUniversalTime() -UFormat %s))"' 2>/dev/null | tr -dc '0-9')
+SVC=$($DENSSH 'powershell -NoProfile -Command "(Get-Service EndpointAgent).Status"' 2>/dev/null | tr -d '\r\n')
+STREAM=$($DENSSH 'powershell -NoProfile -Command "Get-Content C:\ProgramData\EndpointAgent\logs\endpoint-agent.log -Tail 25"' 2>/dev/null | grep -aE "harness started" | tail -1)
+if [ -n "$CERT_EXP" ] && [ "$CERT_EXP" -gt $((NOW + 20*3600)) ] && [ "$SVC" = "Running" ]; then
+  say "=== RENEW OK: cert fresh (expires in $(( (CERT_EXP-NOW)/3600 ))h) + service Running${STREAM:+ + device-key stream up}"
   echo "$NOW" > "$MARK"
   echo "$(date -u +%FT%TZ) OK renewed" > "$STATUS"
 else
-  say "WARN: renew yapıldı ama stream doğrulanamadı [$STREAM]"
-  echo "$(date -u +%FT%TZ) WARN stream-unverified" > "$STATUS"
+  say "WARN: renew ran but not verified (certExp=${CERT_EXP:-?} svc=${SVC:-?})"
+  echo "$(date -u +%FT%TZ) WARN unverified" > "$STATUS"
 fi
