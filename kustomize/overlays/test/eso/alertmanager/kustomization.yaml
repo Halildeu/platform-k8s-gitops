@@ -5,8 +5,14 @@ kind: Kustomization
 
 resources:
   - externalsecret-alertmanager-fallback.yaml
-  # V2.1 Ops-A — Perf alert receiver Teams (ADR-0029 Hibrit D 2026-05-27 — Microsoft
-  # Teams Power Automate workflow primary; Codex `019e6b24` REVISE→AGREE chain absorb)
-  - externalsecret-perf-alertmanager-teams.yaml
+  # perf-alertmanager Teams ES'i TEST'ten ÇIKARILDI (gitops#3163, 2026-08-15).
+  # Ölçülen gerçek: test monitoring stack'i Alertmanager KOŞMAZ (values-test
+  # "lightweight scrape agent"), Secret'ı mount eden pod SIFIR, ve Vault path'i
+  # (kv/platform/perf-alertmanager) yalnız PROD Vault'ta seed'li. Test'teki ES
+  # bu yüzden kalıcı SecretSyncedError üretiyor ve platform-eso-test app'inin
+  # TEK Degraded kaynağı oydu — tüketicisiz bir tel, sağlık sinyalini
+  # zehirliyordu. Prod ikizi (overlays/prod/eso/alertmanager/) Ready=True ve
+  # DOKUNULMADI. Test'te Alertmanager bir gün açılırsa ES o enablement PR'ıyla
+  # (test Vault webhook seed'i dahil) geri gelir.
   # NOT: externalsecret-perf-alertmanager.yaml.disabled.template SLACK DORMANT
   # asset-preserved; kustomization'a dahil DEĞİL (ADR-0029 D2).

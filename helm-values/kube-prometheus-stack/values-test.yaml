@@ -119,6 +119,21 @@ kube-state-metrics:
 # node-exporter — host metric'leri
 prometheus-node-exporter:
   enabled: true
+  # gitops#3227 — textfile collector'ı GERÇEKTEN aç. Şimdiye kadar hiç açık
+  # değildi: k3d node konteynerindeki /var/lib/node_exporter altına yazılan
+  # backup_freshness.prom ve dr_drill.prom Prometheus'a HİÇ ulaşmadı, o
+  # alarm aileleri yapısal kördü (canlı ölçüm 2026-08-15: her iki metrik de
+  # 0 seri; capacity-guard-rule.yaml yorumu aynı bulguyu 2026-07-22'de
+  # belgelemişti). hostPath k3d node'unun kendi dosya sistemi — cron'ların
+  # `docker exec <node> ... > /var/lib/node_exporter/X.prom` yazdığı yerin
+  # ta kendisi. vault_policy_drift.prom da aynı şeritten akar.
+  extraArgs:
+    - --collector.textfile.directory=/host/textfile
+  extraHostVolumeMounts:
+    - name: textfile
+      hostPath: /var/lib/node_exporter
+      mountPath: /host/textfile
+      readOnly: true
   resources:
     limits:
       memory: 64Mi

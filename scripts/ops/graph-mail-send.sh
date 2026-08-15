@@ -130,6 +130,36 @@ normalize_recipients() {
 ALL_RECIPIENTS=$(normalize_recipients "${TO}${CC:+,$CC}")
 EXTERNAL_RECIPIENTS=$(printf '%s\n' "$ALL_RECIPIENTS" | grep -vE '@acik\.com$' || true)
 
+# --- Fail-closed recipient guards (gitops#3450) ---
+# Runs in BOTH dry-run and send mode, before any credential/network step.
+# 1) Legacy-domain hard reject: the pre-migration @serban.com.tr addresses must
+#    never receive mail from this helper (Sent-Items read-back 2026-08-03 caught
+#    one legacy CC that slipped through).
+# 2) Zeynep rule: any mail that includes zeynep.akkilic@acik.com (to OR cc) must
+#    carry halil.kocoglu@acik.com on CC.
+FORBIDDEN_RECIPIENT_DOMAIN="serban.com.tr"
+GUARD_ZEYNEP_ADDR="zeynep.akkilic@acik.com"
+GUARD_REQUIRED_CC_ADDR="halil.kocoglu@acik.com"
+
+FORBIDDEN_HITS=$(printf '%s\n' "$ALL_RECIPIENTS" \
+    | grep -E "@${FORBIDDEN_RECIPIENT_DOMAIN//./\\.}\$" || true)
+if [[ -n "$FORBIDDEN_HITS" ]]; then
+    echo "ERROR: recipient guard (gitops#3450): legacy domain @${FORBIDDEN_RECIPIENT_DOMAIN} is forbidden:" >&2
+    printf '       %s\n' $FORBIDDEN_HITS >&2
+    exit 5
+fi
+
+if printf '%s\n' "$ALL_RECIPIENTS" | grep -qx "$GUARD_ZEYNEP_ADDR"; then
+    CC_NORMALIZED=""
+    if [[ -n "${CC:-}" ]]; then
+        CC_NORMALIZED=$(normalize_recipients "$CC")
+    fi
+    if ! printf '%s\n' "$CC_NORMALIZED" | grep -qx "$GUARD_REQUIRED_CC_ADDR"; then
+        echo "ERROR: recipient guard (gitops#3450): mails to ${GUARD_ZEYNEP_ADDR} require ${GUARD_REQUIRED_CC_ADDR} on CC" >&2
+        exit 5
+    fi
+fi
+
 # Build to/cc JSON arrays (jq --arg injection-safe)
 to_json_array() {
     printf '%s' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' \
