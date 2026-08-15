@@ -1708,8 +1708,15 @@ images:
     # classifies invoice rows from INVOICE.PURCHASE_SALES, with legacy
     # category fallback; W3/MSSQL remains SELECT-only. Signed main build run
     # 30574126578, report-service job 90977992722.
-    newTag: sha-6544f40
-    digest: sha256:de22b05451c46f300d530850c4f6ce830fe88bd978cfe8bf66b9af325d36ece6
+    # 2026-08-15 common-auth OpenFGA outage-hang fix pickup: platform-backend
+    # PR #1071, merge f2f4ee2d fix(common-auth) adds connect/read timeouts to
+    # the OpenFGA client so authz checks fail fast instead of hanging during
+    # an OpenFGA outage. The previous pin (sha-6544f40) predates that merge,
+    # so the live image lacked the fix. Rebuilt from main HEAD 144eb1e2
+    # (image build run 31897150305); digest resolved from the GHCR manifest,
+    # not build logs. gitops issue #3451.
+    newTag: sha-144eb1e
+    digest: sha256:37cbc3cdc3e7496ad12fe3981b86a3861ea66bea1f852637a4db163609bbaca3
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
