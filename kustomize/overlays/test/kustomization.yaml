@@ -666,7 +666,13 @@ images:
     # consumption/depreciation/payroll/transfer share a generic source model;
     # the first live W3 adapter remains read-only invoice lines. Signed main
     # build run 30546648067, budget-service job 90884385048.
-    digest: sha256:45221bd4adac3cfb75df680ab15fe9447259b89b8eef8555960a34b15266a840
+    # 2026-08-15 Workcube plan-import consumer (#3454, parent #3005 mappings):
+    # platform-backend PR #1105, merge d1241d542. POST /api/v1/budgets/import/
+    # workcube materializes existing BUDGET_PLAN_ROW assignments into a
+    # WORKCUBE_IMPORT draft (V5 migration: origin column + batch/skip tables,
+    # RLS forced). Signed main build run 31901041026; digest read back from
+    # GHCR by tag sha-d1241d5 (never from build logs).
+    digest: sha256:257422aab4af137fe16d242e05206724e9f0f5d7e1b1766b80578a4701726144
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
@@ -1715,8 +1721,15 @@ images:
     # so the live image lacked the fix. Rebuilt from main HEAD 144eb1e2
     # (image build run 31897150305); digest resolved from the GHCR manifest,
     # not build logs. gitops issue #3451.
-    newTag: sha-144eb1e
-    digest: sha256:37cbc3cdc3e7496ad12fe3981b86a3861ea66bea1f852637a4db163609bbaca3
+    # 2026-08-15 Workcube budget-plan provider (#3454, parent #3005 mappings):
+    # platform-backend PR #1105, merge d1241d542. Read-only
+    # GET /api/v1/reports/budget-plans/provider over the canonical
+    # [workcube_mikrolink] BUDGET family — company/fiscal-year scoped, keyset
+    # paginated, hash-signed rows consumed by budget-service import. Signed
+    # main build run 31901041026; digest read back from GHCR by tag
+    # sha-d1241d5 (never from build logs).
+    newTag: sha-d1241d5
+    digest: sha256:9368c39167f1c1745fff71de194e890fcdc325c9567ad8bbea88b7de273b0092
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
