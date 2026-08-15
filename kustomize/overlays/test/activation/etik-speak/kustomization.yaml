@@ -211,7 +211,17 @@ images:
     # Kaynak: 0586b7d7bdfe2ac71c7a5f6cee2a84bc975a2917 (etiket TAM sha).
     # Digest gercek cekisle okundu (smoke-dig-w2 pod, k3d-test).
     # Onceki: 055c2596 @ sha256:1687dab5f5e37e3a7...
-    digest: sha256:b82142fb5e2fbc0b867377a1bc5e50ad25df87fad912f1d7bd9c3ceac6d5ce58
+    # 2026-08-15 bump: platform-web#1125 — ModuleHome tamamlayicilari:
+    # "Siradaki is" bandi (gerekce grid hucresiyle AYNI turetimden), tazelik
+    # satiri (Son guncelleme + Yenile, aria-busy), dort durum yuzeyi (iskelet /
+    # iki bos durum / hata+Tekrar dene). Codex D2 kontrol listesi kapandi.
+    # NOT: promosyon gecikti (oturum arasi); ileri-hareket dogrulandi:
+    # 0586b7d7, 2d9e77b6'nin atasi (merge-base --is-ancestor EVET) ve 2d9e77b6
+    # su an web main HEAD — hucre bununla tam guncel.
+    # Kaynak: 2d9e77b6b248d312c0b6d9ede81c2f951b643372 (etiket TAM sha).
+    # Digest gercek cekisle okundu (smoke-dig-m2 pod, k3d-test).
+    # Onceki: 0586b7d7 @ sha256:b82142fb5e2fbc0b8...
+    digest: sha256:e96e172fcd20362e77e15d1abc25edbf8c2f2089edd569e7eb65705d66230244
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
