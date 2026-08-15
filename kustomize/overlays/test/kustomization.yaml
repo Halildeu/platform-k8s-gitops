@@ -8230,6 +8230,18 @@ patches:
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
+      name: budget-service-config
+    patch: |-
+      # #3466 unattended budget smoke lane: BudgetAudienceValidator accepts a
+      # token when aud matches OR azp is in this allowlist. smoke-budget-v1
+      # tokens deliberately do NOT carry aud=frontend (they are not frontend
+      # tokens); the azp allowlist is the intended knob. TEST-only widening —
+      # prod overlay does not carry this client.
+      - op: add
+        path: /data/SECURITY_AUTH_ALLOWED_CLIENT_IDS
+        value: "frontend,admin-cli,serban-web,smoke-budget-v1"
+  - target:
+      kind: ConfigMap
       name: report-service-config
     patch: |-
       - op: add
