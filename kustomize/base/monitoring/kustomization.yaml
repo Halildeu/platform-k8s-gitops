@@ -17,6 +17,7 @@ resources:
   - zanzibar-stability-rule.yaml
   - blackbox-exporter.yaml
   - backup-freshness-rule.yaml    # Codex iter-8 day-2 ek — backup_last_success metric + 5 alert
+  - vault-policy-drift-rule.yaml  # gitops#3227 — vault_policy_drift textfile metric (reconcile --check cron) + stale-check alert
   - dr-drill-rule.yaml            # Session 28 paralel cleanup (c) — dr_drill_last_run_* metric + 4 alert (PLAN.md D23 quarterly)
   - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
   - cardinality-recording-rules.yaml  # R16 PR1 (Codex 019e4448) — cardinality observability; topk by __name__/job + total gauge (no alert, that's PR2 after budget chosen)
