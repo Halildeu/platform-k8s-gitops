@@ -32,6 +32,7 @@ umask 077
 MODE="${1:---check}"
 KC_CONTAINER="platform-kc-test"
 VAULT_CONTAINER="platform-vault-test"
+PG_CONTAINER="platform-pg-test"
 REALM="platform-test"
 CLIENT_ID="smoke-budget-v1"
 PERSONA="budget-smoke-planner"
@@ -116,6 +117,19 @@ check_state() {
       jq -r '.[].name' | sort | tr '\n' ' ')
     echo "$roles" | grep -q "$ROLE_NAME" || { echo "CHECK persona role $ROLE_NAME: ABSENT"; ok=1; }
     echo "$roles" | grep -q "$FORBIDDEN_ROLE" && { echo "CHECK persona forbidden role: $FORBIDDEN_ROLE"; ok=1; }
+    local linked; linked=$(docker exec "$PG_CONTAINER" psql -U postgres -d users_db -At -c \
+      "SELECT id FROM public.users WHERE kc_subject='$uid'" 2>/dev/null || true)
+    if [ -z "$linked" ]; then
+      echo "CHECK identity link (users_db kc_subject): ABSENT"; ok=1
+    else
+      # KC26: a --fields projection HIDES user-profile-managed attributes and
+      # unmanagedAttributePolicy=None discards unmanaged ones — only the full
+      # user representation shows the declared attributes truthfully.
+      local attr_uid; attr_uid=$(K get "users/$uid" -r "$REALM" 2>/dev/null |
+        jq -r '.attributes.userId[0] // empty')
+      [ "$attr_uid" = "$linked" ] ||
+        { echo "CHECK KC userId attribute ($attr_uid) != users_db id ($linked)"; ok=1; }
+    fi
   fi
   [ "$ok" -eq 0 ] && echo "CHECK: OK (client shape + scopes + role + persona)"
   return "$ok"
@@ -146,20 +160,36 @@ apply_state() {
 
   local uid; uid=$(persona_uuid)
   if [ -z "$uid" ]; then
-    K create users -r "$REALM" -s "username=$PERSONA" -s enabled=true \
-      -s 'attributes={"purpose":["budget-smoke-lane gitops#3466"]}' >/dev/null
+    K create users -r "$REALM" -s "username=$PERSONA" -s enabled=true >/dev/null
     uid=$(persona_uuid)
   fi
   [ -n "$uid" ] || { echo "FATAL: persona create/lookup failed" >&2; exit 1; }
+  # Identity link (measured live 2026-08-15, #3466): permission-service
+  # /authz/me returns EMPTY scopes for a principal without a numeric users_db
+  # identity (resolveScopeSummarySafely bails on numericUserId==null), so the
+  # persona needs a users_db row bound via kc_subject. Defaults are copied
+  # from an existing row; the synthetic password hash is never used for login
+  # (authentication is Keycloak-only).
+  local numeric_uid
+  docker exec "$PG_CONTAINER" psql -U postgres -d users_db -v ON_ERROR_STOP=1 -c "
+    INSERT INTO public.users (name,email,enabled,role,version,date_format,locale,time_format,timezone,password,kc_subject,kc_username)
+    SELECT 'Budget Smoke Planner','$PERSONA@synthetic.test',true,'USER',0,date_format,locale,time_format,timezone,password,'$uid','$PERSONA'
+      FROM public.users WHERE password IS NOT NULL ORDER BY id LIMIT 1
+    ON CONFLICT (email) DO UPDATE SET kc_subject=EXCLUDED.kc_subject, kc_username=EXCLUDED.kc_username" >/dev/null
+  numeric_uid=$(docker exec "$PG_CONTAINER" psql -U postgres -d users_db -At -c \
+    "SELECT id FROM public.users WHERE lower(email)='$PERSONA@synthetic.test'")
+  [ -n "$numeric_uid" ] || { echo "FATAL: users_db identity link failed" >&2; exit 1; }
+
   # KC26 user-profile: ROPC fails with "Account is not fully set up" unless
   # the managed profile fields are present and no required action is pending.
-  # org_id attribute feeds the smoke-notify-v1 org claim (BudgetActorResolver
-  # tenant source); the whole attributes map is replaced in one write (KC26
-  # user-profile discards unmanaged partial updates).
+  # org_id feeds the smoke-notify-v1 org claim (BudgetActorResolver tenant
+  # source); userId/subscriberId carry the numeric identity into tokens (the
+  # smoke-runtime-v1 mapper). The whole attributes map is replaced in one
+  # write (KC26 user-profile discards unmanaged partial updates).
   K update "users/$uid" -r "$REALM" \
     -s "email=$PERSONA@synthetic.test" -s emailVerified=true \
     -s firstName=Budget -s lastName=SmokePlanner -s 'requiredActions=[]' \
-    -s 'attributes={"purpose":["budget-smoke-lane gitops#3466"],"org_id":["1"]}' >/dev/null
+    -s "attributes={\"org_id\":[\"1\"],\"userId\":[\"$numeric_uid\"],\"subscriberId\":[\"$numeric_uid\"]}" >/dev/null
   K add-roles -r "$REALM" --uusername "$PERSONA" --rolename "$ROLE_NAME" >/dev/null
 
   # Rotate persona password + capture client secret; both go to Vault via
@@ -185,7 +215,7 @@ rollback_state() {
   [ -n "$uid" ] && K delete "users/$uid" -r "$REALM" >/dev/null 2>&1 || true
   local cid; cid=$(client_uuid)
   [ -n "$cid" ] && K delete "clients/$cid" -r "$REALM" >/dev/null 2>&1 || true
-  echo "ROLLBACK: persona and client removed (Vault entry left for audit; rotate/delete manually if required)"
+  echo "ROLLBACK: persona and client removed (Vault entry and the users_db identity row are left for audit; the row authenticates nothing once the KC persona is gone)"
 }
 
 case "$MODE" in
