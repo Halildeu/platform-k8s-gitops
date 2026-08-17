@@ -677,7 +677,13 @@ images:
     # (TEST ERP carries only the scenario demo budget); default behaviour is
     # byte-identical. Signed main build run 32020341045; digest read back
     # from GHCR by tag sha-f2b0389.
-    digest: sha256:3761bcc6822b1237375057b85bbdbca2bec0a5705e9aa74ef6d5251e11d9dbd4
+    # 2026-08-17 fiscal-year period guard (#3474): platform-backend PR #1116,
+    # merge afc7d4431. Out-of-year PLAN_DATE rows become explicit
+    # PERIOD_OUTSIDE_FISCAL_YEAR skips instead of bypassing the replaceLines
+    # invariant (V6 widens the skip-reason CHECK). Signed main build run
+    # 32040291713 (rerun after a GitHub 429/502 action-download flake);
+    # digest read back from GHCR by tag sha-afc7d44.
+    digest: sha256:2bd7cff1aef1d7bc4a55ed40d809a1dd8392bef233800723d03bbfa8ce654658
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
