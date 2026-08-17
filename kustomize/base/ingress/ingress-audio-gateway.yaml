@@ -20,6 +20,11 @@ metadata:
     # WebSocket uzun-ömür: sessiz drain pencereleri 60s default'u aşar.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Faz 24 İ3/İ5 — live-analysis SSE relay'i de bu Ingress'ten geçer:
+    # response buffering açıkken nginx analiz frame'lerini bağlantı ölene
+    # kadar tamponda tutuyor, desktop paneli "Bağlanıyor"dan çıkamıyordu
+    # (2026-08-15 canlı teşhis; edge katmanındaki eşleniği default.conf'ta).
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
 spec:
   ingressClassName: nginx
   tls:

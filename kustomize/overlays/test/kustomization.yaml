@@ -9668,8 +9668,10 @@ patches:
       # mTLS site'ina gider (8244 -> 127.0.0.1:8300; 8243'un ikizi, ayni CA;
       # WFP kurali yalniz 10.99.0.1). Canli kanit 2026-08-05: gateway'in kendi
       # istemci sertifikasiyla POST /analyze/live -> HTTP 200 (soguk 58s model
-      # yuklemesi, sicak 12.7s) — timeout bu yuzden 60s: trigger fire-and-forget
-      # (STT yolunu bloklamaz), soguk ilk cagriyi da kapsasin.
+      # yuklemesi, sicak 12.7s). 60s timeout soguk ilk cagride SINIRDA kaldi:
+      # 2026-08-16 sabahi iki ardisik trigger TimeoutException ile dustu ve
+      # toplantinin ilk analiz turlari hic uretilmedi. 120s soguk yuklemeyi
+      # rahat kapsar; trigger fire-and-forget oldugu icin STT yolunu bloklamaz.
       # ROLLBACK: uc degeri base default'una dondur ("false"/""/"5000") +
       # broadcast'i "false" yap + rev bump. NetPol tarafinin rollback'i icin
       # tombstone deseni netpol dosyasindaki nota bakin.
@@ -9681,7 +9683,7 @@ patches:
         value: "https://live-stt.denetim:8244"
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS
-        value: "60000"
+        value: "120000"
       # I2-T web izleyici canli transkript SSE hub'i — ayni pakette acilir;
       # ephemeral pub/sub, kalicilik yok, drop-oldest back-pressure.
       - op: replace
