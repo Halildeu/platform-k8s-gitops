@@ -672,7 +672,12 @@ images:
     # WORKCUBE_IMPORT draft (V5 migration: origin column + batch/skip tables,
     # RLS forced). Signed main build run 31901041026; digest read back from
     # GHCR by tag sha-d1241d5 (never from build logs).
-    digest: sha256:257422aab4af137fe16d242e05206724e9f0f5d7e1b1766b80578a4701726144
+    # 2026-08-17 includeScenarios opt-in (#3471): platform-backend PR #1114,
+    # merge f2b03890d. Scenario plans can be pulled into a draft deliberately
+    # (TEST ERP carries only the scenario demo budget); default behaviour is
+    # byte-identical. Signed main build run 32020341045; digest read back
+    # from GHCR by tag sha-f2b0389.
+    digest: sha256:3761bcc6822b1237375057b85bbdbca2bec0a5705e9aa74ef6d5251e11d9dbd4
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
@@ -1733,8 +1738,13 @@ images:
     # alias so UUID-keyed data-access tuples stay visible after a principal
     # gains its numeric users_db identity. Signed main build run 31904170001;
     # digest read back from GHCR by tag sha-a5f9cbe (never from build logs).
-    newTag: sha-a5f9cbe
-    digest: sha256:53651a347c6caa601753e0b5277bc0e7659f28c6da75b799bcde09dd896c2cc7
+    # 2026-08-17 RC-009/RC-010 actions[] 1c migration (#799): platform-backend
+    # PR #1115 (merge b8391a768) + #1114 head f2b03890d. The deferred-stub
+    # deadline implementation — contract gate green again on every PR.
+    # Signed main build run 32020341045; digest read back from GHCR by tag
+    # sha-f2b0389.
+    newTag: sha-f2b0389
+    digest: sha256:6ce43c610b718290995137772b30072e5aa0fd71a538eead292b636b78b32386
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
