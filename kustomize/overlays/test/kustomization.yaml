@@ -683,7 +683,12 @@ images:
     # invariant (V6 widens the skip-reason CHECK). Signed main build run
     # 32040291713 (rerun after a GitHub 429/502 action-download flake);
     # digest read back from GHCR by tag sha-afc7d44.
-    digest: sha256:2bd7cff1aef1d7bc4a55ed40d809a1dd8392bef233800723d03bbfa8ce654658
+    # 2026-08-17 annual-bucket remap (#3474 inversion): platform-backend
+    # PR #1117, merge 545f8f9a9. PLAN_DATE proved to be the ENTRY date
+    # (2026 demo budget rows cluster on 2025-06/2025-12); imported lines now
+    # bucket to fiscalYear-01-01 and period-based skips are gone. Digest read
+    # back from GHCR by tag sha-545f8f9.
+    digest: sha256:63203e4d4a63727fbf88e27e0a350d50513851a0c2e8d6be53f3edf8b3830906
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
