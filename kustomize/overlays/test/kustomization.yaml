@@ -7001,7 +7001,15 @@ images:
     # This does not widen what a grant can do: the exact binding to one
     # recipient, channel, topic and template is untouched, so an invitation
     # grant can no more deliver an OTP than the reverse.
-    digest: sha256:54aa59fc3c975c3ef16a0c4b14e957635d23c08e904e842c4da9b02e187be3b3
+    #
+    # 2026-08-18 bump: sha-545f8f9 — platform-backend#1108 (gitops#3460).
+    # AuditPartitionRetentionService rescues rows stranded in the DEFAULT
+    # partition (DETACH default → CREATE month partition → move via parent →
+    # ATTACH), so a row landing in DEFAULT at a month boundary can no longer
+    # permanently block CREATE PARTITION. Service delta since sha-43ab06d is
+    # exactly the #1108 family (#1108 fix + #1110/#1112 test-only). Digest
+    # read back from GHCR by tag (sha-545f8f9), not from build logs.
+    digest: sha256:f4b2358cc16ecdede1160a37b3e440ffb0fc7f72899a397d95d04fe3ebaefd05
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.30:
