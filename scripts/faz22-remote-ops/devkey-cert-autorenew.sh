@@ -110,7 +110,17 @@ sleep 12
 # measured 2026-08-15 with the bridge config-disabled, a successful renew would
 # have WARNed forever. The cert's own NotAfter is deterministic either way; the
 # stream line is reported as a bonus when the bridge happens to be on.
-CERT_EXP=$($DENSSH 'powershell -NoProfile -Command "$c=New-Object Security.Cryptography.X509Certificates.X509Certificate2(\"C:\ProgramData\EndpointAgent\tpm-client-cert.pem\"); [int][double]::Parse((Get-Date $c.NotAfter.ToUniversalTime() -UFormat %s))"' 2>/dev/null | tr -dc '0-9')
+# EncodedCommand, like the mint step above — and for the same reason. The
+# endpoint's SSH login shell is PowerShell, so an inline -Command string is
+# parsed TWICE: the login shell interpolates $c (to empty) before the inner
+# powershell ever runs, and the verify silently returns nothing. Measured
+# 2026-08-23: eight days of "WARN unverified (certExp=?)", the MARK never
+# advancing, and the cron re-minting every 8h instead of every 16h — 61 certs
+# in the ledger where ~12 would do. DateTimeOffset avoids the PS5.1
+# `-UFormat %s` local-time shift as well.
+VERIFY_PS='$c=New-Object Security.Cryptography.X509Certificates.X509Certificate2("C:\ProgramData\EndpointAgent\tpm-client-cert.pem"); [System.DateTimeOffset]::new($c.NotAfter.ToUniversalTime(),[TimeSpan]::Zero).ToUnixTimeSeconds()'
+VERIFY_B64=$(printf '%s' "$VERIFY_PS" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)
+CERT_EXP=$($DENSSH "powershell -NoProfile -EncodedCommand $VERIFY_B64" 2>/dev/null | tr -dc '0-9')
 SVC=$($DENSSH 'powershell -NoProfile -Command "(Get-Service EndpointAgent).Status"' 2>/dev/null | tr -d '\r\n')
 STREAM=$($DENSSH 'powershell -NoProfile -Command "Get-Content C:\ProgramData\EndpointAgent\logs\endpoint-agent.log -Tail 25"' 2>/dev/null | grep -aE "harness started" | tail -1)
 if [ -n "$CERT_EXP" ] && [ "$CERT_EXP" -gt $((NOW + 20*3600)) ] && [ "$SVC" = "Running" ]; then
