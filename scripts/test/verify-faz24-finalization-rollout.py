@@ -496,7 +496,7 @@ def main() -> None:
         meeting_deploy,
         "meeting-service",
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:a6b2bb8cba25d90f727cf3d7297527abd6f53932b5be4e40a30a333016969812",
+        "sha256:ec7f01ec1a5ecb88303824fb993fb8f277d7e454d3c540780e6349cf0e6ae160",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future

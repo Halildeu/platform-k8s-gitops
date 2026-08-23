@@ -558,7 +558,7 @@ images:
     # Kaynak: 01e0fde9460757eef519344e4f292da615df9e4e (etiket KISA sha).
     # Digest gercek cekisle okundu (smoke-dig-t1/t2/t3 podlari, k3d-test).
     # Onceki: sha256:8265d161a7076f12851...
-    digest: sha256:a6b2bb8cba25d90f727cf3d7297527abd6f53932b5be4e40a30a333016969812
+    digest: sha256:ec7f01ec1a5ecb88303824fb993fb8f277d7e454d3c540780e6349cf0e6ae160
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -5094,7 +5094,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-0b9ac21
+    newTag: sha-ae54478
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -5133,7 +5133,7 @@ images:
     # promotion workflow now performs this resolution before writing desired
     # state, preventing a later promotion from reintroducing an index/imageID
     # mismatch.
-    digest: sha256:9e8c2ab573e26634f5456542d48adb3b08cf4d41f8a989ed83ca43bc9220370f
+    digest: sha256:ca68ccd004ac472fb3fb9c4a47051f8cde005cfc0f0173064ea1681edf97729b
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
