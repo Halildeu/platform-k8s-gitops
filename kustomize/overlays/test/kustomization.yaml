@@ -7039,23 +7039,24 @@ images:
     newName: ghcr.io/halildeu/platform-agent-artifacts
     # newTag is the operator-readable release identity; digest is the D30 pull
     # authority and remains immutable even if a registry tag were moved.
-    newTag: v0.3.30
-    # D30 immutable pin — Release EXE trusted run 30766834983 (tag v0.3.30,
-    # release_class=rollout-candidate, signing_tier=trusted-internal-ca). Release asset
-    # manifest records EndpointAgent.zip SHA256
-    # 2f4394572037cb14c2e26acb7871233d743149a3299d434dde740e032509474c,
+    newTag: v0.3.31
+    # D30 immutable pin — Release EXE trusted run 32663285170 (tag v0.3.31,
+    # release_class=rollout-candidate, signing_tier=trusted-internal-ca; ships
+    # the self-update pending-activation retry, platform-agent#295/#296 /
+    # gitops#3483). Release asset manifest records EndpointAgent.zip SHA256
+    # e5ab543882fa5789e03962ef8776aa7be059d161dd5d2b0234117cf3709c9ddc,
     # agent binary SHA256
-    # 871c13be9d872692ccb8167233fd232124c5dfe6cb1988df2e3446f04287f0f3, and
+    # 6785bf6ab4a28a1e0e3ec016723310c090c6f01781f20452456cdfb0835f6fbf, and
     # install.ps1 SHA256
-    # 20ed21b621ec7722b16b9972daa28e51f343cc4a457e9eb7c4c14596e79314c7,
+    # 66fc627386c7244a653bf5e22704df451e9c46d7624d347649ebfe863a82f3fe,
     # release-manifest.json SHA256
-    # 70a907516f76887f8a3a1bf3d943d02af018bd745aa4d41e07fc753771198397, and
+    # 4876032b53bca48b92699861e3aed2c2ee890d36d21adeb5e4ea80330961d81c, and
     # remote-bridge attestation evidence SHA256
-    # 2fb0c012d120e5933de34eb8caf717c085b7b0940671d348ab0768b6431290e8.
-    # Rollback anchor: v0.3.29, source 1460d26a9c8f2b4335e74fef9a6b03166356c98a,
-    # artifact digest sha256:a5075ef80629750f82505b31a2c4bba818d918eddee7ead607e28c889101cc33,
-    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.29.
-    digest: sha256:158d8376b9714b413c309268c57d2d1b717a333e2b3063054e14cbf4631e0a74
+    # 955c98a3ee3783c3219dae466702256fadfcc27f8bf462ed1f46729f8b2adad2.
+    # Rollback anchor: v0.3.30, source 298229d9de3aad5ddbbfef78c6da4012d7d28ac1,
+    # artifact digest sha256:158d8376b9714b413c309268c57d2d1b717a333e2b3063054e14cbf4631e0a74,
+    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.30.
+    digest: sha256:9fdcb90c98835c22d882e1632b8fd5ce0129fc0d121801a928ea01666bb7d492
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
