@@ -1,0 +1,71 @@
+# PYP actuals provider live sample (gitops#3496).
+#
+# Read-only: pages the deployed provider with the synthetic planner token
+# (host-side Vault; nothing leaves the runner) and uploads the sample JSONL
+# plus a dimension-source summary as the acceptance evidence for resolution
+# changes. Repeatable channel for when the operator workstation has no route
+# to the host (same rationale as budget-evidence-collector).
+name: Budget PYP sample collector
+
+on:
+  workflow_dispatch:
+    inputs:
+      fiscal_year:
+        description: "Fiscal year"
+        required: false
+        default: "2026"
+      pages:
+        description: "Pages of 2000 rows"
+        required: false
+        default: "5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budget-pyp-sample-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Collect provider sample (read-only)
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: Collect sample
+        env:
+          FISCAL_YEAR: ${{ inputs.fiscal_year }}
+          PAGES: ${{ inputs.pages }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="$RUNNER_TEMP/pyp-sample-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          echo "EVIDENCE_DIR=$EVIDENCE_DIR" >> "$GITHUB_ENV"
+          chmod +x scripts/acceptance/collect-pyp-sample.sh
+          EVIDENCE_DIR="$EVIDENCE_DIR" scripts/acceptance/collect-pyp-sample.sh
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "## PYP provider sample"
+            if [ -f "$EVIDENCE_DIR/pyp-summary.json" ]; then
+              echo '```json'
+              cat "$EVIDENCE_DIR/pyp-summary.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sample artifact
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: pyp-sample-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
