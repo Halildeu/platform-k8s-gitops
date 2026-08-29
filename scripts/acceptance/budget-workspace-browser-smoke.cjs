@@ -32,6 +32,8 @@ const waitVisible = async (locator, label, timeout) => {
   });
 };
 
+let failurePage = null;
+
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({
@@ -40,6 +42,7 @@ const waitVisible = async (locator, label, timeout) => {
     ignoreHTTPSErrors: false,
   });
   const page = await context.newPage();
+  failurePage = page;
 
   page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`));
   page.on('console', (message) => {
@@ -62,6 +65,11 @@ const waitVisible = async (locator, label, timeout) => {
   await page.goto(`${baseURL}/admin/reports/budget-control`, { waitUntil: 'domcontentloaded' });
   const importSection = page.getByRole('region', { name: 'Workcube bütçe planı içe aktarma' });
   if (!(await importSection.isVisible().catch(() => false))) {
+    // Anonymous users land on the shell /login page (no automatic KC
+    // redirect); the corporate button starts the route-scoped KC flow.
+    const corporateButton = page.getByTestId('corporate-login-button');
+    await waitVisible(corporateButton, 'kurumsal giriş butonu', 30_000);
+    await corporateButton.click();
     await page.waitForURL(/\/realms\/platform-test\//u, { timeout: 30_000 });
     await page.locator('#username').fill(username);
     await page.locator('#password').fill(password);
@@ -142,7 +150,36 @@ const waitVisible = async (locator, label, timeout) => {
 
   await browser.close();
   console.log(`PASS journey: ${periodCount} taslak satırı, ${budgetRequests.length} budget isteği, 0 console hatası`);
-})().catch((error) => {
+})().catch(async (error) => {
   console.error(`FAIL: ${error.message}`);
+  // Leave debuggable evidence on failure too — the artifact step depends on
+  // the directory being non-empty.
+  try {
+    if (failurePage) {
+      await failurePage.screenshot({
+        path: path.join(evidenceDir, '99-failure.png'),
+        fullPage: true,
+      });
+    }
+  } catch {
+    /* the page may already be unusable */
+  }
+  try {
+    fs.writeFileSync(
+      path.join(evidenceDir, 'failure.json'),
+      JSON.stringify(
+        {
+          error: error.message,
+          lastUrl: failurePage ? failurePage.url() : null,
+          consoleErrors: consoleErrors.slice(0, 20),
+          budgetRequests,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch {
+    /* best effort */
+  }
   process.exit(1);
 });
