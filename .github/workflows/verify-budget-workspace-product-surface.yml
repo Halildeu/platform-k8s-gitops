@@ -91,5 +91,5 @@ jobs:
         with:
           name: budget-workspace-browser-${{ github.run_attempt }}
           path: ${{ env.EVIDENCE_DIR }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
