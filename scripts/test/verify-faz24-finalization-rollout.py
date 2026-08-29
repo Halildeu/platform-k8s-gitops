@@ -489,14 +489,21 @@ def main() -> None:
         # exactly the values it had, which the ten pre-existing grant tests
         # assert unchanged. The Faz 24 mint surface this verifier pins is a
         # different endpoint and is untouched.
+        # 2026-08-29 (gitops#3507): sha-813e0d0 — meeting-service service
+        # client gains the user-service audience with an audience-pinned
+        # users:internal permission (platform-backend#1120); the Faz 24 mint
+        # surface stays untouched.
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:350c70ef79b74257bf84ab532d176257cce224411e7eb4105d52701a10696354",
+        "sha256:f531fcbab6faa8493da8f4b425d8fca196365d46470f59614e2f8ed08d25a90d",
     )
     container_image(
         meeting_deploy,
         "meeting-service",
+        # 2026-08-29 (gitops#3507): sha-813e0d0 — actions accept an optional
+        # assigneeUserId resolved server-side to the stable KC subject; the
+        # durable-finalization surface this verifier pins is untouched.
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:ec7f01ec1a5ecb88303824fb993fb8f277d7e454d3c540780e6349cf0e6ae160",
+        "sha256:726f6ae022106cde26274b40b42e2a5531c4bec6b4c2775ccfc5a29118e4c163",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
