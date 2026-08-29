@@ -1754,8 +1754,14 @@ images:
     # deadline implementation — contract gate green again on every PR.
     # Signed main build run 32020341045; digest read back from GHCR by tag
     # sha-f2b0389.
-    newTag: sha-f2b0389
-    digest: sha256:6ce43c610b718290995137772b30072e5aa0fd71a538eead292b636b78b32386
+    # 2026-08-29 Görevlerim gateway route (#3487/#3494): platform-backend
+    # PR #1119 (merge 576b7a916). meeting-service-admin route gains the
+    # second pattern /api/v1/admin/my/** — live gateway 404 vs in-cluster
+    # 401 proved the endpoint existed but the route table did not match.
+    # Main build run 33259682624; digest pull-proofed via in-cluster smoke
+    # pod imageID (never from build logs).
+    newTag: sha-576b7a9
+    digest: sha256:a742db0550b0ba9804e3c994d1b5c2813b441900a5aa07646ec6c081a730362e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
