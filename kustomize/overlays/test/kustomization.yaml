@@ -83,6 +83,7 @@ resources:
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
   - auth-service-transcript-service-externalsecret.yaml  # gitops#2568: transcript-service servis client secret (ayni izolasyon gerekcesi)
+  - auth-service-meeting-service-externalsecret.yaml  # gitops#3507: meeting-service servis client secret (Görevler assignee resolution; ayni izolasyon)
   - auth-service-ethics-externalsecret.yaml  # Faz 35 #2856: isolated service identity; missing key cannot stall core auth secret rotation
   - user-service-mfa-admin-externalsecret.yaml  # gitops#3211: panel MFA proxy KC client secret; blank keeps the surface 503 fail-closed
   - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
@@ -558,7 +559,13 @@ images:
     # Kaynak: 01e0fde9460757eef519344e4f292da615df9e4e (etiket KISA sha).
     # Digest gercek cekisle okundu (smoke-dig-t1/t2/t3 podlari, k3d-test).
     # Onceki: sha256:8265d161a7076f12851...
-    digest: sha256:ec7f01ec1a5ecb88303824fb993fb8f277d7e454d3c540780e6349cf0e6ae160
+    # 2026-08-29 bump: sha-813e0d0 — platform-backend#1120 (gitops#3507):
+    # actions create/update accepts assigneeUserId; meeting-service resolves
+    # it to the stable KC subject through user-service's internal endpoint
+    # (both-forms 400, unresolvable 422, directory-down 503). Digest
+    # pull-proofed via in-cluster smoke pod imageID (never build logs).
+    # Onceki: sha256:ec7f01ec1a5ecb88...
+    digest: sha256:726f6ae022106cde26274b40b42e2a5531c4bec6b4c2775ccfc5a29118e4c163
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -821,7 +828,12 @@ images:
     # invitation sender is user-service, so putting it on a shared client list
     # would have let it mint MFA OTP grants too — cross-use prevented by
     # convention rather than by construction.
-    digest: sha256:350c70ef79b74257bf84ab532d176257cce224411e7eb4105d52701a10696354
+    # 2026-08-29 bump: sha-813e0d0 — platform-backend#1120 (gitops#3507):
+    # meeting-service service-client gains the user-service audience with an
+    # audience-pinned users:internal permission (transcript permissions stay
+    # pinned to the transcript audience). Digest pull-proofed via in-cluster
+    # smoke pod imageID. Onceki: sha256:350c70ef79b7...
+    digest: sha256:f531fcbab6faa8493da8f4b425d8fca196365d46470f59614e2f8ed08d25a90d
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -7349,6 +7361,19 @@ patches:
               # gitops#3212: blank/absent keeps the keycloak-sms-otp client
               # disabled in auth-service (fail-closed); core auth unaffected.
               optional: true
+      # gitops#3507 — meeting-service servis client'i (Görevler assignee
+      # resolution: audience user-service / permission users:internal,
+      # platform-backend#1120). Blank/absent = client DISABLED (fail-closed);
+      # core auth etkilenmez.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_MEETING_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-meeting-service-secret
+              key: SERVICE_CLIENT_MEETING_SERVICE_SECRET
+              optional: true
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
@@ -8062,6 +8087,18 @@ patches:
   # (route 19, specific); catch-all yok.
   # INVARIANT: `kubectl kustomize overlays/test | grep ROUTES_26` → VAR;
   # `kubectl kustomize overlays/prod | grep ROUTES_26` → YOK (0 satır).
+  # gitops#3507 — Görevler assignee resolution aktivasyonu (TEST-only):
+  # meeting-service, atamadaki sayisal dizin id'sini user-service internal
+  # ucundan KC subject'e cozer (platform-backend#1120). Secret ayni Vault
+  # kaynagindan ESO ile gelir; flag olmadan ozellik fail-closed kapali.
+  - target:
+      kind: ConfigMap
+      name: meeting-service-config
+    patch: |-
+      - op: add
+        path: /data/MEETING_ASSIGNEE_DIRECTORY_ENABLED
+        value: "true"
+
   - target:
       kind: ConfigMap
       name: api-gateway-config
