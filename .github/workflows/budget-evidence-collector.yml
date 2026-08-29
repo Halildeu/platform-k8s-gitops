@@ -51,15 +51,15 @@ jobs:
           set -euo pipefail
           # Runtime images carry no curl/wget; fetch through a runner-side
           # port-forward instead of exec-ing into the pod.
-          $KCTL port-forward deploy/notification-orchestrator 18081:8081 \
+          $KCTL port-forward --address 127.0.0.1 deploy/notification-orchestrator 28781:8081 \
             >/dev/null 2>&1 &
           pf=$!
           trap 'kill "$pf" 2>/dev/null || true' EXIT
           for _ in $(seq 1 40); do
-            curl -sf --max-time 2 http://127.0.0.1:18081/actuator/health >/dev/null && break
+            curl -sf --max-time 2 http://127.0.0.1:28781/actuator/health >/dev/null && break
             sleep 0.5
           done
-          curl -sf --max-time 20 http://127.0.0.1:18081/actuator/prometheus \
+          curl -sf --max-time 20 http://127.0.0.1:28781/actuator/prometheus \
             | grep -E '^notify_audit_retention' \
             | tee "$EVIDENCE_DIR/retention-metrics.txt"
           kill "$pf" 2>/dev/null || true
@@ -86,17 +86,17 @@ jobs:
       - name: 3 — year-tenant schema lineage discovery (issue 3496 slice A)
         run: |
           set -euo pipefail
-          $KCTL port-forward deploy/schema-service 18096:8096 >/dev/null 2>&1 &
+          $KCTL port-forward --address 127.0.0.1 deploy/schema-service 28796:8096 >/dev/null 2>&1 &
           pf=$!
           trap 'kill "$pf" 2>/dev/null || true' EXIT
           for _ in $(seq 1 40); do
             # management port is separate (8081); any HTTP status on 8096
             # proves the forward is up, so probe without -f.
-            curl -s -o /dev/null --max-time 2 http://127.0.0.1:18096/ && break
+            curl -s -o /dev/null --max-time 2 http://127.0.0.1:28796/ && break
             sleep 0.5
           done
           curl -sf --max-time 120 \
-            "http://127.0.0.1:18096/api/v1/schema/snapshot?schema=workcube_mikrolink_2026_1" \
+            "http://127.0.0.1:28796/api/v1/schema/snapshot?schema=workcube_mikrolink_2026_1" \
             > "$EVIDENCE_DIR/snapshot-2026-1.json"
           kill "$pf" 2>/dev/null || true
           trap - EXIT
