@@ -79,8 +79,8 @@ vault_field() {
     ' sh "$1" "$2"
 }
 
-ADMIN_USERNAME="$(vault_field username "$VAULT_ADMIN_PERSONA_PATH")"
-vault_field password "$VAULT_ADMIN_PERSONA_PATH" > "$TMP_DIR/admin.password"
+ADMIN_USERNAME="$(vault_field admin_persona_username "$VAULT_ADMIN_PERSONA_PATH")"
+vault_field admin_persona_password "$VAULT_ADMIN_PERSONA_PATH" > "$TMP_DIR/admin.password"
 vault_field client_secret "$VAULT_SMOKE_CLIENT_PATH" > "$TMP_DIR/client.secret"
 chmod 600 "$TMP_DIR/admin.password" "$TMP_DIR/client.secret"
 
