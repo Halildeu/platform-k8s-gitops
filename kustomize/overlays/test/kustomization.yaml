@@ -8068,7 +8068,12 @@ patches:
         value: "http://meeting-service:8097"
       - op: add
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_26_PREDICATES_0
-        value: "Path=/api/v1/admin/meetings/**"
+        # 2026-08-29 (#3487): the env-bound legacy route table is what the
+        # runtime actually serves; the my-actions pattern must live here or
+        # the gateway 404s while application-k8s.yml carries the route. A
+        # comma list is ONE Path predicate with two patterns — a second
+        # Path predicate entry would AND and never match.
+        value: "Path=/api/v1/admin/meetings/**,/api/v1/admin/my/**"
       - op: add
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_27_ID
         value: "transcript-admin-route"
