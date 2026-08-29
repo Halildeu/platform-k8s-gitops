@@ -1,0 +1,95 @@
+# Budget Workspace authenticated product-surface verify (gitops#3479).
+#
+# Real browser journey on testai with the synthetic planner persona
+# (budget-smoke-planner, #3466 lane): route-scoped KC login ->
+# /admin/reports/budget-control -> Workcube plan import (scenario opt-in) ->
+# COMPLETED result panel -> versioned draft table (annual-bucket periods).
+#
+# Design notes, learned from the two prior browser-verify harnesses:
+#   - The expected frontend digest is READ FROM THE CANONICAL OVERLAY PIN at
+#     run time (verify-faz25-p5 froze its digest as a workflow constant and
+#     went permanently red after the next promotion).
+#   - No rollback automation is coupled to failure (the fullats lane opens a
+#     compensating rollback PR bound to an old promotion — wrong blast radius
+#     for a smoke of a different product surface).
+name: Verify Budget Workspace product surface
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budget-workspace-product-surface
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Planner persona browser journey
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout canonical acceptance harness
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: Prepare evidence workspace
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="$RUNNER_TEMP/budget-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$EVIDENCE_DIR"
+          echo "EVIDENCE_DIR=$EVIDENCE_DIR" >> "$GITHUB_ENV"
+
+      - name: Bind frontend runtime to the canonical overlay pin
+        id: pin
+        run: |
+          set -euo pipefail
+          pin="$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
+            --kustomization kustomize/overlays/test/kustomization.yaml)"
+          digest="$(jq -er '.digest | select(type == "string" and test("^sha256:[a-f0-9]{64}$"))' <<<"$pin")"
+          echo "EXPECTED_FRONTEND_DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - name: Verify live frontend pod runs exactly the pinned digest
+        run: |
+          set -euo pipefail
+          bash scripts/deploy/verify-pod-digest.sh \
+            --context k3d-test --namespace platform-test \
+            --selector "app.kubernetes.io/name=frontend" \
+            --expected-digest "$EXPECTED_FRONTEND_DIGEST"
+
+      - name: Run planner persona browser journey
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="$EVIDENCE_DIR" \
+          EXPECTED_FRONTEND_DIGEST="$EXPECTED_FRONTEND_DIGEST" \
+            bash scripts/acceptance/budget-workspace-browser-smoke.sh
+
+      - name: Publish non-secret outcome
+        if: always()
+        run: |
+          {
+            echo "## Budget Workspace product-surface verify"
+            echo ""
+            echo "- environment: testai (TEST realm platform-test)"
+            echo "- persona: synthetic planner (budget-smoke-planner; password stays host-side)"
+            echo "- journey: route-scoped login -> plan import (scenario opt-in) -> COMPLETED panel -> annual-bucket draft table"
+            echo "- frontend digest authority: canonical overlay pin, verified against the live pod imageID"
+            echo "- rollback coupling: none (fail = red run + evidence only)"
+            if [ -f "$EVIDENCE_DIR/journey.json" ]; then
+              echo '```json'
+              cat "$EVIDENCE_DIR/journey.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: budget-workspace-browser-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
