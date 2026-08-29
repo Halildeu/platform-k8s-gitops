@@ -95,11 +95,15 @@ else
     SELECT_FIELDS="id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments"
 fi
 
-# Build Graph query
-GRAPH_QUERY="/users/${MAILBOX}/messages?\$top=${TOP}&\$select=${SELECT_FIELDS}&\$orderby=receivedDateTime%20desc"
+# Build Graph query.
+# Graph rejects $search combined with $orderby (SearchWithOrderBy); when a
+# search is requested we drop server-side ordering and sort locally instead.
+GRAPH_QUERY="/users/${MAILBOX}/messages?\$top=${TOP}&\$select=${SELECT_FIELDS}"
 if [[ -n "$SEARCH" ]]; then
     SEARCH_ENC=$(printf '%s' "$SEARCH" | jq -sRr @uri)
     GRAPH_QUERY="${GRAPH_QUERY}&\$search=%22${SEARCH_ENC}%22"
+else
+    GRAPH_QUERY="${GRAPH_QUERY}&\$orderby=receivedDateTime%20desc"
 fi
 if [[ -n "$FILTER" ]]; then
     FILTER_ENC=$(printf '%s' "$FILTER" | jq -sRr @uri)
@@ -254,7 +258,7 @@ echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
         has_attachments: .hasAttachments,
         body_preview: (if .bodyPreview then (.bodyPreview | .[0:500]) else null end),
         body_text: (if .body.content then (.body.content | .[0:6000]) else null end)
-    }]
+    }] | sort_by(.received // "") | reverse
 }'
 
 # cleanup trap revokes the short-lived Vault token.
