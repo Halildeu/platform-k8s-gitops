@@ -35,11 +35,16 @@ jobs:
     timeout-minutes: 15
     env:
       KCTL: kubectl --context k3d-test -n platform-test
-      EVIDENCE_DIR: ${{ runner.temp }}/budget-evidence-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Prepare evidence workspace
-        run: mkdir -p "$EVIDENCE_DIR"
+        # runner.* is not a valid job-level env context; derive the path from
+        # the RUNNER_TEMP shell variable and export it for later steps.
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="$RUNNER_TEMP/budget-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$EVIDENCE_DIR"
+          echo "EVIDENCE_DIR=$EVIDENCE_DIR" >> "$GITHUB_ENV"
 
       - name: 1 — audit retention counters (issue 3460)
         run: |
@@ -154,6 +159,6 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: budget-evidence-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/budget-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error
           retention-days: 14
