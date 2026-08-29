@@ -1,0 +1,159 @@
+# Budget lane evidence collector (gitops#3460 + gitops#3496 Dilim A).
+#
+# Read-only: collects live TEST-cluster evidence that is otherwise
+# unreachable when the operator workstation has no route to the host
+# (VPN policy variance — see memory reference-vpn-policy-excludes-new-host):
+#
+#   1. notification-orchestrator audit-retention Prometheus counters
+#      (rescued_rows closes #3460's last acceptance gap).
+#   2. notify.audit_event_v2 partition inventory from Postgres
+#      (proves the month partitions the rescue created).
+#   3. schema-service year-tenant snapshot column discovery for the
+#      PYP plan-vs-actual lineage map (#3496 slice A): ACCOUNT_CARD_ROWS
+#      budget dimension columns, INVOICE_ROW order linkage, progress-payment
+#      (hakedis) table candidates, EXPENSE_CENTER key shape.
+#
+# No cluster mutation of any kind; kubectl is used only for exec-read.
+# The snapshot endpoint is permitAll with an empty internal key in TEST
+# (SchemaController doc: empty configured key = test/dev semantics).
+name: Budget evidence collector
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budget-evidence-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Collect retention + schema-lineage evidence (read-only)
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 15
+    env:
+      KCTL: kubectl --context k3d-test -n platform-test
+      EVIDENCE_DIR: ${{ runner.temp }}/budget-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Prepare evidence workspace
+        run: mkdir -p "$EVIDENCE_DIR"
+
+      - name: 1 — audit retention counters (issue 3460)
+        run: |
+          set -euo pipefail
+          # Runtime images carry no curl/wget; fetch through a runner-side
+          # port-forward instead of exec-ing into the pod.
+          $KCTL port-forward deploy/notification-orchestrator 18081:8081 \
+            >/dev/null 2>&1 &
+          pf=$!
+          trap 'kill "$pf" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 40); do
+            curl -sf --max-time 2 http://127.0.0.1:18081/actuator/health >/dev/null && break
+            sleep 0.5
+          done
+          curl -sf --max-time 20 http://127.0.0.1:18081/actuator/prometheus \
+            | grep -E '^notify_audit_retention' \
+            | tee "$EVIDENCE_DIR/retention-metrics.txt"
+          kill "$pf" 2>/dev/null || true
+          trap - EXIT
+          # The counter must exist; a rescue that ran shows a positive total.
+          grep -q 'notify_audit_retention_default_partition_rescued_rows' \
+            "$EVIDENCE_DIR/retention-metrics.txt"
+
+      - name: 2 — audit_event_v2 partition inventory (issue 3460)
+        run: |
+          set -euo pipefail
+          # Postgres is a HOST service (compose container platform-pg-test),
+          # not a cluster pod — same access pattern as faz25-fullats-test-recovery.
+          docker exec platform-pg-test psql -U postgres -d notify_db -Atc \
+            "SELECT inhrelid::regclass::text
+             FROM pg_inherits
+             WHERE inhparent = 'notify.audit_event_v2'::regclass
+             ORDER BY 1" \
+            | tee "$EVIDENCE_DIR/audit-partitions.txt"
+          docker exec platform-pg-test psql -U postgres -d notify_db -Atc \
+            "SELECT count(*) FROM notify.audit_event_v2_default" \
+            | tee "$EVIDENCE_DIR/default-partition-rowcount.txt"
+
+      - name: 3 — year-tenant schema lineage discovery (issue 3496 slice A)
+        run: |
+          set -euo pipefail
+          $KCTL port-forward deploy/schema-service 18096:8096 >/dev/null 2>&1 &
+          pf=$!
+          trap 'kill "$pf" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 40); do
+            # management port is separate (8081); any HTTP status on 8096
+            # proves the forward is up, so probe without -f.
+            curl -s -o /dev/null --max-time 2 http://127.0.0.1:18096/ && break
+            sleep 0.5
+          done
+          curl -sf --max-time 120 \
+            "http://127.0.0.1:18096/api/v1/schema/snapshot?schema=workcube_mikrolink_2026_1" \
+            > "$EVIDENCE_DIR/snapshot-2026-1.json"
+          kill "$pf" 2>/dev/null || true
+          trap - EXIT
+          python3 - "$EVIDENCE_DIR/snapshot-2026-1.json" \
+            > "$EVIDENCE_DIR/lineage-discovery.txt" <<'PY'
+          import json, re, sys
+          snap = json.load(open(sys.argv[1]))
+          tables = snap.get("tables") or {}
+          if isinstance(tables, list):
+              tables = {t.get("name"): t for t in tables if isinstance(t, dict)}
+          def colnames(entry):
+              cols = (entry or {}).get("columns") or []
+              return [c.get("name") if isinstance(c, dict) else str(c) for c in cols]
+          targets = [
+              "ACCOUNT_CARD", "ACCOUNT_CARD_ROWS", "INVOICE", "INVOICE_ROW",
+              "ORDERS", "ORDER_ROW", "EXPENSE_ITEM_PLANS", "EXPENSE_CENTER",
+              "STOCK_FIS", "STOCK_FIS_ROW",
+          ]
+          print(f"tables_in_snapshot={len(tables)}")
+          for name in targets:
+              entry = tables.get(name)
+              if entry is None:
+                  print(f"-- {name}: NOT PRESENT in year schema")
+              else:
+                  print(f"== {name}: {', '.join(colnames(entry))}")
+          pat = re.compile(r"HAKED|PROGRESS|SUBCON|TAAH|POZ|CONTRACT|ORDER", re.I)
+          print("-- lineage table candidates (name match):")
+          for name in sorted(tables):
+              if pat.search(name or ""):
+                  print(f"   {name}: {', '.join(colnames(tables[name]))}")
+          PY
+          head -c 2000 "$EVIDENCE_DIR/lineage-discovery.txt"
+
+      - name: Publish evidence summary
+        if: always()
+        run: |
+          {
+            echo "## Budget evidence collector"
+            echo ""
+            echo '### Retention counters (#3460)'
+            echo '```'
+            cat "$EVIDENCE_DIR/retention-metrics.txt" 2>/dev/null || echo "adim 1 üretmedi"
+            echo '```'
+            echo '### audit_event_v2 partitions'
+            echo '```'
+            cat "$EVIDENCE_DIR/audit-partitions.txt" 2>/dev/null || echo "adim 2 üretmedi"
+            echo '```'
+            echo "### DEFAULT partition row count"
+            echo '```'
+            cat "$EVIDENCE_DIR/default-partition-rowcount.txt" 2>/dev/null || echo "adim 2 üretmedi"
+            echo '```'
+            echo '### Year-tenant lineage discovery (#3496 A) — column names only'
+            echo '```'
+            cat "$EVIDENCE_DIR/lineage-discovery.txt" 2>/dev/null || echo "adim 3 üretmedi"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: budget-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/budget-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
