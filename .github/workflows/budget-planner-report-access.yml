@@ -1,0 +1,72 @@
+# Budget smoke planner REPORT module access (gitops#3479).
+#
+# The Budget Workspace browser verify failed on /unauthorized: the shell's
+# /admin/reports/* guard requires modules.REPORT >= VIEW, which the synthetic
+# planner persona does not hold. This runs the discovery-first grant script
+# on the host (scripts/acceptance/grant-report-module-access.sh): discover
+# lists candidate roles without mutating; apply joins the persona to the
+# named, granule-allowlisted role via the permission-service product API.
+name: Budget planner REPORT access
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "discover | dry-run | apply"
+        required: true
+        default: "discover"
+        type: choice
+        options: [discover, dry-run, apply]
+      role:
+        description: "Exact role name (dry-run/apply)"
+        required: false
+        default: ""
+      allowed_granules:
+        description: "Reviewed granule-key allowlist, space separated (dry-run/apply)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budget-planner-report-access
+  cancel-in-progress: false
+
+jobs:
+  grant:
+    name: ${{ inputs.mode }} REPORT role membership
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: Run grant script
+        env:
+          MODE: ${{ inputs.mode }}
+          ROLE: ${{ inputs.role }}
+          ALLOWED: ${{ inputs.allowed_granules }}
+          OUT_PATH: ${{ runner.temp }}/report-access-${{ github.run_id }}.json
+        run: |
+          set -euo pipefail
+          chmod +x scripts/acceptance/grant-report-module-access.sh
+          case "$MODE" in
+            discover)
+              scripts/acceptance/grant-report-module-access.sh --discover ;;
+            dry-run|apply)
+              scripts/acceptance/grant-report-module-access.sh "--$MODE" \
+                --role "$ROLE" --allowed-granules "$ALLOWED" ;;
+          esac
+
+      - name: Upload discovery/audit output
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: report-access-${{ inputs.mode }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/report-access-${{ github.run_id }}.json
+          if-no-files-found: warn
+          retention-days: 14
