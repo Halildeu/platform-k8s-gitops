@@ -1763,8 +1763,14 @@ images:
     # deadline implementation — contract gate green again on every PR.
     # Signed main build run 32020341045; digest read back from GHCR by tag
     # sha-f2b0389.
-    newTag: sha-f2b0389
-    digest: sha256:6ce43c610b718290995137772b30072e5aa0fd71a538eead292b636b78b32386
+    # 2026-08-29 PYP actuals provider (gitops#3496 slice B): platform-backend
+    # PR #1121, merge b887d54. GET /api/v1/reports/pyp-actuals/provider —
+    # ledger-spine (muavin) rows labeled with source-resolved budget
+    # dimensions (invoice line/header, expense uniform/mixed) + order/
+    # progress/contract lineage. Main build run 33265795959; digest read
+    # back from GHCR by tag sha-b887d54 (never from build logs).
+    newTag: sha-b887d54
+    digest: sha256:91ea85b071aa28aa5cb48b98896f7358fa678ff610cb333b3d9c238d52b18caf
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
