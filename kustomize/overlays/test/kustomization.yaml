@@ -1781,8 +1781,14 @@ images:
     # dimensions (invoice line/header, expense uniform/mixed) + order/
     # progress/contract lineage. Main build run 33265795959; digest read
     # back from GHCR by tag sha-b887d54 (never from build logs).
-    newTag: sha-b887d54
-    digest: sha256:91ea85b071aa28aa5cb48b98896f7358fa678ff610cb333b3d9c238d52b18caf
+    # 2026-08-30 invoice-uniform resolution (gitops#3496 B.1): platform-backend
+    # PR #1122, merge ce54be4. Ledger invoice rows with unset ACTION_ROW_ID
+    # (measured: all of them in this tenant) now resolve budget dimensions by
+    # invoice-uniform line aggregation (99.6% of invoices are uniform), with
+    # single-order lineage. Main build run 33275952389; digest read back from
+    # GHCR by tag sha-ce54be4 (never from build logs).
+    newTag: sha-ce54be4
+    digest: sha256:6c933348606976320e28f916a05fd52222f6bad781777e1cc680f30c71f169bd
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
