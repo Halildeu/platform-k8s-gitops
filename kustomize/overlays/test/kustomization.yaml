@@ -1792,7 +1792,12 @@ images:
     # single-order lineage. Main build run 33275952389; digest read back from
     # GHCR by tag sha-ce54be4 (never from build logs).
     newTag: sha-ce54be4
-    digest: sha256:6c933348606976320e28f916a05fd52222f6bad781777e1cc680f30c71f169bd
+    # 2026-08-30 paging floor fix: platform-backend PR #1125, merge 9a49f85.
+    # Dynamic-report page<=0 reached MSSQL as a negative OFFSET (error 10742,
+    # measured live on fin-gerceklesen-maliyet) -> raw 500. Controller clamps
+    # page; SqlBuilder floors the offset at all three sites. Digest read back
+    # from GHCR by tag sha-9a49f85 (never from build logs).
+    digest: sha256:7f32f50243401187af4a59f2e54a6c6565a1e415afe2ea7a13eabf1992f78290
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
