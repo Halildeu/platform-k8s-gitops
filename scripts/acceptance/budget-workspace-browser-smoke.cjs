@@ -115,6 +115,16 @@ let failurePage = null;
   await waitVisible(statusBadge, 'sürüm durum rozeti', 10_000);
   await page.screenshot({ path: path.join(evidenceDir, '02-import-draft.png'), fullPage: true });
 
+  // 4b — in-product PYP breakdown (gitops#3496 D1): the general-to-detail
+  // drill must render from the live provider inside the product.
+  const pypSection = page.getByRole('region', { name: 'PYP gerçekleşen kırılımı' });
+  await waitVisible(pypSection, 'PYP kırılım bölümü', 15_000);
+  await pypSection.getByRole('button', { name: 'Kırılımı getir' }).click();
+  await waitVisible(pypSection.getByRole('status'), 'PYP özet paneli', 180_000);
+  const centerNodes = await pypSection.locator('details').count();
+  if (centerNodes < 1) throw new Error('PYP kırılımında merkez düğümü yok');
+  await page.screenshot({ path: path.join(evidenceDir, '03-pyp-breakdown.png'), fullPage: true });
+
   // 5 — evidence + fail-closed checks.
   fs.writeFileSync(
     path.join(evidenceDir, 'network-budget.json'),
