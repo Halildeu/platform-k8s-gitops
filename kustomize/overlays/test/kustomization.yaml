@@ -695,7 +695,11 @@ images:
     # (2026 demo budget rows cluster on 2025-06/2025-12); imported lines now
     # bucket to fiscalYear-01-01 and period-based skips are gone. Digest read
     # back from GHCR by tag sha-545f8f9.
-    digest: sha256:63203e4d4a63727fbf88e27e0a350d50513851a0c2e8d6be53f3edf8b3830906
+    # 2026-08-30 current-plan discovery read (gitops#3496 slice C):
+    # platform-backend PR #1124, merge 8c337af. GET /api/v1/budgets/plans/
+    # current?fiscalYear= — the plan-vs-actual surface's discovery path.
+    # Digest read back from GHCR by tag sha-8c337af (never from build logs).
+    digest: sha256:15e44a1d0a967352ef8aa2f0cd55a96ecd827b3e08700c5a8bb04b4137f239b8
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
