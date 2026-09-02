@@ -475,7 +475,12 @@ images:
     # analysis chain over the pinned-identity 8244 bridge (gitops#3440).
     # Pulled from GHCR, pushed to the TEST-only local registry with digest
     # read-back, containerd-imported + digest-tagged on k3d-test-server-0.
-    digest: sha256:e038e52addc23cba9192e9c046469f8c7b08222f004f83b766a434e8dfa15a07
+    # 2026-09-03 bump: sha-2f63a74 — platform-backend#1127 (gitops#3486):
+    # live-analyze window is CUMULATIVE (bounded 60k chars) instead of the last
+    # 5 fragments; Zeynep's 2026-08-31 finding 1 (live summary == latest
+    # sentence). Digest pull-proofed via in-cluster smoke pod imageID.
+    # Onceki: sha256:e038e52addc23cba...
+    digest: sha256:d9f31772d197cf8f951a888611484e2ed6a94470f657e98f5f2a30e2482d52bf
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
