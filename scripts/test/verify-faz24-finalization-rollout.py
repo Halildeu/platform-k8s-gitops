@@ -535,7 +535,10 @@ def main() -> None:
         # "fixed", pairing with the overlay's max_delay 1.0 (gitops#3424) so
         # live finals commit fast without mid-word cuts.
         "platform-test-registry:5000/platform-backend-audio-gateway-service@"
-        "sha256:e038e52addc23cba9192e9c046469f8c7b08222f004f83b766a434e8dfa15a07",
+        # 2026-09-03 (gitops#3486): sha-2f63a74 — platform-backend#1127 makes the
+        # live-analyze window cumulative; the durable-finalization surface this
+        # verifier pins is untouched.
+        "sha256:d9f31772d197cf8f951a888611484e2ed6a94470f657e98f5f2a30e2482d52bf",
     )
     pod_annotation(
         meeting_deploy,
