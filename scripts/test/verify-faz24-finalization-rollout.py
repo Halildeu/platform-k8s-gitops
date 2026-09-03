@@ -493,8 +493,11 @@ def main() -> None:
         # client gains the user-service audience with an audience-pinned
         # users:internal permission (platform-backend#1120); the Faz 24 mint
         # surface stays untouched.
+        # 2026-09-03 (gitops#3537): sha-a41b5ce — meeting-service client also mints
+        # notification-orchestrator / notify:intents:system (platform-backend#1128,
+        # Görevler dilim-4b); the Faz 24 mint surface stays untouched.
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:f531fcbab6faa8493da8f4b425d8fca196365d46470f59614e2f8ed08d25a90d",
+        "sha256:ffd2bff1d2fe62872cde8e14f7b9f7e3ef66d6debf2b5982f9f81dce7b30c7d8",
     )
     container_image(
         meeting_deploy,
@@ -502,8 +505,11 @@ def main() -> None:
         # 2026-08-29 (gitops#3507): sha-813e0d0 — actions accept an optional
         # assigneeUserId resolved server-side to the stable KC subject; the
         # durable-finalization surface this verifier pins is untouched.
+        # 2026-09-03 (gitops#3537): sha-a41b5ce — outbox poller delivers assignment
+        # events to Notify as system intents (platform-backend#1128); the
+        # durable-finalization surface this verifier pins is untouched.
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:726f6ae022106cde26274b40b42e2a5531c4bec6b4c2775ccfc5a29118e4c163",
+        "sha256:8d3306a04f5e3f47f3d58aa482771049e90e96cfcd5f90200b8d37d64e98c573",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
