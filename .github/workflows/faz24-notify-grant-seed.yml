@@ -1,0 +1,50 @@
+name: "Faz 24 Görevler dilim-4b — notify receive grant seed (TEST)"
+
+# Runs scripts/faz24/openfga-meeting-action-notify-seed.sh on the aiserver
+# self-hosted runner (in-cluster reach to OpenFGA via the meeting-service pod),
+# so the TEST-only receive grants can be (re)applied without an operator VPN
+# session. Idempotent; fail-closed smoke checks (gitops#3537, runbook
+# docs/runbooks/RB-faz24-meeting-action-notify-grants.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: SEED_NOTIFY_GRANTS_TEST'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-notify-grant-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: Seed + verify meeting action notification grants (k3d-test)
+    runs-on: [self-hosted, testai-deploy]
+    timeout-minutes: 10
+    steps:
+      - name: Validate dispatch input
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "SEED_NOTIFY_GRANTS_TEST" ]; then
+            echo "::error::confirm input must be SEED_NOTIFY_GRANTS_TEST"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Preflight (context, namespace, tooling)
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null
+          kubectl --context k3d-test -n platform-test get deploy meeting-service -o name
+
+      - name: Seed + verify (idempotent, fail-closed)
+        env:
+          KUBE_CONTEXT: k3d-test
+          KUBE_NS: platform-test
+        run: ./scripts/faz24/openfga-meeting-action-notify-seed.sh
