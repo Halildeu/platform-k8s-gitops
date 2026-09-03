@@ -47,6 +47,13 @@ readonly PERMISSION_ROLE_NAME="Full ATS Recruiter"
 # audience. Token is minted through the public edge so the issuer claim matches
 # what the backend validates.
 readonly KC_ROPC_CLIENT_ID="smoke-client"
+# ATS recruiter endpoints are tenant-gated on the JWT `tenant` claim, which the
+# Keycloak client scope `ats-api-audience` derives from the user attribute
+# `ats_tenant` (NOT the platform `tenantId` attribute). M365 auto-provisioned
+# accounts carry `entra_oid/entra_tid` but no `ats_tenant`, so a correct role
+# membership still yields 403 on /api/v1/recruiter/** (platform-web#1134).
+readonly ATS_TENANT_ATTRIBUTE="ats_tenant"
+readonly ATS_PUBLIC_TENANT_ID="${ATS_PUBLIC_TENANT_ID:-00000000-0000-0000-0000-000000000001}"
 
 # The ATS module gate this grant must produce. permission-service performs no
 # case transform (catalog key == permission_key == OpenFGA object id), so the
@@ -66,6 +73,7 @@ STATUS="running"
 FAILURE_REASON=""
 KEYCLOAK_MATCH=false
 KEYCLOAK_TENANT_CLAIM_READY=false
+ATS_TENANT_ATTRIBUTE_WRITTEN=false
 USER_SERVICE_MATCH=false
 PERMISSION_ROLE_READY=false
 GRANULE_BOUNDARY_READY=false
@@ -114,6 +122,7 @@ write_result() {
     --arg moduleKey "${REQUIRED_MODULE_KEY}" \
     --argjson keycloakMatch "${KEYCLOAK_MATCH}" \
     --argjson keycloakTenantClaimReady "${KEYCLOAK_TENANT_CLAIM_READY}" \
+    --argjson atsTenantAttributeWritten "${ATS_TENANT_ATTRIBUTE_WRITTEN}" \
     --argjson userServiceMatch "${USER_SERVICE_MATCH}" \
     --argjson permissionRoleReady "${PERMISSION_ROLE_READY}" \
     --argjson granuleBoundaryReady "${GRANULE_BOUNDARY_READY}" \
@@ -127,7 +136,8 @@ write_result() {
       target: {
         exactKeycloakMatch: $keycloakMatch,
         exactUserServiceMatch: $userServiceMatch,
-        keycloakTenantClaimReady: $keycloakTenantClaimReady
+        keycloakTenantClaimReady: $keycloakTenantClaimReady,
+        atsTenantAttributeWritten: $atsTenantAttributeWritten
       },
       permissionService: {
         role: $permissionRole,
@@ -272,11 +282,50 @@ KC_USER_ID="$(jq -r '.[0].id // empty' "${KC_USERS_JSON}")"
 KEYCLOAK_MATCH=true
 
 # The ATS recruiter endpoints are tenant-gated (tenantAuthenticated): a token
-# without a tenant claim derives zero authority. Assert the source attribute
-# exists so the grant cannot be reported as usable when it is not.
+# without a `tenant` claim derives zero authority. The claim is mapped from the
+# user attribute `ats_tenant`; the platform `tenantId` attribute is a different
+# key and does not satisfy the ATS gate. Under --apply the attribute is written
+# (idempotent, other attributes preserved) and read back; in dry-run a missing
+# attribute is reported instead of being mistaken for readiness.
 jq -e '(.[0].attributes.tenantId[0] // "") | length > 0' "${KC_USERS_JSON}" >/dev/null \
   || die "keycloak-tenant-attribute-missing"
-KEYCLOAK_TENANT_CLAIM_READY=true
+KC_ATS_TENANT="$(jq -r --arg key "${ATS_TENANT_ATTRIBUTE}" \
+  '.[0].attributes[$key][0] // empty' "${KC_USERS_JSON}")"
+if [[ "${KC_ATS_TENANT}" == "${ATS_PUBLIC_TENANT_ID}" ]]; then
+  KEYCLOAK_TENANT_CLAIM_READY=true
+elif [[ -n "${KC_ATS_TENANT}" ]]; then
+  die "keycloak-ats-tenant-attribute-mismatch"
+elif [[ "${MODE}" == "apply" ]]; then
+  KC_USER_JSON="${TMP_DIR}/kc-user.json"
+  code="$(curl -sS --max-time 20 -o "${KC_USER_JSON}" -w '%{http_code}' \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}" \
+    --config "${KC_AUTH_CONFIG}" || printf '000')"
+  [[ "${code}" == "200" ]] || die "keycloak-user-read-failed"
+  KC_USER_PUT_JSON="${TMP_DIR}/kc-user-put.json"
+  # PUT replaces the whole user representation: send the full object back with
+  # only the attribute map extended (an attributes-only body drops email/name).
+  jq --arg key "${ATS_TENANT_ATTRIBUTE}" --arg tenant "${ATS_PUBLIC_TENANT_ID}" \
+    '.attributes = ((.attributes // {}) + {($key): [$tenant]})' \
+    "${KC_USER_JSON}" > "${KC_USER_PUT_JSON}"
+  code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' -X PUT \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}" \
+    --config "${KC_AUTH_CONFIG}" \
+    -H 'Content-Type: application/json' --data "@${KC_USER_PUT_JSON}" || printf '000')"
+  [[ "${code}" == "204" ]] || die "keycloak-ats-tenant-attribute-write-failed"
+  code="$(curl -sS --max-time 20 -o "${KC_USER_JSON}" -w '%{http_code}' \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}" \
+    --config "${KC_AUTH_CONFIG}" || printf '000')"
+  [[ "${code}" == "200" ]] || die "keycloak-ats-tenant-attribute-readback-failed"
+  [[ "$(jq -r --arg key "${ATS_TENANT_ATTRIBUTE}" '.attributes[$key][0] // empty' "${KC_USER_JSON}")" \
+    == "${ATS_PUBLIC_TENANT_ID}" ]] || die "keycloak-ats-tenant-attribute-readback-mismatch"
+  [[ "$(jq -r '.email // empty | ascii_downcase' "${KC_USER_JSON}")" == "${TARGET_EMAIL}" ]] \
+    || die "keycloak-user-email-lost-on-write"
+  ATS_TENANT_ATTRIBUTE_WRITTEN=true
+  KEYCLOAK_TENANT_CLAIM_READY=true
+else
+  echo "WARN: ${ATS_TENANT_ATTRIBUTE} attribute missing on the Keycloak user;" \
+    "recruiter endpoints will 403 until --apply writes it" >&2
+fi
 
 # --- 2) permission-service writer identity --------------------------------
 PERSONA_TOKEN_JSON="${TMP_DIR}/persona-token.json"
@@ -352,6 +401,13 @@ if jq -e --argjson userId "${PLATFORM_USER_ID}" \
   'any((.items? // .)[]?; (.userId // .id) == $userId)' "${MEMBERS_JSON}" >/dev/null; then
   ALREADY_MEMBER=true
   MEMBERSHIP_READY=true
+  if [[ "${KEYCLOAK_TENANT_CLAIM_READY}" != "true" ]]; then
+    STATUS="blocked"
+    FAILURE_REASON="keycloak-ats-tenant-attribute-missing"
+    write_result
+    echo "BLOCKED: membership exists but ${ATS_TENANT_ATTRIBUTE} is missing; rerun with --apply" >&2
+    exit 1
+  fi
   STATUS="already-granted"
   write_result
   echo "OK: target already holds ${PERMISSION_ROLE_NAME}; no mutation performed"
