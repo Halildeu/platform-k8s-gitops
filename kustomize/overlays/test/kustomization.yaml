@@ -8118,6 +8118,19 @@ patches:
       - op: add
         path: /data/MEETING_ASSIGNEE_DIRECTORY_ENABLED
         value: "true"
+  # gitops#3537 — Görevler dilim-4b (TEST-only): meeting-service delivers
+  # meeting.action.assigned / meeting.action.reassigned outbox events to
+  # notification-orchestrator as fixed-copy system intents for the assignee
+  # (platform-backend: sink + auth-service grant + V28 templates). Secret and
+  # subject issuer fall back to the existing directory secret / KEYCLOAK_ISSUER_URI;
+  # without the flag the poller keeps the pure Redis publish path.
+  - target:
+      kind: ConfigMap
+      name: meeting-service-config
+    patch: |-
+      - op: add
+        path: /data/MEETING_NOTIFY_ENABLED
+        value: "true"
 
   - target:
       kind: ConfigMap
