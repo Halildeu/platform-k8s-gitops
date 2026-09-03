@@ -1,0 +1,29 @@
+{
+  "_comment": "Faz 24 Görevler dilim-4b (gitops#3486 / #3537) — OpenFGA Layer-2 receive grants for the meeting action assignment notifications (topics meeting.action.assigned / meeting.action.reassigned, platform-backend#1128).",
+  "_purpose": "notification-orchestrator blocks in-app delivery with BLOCKED_BY_AUTHZ unless `template:<id>#can_receive@subscriber:<id>` resolves; the live model inherits can_receive from the topic (`template.topic: [notification_topic]`, `notification_topic.can_receive: [subscriber]`). This seed binds the two templates to their topics and grants can_receive to the TEST meeting users so an assignment reaches the assignee's inbox (measured 2026-09-03: intent mtg-5b2893c8 accepted, delivery authz_deny).",
+  "_scope": "test-only bootstrap exception (same discipline as meeting-transcript-tuples.json / ADR-0041 §4). k3d-test, realm platform-test. No production realm tuple is written.",
+  "_subject_model": "subscriber id == platform users_db numeric id (notification-orchestrator RecipientRef.subscriberId == meeting-service resolveUserId(kcSubject) == /authz/me userId). user:1 = test admin (halildeu), user:4 = Zeynep Nisa Akkılıç (KC 63ea39e5), user:9 = ats-recruiter-persona.",
+  "_invariants": [
+    "Wildcard subject (subscriber:*, user:*) YASAK — explicit numeric subscriber ids only",
+    "Objects limited to the two meeting action templates and their two topics",
+    "Idempotent: duplicate write → HTTP 400 'cannot write a tuple which already exists' treated as OK (per-tuple writes)",
+    "Canonical/prod path = permission-service tuple writer (DD-EA-2); automatic per-user grant on module membership is tracked separately (gitops#3541)"
+  ],
+  "_apply_via": "scripts/faz24/openfga-meeting-action-notify-seed.sh (host jq + meeting-service pod curl, same as scripts/faz24/openfga-meeting-transcript-seed.sh).",
+  "tuples": [
+    { "_role": "template → topic binding (assigned)", "user": "notification_topic:meeting.action.assigned", "relation": "topic", "object": "template:meeting.action.assigned" },
+    { "_role": "template → topic binding (reassigned)", "user": "notification_topic:meeting.action.reassigned", "relation": "topic", "object": "template:meeting.action.reassigned" },
+    { "_role": "test admin receives assignment notifications", "user": "subscriber:1", "relation": "can_receive", "object": "notification_topic:meeting.action.assigned" },
+    { "_role": "test admin receives hand-over notifications", "user": "subscriber:1", "relation": "can_receive", "object": "notification_topic:meeting.action.reassigned" },
+    { "_role": "Zeynep receives assignment notifications", "user": "subscriber:4", "relation": "can_receive", "object": "notification_topic:meeting.action.assigned" },
+    { "_role": "Zeynep receives hand-over notifications", "user": "subscriber:4", "relation": "can_receive", "object": "notification_topic:meeting.action.reassigned" },
+    { "_role": "ats-recruiter-persona receives assignment notifications", "user": "subscriber:9", "relation": "can_receive", "object": "notification_topic:meeting.action.assigned" },
+    { "_role": "ats-recruiter-persona receives hand-over notifications", "user": "subscriber:9", "relation": "can_receive", "object": "notification_topic:meeting.action.reassigned" }
+  ],
+  "smoke_checks": [
+    { "_why": "inheritance through the template→topic binding (what the orchestrator actually checks)", "user": "subscriber:1", "relation": "can_receive", "object": "template:meeting.action.reassigned", "expect_allowed": true },
+    { "_why": "assigned template for Zeynep", "user": "subscriber:4", "relation": "can_receive", "object": "template:meeting.action.assigned", "expect_allowed": true },
+    { "_why": "deny-by-default for an unknown subscriber", "user": "subscriber:424242", "relation": "can_receive", "object": "template:meeting.action.assigned", "expect_allowed": false },
+    { "_why": "grant is topic-scoped — no bleed into another template", "user": "subscriber:1", "relation": "can_receive", "object": "template:ethics.case.activity", "expect_allowed": false }
+  ]
+}
