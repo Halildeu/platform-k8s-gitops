@@ -5123,7 +5123,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: e9dec1929573e9a6dac23192bca8bf589367e67d
+    # sourceRevision: a86be52dc69020a31eedda5762a424b5d109172a
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -5141,7 +5141,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-e9dec19
+    newTag: sha-a86be52
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -5180,7 +5180,7 @@ images:
     # promotion workflow now performs this resolution before writing desired
     # state, preventing a later promotion from reintroducing an index/imageID
     # mismatch.
-    digest: sha256:c12e686adc07657afd14549a0d0c9e2fef08a2ef20cc150348c44eaeca989310
+    digest: sha256:9a1002fdb4875bca3dd768379934fbb3c826d99275fd80753c947e6894b8dd6d
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
