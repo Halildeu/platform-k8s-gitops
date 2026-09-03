@@ -570,7 +570,11 @@ images:
     # (both-forms 400, unresolvable 422, directory-down 503). Digest
     # pull-proofed via in-cluster smoke pod imageID (never build logs).
     # Onceki: sha256:ec7f01ec1a5ecb88...
-    digest: sha256:726f6ae022106cde26274b40b42e2a5531c4bec6b4c2775ccfc5a29118e4c163
+    # 2026-09-03 update: sha-a41b5ce (platform-backend#1128, gitops#3537 Görevler
+    # dilim-4b) — outbox poller delivers meeting.action.assigned/reassigned to
+    # Notify as idempotent system intents (MEETING_NOTIFY_ENABLED, #3539).
+    # Registry digest from the k3d-test pull (smoke pod imageID), not a build log.
+    digest: sha256:8d3306a04f5e3f47f3d58aa482771049e90e96cfcd5f90200b8d37d64e98c573
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -842,7 +846,11 @@ images:
     # audience-pinned users:internal permission (transcript permissions stay
     # pinned to the transcript audience). Digest pull-proofed via in-cluster
     # smoke pod imageID. Onceki: sha256:350c70ef79b7...
-    digest: sha256:f531fcbab6faa8493da8f4b425d8fca196365d46470f59614e2f8ed08d25a90d
+    # 2026-09-03 update: sha-a41b5ce (platform-backend#1128, gitops#3537 Görevler
+    # dilim-4b) — meeting-service client may mint notification-orchestrator /
+    # notify:intents:system (per-audience pinned). Registry digest from the
+    # k3d-test pull (smoke pod imageID), not a build log.
+    digest: sha256:ffd2bff1d2fe62872cde8e14f7b9f7e3ef66d6debf2b5982f9f81dce7b30c7d8
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -7056,7 +7064,11 @@ images:
     # permanently block CREATE PARTITION. Service delta since sha-43ab06d is
     # exactly the #1108 family (#1108 fix + #1110/#1112 test-only). Digest
     # read back from GHCR by tag (sha-545f8f9), not from build logs.
-    digest: sha256:f4b2358cc16ecdede1160a37b3e440ffb0fc7f72899a397d95d04fe3ebaefd05
+    # 2026-09-03 update: sha-a41b5ce (platform-backend#1128, gitops#3537 Görevler
+    # dilim-4b) — topic catalog meeting.action.assigned/reassigned + V28
+    # fixed-copy templates (tr-TR, en-US). Registry digest from the k3d-test
+    # pull (smoke pod imageID), not a build log.
+    digest: sha256:2efe8b11dc69b404df0f2dc98a3b0a7203b3eafbbb0c39999fa89ae773a54158
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.30:
