@@ -512,7 +512,7 @@ def main() -> None:
         # speechContextTerms on the meeting contract (platform-backend#1129); the
         # durable-finalization surface this verifier pins is untouched.
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:b0a25c41f39991affe8a0226b5c4c34361996a2648daf53150a7bb3a61e87e1c",
+        "sha256:41da7a6f53b71bf3ec8fcc8490ffd77f198815ead8838aa29aeb5ac61d266639",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
@@ -547,7 +547,7 @@ def main() -> None:
         # 2026-09-03 (gitops#3486): sha-2f63a74 — platform-backend#1127 makes the
         # live-analyze window cumulative; the durable-finalization surface this
         # verifier pins is untouched.
-        "sha256:d9f31772d197cf8f951a888611484e2ed6a94470f657e98f5f2a30e2482d52bf",
+        "sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773",
     )
     pod_annotation(
         meeting_deploy,
