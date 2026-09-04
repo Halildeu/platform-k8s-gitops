@@ -573,8 +573,12 @@ images:
     # 2026-09-03 update: sha-a41b5ce (platform-backend#1128, gitops#3537 Görevler
     # dilim-4b) — outbox poller delivers meeting.action.assigned/reassigned to
     # Notify as idempotent system intents (MEETING_NOTIFY_ENABLED, #3539).
-    # Registry digest from the k3d-test pull (smoke pod imageID), not a build log.
-    digest: sha256:8d3306a04f5e3f47f3d58aa482771049e90e96cfcd5f90200b8d37d64e98c573
+    # 2026-09-04 (platform-backend#1024 slice 1, platform-backend#1129): sha-7d8e198 —
+    # consent-bound speechContextTerms on the canonical meeting contract (V14 JSONB
+    # column + API echo); the outbox/Notify surface above is untouched.
+    # Registry manifest digest from the GHCR package API; the method was cross-checked
+    # against the k3d-test pull of sha-a41b5ce (API digest == smoke pod imageID).
+    digest: sha256:b0a25c41f39991affe8a0226b5c4c34361996a2648daf53150a7bb3a61e87e1c
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service

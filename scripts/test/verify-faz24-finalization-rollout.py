@@ -508,8 +508,11 @@ def main() -> None:
         # 2026-09-03 (gitops#3537): sha-a41b5ce — outbox poller delivers assignment
         # events to Notify as system intents (platform-backend#1128); the
         # durable-finalization surface this verifier pins is untouched.
+        # 2026-09-04 (platform-backend#1024 slice 1): sha-7d8e198 — consent-bound
+        # speechContextTerms on the meeting contract (platform-backend#1129); the
+        # durable-finalization surface this verifier pins is untouched.
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:8d3306a04f5e3f47f3d58aa482771049e90e96cfcd5f90200b8d37d64e98c573",
+        "sha256:b0a25c41f39991affe8a0226b5c4c34361996a2648daf53150a7bb3a61e87e1c",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
