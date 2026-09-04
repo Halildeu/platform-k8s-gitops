@@ -480,7 +480,10 @@ images:
     # 5 fragments; Zeynep's 2026-08-31 finding 1 (live summary == latest
     # sentence). Digest pull-proofed via in-cluster smoke pod imageID.
     # Onceki: sha256:e038e52addc23cba...
-    digest: sha256:d9f31772d197cf8f951a888611484e2ed6a94470f657e98f5f2a30e2482d52bf
+    # 2026-09-04 (platform-backend#1024 dilim 2, platform-backend#1130): sha-9f096ac — meeting-contract
+    # speechContextTerms merged ahead of the recorder's contextTerms (SpeechContextTermMerger) before
+    # Speechmatics additional_vocab; GHCR package-API manifest digest.
+    digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -578,7 +581,10 @@ images:
     # column + API echo); the outbox/Notify surface above is untouched.
     # Registry manifest digest from the GHCR package API; the method was cross-checked
     # against the k3d-test pull of sha-a41b5ce (API digest == smoke pod imageID).
-    digest: sha256:b0a25c41f39991affe8a0226b5c4c34361996a2648daf53150a7bb3a61e87e1c
+    # 2026-09-04 (platform-backend#1024 dilim 2, platform-backend#1130): sha-9f096ac — recording-access
+    # preflight now returns the consent-bound speechContextTerms; GHCR package-API manifest digest
+    # (method cross-checked against the k3d-test pull of sha-a41b5ce).
+    digest: sha256:41da7a6f53b71bf3ec8fcc8490ffd77f198815ead8838aa29aeb5ac61d266639
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
