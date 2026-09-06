@@ -53,9 +53,7 @@ write_runtime('postgres.env',f"POSTGRES_USER=platform\nPOSTGRES_DB=platform\nPOS
 write_runtime('keycloak.env',f"KC_BOOTSTRAP_ADMIN_USERNAME=dev-admin\nKC_BOOTSTRAP_ADMIN_PASSWORD={secret['keycloak_admin']}\nKC_DB=postgres\nKC_DB_URL=jdbc:postgresql://127.0.0.1:5432/keycloak\nKC_DB_USERNAME=platform\nKC_DB_PASSWORD={secret['postgres']}\nKC_HOSTNAME=http://127.0.0.1:33081\nKC_HEALTH_ENABLED=true\n")
 write_runtime('openfga.env',f"OPENFGA_DATASTORE_ENGINE=postgres\nOPENFGA_DATASTORE_URI=postgres://platform:{secret['postgres']}@127.0.0.1:5432/openfga?sslmode=disable\nOPENFGA_HTTP_ADDR=127.0.0.1:34080\nOPENFGA_GRPC_ADDR=127.0.0.1:34081\nOPENFGA_PLAYGROUND_ENABLED=false\nOPENFGA_METRICS_ADDR=127.0.0.1:34112\n")
 schemas=['auth_service','user_service','permission_service','variant_service','core_data_service','meeting_service','budget_service']
-init=write_runtime('postgres-init.sql',"CREATE ROLE platform_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '"+secret['postgres']+"';\nCREATE DATABASE keycloak;\n"+''.join(f'CREATE SCHEMA IF NOT EXISTS {s} AUTHORIZATION platform_app;\n' for s in schemas))
-with Path(init).open('a') as f:
-    f.write_runtime('CREATE DATABASE openfga;\n')
+init=write_runtime('postgres-init.sql',"CREATE ROLE platform_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '"+secret['postgres']+"';\nCREATE DATABASE keycloak;\n"+''.join(f'CREATE SCHEMA IF NOT EXISTS {schema} AUTHORIZATION platform_app;\n' for schema in schemas)+'CREATE DATABASE openfga;\n')
 # The Postgres entrypoint reads this init script as its container user.
 Path(init).chmod(0o644)
 common={'network_mode':'host','restart':'unless-stopped','logging':{'driver':'local','options':{'max-size':'10m','max-file':'3'}}}
