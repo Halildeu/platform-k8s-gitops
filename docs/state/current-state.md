@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — ATS question editor and interview cancellation; acceptance gaps (2026-09-06)
+
+This delta supersedes historical runtime statements below only for the measured
+ATS/frontend/meeting-ai scope. TEST only; no production mutation or legal acceptance.
+
+- ATS source `d5e48e4a12b4700ea66af88421b077105cdede28` includes question model
+  and Tomcat security fix [ats#256](https://github.com/Halildeu/ats/pull/256).
+  [Build 34025974278](https://github.com/Halildeu/ats/actions/runs/34025974278)
+  passed build, critical vulnerability scan and push. GitOps
+  [#3551](https://github.com/Halildeu/platform-k8s-gitops/pull/3551) deployed
+  `sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0`;
+  `k3d-test/platform-test/ats-interview-evidence` is ready with that imageID.
+- Frontend [#1139](https://github.com/Halildeu/platform-web/pull/1139) source
+  `0deca077c0f76a5b4fb3b6e424ba0f95cfb0cf35` was promoted through GitOps
+  [#3552](https://github.com/Halildeu/platform-k8s-gitops/pull/3552).
+  Ready frontend digest
+  `sha256:782cbd01a3acbbc6f706997566933344ba461d2a54d3cb60a0a6a546ea9f7fb8`
+  matched public build-info. Runtime gate
+  [34027058807](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34027058807)
+  passed after earlier overlapping Argo sync attempts failed.
+- Real Keycloak recruiter login and a separate mobile candidate browser verified:
+  question create/reorder/stable IDs/reopen/delete; PDF import and editable form;
+  persistent application; recruiter evaluation; candidate status readback;
+  scheduled then cancelled interview visible to both personas without internal
+  evaluation fields; paused/closed job rejects new applications while the existing
+  candidate result remains readable. These are synthetic TEST functional checks,
+  not production or full product acceptance.
+- Aggregate browser acceptance **FAIL** on the measured frontend: two serious
+  contrast failures (4.37:1, required 4.5:1), notice disclosure and calendar link.
+  [web#1140](https://github.com/Halildeu/platform-web/issues/1140) and
+  [fix PR #1141](https://github.com/Halildeu/platform-web/pull/1141) track the
+  change and required exact-artifact browser recheck. The canonical harness keeps
+  fail-fast axe enforcement; a separate diagnostic run continued with a FAIL result.
+- [ats#240](https://github.com/Halildeu/ats/issues/240#issuecomment-5558653078):
+  question editor slice A is measured; candidate answers B and recruiter answer
+  reading C are not implemented. [web#961](https://github.com/Halildeu/platform-web/issues/961#issuecomment-5558652971)
+  cancellation/calendar slice is measured; reschedule, assigned interviewer
+  scorecard and complete are not covered by this run. No issue is closed.
+- [ai#323](https://github.com/Halildeu/platform-ai/issues/323#issuecomment-5558639064):
+  GPU source `ff179d92c8051e3d8d1cf7c4a81e0db15ac3fda7` includes #334/#335
+  broken-line fixes; 51 relevant tests passed on that host. Recent persisted
+  metadata has nonempty verified outputs. New real-Ollama synthetic class-level
+  test timed out at 60s, then returned verified full sentences at diagnostic 300s.
+  Runtime settings were not changed. Fresh attended capture through persistence
+  and browser citation readback remains **unverified**; health alone is insufficient.
+
+The legacy shell harness bootstrap uses a smoke token whose observed audience
+does not satisfy permission-service. This run used the existing authorized
+synthetic persona through actual browser OIDC; no audience or permission was
+weakened. Canonical unattended bootstrap needs its own bounded correction.
+
 ## Live Delta — Faz 24 TEST customer journey passed; historical DLQ disposition remains tracked (2026-08-01)
 
 The last passed customer gate for [#2610](https://github.com/Halildeu/platform-k8s-gitops/issues/2610)

@@ -250,6 +250,7 @@ try {
   await recruiterPage.getByRole('tab', { name: 'İlanlar' }).click();
   const jobsPanel = recruiterPage.getByTestId('recruiter-jobs-panel');
   await waitVisible(jobsPanel, 'recruiter jobs panel');
+  await jobsPanel.getByTestId('recruiter-job-filter-ALL').click();
   await jobsPanel.getByRole('button', { name: 'Yeni ilan oluştur' }).click();
   const createForm = jobsPanel.getByRole('form', { name: 'Yeni ilan' });
   await waitVisible(createForm, 'new job form');
@@ -263,6 +264,13 @@ try {
     .getByLabel('İlan özeti')
     .fill('Sentetik adayların uçtan uca test edebileceği müşteri odaklı ürün rolü.');
   await createForm.getByLabel('Öne çıkanlar').fill('Müşteri keşfi\nUçtan uca teslimat');
+  await createForm.getByRole('button', { name: 'Soru ekle', exact: true }).click();
+  await createForm.getByLabel('Soru metni', { exact: true }).nth(0).fill('Hangi teknik alanda deneyiminiz var?');
+  await createForm.getByRole('button', { name: 'Soru ekle', exact: true }).click();
+  await createForm.getByLabel('Soru metni', { exact: true }).nth(1).fill('Hangi calisma bicimini tercih edersiniz?');
+  await createForm.getByLabel(/^Cevap biçimi/u).nth(1).selectOption('SINGLE_CHOICE');
+  await createForm.getByLabel('2. soru, 1. seçenek', { exact: true }).fill('Ofis');
+  await createForm.getByLabel('2. soru, 2. seçenek', { exact: true }).fill('Uzaktan');
   const createJobResponse = recruiterPage.waitForResponse(
     (response) =>
       relevantPath(response.url()) === '/api/ats/v1/recruiter/jobs' &&
@@ -273,6 +281,10 @@ try {
   const createdResponse = await createJobResponse;
   if (createdResponse.status() !== 201) throw new Error(`job create HTTP ${createdResponse.status()}`);
   const createdJob = await createdResponse.json();
+  if (createdJob.questions?.length !== 2 || !createdJob.questions.every(q => q.questionId)) throw new Error('question create persistence missing');
+  const originalQuestionIds = createdJob.questions.map(q => q.questionId);
+  const originalOptionIds = createdJob.questions[1].options.map(o => o.optionId);
+  console.log('PASS recruiter question create and server ids');
   jobId = typeof createdJob.jobId === 'string' ? createdJob.jobId : '';
   if (!/^job_[A-Za-z0-9_-]{16,}$/u.test(jobId) || createdJob.slug !== jobSlug || createdJob.status !== 'DRAFT') {
     throw new Error('created job response contract invalid');
@@ -283,6 +295,7 @@ try {
   await jobCard.getByRole('button', { name: 'Düzenle' }).click();
   const editForm = jobsPanel.getByRole('form', { name: 'İlanı düzenle' });
   await waitVisible(editForm, 'edit job form');
+  await editForm.getByRole('button', { name: '2. soruyu yukarı taşı', exact: true }).click();
   await editForm.getByLabel('İlan özeti').fill(editedJobSummary);
   const updateJobResponse = recruiterPage.waitForResponse(
     (response) =>
@@ -294,10 +307,22 @@ try {
   const updatedResponse = await updateJobResponse;
   if (updatedResponse.status() !== 200) throw new Error(`job update HTTP ${updatedResponse.status()}`);
   const updatedJob = await updatedResponse.json();
+  if (JSON.stringify(updatedJob.questions.map(q => q.questionId)) !== JSON.stringify([...originalQuestionIds].reverse()) || JSON.stringify(updatedJob.questions[0].options.map(o => o.optionId)) !== JSON.stringify(originalOptionIds)) throw new Error('question reorder changed ids');
+  console.log('PASS recruiter question reorder preserves ids');
   if (updatedJob.summary !== editedJobSummary || updatedJob.version !== 1) {
     throw new Error('updated job response contract invalid');
   }
 
+  await jobCard.getByRole('button', { name: 'Düzenle' }).click();
+  await waitVisible(editForm, 'reopened question form');
+  if (await editForm.getByLabel('Soru metni', { exact: true }).nth(0).inputValue() !== 'Hangi calisma bicimini tercih edersiniz?') throw new Error('question reopen readback mismatch');
+  await editForm.getByRole('button', { name: '2. soruyu sil', exact: true }).click();
+  await editForm.getByRole('button', { name: '1. soruyu sil', exact: true }).click();
+  const removeResponsePromise = recruiterPage.waitForResponse(r => relevantPath(r.url()) === `/api/ats/v1/recruiter/jobs/${jobId}` && r.request().method() === 'PUT');
+  await editForm.getByRole('button', { name: 'Değişiklikleri kaydet' }).click();
+  const removeResponse = await removeResponsePromise;
+  if (removeResponse.status() !== 200 || (await removeResponse.json()).questions.length !== 0) throw new Error('question deletion persistence failed');
+  console.log('PASS recruiter question independent reopen and deletion');
   await jobCard.getByRole('button', { name: 'Önizle' }).click();
   const jobPreview = recruiterPage.getByTestId('recruiter-job-preview');
   await waitVisible(jobPreview, 'job preview');
@@ -369,7 +394,7 @@ try {
   await waitVisible(resumeMeta, 'candidate PDF import result');
   const resumeMetaText = (await resumeMeta.textContent()) ?? '';
   const importedFieldCount = Number.parseInt(
-    resumeMetaText.match(/CV’den dolduruldu:\s*(\d+)\s*alan/u)?.[1] ?? '0',
+    resumeMetaText.match(/(\d+)\s*alan forma\s*aktarıldı/u)?.[1] ?? '0',
     10,
   );
   if (!Number.isSafeInteger(importedFieldCount) || importedFieldCount < 2) {
@@ -389,16 +414,14 @@ try {
   };
   await fillIfEmpty('candidate-phone', '+90 555 000 00 00');
   await fillIfEmpty('candidate-city', 'İstanbul');
-  await candidatePage.getByRole('button', { name: 'Deneyim bilgilerime devam et' }).click();
+  await candidatePage.getByRole('button', { name: 'Deneyim bilgilerime geç' }).click();
   await fillIfEmpty(
     'candidate-summary',
     'Müşteri ihtiyacını çalışan ürün yolculuğuna dönüştüren sentetik aday.',
   );
-  await fillIfEmpty('candidate-experience', 'Ürün Uzmanı · Örnek Teknoloji · 2022–2026');
-  await fillIfEmpty(
-    'candidate-education',
-    'Yönetim Bilişim Sistemleri · Örnek Üniversitesi · 2020',
-  );
+  await fillIfEmpty('candidate-experience-0-title', 'Ürün Uzmanı');
+  await fillIfEmpty('candidate-experience-0-company', 'Örnek Teknoloji');
+  await fillIfEmpty('candidate-education-0-school', 'Örnek Üniversitesi');
   await fillIfEmpty('candidate-skills', 'Ürün keşfi, kullanıcı araştırması, analitik');
   await candidatePage.getByRole('button', { name: 'Başvuruyu kontrol et' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-preview'), 'candidate preview');
@@ -427,9 +450,9 @@ try {
   const expectedSubmittedKeys = [
     'accuracyConfirmedAt',
     'city',
-    'education',
+    'educationEntries',
     'email',
-    'experience',
+    'experienceEntries',
     'fullName',
     'noticeAcceptedAt',
     'noticeVersion',
@@ -583,7 +606,7 @@ try {
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-desktop');
 
   await reviewPanel.getByRole('button', { name: 'İnsan incelemesini başlat' }).click();
-  await waitVisible(reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }), 'under review transition');
+  await waitVisible(reviewPanel.getByRole('button', { name: 'Kısa listeye al' }), 'under review transition');
   const refreshStatusButton = candidatePage.getByRole('button', { name: 'Durumu yenile' });
   const reviewStep = currentStatusHeading('İnsan incelemesinde');
   await refreshUntilVisible(refreshStatusButton, reviewStep, 'candidate sees under review');
@@ -620,7 +643,7 @@ try {
   }
   await scorecard.waitFor({ state: 'hidden', timeout: 30_000 });
   const interviewPendingButton = reviewPanel.getByRole('button', {
-    name: 'Mülakat planlamasına al',
+    name: 'Kısa listeye al',
   });
 
   const terminalTransitionResponse = recruiterPage.waitForResponse(
@@ -629,12 +652,12 @@ try {
       relevantPath(response.url()) === `/api/ats/v1/recruiter/applications/${publicRef}/status`,
     { timeout: 30_000 },
   );
-  await reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }).click();
+  await reviewPanel.getByRole('button', { name: 'Kısa listeye al' }).click();
   const terminalResponse = await terminalTransitionResponse;
   if (terminalResponse.status() !== 200) {
     throw new Error(`interview pending transition HTTP ${terminalResponse.status()}`);
   }
-  const terminalStatusText = 'Durum güncellendi: Mülakat planlaması bekliyor.';
+  const terminalStatusText = 'Durum güncellendi: Kısa listede.';
   const terminalStatus = reviewPanel.getByRole('status').filter({ hasText: terminalStatusText });
   await waitVisible(terminalStatus, 'interview pending terminal status');
   if ((await terminalStatus.textContent())?.trim() !== terminalStatusText) {
@@ -645,9 +668,50 @@ try {
   const interviewStep = currentStatusHeading('Mülakat planlaması');
   await refreshUntilVisible(refreshStatusButton, interviewStep, 'candidate sees interview pending');
 
+  const interviewPanel = recruiterPage.getByTestId('recruiter-interview-workspace');
+  await interviewPanel.getByRole('button', { name: 'Yeni görüşme planla', exact: true }).click();
+  const scheduleForm = interviewPanel.getByRole('form', { name: 'Yeni görüşme planı', exact: true });
+  const scheduleResponsePromise = recruiterPage.waitForResponse(r => r.url().includes(`/recruiter/applications/${publicRef}/interviews`) && r.request().method() === 'POST');
+  await scheduleForm.getByRole('button', { name: 'Görüşmeyi kalıcı olarak planla', exact: true }).click();
+  const scheduleResponse = await scheduleResponsePromise;
+  if (![200,201].includes(scheduleResponse.status())) throw new Error(`interview schedule HTTP ${scheduleResponse.status()}`);
+  const scheduled = await scheduleResponse.json();
+  if (scheduled.status !== 'SCHEDULED') throw new Error('interview schedule state mismatch');
+  const candidateCalendar = candidatePage.getByRole('region', {name:'Görüşme takvimim',exact:true});
+  await refreshUntilVisible(refreshStatusButton, candidateCalendar.getByText('Planlandı', {exact:true}), 'candidate schedule readback');
+  console.log('PASS synthetic interview scheduled and candidate calendar readback');
+  await interviewPanel.getByRole('button', { name: 'Görüşmeyi iptal et', exact: true }).click();
+  const internalReason = `Sentetik ic gerekce ${runSuffix}`;
+  await interviewPanel.getByLabel('Gerekçe', {exact:true}).fill(internalReason);
+  const cancelPromise = recruiterPage.waitForResponse(r => r.url().includes(`/interviews/${scheduled.interviewId}/transitions`) && r.request().method() === 'POST');
+  await interviewPanel.getByRole('button', {name:'İnsan eylemini kaydet',exact:true}).click();
+  const cancelResponse = await cancelPromise;
+  if (cancelResponse.status()!==200 || (await cancelResponse.json()).status!=='CANCELLED') throw new Error('interview cancel persistence failed');
+  await interviewPanel.getByRole('button', {name:'Görüşmeleri yenile',exact:true}).click();
+  await waitVisible(interviewPanel.getByText('İptal edildi',{exact:true}), 'recruiter cancel independent readback');
+  const safeCalendarPromise = candidatePage.waitForResponse(r => r.url().includes(`/candidate/applications/${publicRef}/interviews`) && r.request().method()==='GET');
+  await refreshStatusButton.click();
+  const safeCalendarResponse = await safeCalendarPromise;
+  if (safeCalendarResponse.status()!==200) throw new Error('candidate calendar readback failed');
+  const safeCalendar = await safeCalendarResponse.json();
+  const forbidden = new Set(['participants','criteria','scorecards','actorRef','reason','summary','ratings','recommendation']);
+  const hasInternal = value => Array.isArray(value) ? value.some(hasInternal) : value && typeof value==='object' ? Object.entries(value).some(([k,v]) => forbidden.has(k)||hasInternal(v)) : false;
+  if (hasInternal(safeCalendar) || JSON.stringify(safeCalendar).includes(internalReason)) throw new Error('candidate calendar internal field leak');
+  if (!Array.isArray(safeCalendar) || !safeCalendar.some(x=>x.interviewId===scheduled.interviewId && x.status==='CANCELLED')) throw new Error('candidate cancelled interview missing');
+  await waitVisible(candidateCalendar.getByText('İptal edildi',{exact:true}), 'candidate cancelled state rendered');
+  await candidateCalendar.screenshot({path:path.join(evidenceDir,'candidate-cancelled-synthetic.png')});
+  console.log('PASS interview cancellation recruiter/candidate readback and internal fields absent');
+  fs.writeFileSync(path.join(evidenceDir, 'interview-cancellation.json'), JSON.stringify({
+    frontendSourceCommit: expectedFrontendSha, expectedAtsDigest, expectedFrontendDigest,
+    syntheticOnly: true, interviewIdSha256: sha256(scheduled.interviewId),
+    recruiterStatus: 'CANCELLED', candidateStatus: 'CANCELLED', internalFieldsAbsent: true,
+    boundary: 'Two-persona functional check only; aggregate accessibility gate remains independent',
+  }, null, 2));
+
   await recruiterPage.getByRole('button', { name: 'Aday detayını kapat' }).click();
   await recruiterPage.getByRole('tab', { name: 'İlanlar' }).click();
   await waitVisible(jobsPanel, 'recruiter jobs panel after candidate review');
+  await recruiterPage.getByTestId('recruiter-job-filter-ALL').click();
 
   const negativeProbeContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -822,6 +886,7 @@ try {
       'authorized-recruiter-job-management',
       'recruiter-creates-persistent-draft',
       'recruiter-edits-draft',
+      'recruiter-question-create-reorder-stable-ids-reopen-delete',
       'recruiter-previews-draft',
       'recruiter-publishes-job',
       'candidate-opens-dynamic-public-job',
@@ -836,6 +901,7 @@ try {
       'candidate-sees-under-review',
       'human-controlled-interview-pending-transition',
       'candidate-sees-interview-pending',
+      'synthetic-interview-schedule-cancel-two-persona-readback-no-internal-fields',
       'recruiter-pauses-job',
       'paused-job-rejects-new-application',
       'existing-candidate-result-survives-pause',
