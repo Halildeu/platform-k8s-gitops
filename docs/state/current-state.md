@@ -69,7 +69,7 @@ it does not claim production, legal acceptance, or recruiter answer readback (C)
   full catalog `120s` stability window passed. This supersedes the pending
   rollback wording below, not the failed source acceptance.
 - [backend#1131](https://github.com/Halildeu/platform-backend/issues/1131)
-  tracks the exact-source customer step under #3399. Current backend
+  tracks the exact-source customer step under #3399. Pre-repair backend
   `9f096ac68ca4c455b0b185b03f2eaf666775e1bb` omits required
   `X-Analysis-Run-Id` and `X-Analysis-Spec-Version` in its transcript client.
   The transcript controller requires both. A bounded TEST probe confirmed
