@@ -39,6 +39,20 @@
 # Vault seed AYRI adım — bkz. aşağıdaki VAULT notu (fail-closed, sessiz atlama YOK).
 #
 # Exit: 0 OK · 1 ERROR(input/login/guard) · 2 DRIFT(--check) · 3 POSTCONDITION
+#
+# ── PLATFORM AUDIENCE MAPPER'LARI (2026-09-06 ölçümü, ats#240 B acceptance) ──
+# ATS kendi yetki kararını platforma delege eder (ATS_AUTHORIZATION_PLATFORM_BASE_URL
+# → api-gateway → permission-service) ve permission-service/user-service token'ı `aud`
+# ile doğrular (SECURITY_JWT_AUDIENCE = account,frontend,<service>). Yalnız
+# `aud=["ats-api"]` taşıyan smoke-ats-v1 token'ı bu yüzden HİÇBİR yerde geçmiyordu
+# (canlı ölçüm: /api/v1/users/me/profile 401, /api/v1/authz/me 401,
+# /api/ats/v1/recruiter/jobs 401 "platform kimliği reddetti"). Çözüm rol/scope
+# GENİŞLETMEZ: client-level `oidc-audience-mapper` ile yalnız iki servisin audience'ı
+# eklenir (permission-service, user-service). `account`/`frontend` audience'ı KASITLI
+# eklenmez — onları kabul eden her platform servisine kapı açardı. Aynı token ile
+# ölçüldü: profile 200, authz/me 200 (superAdmin=false, least-privilege modül seti),
+# recruiter/applications 200. Eksik/yanlış mapper --check'te DRIFT, --apply'da
+# converge + postcondition'dır.
 set -euo pipefail
 
 MODE="${1:---check}"
@@ -63,18 +77,30 @@ case "$REALM" in
   *) echo "ERROR: desteklenmeyen REALM '$REALM' (platform-test | serban)" >&2; exit 1 ;;
 esac
 
-K() { docker exec "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@"; }
-KI() { docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@"; }
+# İzole kcadm config (container içinde mktemp): paylaşılan kcadm oturumunu ezmez ve admin
+# parolası container'ı TERK ETMEZ — `KC_CLI_PASSWORD` container içinde dosyadan okunur,
+# host argv/env'inde hiç görünmez (eski sürüm parolayı kcadm'in parola bayrağıyla host
+# `docker exec` argv'sine koyuyordu; `ps` ile okunabiliyordu).
+# Kardeş setup-smoke-budget-client.sh ile aynı örüntü.
+KCADM_CONFIG=$(docker exec "$KC_CONTAINER" mktemp /tmp/kcadm-smoke-ats.XXXXXX)
+docker exec "$KC_CONTAINER" chmod 600 "$KCADM_CONFIG"
+trap 'docker exec "$KC_CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true' EXIT
+
+K() { docker exec "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@" --config "$KCADM_CONFIG"; }
+KI() { docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@" --config "$KCADM_CONFIG"; }
 
 echo "== A2b.3 smoke-ats-v1 ($MODE) — realm=$REALM kc=$KC_CONTAINER =="
 
 kc_login() {
-  local p
-  p="$(docker exec "$KC_CONTAINER" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"' | tr -d '\n')"
-  [ -n "$p" ] || { echo "ERROR: admin password okunamadı" >&2; return 1; }
-  K config credentials --server http://localhost:8080 --realm master --user admin --password "$p" >/dev/null 2>&1 \
-    || { echo "ERROR: master realm login başarısız" >&2; unset p; return 1; }
-  unset p
+  docker exec -e KC_CONFIG="$KCADM_CONFIG" "$KC_CONTAINER" sh -c '
+    set -eu
+    [ -r "${KEYCLOAK_ADMIN_PASSWORD_FILE:?}" ]
+    KC_CLI_PASSWORD=$(cat "$KEYCLOAK_ADMIN_PASSWORD_FILE")
+    export KC_CLI_PASSWORD
+    exec /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:8080 --realm master --user admin \
+      --config "$KC_CONFIG"
+  ' >/dev/null 2>&1 || { echo "ERROR: master realm login başarısız (izole config)" >&2; return 1; }
 }
 
 guard_realm() {
@@ -121,6 +147,95 @@ ats_scope_names() {
     | tr -d '\r' | grep -E '^ats\.' | sort
 }
 DESIRED_DEFAULT_SCOPES="ats-api-audience"
+
+# ── DESIRED client-level audience mapper'lar (name|audience) — bkz. üst not ──
+# Tam olarak bu ikisi; tests/operations/test_smoke_ats_client_scope_invariant.py
+# `account`/`frontend` gibi genişletici audience'ları reddeder.
+desired_audience_mappers() {
+  printf '%s\n' \
+    "smoke-ats-audience-permission-service|permission-service" \
+    "smoke-ats-audience-user-service|user-service"
+}
+
+# Client-level mapper listesi TEK kcadm çağrısıyla okunur (her çağrı bir JVM açar).
+# Okuma başarısızsa (kcadm hatası / JSON dizi değil) script HİÇ mutasyon yapmadan durur:
+# authoritative durum bilinmeden create/update/delete başlatılmaz.
+read_client_mappers() {  # $1=client uuid ; stdout: JSON dizi ; başarısızlık = exit 1
+  local raw
+  raw=$(K get "clients/$1/protocol-mappers/models" -r "$REALM" 2>/dev/null) \
+    || { echo "ERROR: client mapper listesi okunamadı (kcadm)" >&2; exit 1; }
+  printf '%s' "$raw" | python3 -c 'import json,sys
+rows=json.load(sys.stdin)
+if not isinstance(rows,list): raise SystemExit(1)
+print(json.dumps(rows))' 2>/dev/null \
+    || { echo "ERROR: client mapper listesi JSON dizi değil" >&2; exit 1; }
+}
+
+# Exact-set planı: stdout'a satır başına "<state>|<name>|<audience>|<id>":
+#   missing = desired mapper yok · wrong = aynı adlı mapper var ama audience/config farklı
+#   · extra = desired listede OLMAYAN herhangi bir oidc-audience-mapper (least-privilege
+#   sınırı: farklı adla eklenmiş geniş bir audience de drift'tir). Boş çıktı = converged.
+# stderr'e okunur rapor yazılır.
+audience_plan() {  # $1=client mappers JSON
+  # shellcheck disable=SC2046  # desired satırları boşluksuz; word-split kasıtlı
+  printf '%s' "$1" | python3 -c '
+import json,sys
+rows=[m for m in json.load(sys.stdin) if isinstance(m,dict)]
+desired=dict(l.split("|",1) for l in sys.argv[1:])
+byname={m.get("name"):m for m in rows}
+def report(msg): print(msg, file=sys.stderr)
+def exact(m,aud):
+    # Desired payload ile NORMALIZE karsilastirma: yalniz audience degil, aud claim
+    # kumesini genisletebilecek her alan. included.custom.audience BOS olmali: ayni adli
+    # mapper dogru client audience yaninda genis bir custom audience tasirsa credential
+    # gorunmeden genisler (Codex 2. tur bulgusu). Eksik anahtar = KC varsayilani
+    # (lightweight.claim / introspection.token.claim eski surumlerde donmeyebilir).
+    # NOT: bu blok tek tirnakli python3 -c icinde; yorumlarda kesme isareti KULLANMA.
+    c=m.get("config") or {}
+    def flag(key,default): return str(c.get(key,default)).lower()
+    return (m.get("protocol","openid-connect")=="openid-connect"
+        and m.get("protocolMapper")=="oidc-audience-mapper"
+        and c.get("included.client.audience")==aud
+        and not (c.get("included.custom.audience") or "").strip()
+        and flag("access.token.claim","false")=="true"
+        and flag("id.token.claim","false")=="false"
+        and flag("introspection.token.claim","true")=="true"
+        and flag("lightweight.claim","false")=="false")
+for name,aud in desired.items():
+    m=byname.get(name)
+    if m is None:
+        report("  audience %s: EKSIK (%s) -> platform authz / user-service 401" % (aud,name))
+        print("missing|%s|%s|" % (name,aud)); continue
+    ok=exact(m,aud)
+    if ok: report("  audience %s: var (%s)" % (aud,name))
+    else:
+        report("  audience %s: YANLIS icerik (%s) -> id ile update" % (aud,name))
+        print("wrong|%s|%s|%s" % (name,aud,m.get("id","")))
+for m in rows:
+    if m.get("protocolMapper")!="oidc-audience-mapper" or m.get("name") in desired: continue
+    c=m.get("config") or {}
+    aud=c.get("included.client.audience") or c.get("included.custom.audience") or "?"
+    report("  audience %s: BEKLENMEYEN mapper (%s) -> least-privilege disi, kaldirilir" % (aud,m.get("name")))
+    print("extra|%s|%s|%s" % (m.get("name",""),aud,m.get("id","")))
+' $(desired_audience_mappers)
+}
+
+audience_report() {  # $1=client uuid ; stdout: plan satırları ; okuma hatası = exit 1
+  local mappers
+  mappers=$(read_client_mappers "$1") || return 1
+  audience_plan "$mappers"
+}
+
+audience_mapper_json() {  # $1=name $2=audience [$3=id] ; kcadm `-f -` gövdesi
+  python3 -c 'import json,sys
+d={"name":sys.argv[1],"protocol":"openid-connect","protocolMapper":"oidc-audience-mapper",
+   "consentRequired":False,
+   "config":{"included.client.audience":sys.argv[2],"id.token.claim":"false",
+             "access.token.claim":"true","introspection.token.claim":"true",
+             "lightweight.claim":"false"}}
+if len(sys.argv)>3 and sys.argv[3]: d["id"]=sys.argv[3]
+print(json.dumps(d,separators=(",",":")))' "$@"
+}
 
 ats_client_uuid() {
   local id
@@ -203,12 +318,17 @@ case "$MODE" in
         SCOPE_MISSING=$((SCOPE_MISSING+1))
       fi
     done
+    echo "--- platform audience mapper ---"
+    # Düz atama: liste okunamazsa audience_report exit 1 → set -e burada durur (CONVERGED
+    # sanılmaz). Sayım ayrı boru; `grep -c .` boş planda "0" basıp 1 döner, `|| true` onu örter.
+    AUD_PLAN=$(audience_report "$CID")
+    AUD_MISSING=$(printf '%s' "$AUD_PLAN" | grep -c . || true)
     echo "  secret fingerprint (sha256[0:12]): $(secret_fp "$CID")"
     echo ""
-    if [ "${SHAPE_DRIFT:-1}" = "0" ] && [ "$MISSING" = "0" ] && [ "$SCOPE_MISSING" = "0" ]; then
+    if [ "${SHAPE_DRIFT:-1}" = "0" ] && [ "$MISSING" = "0" ] && [ "$SCOPE_MISSING" = "0" ] && [ "$AUD_MISSING" = "0" ]; then
       echo "=== CONVERGED ==="; exit 0
     else
-      echo "=== DRIFT: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING ==="; exit 2
+      echo "=== DRIFT: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING audience-eksik=$AUD_MISSING ==="; exit 2
     fi
     ;;
 
@@ -221,7 +341,12 @@ case "$MODE" in
       CID="$(client_uuid)"
       [ -n "$CID" ] || { echo "ERROR: create sonrası client bulunamadı" >&2; exit 1; }
       echo "  ✓ create: $CID"
+      # Yeni client: mapper yok, plan = tüm desired mapper'lar eksik (yine authoritative okuma).
+      AUD_PLAN=$(audience_report "$CID")
     else
+      # Authoritative mapper durumu HER mutasyondan (shape/rol/scope dahil) ÖNCE okunur;
+      # okunamazsa audience_report exit 1 → bu koşuda hiçbir şey değişmez.
+      AUD_PLAN=$(audience_report "$CID")
       echo "  client var → shape converge"
       mapfile -d '' -t ARGS < <(desired_shape_args)
       # clientId create-only; update'te gönderilmez
@@ -252,6 +377,32 @@ case "$MODE" in
       echo "  ✓ default scope: $want"
     done
 
+    # platform audience mapper'ları — EXACT SET: eksik → create, aynı adlı yanlış → id ile
+    # atomik update, desired dışı HER oidc-audience-mapper → delete (least-privilege sınırı;
+    # rol/scope'lardaki "fazlayı bırak" kuralı audience için GEÇERLİ DEĞİL, fazlası yetki
+    # genişletir). Plan yukarıda, herhangi bir mutasyondan önce okundu (AUD_PLAN).
+    [ -n "$AUD_PLAN" ] || echo "  ✓ audience mapper seti converged"
+    while IFS='|' read -r state name aud mid; do
+      [ -n "$state" ] || continue
+      case "$state" in
+        missing)
+          audience_mapper_json "$name" "$aud" \
+            | KI create "clients/$CID/protocol-mappers/models" -r "$REALM" -f - >/dev/null 2>&1 \
+            || { echo "ERROR: audience mapper create başarısız: $name ($aud)" >&2; exit 1; }
+          echo "  ✓ audience mapper eklendi: $aud" ;;
+        wrong)
+          audience_mapper_json "$name" "$aud" "$mid" \
+            | KI update "clients/$CID/protocol-mappers/models/$mid" -r "$REALM" -f - >/dev/null 2>&1 \
+            || { echo "ERROR: audience mapper update başarısız: $name ($aud)" >&2; exit 1; }
+          echo "  ✓ audience mapper düzeltildi: $aud" ;;
+        extra)
+          K delete "clients/$CID/protocol-mappers/models/$mid" -r "$REALM" >/dev/null 2>&1 \
+            || { echo "ERROR: beklenmeyen audience mapper silinemedi: $name ($aud)" >&2; exit 1; }
+          echo "  ✓ beklenmeyen audience mapper kaldırıldı: $name ($aud)" ;;
+        *) echo "ERROR: bilinmeyen plan satırı: $state" >&2; exit 1 ;;
+      esac
+    done <<<"$AUD_PLAN"
+
     # postcondition: read-back assert
     echo "--- postcondition (read-back) ---"
     report_shape "$CID" >/dev/null
@@ -265,8 +416,11 @@ case "$MODE" in
         | tr -d '\r' | grep -qx "$want" || SCOPE_MISSING=$((SCOPE_MISSING+1))
     done
     echo "  default scope eksik: $SCOPE_MISSING"
-    if [ "${SHAPE_DRIFT:-1}" != "0" ] || [ "$MISSING" != "0" ] || [ "$SCOPE_MISSING" != "0" ]; then
-      echo "POSTCONDITION FAIL: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING" >&2; exit 3
+    AUD_PLAN=$(audience_report "$CID")
+    AUD_MISSING=$(printf '%s' "$AUD_PLAN" | grep -c . || true)
+    echo "  platform audience mapper drift: $AUD_MISSING"
+    if [ "${SHAPE_DRIFT:-1}" != "0" ] || [ "$MISSING" != "0" ] || [ "$SCOPE_MISSING" != "0" ] || [ "$AUD_MISSING" != "0" ]; then
+      echo "POSTCONDITION FAIL: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING audience-eksik=$AUD_MISSING" >&2; exit 3
     fi
     echo ""
     echo "=== APPLIED + POSTCONDITION OK ==="

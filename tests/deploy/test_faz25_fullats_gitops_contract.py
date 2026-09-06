@@ -787,6 +787,57 @@ fi
         self.assertNotIn("def action_allowed", self.fullats_browser_shell)
         self.assertNotIn('{type:"MODULE",key:$ats_key,grant:"MANAGE"}', self.fullats_browser_shell)
 
+    def test_fullats_d35_admin_persona_is_vault_bound_and_product_audience_correct(self):
+        # 2026-09-06 run 34036592826: the wrapper looked the d35 admin up by e-mail,
+        # picked a different (attribute-less) user that now owns d35-admin@example.com,
+        # reset that user's password and overwrote the Vault persona password (v18, with
+        # a trailing newline); authz/me then answered 401 because smoke-ats-v1 tokens
+        # carried aud=ats-api only. Persona identity comes from Vault (username + uid,
+        # verified against Keycloak), product-API tokens from smoke-client, the reset
+        # password never carries a newline, and the ATS smoke client's platform audience
+        # mappers are converged before the journey starts.
+        shell = self.fullats_browser_shell
+        self.assertNotIn("D35_ADMIN_EMAIL", shell)
+        self.assertNotIn("expected exactly one synthetic d35 admin", shell)
+        for marker in (
+            'vault_field_to_file kv/platform/d35-3 admin_persona_username "$ADMIN_USERNAME_FILE"',
+            'vault_field_to_file kv/platform/d35-3 admin_persona_uid "$SECRET_DIR/d35-admin.uid"',
+            'get "users/$D35_UID" -r "$REALM"',
+            "synthetic d35 admin uid from Vault does not resolve in Keycloak",
+            "synthetic d35 admin username drifted between Vault and Keycloak",
+            'update "users/$D35_UID/reset-password"',
+            "openssl rand -hex 16 | tr -d '\\r\\n' >\"$ADMIN_PASSWORD_FILE\"",
+            '.read_text().rstrip("\\r\\n")',
+            'PRODUCT_SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-client"',
+            'local client_id="${4:-smoke-ats-v1}" secret_file="${5:-$SMOKE_SECRET_FILE}"',
+            "FATAL: d35 admin product API ACCESS authority yok (authz/me HTTP $AUTHZ_CODE)",
+            "bash scripts/keycloak/setup-smoke-ats-client.sh --apply",
+            'rm -f "$SMOKE_SECRET_FILE" "$PRODUCT_SECRET_FILE"',
+        ):
+            self.assertIn(marker, shell)
+        # Both admin token acquisitions (Vault password, then reset verification) use the
+        # platform client; the recruiter keeps the ATS smoke client default.
+        self.assertEqual(
+            shell.count('"$ADMIN_TOKEN_FILE" smoke-client "$PRODUCT_SECRET_FILE"'), 2
+        )
+        # Secret hygiene: the EXIT trap exists before the first Vault read (an early FATAL
+        # must not leave a client secret in a temp file), and the Vault root token never
+        # travels as an environment value — every read/patch feeds it through stdin.
+        self.assertLess(
+            shell.index("trap 'rm -f \"$SMOKE_SECRET_FILE\" \"$PRODUCT_SECRET_FILE\"' EXIT"),
+            shell.index('exec vault kv get -field=client_secret "$1"'),
+        )
+        self.assertNotIn('VAULT_TOKEN="$root"', shell)
+        self.assertNotIn("docker exec -e VAULT_TOKEN", shell)
+        self.assertIn('exec vault kv get -field="$2" "$1"', shell)
+        self.assertIn(
+            "exec vault kv patch kv/platform/d35-3 admin_persona_password=-", shell
+        )
+        self.assertIn('{ vault_root_token; cat "$ADMIN_PASSWORD_FILE"; } | docker exec -i', shell)
+        smoke_ats = (ROOT / "scripts/keycloak/setup-smoke-ats-client.sh").read_text()
+        self.assertIn('"smoke-ats-audience-permission-service|permission-service"', smoke_ats)
+        self.assertIn('"smoke-ats-audience-user-service|user-service"', smoke_ats)
+
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
             "ats": "sha256:1cd9e5b259a22fc7e501e1c71fc8592833dd41dd6a5b9c3640cddb456349b32a",
