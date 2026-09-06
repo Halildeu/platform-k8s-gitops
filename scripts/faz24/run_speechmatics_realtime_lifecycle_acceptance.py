@@ -432,6 +432,41 @@ def finish_lifecycle(
     return gateway.get("state") == "FINISHED", canonical_session_id
 
 
+def product_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    """Strict requirements for this fixed decision/action-bearing audio fixture."""
+    summary = result.get("summary")
+    decisions = result.get("decisions")
+    actions = result.get("action_items")
+    nonempty = lambda value: isinstance(value, str) and bool(value.strip())
+    decision_count = sum(nonempty(x) for x in decisions) if isinstance(decisions, list) else 0
+    action_count = sum(
+        isinstance(x, dict) and nonempty(x.get("text")) for x in actions
+    ) if isinstance(actions, list) else 0
+    usable = all((
+        result.get("persisted") is True,
+        nonempty(result.get("analysisRunId")),
+        nonempty(summary),
+        result.get("summary_grounding_status") == "verified",
+        decision_count > 0,
+        action_count > 0,
+    ))
+    return {
+        "summaryCharacters": len(summary.strip()) if isinstance(summary, str) else 0,
+        "summaryVerified": result.get("summary_grounding_status") == "verified",
+        "decisionCount": decision_count,
+        "actionCount": action_count,
+        "usableProductResult": usable,
+    }
+
+
+def result_fingerprint(result: dict[str, Any]) -> str:
+    fields = ("analysisRunId", "meetingId", "sessionId", "summary",
+              "summary_grounding_status", "summary_citations", "decisions",
+              "action_items", "citations", "persisted")
+    encoded = json.dumps({key: result.get(key) for key in fields}, sort_keys=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def durable_readback(
     *,
     base_url: str,
@@ -446,6 +481,7 @@ def durable_readback(
     transcript_count = 0
     transcript_status_counts: dict[str, int] = {}
     result_session_match = False
+    result: dict[str, Any] = {}
     while time.monotonic() < deadline:
         status, page = http_json(
             base_url=base_url,
@@ -481,7 +517,10 @@ def durable_readback(
                 timeout_seconds=timeout_seconds,
             )
             statuses["intelligenceResult"] = status
-            result_session_match = str(result.get("sessionId")) == canonical_session_id
+            result_session_match = (
+                str(result.get("sessionId")) == canonical_session_id
+                and result.get("meetingId") == meeting_id
+            )
         except AcceptanceError as error:
             if not str(error).endswith("http-404"):
                 raise
@@ -496,8 +535,52 @@ def durable_readback(
         "transcriptStatusCounts": transcript_status_counts,
         "intelligenceResultSessionMatch": result_session_match,
         "durableApiReadBackProven": result_session_match,
+        **product_evidence(result),
+        **(reopen_evidence(
+            base_url=base_url, token=token, meeting_id=meeting_id,
+            canonical_session_id=canonical_session_id, result=result,
+            timeout_seconds=timeout_seconds, statuses=statuses,
+        ) if result_session_match else {
+            "sameResultReopened": False, "canonicalSourceReadBackProven": False,
+        }),
         "containsTranscriptText": False,
     }
+
+
+def reopen_evidence(
+    *, base_url: str, token: str, meeting_id: str, canonical_session_id: str,
+    result: dict[str, Any], timeout_seconds: float, statuses: dict[str, int],
+) -> dict[str, Any]:
+    evidence = {"sameResultReopened": False, "canonicalSourceReadBackProven": False}
+    try:
+        run_id = str(uuid.UUID(str(result.get("analysisRunId"))))
+    except (ValueError, TypeError, AttributeError):
+        return evidence
+    status, source = http_json(
+        base_url=base_url, token=token, method="GET",
+        path=f"/api/v1/admin/meetings/{meeting_id}/intelligence/results/{run_id}/transcript",
+        expected={200}, timeout_seconds=timeout_seconds,
+    )
+    statuses["canonicalSource"] = status
+    transcript = source.get("transcript")
+    evidence["canonicalSourceReadBackProven"] = all((
+        source.get("analysisRunId") == run_id,
+        source.get("meetingId") == meeting_id,
+        str(source.get("sessionId")) == canonical_session_id,
+        isinstance(transcript, str) and bool(transcript.strip()),
+        isinstance(transcript, str) and hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+        == source.get("transcriptSha256"),
+    ))
+    status, reopened = http_json(
+        base_url=base_url, token=token, method="GET",
+        path=f"/api/v1/admin/meetings/{meeting_id}/intelligence/result",
+        expected={200}, timeout_seconds=timeout_seconds,
+    )
+    statuses["intelligenceReopen"] = status
+    evidence["sameResultReopened"] = result_fingerprint(result) == result_fingerprint(reopened)
+    evidence["resultFingerprintSha256"] = result_fingerprint(result)
+    evidence["browserCitationInteractionProven"] = False
+    return evidence
 
 
 async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
@@ -578,6 +661,9 @@ async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             durable.get("transcriptCount", 0) > 0,
             durable.get("intelligenceResultSessionMatch") is True,
             durable.get("durableApiReadBackProven") is True,
+            durable.get("usableProductResult") is True,
+            durable.get("sameResultReopened") is True,
+            durable.get("canonicalSourceReadBackProven") is True,
         )
     )
     report["status"] = "pass" if passed else "fail"
