@@ -7,8 +7,11 @@ every mutation logged) and asserts what it *does*:
 * exact desired set              -> `--check` 0, `--apply` performs no mapper mutation
 * one desired mapper missing     -> `--check` 2, first `--apply` creates exactly it, second is a no-op
 * same-name mapper, wrong config -> `--apply` updates it by id (no create, no delete)
+* same-name mapper carrying an extra broad `included.custom.audience`
+                                 -> `--check` 2, `--apply` single update by id, read-back empty
 * extra broad audience mapper    -> `--check` 2, `--apply` deletes it (least-privilege exact set)
-* mapper listing fails           -> `--apply` exits 1 with ZERO create/update/delete
+* mapper listing fails           -> `--apply` exits 1 with NO mutation of any kind (shape, role
+                                    scope-mapping, default scope or mapper); `--check` is not CONVERGED
 * postcondition read-back broken -> `--apply` exits 3 after the create
 
 Measured 2026-09-06: without the two audiences every smoke-ats-v1 call died with 401
@@ -164,13 +167,22 @@ die("unexpected verb %r" % verb)
 '''
 
 
-def mapper(name, audience, mid, access="true"):
+def mapper(name, audience, mid, access="true", custom=None):
+    config = {
+        "included.client.audience": audience,
+        "access.token.claim": access,
+        "id.token.claim": "false",
+        "introspection.token.claim": "true",
+        "lightweight.claim": "false",
+    }
+    if custom is not None:
+        config["included.custom.audience"] = custom
     return {
         "id": mid,
         "name": name,
         "protocol": "openid-connect",
         "protocolMapper": "oidc-audience-mapper",
-        "config": {"included.client.audience": audience, "access.token.claim": access},
+        "config": config,
     }
 
 
@@ -221,10 +233,15 @@ class SmokeAtsAudienceBehaviour(unittest.TestCase):
         return proc
 
     def mutations(self):
+        """Audience-mapper mutations only (create / update-by-id / delete)."""
         return [
             line for line in self.log.read_text().splitlines()
             if line.startswith(("create|", "update|m", "delete|"))
         ]
+
+    def all_mutations(self):
+        """Every logged write: shape update, role scope-mapping, default scope, mapper."""
+        return [line for line in self.log.read_text().splitlines() if line != "login"]
 
     def current_mappers(self):
         return json.loads(self.state.read_text())["mappers"]
@@ -260,6 +277,24 @@ class SmokeAtsAudienceBehaviour(unittest.TestCase):
         audiences = sorted(m["config"]["included.client.audience"] for m in self.current_mappers())
         self.assertEqual(audiences, ["permission-service", "user-service"])
 
+    def test_same_name_mapper_with_extra_custom_audience_is_drift_and_updated(self):
+        # Correct name, correct client audience, access.token.claim=true — but an extra
+        # broad custom audience: the token's aud would widen without any new mapper name.
+        hidden = [mapper("smoke-ats-audience-permission-service", "permission-service", "m1",
+                         custom="frontend account"), GOOD[1]]
+        check = self.run_script("--check", hidden)
+        self.assertEqual(check.returncode, 2, check.stdout + check.stderr)
+        self.assertIn("YANLIS icerik", check.stdout + check.stderr)
+        apply = self.run_script("--apply", hidden)
+        self.assertEqual(apply.returncode, 0, apply.stdout + apply.stderr)
+        self.assertEqual(
+            self.mutations(), ["update|m1|smoke-ats-audience-permission-service|permission-service"]
+        )
+        for m in self.current_mappers():
+            self.assertNotIn("included.custom.audience", m["config"])
+        again = self.run_script("--check", self.current_mappers())
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+
     def test_extra_broad_audience_mapper_is_drift_and_removed(self):
         extra = GOOD + [mapper("some-other-audience", "frontend", "m9")]
         check = self.run_script("--check", extra)
@@ -271,13 +306,16 @@ class SmokeAtsAudienceBehaviour(unittest.TestCase):
         self.assertEqual({m["id"] for m in self.current_mappers()}, {"m1", "m2"})
 
     def test_listing_failure_stops_before_any_mutation(self):
+        # Not only audience-mapper writes: the authoritative mapper state is read before
+        # the shape update, the role scope-mapping and the default-scope updates too.
         apply = self.run_script("--apply", GOOD[:1], mappers_read_fail=True)
         self.assertEqual(apply.returncode, 1, apply.stdout + apply.stderr)
         self.assertIn("client mapper listesi okunamad", apply.stderr)
-        self.assertEqual(self.mutations(), [])
+        self.assertEqual(self.all_mutations(), [])
         check = self.run_script("--check", GOOD, mappers_read_fail=True)
         self.assertEqual(check.returncode, 1)
         self.assertNotIn("=== CONVERGED ===", check.stdout)
+        self.assertEqual(self.all_mutations(), [])
 
     def test_postcondition_failure_is_exit_3(self):
         apply = self.run_script("--apply", GOOD[:1], ignore_create=True)

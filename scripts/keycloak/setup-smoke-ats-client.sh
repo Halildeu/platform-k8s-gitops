@@ -184,14 +184,29 @@ rows=[m for m in json.load(sys.stdin) if isinstance(m,dict)]
 desired=dict(l.split("|",1) for l in sys.argv[1:])
 byname={m.get("name"):m for m in rows}
 def report(msg): print(msg, file=sys.stderr)
+def exact(m,aud):
+    # Desired payload ile NORMALIZE karsilastirma: yalniz audience degil, aud claim
+    # kumesini genisletebilecek her alan. included.custom.audience BOS olmali: ayni adli
+    # mapper dogru client audience yaninda genis bir custom audience tasirsa credential
+    # gorunmeden genisler (Codex 2. tur bulgusu). Eksik anahtar = KC varsayilani
+    # (lightweight.claim / introspection.token.claim eski surumlerde donmeyebilir).
+    # NOT: bu blok tek tirnakli python3 -c icinde; yorumlarda kesme isareti KULLANMA.
+    c=m.get("config") or {}
+    def flag(key,default): return str(c.get(key,default)).lower()
+    return (m.get("protocol","openid-connect")=="openid-connect"
+        and m.get("protocolMapper")=="oidc-audience-mapper"
+        and c.get("included.client.audience")==aud
+        and not (c.get("included.custom.audience") or "").strip()
+        and flag("access.token.claim","false")=="true"
+        and flag("id.token.claim","false")=="false"
+        and flag("introspection.token.claim","true")=="true"
+        and flag("lightweight.claim","false")=="false")
 for name,aud in desired.items():
     m=byname.get(name)
     if m is None:
         report("  audience %s: EKSIK (%s) -> platform authz / user-service 401" % (aud,name))
         print("missing|%s|%s|" % (name,aud)); continue
-    c=m.get("config") or {}
-    ok=(m.get("protocolMapper")=="oidc-audience-mapper"
-        and c.get("included.client.audience")==aud and c.get("access.token.claim")=="true")
+    ok=exact(m,aud)
     if ok: report("  audience %s: var (%s)" % (aud,name))
     else:
         report("  audience %s: YANLIS icerik (%s) -> id ile update" % (aud,name))
@@ -326,7 +341,12 @@ case "$MODE" in
       CID="$(client_uuid)"
       [ -n "$CID" ] || { echo "ERROR: create sonrası client bulunamadı" >&2; exit 1; }
       echo "  ✓ create: $CID"
+      # Yeni client: mapper yok, plan = tüm desired mapper'lar eksik (yine authoritative okuma).
+      AUD_PLAN=$(audience_report "$CID")
     else
+      # Authoritative mapper durumu HER mutasyondan (shape/rol/scope dahil) ÖNCE okunur;
+      # okunamazsa audience_report exit 1 → bu koşuda hiçbir şey değişmez.
+      AUD_PLAN=$(audience_report "$CID")
       echo "  client var → shape converge"
       mapfile -d '' -t ARGS < <(desired_shape_args)
       # clientId create-only; update'te gönderilmez
@@ -360,9 +380,7 @@ case "$MODE" in
     # platform audience mapper'ları — EXACT SET: eksik → create, aynı adlı yanlış → id ile
     # atomik update, desired dışı HER oidc-audience-mapper → delete (least-privilege sınırı;
     # rol/scope'lardaki "fazlayı bırak" kuralı audience için GEÇERLİ DEĞİL, fazlası yetki
-    # genişletir). Liste okunamazsa audience_report exit 1 → hiç mutasyon yapılmaz
-    # (stderr bastırılmaz: ERROR satırı ve okunur rapor görünür kalır).
-    AUD_PLAN=$(audience_report "$CID")
+    # genişletir). Plan yukarıda, herhangi bir mutasyondan önce okundu (AUD_PLAN).
     [ -n "$AUD_PLAN" ] || echo "  ✓ audience mapper seti converged"
     while IFS='|' read -r state name aud mid; do
       [ -n "$state" ] || continue

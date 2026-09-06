@@ -112,10 +112,16 @@ def test_platform_audiences_are_exactly_the_two_delegation_targets():
     text = SCRIPT.read_text(encoding="utf-8")
     assert '"protocolMapper":"oidc-audience-mapper"' in text
     assert 'clients/$CID/protocol-mappers/models' in text, "mappers must be client-level"
-    # The plan is read as a plain assignment in --check, --apply and the postcondition so a
-    # failed mapper listing aborts under `set -e` instead of counting as "converged", and
-    # no mutation starts before the authoritative state was read.
-    assert text.count('AUD_PLAN=$(audience_report "$CID"') == 3
+    # The plan is read as a plain assignment in --check, in both --apply branches (before
+    # any shape/role/scope mutation) and in the postcondition, so a failed mapper listing
+    # aborts under `set -e` instead of counting as "converged", and no mutation at all
+    # starts before the authoritative state was read.
+    assert text.count('AUD_PLAN=$(audience_report "$CID"') == 4
+    assert text.index('AUD_PLAN=$(audience_report "$CID")\n      echo "  client var → shape converge"') > 0
+    # Same-name mappers are compared against the whole desired payload, not just the
+    # client audience: a broad `included.custom.audience` on a correctly named mapper
+    # would silently widen the credential.
+    assert 'not (c.get("included.custom.audience") or "").strip()' in text
     assert "read_client_mappers" in text and "exit 1" in text
     assert 'audience-eksik=$AUD_MISSING' in text
     # Exact set: extras are deleted, same-name wrong mappers are updated by id, never a
