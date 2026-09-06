@@ -5144,7 +5144,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: c604281ce9507a21f967f8daca96abb20868f4bb
+    # sourceRevision: 6202e96a0d2f86e543015cb38fd51cf0f527da1c
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -5162,7 +5162,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-c604281
+    newTag: sha-6202e96
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -5201,7 +5201,8 @@ images:
     # promotion workflow now performs this resolution before writing desired
     # state, preventing a later promotion from reintroducing an index/imageID
     # mismatch.
-    digest: sha256:7b820ba512d2b850178989e172697a2450f3b6b17be8e25cde88ac5a50183274
+    # #2828 request-bound TEST exception UI; web #1145, build 34041913860.
+    digest: sha256:55b53f4dfb6814e972416710cda9d7edd5abeb50e28fd703a02b634677cf00bf
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -6701,7 +6702,9 @@ images:
     # platform-backend#1098, main 58ccbed4c304d02b5ae4d5799f86e5a7eea775fd.
     # Build run 30766730747, endpoint-admin job 91546668965; immutable image
     # digest and GitHub provenance bind this pin to that exact merge.
-    digest: sha256:260bec36e7f44999394e8fb84bb61b3f3d079123ce5660641e92b358a3292dba
+    # #2828 TEST owner exception; backend #1134 head 0595ae0f, build 34041913015.
+    # GitHub provenance verified against exact source and ci-image-push.yml.
+    digest: sha256:dc18c0d2b83dcc99d52137898107f0b49dff2b63eb79a5170f102088aab2881f
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -7131,6 +7134,7 @@ images:
     digest: sha256:9fdcb90c98835c22d882e1632b8fd5ce0129fc0d121801a928ea01666bb7d492
 
 patches:
+  - path: endpoint-uninstall-owner-exception.yaml
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
   # prod (selfHeal-OFF, no prod-vault seed) is never touched. (a) append the two
   # service-to-service secret keys to the base ExternalSecrets — Vault values
