@@ -1,5 +1,50 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — ATS strict TEST browser acceptance on contrast fix (2026-09-06 10:56 UTC)
+
+This delta supersedes the earlier September 6 accessibility failure only on the
+exact TEST artifacts below. It does not claim production, full ATS question-answer
+delivery, or fresh attended Meeting Intelligence acceptance.
+
+- Frontend [web#1141](https://github.com/Halildeu/platform-web/pull/1141) source
+  `08660adfc9e79060e1a8ddad3ac0c84b549d88ad` fixes notice/calendar text contrast.
+  Relevant 71 tests, full Web Test Gate, image build/security checks passed.
+  GitOps [#3555](https://github.com/Halildeu/platform-k8s-gitops/pull/3555), commit
+  `b9d75a194f9012369f9ee204eb50827e5406f926`, is Synced/Healthy in ArgoCD.
+  [Runtime gate 34028631849](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34028631849)
+  passed. Ready pod imageID matches frontend
+  `sha256:c7bd6029d4f735faea98a13cc9d03c636c718fe42727ef8ed0fdb0aaafda231e`.
+- ATS remains ready at
+  `sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0`.
+  Strict browser acceptance reports **PASS** with public frontend source checked
+  before/after, real Keycloak recruiter login and a separate mobile candidate.
+  The measured journey includes question editing/stable-ID persistence, publication,
+  local PDF import/edit, persistent application, recruiter evaluation/shortlist,
+  candidate status, interview schedule/cancel and two-persona readback without
+  internal scorecard fields, pause/close rejection and retained application access,
+  plus anonymous recruiter denial. All scanned surfaces have zero axe WCAG A/AA
+  violations and no horizontal overflow. Synthetic TEST data only.
+- Local scoped evidence: `/tmp/ats-delivery-final-20260906/summary.json`, SHA-256
+  `812ab30411090cb405b94c6d9bc7b19a76e57866284d3aa361a11dc2bee14e25`.
+  Hash verified after transfer; candidate cancellation screenshot visually checked.
+  This is local evidence, not a published or signed attestation.
+- [ats#240](https://github.com/Halildeu/ats/issues/240) still lacks candidate
+  question answers B and recruiter answer readback C. Question editor A alone is
+  not the requested complete question-answer customer journey.
+- [web#961](https://github.com/Halildeu/platform-web/issues/961#issuecomment-5558701678)
+  reschedule/calendar and assigned interviewer scorecard were separately measured
+  on earlier source `0deca077`; they are not part of the new strict run. Interview
+  completion and a distinct unauthorized interviewer negative remain unverified.
+- [ai#323](https://github.com/Halildeu/platform-ai/issues/323#issuecomment-5558724817)
+  runtime allowlisted readback confirms `MAI_REQUEST_TIMEOUT=300`; the standalone
+  60-second diagnostic timeout was not the live runtime configuration. Source
+  `ff179d92` has 51 host tests and a real-Ollama synthetic class-level check, but a
+  fresh attended capture through persisted analysis and browser citations remains
+  unverified. No runtime setting was changed.
+- Unattended browser bootstrap audience mismatch is separately tracked in
+  [#3553](https://github.com/Halildeu/platform-k8s-gitops/issues/3553). This acceptance
+  used real browser OIDC, without widening audiences, permissions or secret scope.
+
 ## Live Delta — ATS question editor and interview cancellation; acceptance gaps (2026-09-06)
 
 This delta supersedes historical runtime statements below only for the measured
