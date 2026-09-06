@@ -39,6 +39,20 @@
 # Vault seed AYRI adım — bkz. aşağıdaki VAULT notu (fail-closed, sessiz atlama YOK).
 #
 # Exit: 0 OK · 1 ERROR(input/login/guard) · 2 DRIFT(--check) · 3 POSTCONDITION
+#
+# ── PLATFORM AUDIENCE MAPPER'LARI (2026-09-06 ölçümü, ats#240 B acceptance) ──
+# ATS kendi yetki kararını platforma delege eder (ATS_AUTHORIZATION_PLATFORM_BASE_URL
+# → api-gateway → permission-service) ve permission-service/user-service token'ı `aud`
+# ile doğrular (SECURITY_JWT_AUDIENCE = account,frontend,<service>). Yalnız
+# `aud=["ats-api"]` taşıyan smoke-ats-v1 token'ı bu yüzden HİÇBİR yerde geçmiyordu
+# (canlı ölçüm: /api/v1/users/me/profile 401, /api/v1/authz/me 401,
+# /api/ats/v1/recruiter/jobs 401 "platform kimliği reddetti"). Çözüm rol/scope
+# GENİŞLETMEZ: client-level `oidc-audience-mapper` ile yalnız iki servisin audience'ı
+# eklenir (permission-service, user-service). `account`/`frontend` audience'ı KASITLI
+# eklenmez — onları kabul eden her platform servisine kapı açardı. Aynı token ile
+# ölçüldü: profile 200, authz/me 200 (superAdmin=false, least-privilege modül seti),
+# recruiter/applications 200. Eksik/yanlış mapper --check'te DRIFT, --apply'da
+# converge + postcondition'dır.
 set -euo pipefail
 
 MODE="${1:---check}"
@@ -122,6 +136,40 @@ ats_scope_names() {
 }
 DESIRED_DEFAULT_SCOPES="ats-api-audience"
 
+# ── DESIRED client-level audience mapper'lar (name|audience) — bkz. üst not ──
+# Tam olarak bu ikisi; tests/operations/test_smoke_ats_client_scope_invariant.py
+# `account`/`frontend` gibi genişletici audience'ları reddeder.
+desired_audience_mappers() {
+  printf '%s\n' \
+    "smoke-ats-audience-permission-service|permission-service" \
+    "smoke-ats-audience-user-service|user-service"
+}
+
+# Mapper listesi TEK kcadm çağrısıyla okunur (her çağrı bir JVM açar); stdout'a yalnız
+# eksik/yanlış olan "name|audience" satırları, stderr'e satır raporu yazılır.
+audience_report() {  # $1=client uuid
+  # shellcheck disable=SC2046  # satırlar boşluk içermez; word-split kasıtlı
+  K get "clients/$1/protocol-mappers/models" -r "$REALM" 2>/dev/null | python3 -c '
+import json,sys
+try: rows=json.load(sys.stdin)
+except Exception: rows=[]
+have={m.get("name"):m for m in rows if isinstance(m,dict)}
+for line in sys.argv[1:]:
+    name,aud=line.split("|",1)
+    m=have.get(name); c=(m or {}).get("config",{})
+    ok=(bool(m) and m.get("protocolMapper")=="oidc-audience-mapper"
+        and c.get("included.client.audience")==aud and c.get("access.token.claim")=="true")
+    print(("  audience %s: var (%s)" % (aud,name)) if ok
+          else ("  audience %s: EKSIK (%s) -> platform authz / user-service 401" % (aud,name)),
+          file=sys.stderr)
+    if not ok: print(line)
+' $(desired_audience_mappers)
+}
+
+audience_missing_count() {  # $1=client uuid ; stdout: eksik/yanlış sayısı
+  audience_report "$1" | grep -c . || true
+}
+
 ats_client_uuid() {
   local id
   id=$(K get clients -r "$REALM" -q "clientId=$ATS_CLIENT" --fields id --format csv --noquotes 2>/dev/null | tr -d '\r' | head -1)
@@ -203,12 +251,14 @@ case "$MODE" in
         SCOPE_MISSING=$((SCOPE_MISSING+1))
       fi
     done
+    echo "--- platform audience mapper ---"
+    AUD_MISSING=$(audience_missing_count "$CID")
     echo "  secret fingerprint (sha256[0:12]): $(secret_fp "$CID")"
     echo ""
-    if [ "${SHAPE_DRIFT:-1}" = "0" ] && [ "$MISSING" = "0" ] && [ "$SCOPE_MISSING" = "0" ]; then
+    if [ "${SHAPE_DRIFT:-1}" = "0" ] && [ "$MISSING" = "0" ] && [ "$SCOPE_MISSING" = "0" ] && [ "$AUD_MISSING" = "0" ]; then
       echo "=== CONVERGED ==="; exit 0
     else
-      echo "=== DRIFT: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING ==="; exit 2
+      echo "=== DRIFT: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING audience-eksik=$AUD_MISSING ==="; exit 2
     fi
     ;;
 
@@ -252,6 +302,19 @@ case "$MODE" in
       echo "  ✓ default scope: $want"
     done
 
+    # platform audience mapper'ları (eksikleri ekle; fazlayı BIRAKMA). Aynı adda ama
+    # yanlış içerikli bir mapper varsa create 409 verir ve script GURULTULU durur —
+    # sessiz "ekledim" yok, postcondition da aynı kontrolü tekrar yapar.
+    mapfile -t AUD_TODO < <(audience_report "$CID" 2>/dev/null)
+    [ "${#AUD_TODO[@]}" -eq 0 ] && echo "  ✓ audience mapper'lar zaten var"
+    for line in "${AUD_TODO[@]}"; do
+      name="${line%%|*}"; aud="${line#*|}"
+      printf '{"name":"%s","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","consentRequired":false,"config":{"included.client.audience":"%s","id.token.claim":"false","access.token.claim":"true","introspection.token.claim":"true","lightweight.claim":"false"}}' "$name" "$aud" \
+        | KI create "clients/$CID/protocol-mappers/models" -r "$REALM" -f - >/dev/null 2>&1 \
+        || { echo "ERROR: audience mapper create başarısız: $name ($aud)" >&2; exit 1; }
+      echo "  ✓ audience mapper eklendi: $aud"
+    done
+
     # postcondition: read-back assert
     echo "--- postcondition (read-back) ---"
     report_shape "$CID" >/dev/null
@@ -265,8 +328,10 @@ case "$MODE" in
         | tr -d '\r' | grep -qx "$want" || SCOPE_MISSING=$((SCOPE_MISSING+1))
     done
     echo "  default scope eksik: $SCOPE_MISSING"
-    if [ "${SHAPE_DRIFT:-1}" != "0" ] || [ "$MISSING" != "0" ] || [ "$SCOPE_MISSING" != "0" ]; then
-      echo "POSTCONDITION FAIL: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING" >&2; exit 3
+    AUD_MISSING=$(audience_missing_count "$CID" 2>/dev/null)
+    echo "  platform audience mapper eksik: $AUD_MISSING"
+    if [ "${SHAPE_DRIFT:-1}" != "0" ] || [ "$MISSING" != "0" ] || [ "$SCOPE_MISSING" != "0" ] || [ "$AUD_MISSING" != "0" ]; then
+      echo "POSTCONDITION FAIL: shape=$SHAPE_DRIFT rol-eksik=$MISSING scope-eksik=$SCOPE_MISSING audience-eksik=$AUD_MISSING" >&2; exit 3
     fi
     echo ""
     echo "=== APPLIED + POSTCONDITION OK ==="

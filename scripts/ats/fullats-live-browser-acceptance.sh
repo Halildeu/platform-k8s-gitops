@@ -12,6 +12,22 @@
 # ats.* scope'lar smoke-client'ta yok. A2c ÖNCESİ Faz25 team ya (a) A2b.3 ile
 # smoke-client'a ats.* scope'ları eklemeli, ya (b) dedicated `ats-recruiter-smoke`
 # client kurmalı. Aksi halde A2c bu acceptance'ı break eder.
+#
+# PERSONA + AUDIENCE NOTE (2026-09-06, ats#240 B acceptance, run 34036592826):
+# - d35 admin persona Vault `kv/platform/d35-3`'teki username+uid ile bulunur, e-posta
+#   ile DEĞİL: realm'de `d35-admin@example.com` başka (attribute'suz) bir kullanıcıya
+#   geçmişti; e-posta araması o kullanıcıyı seçip parolasını sıfırlıyor ve Vault'taki
+#   persona parolasını BAŞKA hesabın parolasıyla eziyordu (v18). Her diğer d35-3
+#   tüketicisi (provision-ats-recruiter-access, faz24/faz35 scriptleri) username ile
+#   çalışır; bu hat da öyle. uid Keycloak'ta çözülmez ya da username uyuşmazsa durur.
+# - Ürün API'si (permission-service/user-service) token'ı `aud` ile doğrular; d35 admin
+#   token'ı `smoke-client` ile alınır (aud: permission-service + `userId` claim'i —
+#   numeric kimlik yalnız oradan gelir). Recruiter token'ı `smoke-ats-v1` ile kalır;
+#   o client'ın platform audience mapper'ları `scripts/keycloak/setup-smoke-ats-client.sh`
+#   desired-state'indedir ve 1/6'da converge edilir.
+# - Reset parolası satır sonu TAŞIMAZ: `openssl rand -hex 16` çıktısı `\n` ile
+#   bitiyordu, KC'ye ve Vault'a `hex\n` yazılmıştı; `$(vault kv get -field)` ile
+#   okuyan her tüketici 401 alırdı.
 set -euo pipefail
 
 # ── A2b.3 (gitops #2746): smoke ROPC client secret'i ────────────────────────
@@ -40,9 +56,26 @@ printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
       exec vault kv get -field=client_secret "$1"
     ' sh "$SMOKE_VAULT_PATH" > "$SMOKE_SECRET_FILE" 2>/dev/null \
   || { echo "FATAL: $SMOKE_VAULT_PATH okunamadi" >&2; exit 1; }
-_SMOKE_ROOT=""
 [ -s "$SMOKE_SECRET_FILE" ] || { echo "FATAL: smoke client secret bos" >&2; exit 1; }
-trap 'rm -f "$SMOKE_SECRET_FILE"' EXIT
+
+# ── Ürün API'si (permission/user-service) için platform smoke ROPC client'ı ─────
+# d35 admin persona'nın numeric kimliği (`userId` claim) yalnız smoke-client'ın
+# `smoke-runtime-v1` scope'undan gelir; kardeş provision-ats-recruiter-access.sh ile
+# aynı kanonik client. Aynı in-band idiom (token stdin, argv/env'de değer yok).
+PRODUCT_SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-client"
+PRODUCT_SECRET_FILE="$(mktemp)"; chmod 600 "$PRODUCT_SECRET_FILE"
+printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault kv get -field=client_secret "$1"
+    ' sh "$PRODUCT_SMOKE_VAULT_PATH" > "$PRODUCT_SECRET_FILE" 2>/dev/null \
+  || { echo "FATAL: $PRODUCT_SMOKE_VAULT_PATH okunamadi" >&2; exit 1; }
+_SMOKE_ROOT=""
+[ -s "$PRODUCT_SECRET_FILE" ] || { echo "FATAL: platform smoke client secret bos" >&2; exit 1; }
+# Bu trap asagida `cleanup` ile DEGISTIRILIR; cleanup iki secret dosyasini da siler.
+trap 'rm -f "$SMOKE_SECRET_FILE" "$PRODUCT_SECRET_FILE"' EXIT
 
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 REALM="${REALM:-platform-test}"
@@ -60,7 +93,6 @@ EXPECTED_PERMISSION_DIGEST="${EXPECTED_PERMISSION_DIGEST:-}"
 EXPECTED_FRONTEND_DIGEST="${EXPECTED_FRONTEND_DIGEST:-}"
 RECRUITER_USERNAME="ats-recruiter-persona"
 RECRUITER_EMAIL="ats-recruiter-persona@test.invalid"
-D35_ADMIN_EMAIL="d35-admin@example.com"
 ROLE_NAME="Full ATS Recruiter"
 INTERVIEW_MODULE_KEY="INTERVIEW_EVIDENCE"
 ATS_MODULE_KEY="ATS"
@@ -132,6 +164,8 @@ ADMIN_USERNAME_FILE="$SECRET_DIR/d35-admin.username"
 cleanup() {
   set +e
   rm -rf "$SECRET_DIR"
+  # mktemp ile acilan client secret dosyalari (ilk EXIT trap'i burada devraliniyor).
+  rm -f "$SMOKE_SECRET_FILE" "$PRODUCT_SECRET_FILE"
 }
 trap cleanup EXIT
 
@@ -176,7 +210,10 @@ persist_d35_password() {
 }
 
 token_from_password() {
+  # $4/$5: ROPC client + secret dosyasi. Varsayilan smoke-ats-v1 (recruiter: ATS API +
+  # platform audience'lari); d35 admin persona icin smoke-client + PRODUCT_SECRET_FILE.
   local username_file="$1" password_file="$2" token_file="$3"
+  local client_id="${4:-smoke-ats-v1}" secret_file="${5:-$SMOKE_SECRET_FILE}"
   local response_file code username
   response_file="$(json_file token-response.json)"
   username="$(tr -d '\r\n' <"$username_file")"
@@ -184,8 +221,8 @@ token_from_password() {
     -o "$response_file" -w '%{http_code}' \
     -X POST "$BASE_URL/realms/$REALM/protocol/openid-connect/token" \
     --data-urlencode 'grant_type=password' \
-    --data-urlencode 'client_id=smoke-ats-v1' \
-    --data-urlencode "client_secret@$SMOKE_SECRET_FILE" \
+    --data-urlencode "client_id=$client_id" \
+    --data-urlencode "client_secret@$secret_file" \
     --data-urlencode "username=$username" \
     --data-urlencode "password@$password_file" || true)"
   if [[ "$code" != "200" ]] || ! jq -e '.access_token | type == "string" and length > 100' "$response_file" >/dev/null; then
@@ -219,6 +256,9 @@ api_request() {
 
 echo "1/6 Canonical ATS Keycloak personasini uzlastir"
 bash scripts/ats/provision-test-keycloak.sh >/dev/null
+# smoke-ats-v1 desired-state (platform audience mapper'lari dahil): drift varsa burada
+# converge edilir; postcondition basarisizsa (exit 3) acceptance fail-closed durur.
+bash scripts/keycloak/setup-smoke-ats-client.sh --apply >/dev/null
 
 RECRUITER_KC_FILE="$(json_file recruiter-kc-user.json)"
 docker exec "$KC_CONTAINER" "$KCADM" get users -r "$REALM" \
@@ -240,31 +280,50 @@ PY
 rm -f "$RECRUITER_KC_FILE"
 
 echo "2/6 Sentetik d35 admin credential ve product API authority hazirla"
-D35_JSON="$(docker exec "$KC_CONTAINER" "$KCADM" get users -r "$REALM" \
-  -q "email=$D35_ADMIN_EMAIL" --fields id,username,email,enabled 2>/dev/null)"
+# Persona kimligi Vault'tan (username + uid); e-posta aramasi YOK (bkz. ust not).
+vault_field_to_file kv/platform/d35-3 admin_persona_username "$ADMIN_USERNAME_FILE" || {
+  echo "FATAL: kv/platform/d35-3 admin_persona_username okunamadi" >&2
+  exit 1
+}
+vault_field_to_file kv/platform/d35-3 admin_persona_uid "$SECRET_DIR/d35-admin.uid" || {
+  echo "FATAL: kv/platform/d35-3 admin_persona_uid okunamadi" >&2
+  exit 1
+}
+D35_UID="$(tr -d '\r\n' <"$SECRET_DIR/d35-admin.uid")"
+[[ "$D35_UID" =~ ^[0-9a-f-]{36}$ ]] || {
+  echo "FATAL: admin_persona_uid Keycloak user id biciminde degil" >&2
+  exit 1
+}
+D35_JSON="$(docker exec "$KC_CONTAINER" "$KCADM" get "users/$D35_UID" -r "$REALM" 2>/dev/null || true)"
 D35_FILE="$(json_file d35-user.json)"
 printf '%s' "$D35_JSON" >"$D35_FILE"
-python3 - "$D35_ADMIN_EMAIL" "$ADMIN_USERNAME_FILE" "$SECRET_DIR/d35-admin.uid" "$D35_FILE" <<'PY'
+python3 - "$D35_UID" "$ADMIN_USERNAME_FILE" "$D35_FILE" <<'PY'
 import json, pathlib, sys
-rows = [row for row in json.loads(pathlib.Path(sys.argv[4]).read_text()) if row.get("email") == sys.argv[1]]
-if len(rows) != 1:
-    raise SystemExit(f"expected exactly one synthetic d35 admin, got {len(rows)}")
-if rows[0].get("enabled") is not True:
+try:
+    row = json.loads(pathlib.Path(sys.argv[3]).read_text())
+except ValueError:
+    row = None
+if not isinstance(row, dict) or row.get("id") != sys.argv[1]:
+    raise SystemExit("synthetic d35 admin uid from Vault does not resolve in Keycloak")
+if row.get("username") != pathlib.Path(sys.argv[2]).read_text().strip():
+    raise SystemExit("synthetic d35 admin username drifted between Vault and Keycloak")
+if row.get("enabled") is not True:
     raise SystemExit("synthetic d35 admin is disabled")
-pathlib.Path(sys.argv[2]).write_text(rows[0]["username"])
-pathlib.Path(sys.argv[3]).write_text(rows[0]["id"])
 PY
 rm -f "$D35_FILE"
 chmod 600 "$ADMIN_USERNAME_FILE" "$SECRET_DIR/d35-admin.uid"
 
 if ! vault_field_to_file kv/platform/d35-3 admin_persona_password "$ADMIN_PASSWORD_FILE" || \
-   ! token_from_password "$ADMIN_USERNAME_FILE" "$ADMIN_PASSWORD_FILE" "$ADMIN_TOKEN_FILE"; then
-  openssl rand -hex 16 >"$ADMIN_PASSWORD_FILE"
+   ! token_from_password "$ADMIN_USERNAME_FILE" "$ADMIN_PASSWORD_FILE" "$ADMIN_TOKEN_FILE" smoke-client "$PRODUCT_SECRET_FILE"; then
+  # Satir sonu TASIMAYAN parola: `openssl rand -hex 16` '\n' ile biter; o byte KC'ye ve
+  # Vault'a girerse `$(vault kv get -field)` ile okuyan her tuketici 401 alir
+  # (2026-09-06 v18 olcumu: 33 byte, son byte '\n'). Reset yalniz Vault uid'sine gider.
+  openssl rand -hex 16 | tr -d '\r\n' >"$ADMIN_PASSWORD_FILE"
   chmod 600 "$ADMIN_PASSWORD_FILE"
   python3 - "$ADMIN_PASSWORD_FILE" <<'PY' | docker exec -i "$KC_CONTAINER" "$KCADM" \
-      update "users/$(cat "$SECRET_DIR/d35-admin.uid")/reset-password" -r "$REALM" -f - >/dev/null
+      update "users/$D35_UID/reset-password" -r "$REALM" -f - >/dev/null
 import json, pathlib, sys
-print(json.dumps({"type":"password","temporary":False,"value":pathlib.Path(sys.argv[1]).read_text()}))
+print(json.dumps({"type":"password","temporary":False,"value":pathlib.Path(sys.argv[1]).read_text().rstrip("\r\n")}))
 PY
   # Verify BEFORE persisting. Writing Vault first and checking afterwards means a
   # failed verification leaves Vault holding a password Keycloak never accepted, and
@@ -274,7 +333,7 @@ PY
   # `repair-d35-permission-writer-credential.sh` both got 401 from a live realm that
   # was otherwise healthy. `kcadm update .../reset-password` can exit 0 without the
   # intended password becoming usable, so its exit status is not sufficient proof.
-  token_from_password "$ADMIN_USERNAME_FILE" "$ADMIN_PASSWORD_FILE" "$ADMIN_TOKEN_FILE" || {
+  token_from_password "$ADMIN_USERNAME_FILE" "$ADMIN_PASSWORD_FILE" "$ADMIN_TOKEN_FILE" smoke-client "$PRODUCT_SECRET_FILE" || {
     echo "FATAL: sentetik d35 admin parolasi Keycloak tarafinda dogrulanamadi;" >&2
     echo "       Vault'a YAZILMADI (kv/platform/d35-3 dokunulmadan kaldi)." >&2
     exit 1
@@ -289,7 +348,7 @@ if [[ "$AUTHZ_CODE" != "200" ]] || ! jq -e '
     (.superAdmin == true) or
     (((.modules.ACCESS? // "") | tostring | ascii_upcase) == "MANAGE")
   ' "$AUTHZ_OUT" >/dev/null; then
-  echo "FATAL: d35 admin product API ACCESS authority yok" >&2
+  echo "FATAL: d35 admin product API ACCESS authority yok (authz/me HTTP $AUTHZ_CODE)" >&2
   exit 1
 fi
 rm -f "$AUTHZ_OUT"

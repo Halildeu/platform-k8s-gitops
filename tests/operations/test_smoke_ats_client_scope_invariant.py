@@ -83,3 +83,35 @@ def test_roles_are_discovered_at_runtime_not_hardcoded():
     assert "ats_role_names()" in text, "runtime role discovery helper missing"
     literals = re.findall(r'"(ats\.[a-z.]+)"', text)
     assert not literals, f"hardcoded ats.* role names found: {literals}"
+
+
+# Client-level audience mappers the desired state may declare — EXACTLY these.
+# 2026-09-06: ATS delegates authorization to the platform (permission-service) and
+# both permission-service and user-service validate `aud`; with `aud=["ats-api"]`
+# alone every smoke-ats-v1 call died with 401 (measured: users/me/profile, authz/me,
+# recruiter/jobs). `account` and `frontend` are accepted by every platform service
+# and are deliberately absent — adding either would widen one test credential to the
+# whole platform, the same silent regression the fullScopeAllowed guard exists for.
+REQUIRED_AUDIENCES = {"permission-service", "user-service"}
+FORBIDDEN_AUDIENCES = {"account", "frontend"}
+
+
+def _desired_audiences() -> set:
+    text = SCRIPT.read_text(encoding="utf-8")
+    block = re.search(r"desired_audience_mappers\(\)\s*\{(.*?)\n\}", text, re.S)
+    assert block, "desired_audience_mappers() helper missing"
+    return set(re.findall(r'"[a-z0-9-]+\|([a-z-]+)"', block.group(1)))
+
+
+def test_platform_audiences_are_exactly_the_two_delegation_targets():
+    got = _desired_audiences()
+    assert got == REQUIRED_AUDIENCES, (
+        f"declared audiences {sorted(got)} must be exactly {sorted(REQUIRED_AUDIENCES)}"
+    )
+    assert not (got & FORBIDDEN_AUDIENCES), "account/frontend audience widens the credential"
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert '"protocolMapper":"oidc-audience-mapper"' in text
+    assert 'clients/$CID/protocol-mappers/models' in text, "mappers must be client-level"
+    # --check reports drift and --apply asserts the read-back; neither may skip it.
+    assert text.count('AUD_MISSING=$(audience_missing_count "$CID"') == 2
+    assert 'audience-eksik=$AUD_MISSING' in text
