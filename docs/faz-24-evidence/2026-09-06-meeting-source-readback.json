@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "faz24.meetingSourceRepairEvidence.v1",
+  "collectionMethod": "agent-initiated direct CLI over SSH; not a GitHub acceptance run",
+  "gitopsRevision": "d8cfde2f020612710e21e33f1fa838284d115293",
+  "backendSourceRevision": "089381f8839083c4bb443c24311d003f28c6e4c8",
+  "backendMergeRevision": "e32c5bca1b12d7b02640bec91afa806bde993b6f",
+  "matchingBackendTree": "32f844384bd0c3dd0c9ad506c01cfa551bad41a9",
+  "imageBuildRun": "https://github.com/Halildeu/platform-backend/actions/runs/34040070306",
+  "imageDigest": "sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d",
+  "attestationVerifiedAgainstSource": true,
+  "runtime": {
+    "context": "k3d-test",
+    "namespace": "platform-test",
+    "generation": 28,
+    "observedGeneration": 28,
+    "readyReplicas": 1,
+    "restartCount": 0,
+    "argocdSync": "Synced",
+    "argocdHealth": "Healthy",
+    "sourceReadEnabled": true
+  },
+  "stability": {
+    "status": "pass",
+    "windowSeconds": 120,
+    "scriptSha256": "56ca7b03ed91aba5a6b425a22829787d700114fef74a28fb4fd93035317bdd7f",
+    "catalogSha256": "d6b4a922bca5d9baefd43ca96f1e834c256d4a76fe2fc3adfbef868b191c4a32"
+  },
+  "cleanup": {
+    "status": "pass",
+    "tempUserDeleted": true,
+    "directGrantsRestored": true,
+    "tokenFileRemoved": true,
+    "temporaryScriptWorkspaceRemoved": true
+  },
+  "acceptance": {
+    "audioIncluded": false,
+    "baseUrl": "https://testai.acik.com",
+    "completedAt": "2026-09-06T15:14:20Z",
+    "durable": {
+      "actionCount": 2,
+      "browserCitationInteractionProven": false,
+      "canonicalSessionId": "3fa0e31d-49c7-4a15-83d5-c86ac76086c7",
+      "canonicalSourceReadBackProven": true,
+      "containsTranscriptText": false,
+      "decisionCount": 1,
+      "durableApiReadBackProven": true,
+      "intelligenceResultSessionMatch": true,
+      "resultFingerprintSha256": "528702aee73c1c6f31ae57b6d4b005da3b2a54d3fefcfda0f2cfb2708ec670ee",
+      "sameResultReopened": true,
+      "summaryCharacters": 138,
+      "summaryVerified": true,
+      "transcriptCount": 22,
+      "transcriptStatusCounts": {
+        "DRAFT": 22
+      },
+      "usableProductResult": true
+    },
+    "http": {
+      "canonicalSource": 200,
+      "createMeeting": 201,
+      "finishSession": 200,
+      "intelligenceReopen": 200,
+      "intelligenceResult": 200,
+      "recordConsent": 201,
+      "recordingLifecycleFinish": 200,
+      "recordingLifecycleStart": 200,
+      "sessionStatus": 200,
+      "startSession": 201,
+      "transcriptRead": 200
+    },
+    "meetingId": "9373e784-ed30-4dba-bb63-5c6307715af0",
+    "mode": "realtime",
+    "provider": "speechmatics",
+    "schemaVersion": "faz24.speechmaticsRealtimeLifecycleAcceptance.v1",
+    "sessionFinished": true,
+    "sessionId": "SES-fbb2a3ba-8a9d-4ef7-896f-e818dcc45326",
+    "startedAt": "2026-09-06T15:07:39Z",
+    "status": "pass",
+    "stream": {
+      "audioAcks": 150,
+      "audioFrames": 150,
+      "audioIncluded": false,
+      "drained": true,
+      "eofAck": true,
+      "finalEvents": 22,
+      "firstFinalMs": 1114,
+      "firstPartialMs": 417,
+      "keywordMatches": 7,
+      "keywordTotal": 7,
+      "partialEvents": 39,
+      "partialWhileSpeaking": true,
+      "providerReady": true,
+      "ready": true,
+      "terminalTimeout": false,
+      "tokenIncluded": false,
+      "transcriptIncluded": false
+    },
+    "tokenIncluded": false,
+    "transcriptIncluded": false
+  },
+  "boundaries": {
+    "privilegedSyntheticFixture": true,
+    "normalPersonaAcceptance": false,
+    "attendedDesktopAcceptance": false,
+    "browserCitationInteractionProven": false,
+    "productionMutation": false,
+    "secretIncluded": false,
+    "rawTranscriptIncluded": false
+  },
+  "trackedBy": [
+    "https://github.com/Halildeu/platform-k8s-gitops/issues/3399",
+    "https://github.com/Halildeu/platform-backend/issues/1131"
+  ],
+  "pullRequests": [
+    "https://github.com/Halildeu/platform-backend/pull/1132",
+    "https://github.com/Halildeu/platform-k8s-gitops/pull/3570"
+  ]
+}

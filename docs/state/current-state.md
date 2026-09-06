@@ -27,9 +27,23 @@
   `sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d`.
   This TEST overlay pins that artifact and activates source read through the
   existing service identity. Seventy-five focused overlay/evidence tests pass.
-  Immutable TEST rollout and fresh strict source-read acceptance are pending;
-  no runtime fix or normal-persona delivery is claimed here. On health or source
-  acceptance failure, revert this image/activation patch via GitOps to the
+  [#3570](https://github.com/Halildeu/platform-k8s-gitops/pull/3570) merged as
+  `d8cfde2f020612710e21e33f1fa838284d115293`; Argo TEST reached Synced/Healthy.
+  Live meeting-service generation/observedGeneration `28`, ready `1`, restart
+  `0`, imageID matching the pinned digest. The unchanged catalog-driven gate
+  passed its full `120s` window over read-only SSH with source/hash equality.
+- [Fresh bounded receipt](../faz-24-evidence/2026-09-06-meeting-source-readback.json)
+  completed `2026-09-06T15:14:20Z`: strict lifecycle **PASS**, canonical source
+  HTTP `200` (previously `503`), 150 frames/acks, 22 durable transcript rows,
+  verified 138-character summary, one decision, two actions, exact session
+  match and identical repeated-read fingerprint. The approved script ran from
+  exact GitOps `d8cfde2f` through direct CLI, not a GitHub acceptance run, while
+  another session occupied the sole runner. Our queued workflows were cancelled
+  rather than treated as passed. Temporary user/grants/token cleanup passed.
+  This is a privileged synthetic TEST fixture: normal-persona, attended desktop,
+  multi-session, dictionary and assignment/notification acceptance remain open.
+  No production mutation or broader customer-delivery claim. On a new health or
+  source acceptance failure, revert the image/activation via GitOps to the
   verified #3568 rollback state; no imperative workload mutation is authorized.
 
 ## Live Delta — Meeting TEST canonical source activation (2026-09-06)
