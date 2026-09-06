@@ -820,6 +820,20 @@ fi
         self.assertEqual(
             shell.count('"$ADMIN_TOKEN_FILE" smoke-client "$PRODUCT_SECRET_FILE"'), 2
         )
+        # Secret hygiene: the EXIT trap exists before the first Vault read (an early FATAL
+        # must not leave a client secret in a temp file), and the Vault root token never
+        # travels as an environment value — every read/patch feeds it through stdin.
+        self.assertLess(
+            shell.index("trap 'rm -f \"$SMOKE_SECRET_FILE\" \"$PRODUCT_SECRET_FILE\"' EXIT"),
+            shell.index('exec vault kv get -field=client_secret "$1"'),
+        )
+        self.assertNotIn('VAULT_TOKEN="$root"', shell)
+        self.assertNotIn("docker exec -e VAULT_TOKEN", shell)
+        self.assertIn('exec vault kv get -field="$2" "$1"', shell)
+        self.assertIn(
+            "exec vault kv patch kv/platform/d35-3 admin_persona_password=-", shell
+        )
+        self.assertIn('{ vault_root_token; cat "$ADMIN_PASSWORD_FILE"; } | docker exec -i', shell)
         smoke_ats = (ROOT / "scripts/keycloak/setup-smoke-ats-client.sh").read_text()
         self.assertIn('"smoke-ats-audience-permission-service|permission-service"', smoke_ats)
         self.assertIn('"smoke-ats-audience-user-service|user-service"', smoke_ats)

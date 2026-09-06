@@ -112,6 +112,26 @@ def test_platform_audiences_are_exactly_the_two_delegation_targets():
     text = SCRIPT.read_text(encoding="utf-8")
     assert '"protocolMapper":"oidc-audience-mapper"' in text
     assert 'clients/$CID/protocol-mappers/models' in text, "mappers must be client-level"
-    # --check reports drift and --apply asserts the read-back; neither may skip it.
-    assert text.count('AUD_MISSING=$(audience_missing_count "$CID"') == 2
+    # The plan is read as a plain assignment in --check, --apply and the postcondition so a
+    # failed mapper listing aborts under `set -e` instead of counting as "converged", and
+    # no mutation starts before the authoritative state was read.
+    assert text.count('AUD_PLAN=$(audience_report "$CID"') == 3
+    assert "read_client_mappers" in text and "exit 1" in text
     assert 'audience-eksik=$AUD_MISSING' in text
+    # Exact set: extras are deleted, same-name wrong mappers are updated by id, never a
+    # second create that 409s.
+    assert 'K delete "clients/$CID/protocol-mappers/models/$mid"' in text
+    assert 'KI update "clients/$CID/protocol-mappers/models/$mid"' in text
+    assert 'print("extra|%s|%s|%s"' in text and 'print("wrong|%s|%s|%s"' in text
+
+
+def test_admin_login_keeps_the_password_inside_the_container():
+    """`--password "$p"` on the docker exec argv leaked the master admin password to the
+    host process list; the login now reads KC_CLI_PASSWORD from the in-container file and
+    uses an isolated kcadm config that is removed on exit."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert '--password "$p"' not in text
+    assert 'KC_CLI_PASSWORD=$(cat "$KEYCLOAK_ADMIN_PASSWORD_FILE")' in text
+    assert 'KCADM_CONFIG=$(docker exec "$KC_CONTAINER" mktemp /tmp/kcadm-smoke-ats.XXXXXX)' in text
+    assert '--config "$KCADM_CONFIG"; }' in text
+    assert 'rm -f "$KCADM_CONFIG"' in text

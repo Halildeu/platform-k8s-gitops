@@ -36,7 +36,12 @@ set -euo pipefail
 # Hedef client fullScopeAllowed=false + dar scope ile ayni claim'leri uretir
 # (canli dogrulandi: tenant + rol exact-set birebir ayni, audience daraldi).
 SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-ats"
+PRODUCT_SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-client"
 SMOKE_SECRET_FILE="$(mktemp)"; chmod 600 "$SMOKE_SECRET_FILE"
+PRODUCT_SECRET_FILE="$(mktemp)"; chmod 600 "$PRODUCT_SECRET_FILE"
+# EXIT trap'i ilk Vault okumasindan ONCE kurulur: herhangi bir erken FATAL yolunda temp
+# secret dosyasi kalmaz (asagida `cleanup` bu trap'i devralir ve ikisini de siler).
+trap 'rm -f "$SMOKE_SECRET_FILE" "$PRODUCT_SECRET_FILE"' EXIT
 _SMOKE_INIT="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 [ -r "$_SMOKE_INIT" ] || _SMOKE_INIT="$HOME/bootstrap-drill/vault-init-test.json"
 _SMOKE_ROOT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$_SMOKE_INIT" 2>/dev/null || true)"
@@ -62,8 +67,6 @@ printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
 # d35 admin persona'nın numeric kimliği (`userId` claim) yalnız smoke-client'ın
 # `smoke-runtime-v1` scope'undan gelir; kardeş provision-ats-recruiter-access.sh ile
 # aynı kanonik client. Aynı in-band idiom (token stdin, argv/env'de değer yok).
-PRODUCT_SMOKE_VAULT_PATH="kv/platform/keycloak/smoke-client"
-PRODUCT_SECRET_FILE="$(mktemp)"; chmod 600 "$PRODUCT_SECRET_FILE"
 printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
     -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
       set -eu
@@ -74,8 +77,6 @@ printf '%s\n' "$_SMOKE_ROOT" | docker exec -i \
   || { echo "FATAL: $PRODUCT_SMOKE_VAULT_PATH okunamadi" >&2; exit 1; }
 _SMOKE_ROOT=""
 [ -s "$PRODUCT_SECRET_FILE" ] || { echo "FATAL: platform smoke client secret bos" >&2; exit 1; }
-# Bu trap asagida `cleanup` ile DEGISTIRILIR; cleanup iki secret dosyasini da siler.
-trap 'rm -f "$SMOKE_SECRET_FILE" "$PRODUCT_SECRET_FILE"' EXIT
 
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 REALM="${REALM:-platform-test}"
@@ -183,30 +184,37 @@ vault_root_token() {
 }
 
 vault_field_to_file() {
-  local path="$1" field="$2" destination="$3" root
-  root="$(vault_root_token)"
-  if VAULT_TOKEN="$root" docker exec -e VAULT_TOKEN \
-      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" \
-      vault kv get -field="$field" "$path" >"$destination" 2>/dev/null; then
+  # Root token STDIN ile container'a akar (ust nottaki in-band idiom): host `docker`
+  # surecinin env'ine/argv'sine deger girmez. path/field secret degildir, argv ile gecer.
+  # Basarisizlikta hedef dosya kalmaz.
+  local path="$1" field="$2" destination="$3"
+  if vault_root_token | docker exec -i \
+      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+        set -eu
+        IFS= read -r VAULT_TOKEN
+        export VAULT_TOKEN
+        exec vault kv get -field="$2" "$1"
+      ' sh "$path" "$field" >"$destination" 2>/dev/null; then
     chmod 600 "$destination"
-    unset root
     [[ -s "$destination" ]]
     return
   fi
-  unset root
   rm -f "$destination"
   return 1
 }
 
 persist_d35_password() {
-  local root
-  root="$(vault_root_token)"
+  # STDIN: 1. satir root token (sh `read` yalniz o satiri tuketir), kalan byte'lar parola
+  # (`admin_persona_password=-` stdin'den okur; parola dosyasi satir sonsuz). Ne token ne
+  # parola argv/env'e girer. Olculdu: read sonrasi exec'e kalan byte'lar birebir gecer.
   chmod 600 "$ADMIN_PASSWORD_FILE"
-  VAULT_TOKEN="$root" docker exec -i -e VAULT_TOKEN \
-      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" \
-      vault kv patch kv/platform/d35-3 admin_persona_password=- \
-      <"$ADMIN_PASSWORD_FILE" >/dev/null
-  unset root
+  { vault_root_token; cat "$ADMIN_PASSWORD_FILE"; } | docker exec -i \
+      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+        set -eu
+        IFS= read -r VAULT_TOKEN
+        export VAULT_TOKEN
+        exec vault kv patch kv/platform/d35-3 admin_persona_password=-
+      ' >/dev/null
 }
 
 token_from_password() {
