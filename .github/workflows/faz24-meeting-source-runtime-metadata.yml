@@ -1,0 +1,13 @@
+name: Faz 24 Meeting source read-only runtime metadata
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read bounded TEST metadata only
+        run: python3 scripts/faz24/meeting_source_runtime_metadata.py
