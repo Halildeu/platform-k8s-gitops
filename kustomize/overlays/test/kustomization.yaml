@@ -8140,6 +8140,35 @@ patches:
       - op: add
         path: /data/MEETING_ASSIGNEE_DIRECTORY_ENABLED
         value: "true"
+  # gitops#3399: exact analysis-run source read-back. Reuse the existing
+  # meeting-service identity; auth-service already bounds canonical:read.
+  # Pod env binding also triggers a rollout without changing the image pin.
+  - target:
+      kind: ConfigMap
+      name: meeting-service-config
+    patch: |-
+      - op: add
+        path: /data/MEETING_TRANSCRIPT_READ_ENABLED
+        value: "true"
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: meeting-service
+      spec:
+        template:
+          spec:
+            containers:
+              - name: meeting-service
+                env:
+                  - name: MEETING_TRANSCRIPT_READ_CLIENT_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: meeting-service-secrets
+                        key: MEETING_ASSIGNEE_DIRECTORY_CLIENT_SECRET
   # gitops#3537 — Görevler dilim-4b (TEST-only): meeting-service delivers
   # meeting.action.assigned / meeting.action.reassigned outbox events to
   # notification-orchestrator as fixed-copy system intents for the assignee
