@@ -1,5 +1,63 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — ATS Dilim B candidate answers strict TEST acceptance (2026-09-06 15:08 UTC)
+
+This delta supersedes the two earlier September 6 ATS deltas only on the exact TEST
+artifacts below. It claims a synthetic TEST customer journey for job-posting
+screening questions (recruiter question → candidate answer → persisted answers);
+it does not claim production, legal acceptance, or recruiter answer readback (C).
+
+- ATS backend [ats#259](https://github.com/Halildeu/ats/pull/259) source
+  `2e5158f10d31b1fc99b7fd26e490538ec9d5299a` (Dilim B: `PublicJobResponse.questions`,
+  `ApplicationSubmitRequest.answers`, V24 `answers`/`questions_snapshot`/`job_version`,
+  validation against the row-locked posting) plus [ats#258](https://github.com/Halildeu/ats/pull/258)
+  (SINGLE_CHOICE option cap 2..10, owner decision). [Build 34033796475](https://github.com/Halildeu/ats/actions/runs/34033796475)
+  passed build, scan and push. GitOps [#3559](https://github.com/Halildeu/platform-k8s-gitops/pull/3559)
+  (`a9cea87c5`) pinned `sha256:1cd9e5b259a22fc7e501e1c71fc8592833dd41dd6a5b9c3640cddb456349b32a`;
+  `k3d-test/platform-test/ats-interview-evidence` pod `86f49dd9f4-4vnxg` is Running 1/1,
+  restarts 0, imageID equal to that pin; ArgoCD `platform-test` Synced/Healthy.
+  Flyway `V24` applied at 13:11:54 UTC (`answers jsonb NOT NULL DEFAULT '[]'`,
+  `job_version integer`, `questions_snapshot jsonb NOT NULL DEFAULT '[]'`).
+  Public `GET /api/ats/v1/careers/acik/jobs/{slug}` carries `questions` since 13:13 UTC.
+- Frontend [web#1143](https://github.com/Halildeu/platform-web/pull/1143) source
+  `c604281ce9507a21f967f8daca96abb20868f4bb` (candidate "Sorular" section, required-question
+  preview gate, answers bound to `questionId`/`optionId`, sent only when the posting
+  carries questions) plus [web#1142](https://github.com/Halildeu/platform-web/pull/1142)
+  (recruiter option cap 10). Promoted through GitOps [#3560](https://github.com/Halildeu/platform-k8s-gitops/pull/3560)
+  (`012891fad`); ready frontend digest
+  `sha256:7b820ba512d2b850178989e172697a2450f3b6b17be8e25cde88ac5a50183274` matches the
+  pod imageID and public build-info sha `c604281c…`.
+- Acceptance harness [#3561](https://github.com/Halildeu/platform-k8s-gitops/pull/3561)
+  (`166b92fbd`) extends `fullats-live-browser-acceptance.cjs`: three recruiter questions
+  (the third only for the deletion check), reorder `[q2,q1,q3]`, reopen deletes the third
+  and marks the first (single choice) **"Yanıtlanması zorunlu"**; the mobile candidate sees
+  the questions in recruiter order, the preview gate blocks while the required question is
+  unanswered, answers appear in the preview rows, and the submitted body carries `answers`
+  bound to server ids with no visible label. Contract test pins these markers (29 tests).
+  Provider-distinct review: Codex `gpt-5.6-sol` AGREE with exact-scope receipt.
+- Strict browser acceptance [run 34036592826](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34036592826)
+  on GitOps `166b92fbd` failed in the wrapper's 2/6 preflight, before the B journey: the
+  synthetic d35 admin was looked up by e-mail and resolved to a second, attribute-less
+  Keycloak user (`d35-admin`), whose password reset overwrote the Vault persona password
+  (`kv/platform/d35-3` v18, trailing newline); `/api/v1/authz/me` then answered 401 because
+  `smoke-ats-v1` tokens carried `aud=ats-api` only while permission-service/user-service
+  validate `aud` and ATS delegates authorization to the platform (last green run of this
+  workflow: 2026-07-23). Fixed by [#3569](https://github.com/Halildeu/platform-k8s-gitops/pull/3569)
+  (persona bound to Vault username+uid, admin product-API token via `smoke-client`,
+  newline-free reset, `smoke-ats-v1` desired-state gains exact-set client-level audience
+  mappers `permission-service`+`user-service` with a fake-kcadm behaviour matrix; Codex
+  `gpt-5.6-sol` three rounds → AGREE). Vault `d35-3` rolled back to the persona password
+  (v19); persona/`smoke-client` `authz/me` 200 `superAdmin=true`, recruiter/`smoke-ats-v1`
+  profile/authz/inbox/jobs 200 measured before the re-run. [#3571](https://github.com/Halildeu/platform-k8s-gitops/pull/3571)
+  adds the behavioural guard for the wrapper's persona step (identity mismatch → zero
+  reset/persist; rejected Vault password → one reset on the Vault uid, verified before a
+  newline-free persist).
+- Strict browser acceptance re-run [run 34040684999](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34040684999)
+  on GitOps `4153d09ce` (main after #3569): **PASS**. The 2/6 persona step authenticated with the Vault persona password without any reset (no Vault write). Among the 30-step journey chain (`summary.json` sha256 `b722c6988d60…`), the B journeys `recruiter-question-required-flag-persists`, `candidate-sees-recruiter-questions-in-order`, `candidate-preview-blocked-until-required-question-answered` and `candidate-answers-bound-to-server-ids` passed. Runtime binding (ready pod imageID equal to desired): ATS `sha256:1cd9e5b2…`, permission `sha256:264901f4…`, frontend `sha256:7b820ba5…` (frontend source `c604281c`). The post-phase observed GitOps revision was `d8cfde2f0` because main advanced during the run; the dispatched revision is its ancestor, which the gate accepts.
+- DB readback (aiserver, in-band Vault → compose PG, no secret printed): application `app_JCfrP7D_e0f8GKYwjhovR2iz` on job `sentetik-urun-uzmani-1788707250699`, created 15:07:43Z (the same second as the journey PASS line), `job_version` 3 (create → reorder → delete+required), `answers` `[{questionId q_gGQBcecxVOFBFuzc, optionId qo_1z-bMY_z_smf}, {questionId q_yzliwv3bLxT3k62V, text "Backend ve veri"}]` with no option label stored, `questions_snapshot` carrying the single-choice question as `required=true` and the short-text question as `required=false`; V24 columns present, Flyway 24 success at 13:11:54.
+- [ats#240](https://github.com/Halildeu/ats/issues/240): question editor A and candidate
+  answers B are measured on TEST; recruiter answer readback C is not implemented — the
+  issue stays open for C. Synthetic TEST data only; no production mutation.
 ## Live Delta — Meeting exact-source contract repair (2026-09-06)
 
 - Rollback [#3568](https://github.com/Halildeu/platform-k8s-gitops/pull/3568)
