@@ -7134,7 +7134,6 @@ images:
     digest: sha256:9fdcb90c98835c22d882e1632b8fd5ce0129fc0d121801a928ea01666bb7d492
 
 patches:
-  - path: endpoint-uninstall-owner-exception.yaml
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
   # prod (selfHeal-OFF, no prod-vault seed) is never touched. (a) append the two
   # service-to-service secret keys to the base ExternalSecrets — Vault values
