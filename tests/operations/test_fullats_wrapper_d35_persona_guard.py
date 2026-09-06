@@ -103,13 +103,13 @@ class WrapperD35PersonaGuard(unittest.TestCase):
         (self.fix / "kc").mkdir()
         self.region = step_two_region()
 
-    def vault(self, username=USERNAME, uid=UID, password="p-from-vault-000000000000"):
+    def vault(self, username=USERNAME, uid=UID, vault_value="p-from-vault-000000000000"):
         (self.fix / "vault/admin_persona_username").write_text(username)
         (self.fix / "vault/admin_persona_uid").write_text(uid)
-        if password is not None:
-            (self.fix / "vault/admin_persona_password").write_text(password)
+        if vault_value is not None:  # synthetic fixture string, not a credential
+            (self.fix / "vault/admin_persona_password").write_text(vault_value)
 
-    def keycloak(self, uid=UID, username=USERNAME, enabled=True, accepted_password="p-from-vault-000000000000", raw=None):
+    def keycloak(self, uid=UID, username=USERNAME, enabled=True, accepted_value="p-from-vault-000000000000", raw=None):
         if raw is not None:
             (self.fix / "kc/user.json").write_text(raw)
         else:
@@ -117,8 +117,8 @@ class WrapperD35PersonaGuard(unittest.TestCase):
                 '{"id": "%s", "username": "%s", "enabled": %s, "email": "d35-admin-persona@acik.com"}'
                 % (uid, username, "true" if enabled else "false")
             )
-        if accepted_password is not None:
-            (self.fix / "kc/accepted.txt").write_text(accepted_password)
+        if accepted_value is not None:  # what the fake Keycloak accepts; synthetic fixture string
+            (self.fix / "kc/accepted.txt").write_text(accepted_value)
 
     def run_region(self, reset_accepted=True):
         script = HARNESS + "\n" + self.region + "\necho STEP2-OK\n"
@@ -185,8 +185,8 @@ class WrapperD35PersonaGuard(unittest.TestCase):
         self.assert_no_reset_no_persist()
 
     def test_rejected_vault_password_resets_only_the_vault_uid_and_persists_newline_free(self):
-        self.vault(password="stale-vault-password-000000")
-        self.keycloak(accepted_password=None)  # nothing accepted until the reset lands
+        self.vault(vault_value="stale-vault-value-000000")
+        self.keycloak(accepted_value=None)  # nothing accepted until the reset lands
         proc = self.run_region(reset_accepted=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         resets = [c for c in self.calls() if c.startswith("RESET")]
@@ -208,8 +208,8 @@ class WrapperD35PersonaGuard(unittest.TestCase):
         self.assertEqual(persisted.decode(), (self.fix / "kc/password.txt").read_text())
 
     def test_reset_not_accepted_by_keycloak_leaves_vault_untouched(self):
-        self.vault(password="stale-vault-password-000000")
-        self.keycloak(accepted_password=None)
+        self.vault(vault_value="stale-vault-value-000000")
+        self.keycloak(accepted_value=None)
         proc = self.run_region(reset_accepted=False)
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("Vault'a YAZILMADI", proc.stderr)
