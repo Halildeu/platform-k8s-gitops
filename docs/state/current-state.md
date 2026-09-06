@@ -14,9 +14,24 @@
   remote Docker execution, volume reopen and loopback network-binding proof;
   Mac SSH preview HTTP 200 and rendered frontend login page. Exact source and
   environment details: [remote DEV runbook](../operations/RUNBOOKS/RB-remote-dev-legacy-host.md).
-- This is remote coding/build/test plus frontend development serving. DEV
-  application DB/Keycloak/backend deployment and full login/API product journeys
-  are not asserted. Existing local tasks/worktrees/history were not transferred.
+- Scope expanded to nine remote repositories and a synthetic DEV runtime with
+  PostgreSQL, Keycloak, OpenFGA and eight backend services. Real browser login,
+  profile persistence across a new OIDC session, and ten allow/deny fixture checks
+  passed. Desktop 652 tests, mobile typecheck, ATS/backend packaging, Python/Go
+  checks are recorded in the runbook. Both Codex and Claude are authenticated.
+- Source/worktree copy verified: 2,922,977 selected entries present, with no
+  selected still-existing source file missing only on the target; 1,430 valid
+  HEADs/tracked diffs, 386 local branch/tag/stash sets and 27,914 selected working
+  file SHA-256 values matched. Explicit cache exclusions explain the normalized
+  status differences. Nine active repositories imported 3,500 local branch refs.
+- History archive: 36,290,785,280 bytes, matching source/target SHA-256, successful
+  gzip/tar readback and matching 1,962-entry count. Stopped Docker Desktop sparse
+  disk backup also passed full SHA-256 comparison. No local source/history
+  deletion was performed. Existing task routing still requires supported handoff;
+  twelve credential-like local files are held separately. Approximately 174 GiB
+  remains free on the old server after transfer and Linux toolchain setup.
+- Variant authz-revision calls return 503: [backend #1138](https://github.com/Halildeu/platform-backend/issues/1138).
+  Reports/schema/external-AI journeys and native Apple builds are not accepted.
 - Twenty inactive local `node_modules` trees were removed with unchanged Git
   status/diff and lockfile hashes. Measured gain is 1,840,959,488 bytes, not their
   approximately 22 GiB logical size. Local source and credentials are preserved.
