@@ -1,5 +1,49 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Retired host remote DEV workspace (#3582, 2026-09-06)
+
+- Owner authorized removal of retired old-host backups because active aiserver
+  holds newer data. Host .53 identity and stopped/masked old Docker were checked;
+  `/var/lib/docker` and `/srv/platform/archive/aiserver-backup` are absent.
+  Measured recovered capacity: 326,087,487,488 bytes. No active .15 data changed.
+- Separate `/srv/platform-dev` workspace, Docker daemon/socket, Java 21, Node 22,
+  pnpm and Codex are live on `staging-sw-legacy` (`10.9.10.53`). Old Docker and
+  containerd units remain masked. All three canonical source projects are saved
+  as remote SSH projects in the Codex app; remote Codex authentication passed.
+- Developer acceptance: frontend 100 tests and shell build; backend 85 tests;
+  remote Docker execution, volume reopen and loopback network-binding proof;
+  Mac SSH preview HTTP 200 and rendered frontend login page. Exact source and
+  environment details: [remote DEV runbook](../operations/RUNBOOKS/RB-remote-dev-legacy-host.md).
+- Scope expanded to nine remote repositories and a synthetic DEV runtime with
+  PostgreSQL, Keycloak, OpenFGA and eight backend services. Real browser login,
+  profile persistence across a new OIDC session, and ten allow/deny fixture checks
+  passed. Desktop 652 tests, mobile typecheck, ATS/backend packaging, Python/Go
+  checks are recorded in the runbook. Both Codex and Claude are authenticated.
+- Source/worktree copy verified: 2,922,977 selected entries present, with no
+  selected still-existing source file missing only on the target; 1,430 valid
+  HEADs/tracked diffs, 386 local branch/tag/stash sets and 27,914 selected working
+  file SHA-256 values matched. Explicit cache exclusions explain the normalized
+  status differences. Nine active repositories imported 3,500 local branch refs.
+- History archive: 36,290,785,280 bytes, matching source/target SHA-256, successful
+  gzip/tar readback and matching 1,962-entry count. Stopped Docker Desktop sparse
+  disk backup also passed full SHA-256 comparison. No local source/history
+  deletion was performed. Existing task routing still requires supported handoff;
+  twelve credential-like local files are held separately. Approximately 174 GiB
+  remains free on the old server after transfer and Linux toolchain setup.
+- Mac Docker defaults to `platform-dev-remote`; readback resolves to the isolated
+  server daemon. Empty local Colima was stopped, and remote default selection was
+  reverified. This changes where Docker runs; it does not delete local source/data.
+- DEV credential hardening: encrypted master store with separate root-owned key;
+  generated configuration on tmpfs, rendered before the dedicated Docker daemon.
+  Empty-runtime-directory restart, eight backend health responses, real browser
+  login and profile persistence passed. Old plaintext credential/helper files
+  were removed after in-memory value comparison and authenticated readback.
+- Variant authz-revision calls return 503: [backend #1138](https://github.com/Halildeu/platform-backend/issues/1138).
+  Reports/schema/external-AI journeys and native Apple builds are not accepted.
+- Twenty inactive local `node_modules` trees were removed with unchanged Git
+  status/diff and lockfile hashes. Measured gain is 1,840,959,488 bytes, not their
+  approximately 22 GiB logical size. Local source and credentials are preserved.
+
 ## Live Delta - Endpoint TEST uninstall owner exception consumed (2026-09-06)
 
 - Under [#2828](https://github.com/Halildeu/platform-k8s-gitops/issues/2828), the

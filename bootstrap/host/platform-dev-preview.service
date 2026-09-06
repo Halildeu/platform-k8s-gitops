@@ -1,0 +1,19 @@
+[Unit]
+Description=Platform developer shell preview (SSH loopback only)
+After=network.target
+
+[Service]
+Type=simple
+User=halil
+Group=halil
+WorkingDirectory=/srv/platform-dev/repos/platform-web/apps/mfe-shell
+Environment=PATH=/home/halil/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/platform-dev/frontend-common.env
+ExecStart=/home/halil/.local/bin/pnpm exec vite --host 127.0.0.1 --port 33000 --strictPort
+Restart=on-failure
+RestartSec=5
+MemoryMax=4G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

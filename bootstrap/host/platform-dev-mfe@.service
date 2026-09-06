@@ -1,0 +1,20 @@
+[Unit]
+Description=Platform remote developer frontend %i (SSH loopback only)
+After=network.target
+
+[Service]
+Type=simple
+User=halil
+Group=halil
+WorkingDirectory=/srv/platform-dev/repos/platform-web/apps/%i
+Environment=PATH=/home/halil/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/platform-dev/frontend-common.env
+EnvironmentFile=/etc/platform-dev/frontend/%i.env
+ExecStart=/home/halil/.local/bin/pnpm exec vite --host 127.0.0.1 --port ${DEV_PORT} --strictPort
+Restart=on-failure
+RestartSec=5
+MemoryMax=2G
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target
