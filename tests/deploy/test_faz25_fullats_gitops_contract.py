@@ -386,7 +386,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
         terminal_transition_click = self.fullats_browser.index(
             "await reviewPanel.getByRole('button', "
-            "{ name: 'Mülakat planlamasına al' }).click();"
+            "{ name: 'Kısa listeye al' }).click();"
         )
         terminal_response = self.fullats_browser.index(
             "const terminalResponse = await terminalTransitionResponse;"
@@ -418,7 +418,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.fullats_browser,
         )
         self.assertIn(
-            "'Durum güncellendi: Mülakat planlaması bekliyor.'",
+            "'Durum güncellendi: Kısa listede.'",
             self.fullats_browser,
         )
         self.assertIn(
@@ -656,13 +656,13 @@ fi
             "locator('#resume-import-notice')",
             "getByTestId('candidate-resume').setInputFiles",
             "getByRole('button', { name: 'Güvenli önerileri kabul et' })",
-            "getByRole('button', { name: 'Deneyim bilgilerime devam et' })",
+            "getByRole('button', { name: 'Deneyim bilgilerime geç' })",
             "getByRole('button', { name: 'Başvuruyu kontrol et' })",
             "getByTestId('create-application-receipt')",
             "getByRole('button', { name: 'İnsan incelemesini başlat' })",
             "getByRole('button', { name: 'Yapılandırılmış değerlendirme yap' })",
             "getByRole('button', { name: 'Immutable değerlendirmeyi kaydet' })",
-            "getByRole('button', { name: 'Mülakat planlamasına al' })",
+            "getByRole('button', { name: 'Kısa listeye al' })",
             "getByRole('button', { name: 'Duraklat' })",
             "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED')",
             "getByRole('button', { name: 'Yayınla' })",
@@ -716,6 +716,23 @@ fi
         self.assertIn("entry.persona === 'negative-probe'", self.fullats_browser)
         self.assertIn("result.error !== 'NOT_FOUND'", self.fullats_browser)
         self.assertNotIn("/jobs/urun-yoneticisi/apply", self.fullats_browser)
+
+    def test_questions_and_cancellation_have_persistent_readback_boundaries(self):
+        for marker in (
+            "question reorder changed ids",
+            "question reopen readback mismatch",
+            "question deletion persistence failed",
+            "candidate-experience-0-title",
+            "'experienceEntries'",
+            "'educationEntries'",
+            "interview cancel persistence failed",
+            "candidate calendar internal field leak",
+            "candidate cancelled interview missing",
+            "interview-cancellation.json",
+        ):
+            self.assertIn(marker, self.fullats_browser)
+        self.assertIn("throw new Error(`${surface}: axe violations", self.fullats_browser)
+        self.assertNotIn("FAIL_ACCESSIBILITY_FUNCTIONAL_DIAGNOSTIC_ONLY", self.fullats_browser)
 
     def test_fullats_recruiter_setup_is_least_privilege_and_action_explicit(self):
         for permission in (
