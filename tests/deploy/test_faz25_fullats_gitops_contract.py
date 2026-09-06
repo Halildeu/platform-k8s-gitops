@@ -761,7 +761,7 @@ fi
 
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
-            "ats": "sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e",
+            "ats": "sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0",
             "permission": "sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02",
             "frontend": self.frontend_pin["digest"],
         }
@@ -1097,7 +1097,7 @@ fi
 
     def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
-        current_ats = "sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e"
+        current_ats = "sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0"
         # #2555 Slice B (2026-07-20) - bumped from sha256:55f2f2f2 to sha256:a23c72fa
         # (sha-4a0dc67, platform-backend PR #896). AccessScopeService.grant()
         # widens the P0001 handler; POST /access/scope 500->400. Faz 25 ATS

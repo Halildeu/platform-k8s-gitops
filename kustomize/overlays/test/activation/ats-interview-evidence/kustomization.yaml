@@ -1,4 +1,7 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
+# Current pin (2026-09-06): ats@d5e48e4, #240 A questions + #256 Tomcat fix.
+#   digest  sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0
+# The older source/build notes below describe previous rollout history.
 #
 # Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
 # self-heal sağlar. Doğrudan workload patch/set-image yok; tüm değişiklik bu
@@ -178,8 +181,10 @@ resources:
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
+  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34025974278
+  # Rollback image: sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e
+    digest: sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
