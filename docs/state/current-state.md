@@ -1,5 +1,27 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - Endpoint TEST uninstall owner exception consumed (2026-09-06)
+
+- Under [#2828](https://github.com/Halildeu/platform-k8s-gitops/issues/2828), the
+  owner-authorized TEST-only 7-Zip uninstall request
+  `f8b2c5f2-f442-42b1-a09d-d9bec3432c14` was approved through the normal browser
+  product page on Denetim PC device `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`.
+  The UI displayed the bounded owner exception, not independent second approval.
+- Command `03afc45a-e49c-496f-abc5-564e347627e2` was issued at 16:24:36Z,
+  delivered at 16:24:55Z and completed at 16:24:57Z. Its agent result is
+  `SUCCEEDED_VERIFIED`, authoritative `REGISTRY_UNINSTALL` post-probe `ABSENT`,
+  uninstall exit code 0, attempt 1, no reboot required. The device was online
+  with agent v0.3.31. No direct database approval or removal was used.
+- `ENDPOINT_UNINSTALL_TEST_OWNER_EXCEPTION_USED` exists with the exact request,
+  catalog, owner-decision reference and real creator/approver identity; event
+  hash is present. Backend ready imageID is
+  `sha256:dc18c0d2b83dcc99d52137898107f0b49dff2b63eb79a5170f102088aab2881f`.
+- This change removes the consumed grant and its pod annotation from TEST desired
+  state; the backend's default maker-checker remains. Live cleanup reconciliation
+  is pending until the cleanup PR merges and ArgoCD removes all eight grant keys.
+  This is a single TEST uninstall acceptance, not whole-Faz-22 or production
+  acceptance. Other endpoint scenarios remain tracked by #2828.
+
 ## Live Delta — ATS Dilim B candidate answers strict TEST acceptance (2026-09-06 15:08 UTC)
 
 This delta supersedes the two earlier September 6 ATS deltas only on the exact TEST
