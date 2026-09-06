@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Meeting source read-back unavailable in fresh TEST acceptance (2026-09-06)
+
+- User-directed meeting-first work is tracked by
+  [#3399](https://github.com/Halildeu/platform-k8s-gitops/issues/3399).
+  [#3562](https://github.com/Halildeu/platform-k8s-gitops/pull/3562) strengthens
+  the fixed synthetic audio fixture acceptance to require usable persisted
+  summary/decisions/actions, exact canonical source and repeated result readback.
+  These are fixture-specific requirements, not requirements for every meeting.
+- [TEST run 34036141206](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34036141206)
+  on GitOps `3eedf5a99b95531f398d920a5a96497c3f41a1b5` failed in 6m56s:
+  `get-transcript-http-503` at the exact analysis-run canonical transcript API.
+  The original exception receipt discarded earlier stream/product metadata;
+  those measurements cannot be claimed from this run. No new service image
+  or desired runtime configuration was deployed.
+- Redacted diagnostic readback confirms token-contract pass, temporary user
+  deletion, direct-grant restoration, temporary transcript-role restoration,
+  and token-file removal. Existing TEST canonical mapper convergence remains
+  part of the workflow; no claim of entirely unchanged TEST state is made.
+- Local Mac DNS could not resolve `testai.acik.com`; direct staging SSH also
+  timed out. The existing self-hosted TEST runner was online and executed the
+  run. Browser citation interaction, attended mic/loopback, normal-persona
+  end-to-end delivery and exact live service digest binding remain unverified.
+  Historical successes below do not supersede this fresh bounded failure.
+
 ## Live Delta — ATS strict TEST browser acceptance on contrast fix (2026-09-06 10:56 UTC)
 
 This delta supersedes the earlier September 6 accessibility failure only on the
