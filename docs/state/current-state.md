@@ -1,5 +1,54 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Meeting TEST canonical source activation (2026-09-06)
+
+- Meeting-first work remains tracked by [#3399](https://github.com/Halildeu/platform-k8s-gitops/issues/3399).
+  [#3566](https://github.com/Halildeu/platform-k8s-gitops/pull/3566),
+  commit `12b2a936939e14bdc3a185629091651992a35900`, enables TEST canonical
+  transcript reading and wires the existing meeting-service client secret by
+  Secret reference. No new permission, production change or image change.
+- [Runtime metadata and stability 34038124097](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34038124097)
+  observes meeting-service generation/observedGeneration `26`, ready `1/1`,
+  ConfigMap transcript-read `true`, and imageID
+  `sha256:41da7a6f53b71bf3ec8fcc8490ffd77f198815ead8838aa29aeb5ac61d266639`.
+  The existing catalog-driven stability gate passed its full `120s` window,
+  with no UID churn or restart change. Process environment was not read.
+- The broad all-backend verifier `34037771298` was cancelled after Argo
+  convergence; its failure/cancellation is **not** a passed runtime gate.
+  The focused changed-workload stability gate does not claim unrelated service
+  acceptance. The push verifier skipped runtime because image pins were unchanged.
+- Fresh strict synthetic lifecycle [34038348962](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34038348962)
+  at GitOps `6689a402ca95874ad9c6e7197057bc479b08fff9` failed:
+  `get-transcript-http-503:TRANSCRIPT_READ_UNAVAILABLE` persists after activation.
+  It proves 150 audio frames/acks, 39 partial/22 final events, 7/7 keywords,
+  EOF/drained, 22 durable transcript rows, a verified 138-character summary,
+  one decision and two actions. Same-session result and repeated API readback
+  match fingerprint `5a0621d7271212ca671dbf0502c771efad9bf9c7ef497083137b42ec2b7e8ee5`.
+  This is a privileged synthetic fixture, not customer acceptance. Per recorded
+  rollback contract, [#3568](https://github.com/Halildeu/platform-k8s-gitops/pull/3568)
+  reverts only the #3566 activation; rollback live readback is pending.
+- Local Mac HTTPS now returns `200`; Chrome loads the authenticated canonical
+  meeting list. Earlier DNS failure below is historical. For synthetic meeting
+  `178a8328-bcb6-4cf8-b2f8-8be578237931`, Chrome displays the persisted summary,
+  one decision, two actions/tasks and 22 transcript segments after page reload.
+  Clicking a summary citation changes the URL to its visible segment anchor.
+  This separate UI transcript path is not the failed exact analysis-run source
+  API; the existing authenticated session is not verified as a normal persona.
+  Source time labels display an invalid-looking `29811731:00`; live stream is
+  not configured in this web view. Attended mic/loopback and normal-customer
+  end-to-end acceptance remain unverified.
+- [backend#1126 source correction](https://github.com/Halildeu/platform-backend/issues/1126#issuecomment-5559790049):
+  cumulative context fix #1127 exists at `2f63a7481b043c532185cf89fcf12e23a3bd60af`.
+  GitHub ancestry confirms the later overlay-declared build `9f096ac68ca4c455b0b185b03f2eaf666775e1bb`
+  includes it; both that source and current main have trigger blob
+  `a7fdae8e06ef146bca8017a9e2eb9611fae6dfdc` with a 60,000-character bound.
+  Fresh TEST audio-gateway imageID is
+  `sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773`.
+  Overlay provenance is not independent binary attestation. Provider-shape,
+  per-meeting teardown/time bound and attended multi-window acceptance remain.
+  Finalization latency #3532, multi-session #3421/#3533 and desktop#130 remain
+  separate open work; no duplicate cumulative-buffer implementation is warranted.
+
 ## Live Delta — Meeting source read-back unavailable in fresh TEST acceptance (2026-09-06)
 
 - User-directed meeting-first work is tracked by

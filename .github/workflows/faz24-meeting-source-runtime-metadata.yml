@@ -6,8 +6,13 @@ permissions:
 jobs:
   metadata:
     runs-on: [self-hosted, aiserver, testai-deploy]
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
       - name: Read bounded TEST metadata only
         run: python3 scripts/faz24/meeting_source_runtime_metadata.py
+      - name: Verify changed meeting-service stability
+        run: >-
+          bash scripts/deploy/gate-stability-window.sh
+          --service meeting-service --context k3d-test
+          --namespace platform-test --catalog docs/operations/services.yaml
