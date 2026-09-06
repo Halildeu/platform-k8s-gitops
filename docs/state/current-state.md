@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Meeting desktop package and session admission candidate (2026-09-06 15:59 UTC)
+
+- [desktop#130](https://github.com/Halildeu/platform-desktop/pull/130) is merged at
+  `022b9c5c5b82006ae6ddb6f3d2181236dc5f29db`. The planner speech-context input
+  passed 652 tests, typecheck, lint and build on its PR head. The exact merge
+  [Windows package run 34043431579](https://github.com/Halildeu/platform-desktop/actions/runs/34043431579)
+  passed; downloaded `BUILD_METADATA.txt` confirms the merge SHA and
+  `signing=unsigned-dev-smoke`. Installer SHA-256 is
+  `1285c269549954f10f60a148547a4b2fb7b789cf4693ee32bdd075bac2521847`.
+  This is a TEST package, not a signed production release or installed-user acceptance.
+- [backend#1135](https://github.com/Halildeu/platform-backend/pull/1135), source
+  `179751643c030960e509f0ca5a488300a50a6c40`, addresses
+  [#3533](https://github.com/Halildeu/platform-k8s-gitops/issues/3533): a valid late
+  result for one session was rejected after another session's newer result.
+  PostgreSQL reproduced `409 STALE_FINALIZATION` before the fix. The candidate
+  scopes stale admission to the signed session, retains meeting-wide latest
+  ordering and locking, and normalizes new UUID storage. Maven verify passed
+  382 meeting-service tests plus 339 dependency tests, including 27 PostgreSQL
+  ingestion cases. Independent review and immutable TEST rollout are pending;
+  this is not runtime acceptance.
+- Existing cumulative-window behavior was retested with seven
+  `LiveAnalyzeTriggerTest` cases on the current backend source: prior-window
+  text is retained within the 60,000-character bound. This does not establish
+  attended multi-window summary quality. The six-minute finalization guard
+  remains unchanged; the prior 401-second lifecycle total is not stop-to-result latency.
+- Normal-user packaged capture/stop, result/source/reopen, assignment and
+  notification remain unverified under [#3487](https://github.com/Halildeu/platform-k8s-gitops/issues/3487).
+  The observed browser session is ADMIN, not a normal persona. Historical-session
+  selection [#3421](https://github.com/Halildeu/platform-k8s-gitops/issues/3421)
+  and latency [#3532](https://github.com/Halildeu/platform-k8s-gitops/issues/3532)
+  remain separate work. No production or microphone mutation was performed.
+
 ## Live Delta — ATS Dilim B candidate answers strict TEST acceptance (2026-09-06 15:08 UTC)
 
 This delta supersedes the two earlier September 6 ATS deltas only on the exact TEST
