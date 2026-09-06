@@ -133,7 +133,19 @@ def http_json(
         status = error.code
         raw = error.read()
     if status not in expected:
-        raise AcceptanceError(f"{method.lower()}-{path.split('/')[-1]}-http-{status}")
+        code = f"{method.lower()}-{path.split('/')[-1]}-http-{status}"
+        if status == 503:
+            try:
+                problem = json.loads(raw.decode("utf-8"))
+            except (ValueError, UnicodeError):
+                problem = {}
+            if isinstance(problem, dict):
+                for field in ("detail", "reason", "message"):
+                    reason = problem.get(field)
+                    if reason in ("TRANSCRIPT_AUTHORIZATION_UNAVAILABLE", "TRANSCRIPT_READ_UNAVAILABLE"):
+                        code += ":" + reason
+                        break
+        raise AcceptanceError(code)
     if not raw:
         return status, {}
     decoded = json.loads(raw.decode("utf-8"))
@@ -556,12 +568,16 @@ def reopen_evidence(
         run_id = str(uuid.UUID(str(result.get("analysisRunId"))))
     except (ValueError, TypeError, AttributeError):
         return evidence
-    status, source = http_json(
-        base_url=base_url, token=token, method="GET",
-        path=f"/api/v1/admin/meetings/{meeting_id}/intelligence/results/{run_id}/transcript",
-        expected={200}, timeout_seconds=timeout_seconds,
-    )
-    statuses["canonicalSource"] = status
+    try:
+        status, source = http_json(
+            base_url=base_url, token=token, method="GET",
+            path=f"/api/v1/admin/meetings/{meeting_id}/intelligence/results/{run_id}/transcript",
+            expected={200}, timeout_seconds=timeout_seconds,
+        )
+        statuses["canonicalSource"] = status
+    except AcceptanceError as error:
+        source = {}
+        evidence["canonicalSourceErrorCode"] = str(error)
     transcript = source.get("transcript")
     evidence["canonicalSourceReadBackProven"] = all((
         source.get("analysisRunId") == run_id,

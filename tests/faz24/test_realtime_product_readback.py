@@ -2,6 +2,8 @@ import copy
 import hashlib
 import importlib.util
 import json
+import io
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -105,3 +107,39 @@ def test_gate_requires_all_product_checks():
     text = SCRIPT.read_text()
     for name in ("usableProductResult", "sameResultReopened", "canonicalSourceReadBackProven"):
         assert f'durable.get("{name}") is True' in text
+
+
+def test_source_unavailable_preserves_reopen_evidence(monkeypatch, result):
+    def http(**kwargs):
+        if kwargs["path"].endswith("/transcript"):
+            raise helper.AcceptanceError("get-transcript-http-503:TRANSCRIPT_READ_UNAVAILABLE")
+        return 200, result
+
+    monkeypatch.setattr(helper, "http_json", http)
+    evidence = helper.reopen_evidence(
+        base_url=helper.DEFAULT_BASE_URL, token="synthetic-not-a-token",
+        meeting_id=MEETING, canonical_session_id=SESSION, result=result,
+        timeout_seconds=1, statuses={},
+    )
+    assert evidence["sameResultReopened"] is True
+    assert evidence["canonicalSourceReadBackProven"] is False
+    assert evidence["canonicalSourceErrorCode"].endswith("TRANSCRIPT_READ_UNAVAILABLE")
+
+
+@pytest.mark.parametrize("detail,expected", [
+    ("TRANSCRIPT_READ_UNAVAILABLE", ":TRANSCRIPT_READ_UNAVAILABLE"),
+    ("TRANSCRIPT_AUTHORIZATION_UNAVAILABLE", ":TRANSCRIPT_AUTHORIZATION_UNAVAILABLE"),
+    ("sensitive arbitrary server response", ""),
+    ({"private": "untrusted"}, ""),
+])
+def test_http_error_only_exposes_allowlisted_reason(monkeypatch, detail, expected):
+    class Opener:
+        def open(self, *args, **kwargs):
+            raise urllib.error.HTTPError("https://testai.acik.com", 503, "private reason", {},
+                                         io.BytesIO(json.dumps({"detail": detail}).encode()))
+
+    monkeypatch.setattr(helper.urllib.request, "build_opener", lambda *args: Opener())
+    with pytest.raises(helper.AcceptanceError) as error:
+        helper.http_json(base_url=helper.DEFAULT_BASE_URL, token="synthetic-not-a-token",
+                         method="GET", path="/transcript", expected={200}, timeout_seconds=1)
+    assert str(error.value) == "get-transcript-http-503" + expected
