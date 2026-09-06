@@ -15,7 +15,7 @@ User request: move development storage and execution away from the nearly full M
 | Docker service | `platform-dev-docker.service` |
 | Docker socket | `/run/platform-dev/docker.sock` |
 | Docker data | `/srv/platform-dev/docker` |
-| Mac Docker context | `platform-dev-remote` (SSH; original local context remains selected) |
+| Mac Docker context | `platform-dev-remote` (SSH; selected Mac default) |
 | Frontend shell | `127.0.0.1:33000` on the server, reached through SSH |
 | Frontend remotes | `33001`, `33002`, `33004` through `33011`, all loopback |
 | Dependency caches | `/srv/platform-dev/cache/pnpm`, `/srv/platform-dev/cache/maven` |
@@ -64,6 +64,11 @@ Detach with Ctrl-B then D; CLI jobs in that session can continue after the SSH
 client disconnects. Git identity was copied without exposing its values, read
 back, and private GitHub repository access was verified. Maven settings, the global Git ignore rule, and
 pnpm user configuration point to their shared Linux caches.
+
+The Mac's default Docker context now points to the verified remote daemon
+(`stagingsw`, `/srv/platform-dev/docker`). Local Colima was confirmed to have zero
+containers and zero named volumes, then stopped; the remote context was read back
+after stopping it. Local Docker disk/source files were not removed by this step.
 
 `preview` keeps an SSH tunnel in the foreground; Ctrl-C closes that tunnel.
 Visit `http://127.0.0.1:33000/`. The setup session also opened three temporary

@@ -30,6 +30,9 @@
   deletion was performed. Existing task routing still requires supported handoff;
   twelve credential-like local files are held separately. Approximately 174 GiB
   remains free on the old server after transfer and Linux toolchain setup.
+- Mac Docker defaults to `platform-dev-remote`; readback resolves to the isolated
+  server daemon. Empty local Colima was stopped, and remote default selection was
+  reverified. This changes where Docker runs; it does not delete local source/data.
 - DEV credential hardening: encrypted master store with separate root-owned key;
   generated configuration on tmpfs, rendered before the dedicated Docker daemon.
   Empty-runtime-directory restart, eight backend health responses, real browser
