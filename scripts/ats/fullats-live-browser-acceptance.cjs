@@ -271,6 +271,9 @@ try {
   await createForm.getByLabel(/^Cevap biçimi/u).nth(1).selectOption('SINGLE_CHOICE');
   await createForm.getByLabel('2. soru, 1. seçenek', { exact: true }).fill('Ofis');
   await createForm.getByLabel('2. soru, 2. seçenek', { exact: true }).fill('Uzaktan');
+  // #240 B: üçüncü soru YALNIZ silme kapsamı için; ilk iki soru başvuru anında yaşar.
+  await createForm.getByRole('button', { name: 'Soru ekle', exact: true }).click();
+  await createForm.getByLabel('Soru metni', { exact: true }).nth(2).fill('Silinecek deneme sorusu');
   const createJobResponse = recruiterPage.waitForResponse(
     (response) =>
       relevantPath(response.url()) === '/api/ats/v1/recruiter/jobs' &&
@@ -281,7 +284,7 @@ try {
   const createdResponse = await createJobResponse;
   if (createdResponse.status() !== 201) throw new Error(`job create HTTP ${createdResponse.status()}`);
   const createdJob = await createdResponse.json();
-  if (createdJob.questions?.length !== 2 || !createdJob.questions.every(q => q.questionId)) throw new Error('question create persistence missing');
+  if (createdJob.questions?.length !== 3 || !createdJob.questions.every(q => q.questionId)) throw new Error('question create persistence missing');
   const originalQuestionIds = createdJob.questions.map(q => q.questionId);
   const originalOptionIds = createdJob.questions[1].options.map(o => o.optionId);
   console.log('PASS recruiter question create and server ids');
@@ -307,7 +310,9 @@ try {
   const updatedResponse = await updateJobResponse;
   if (updatedResponse.status() !== 200) throw new Error(`job update HTTP ${updatedResponse.status()}`);
   const updatedJob = await updatedResponse.json();
-  if (JSON.stringify(updatedJob.questions.map(q => q.questionId)) !== JSON.stringify([...originalQuestionIds].reverse()) || JSON.stringify(updatedJob.questions[0].options.map(o => o.optionId)) !== JSON.stringify(originalOptionIds)) throw new Error('question reorder changed ids');
+  // "2. soruyu yukarı taşı": [q1, q2, q3] → [q2, q1, q3]; kimlikler sabit kalır.
+  const reorderedQuestionIds = [originalQuestionIds[1], originalQuestionIds[0], originalQuestionIds[2]];
+  if (JSON.stringify(updatedJob.questions.map(q => q.questionId)) !== JSON.stringify(reorderedQuestionIds) || JSON.stringify(updatedJob.questions[0].options.map(o => o.optionId)) !== JSON.stringify(originalOptionIds)) throw new Error('question reorder changed ids');
   console.log('PASS recruiter question reorder preserves ids');
   if (updatedJob.summary !== editedJobSummary || updatedJob.version !== 1) {
     throw new Error('updated job response contract invalid');
@@ -316,13 +321,28 @@ try {
   await jobCard.getByRole('button', { name: 'Düzenle' }).click();
   await waitVisible(editForm, 'reopened question form');
   if (await editForm.getByLabel('Soru metni', { exact: true }).nth(0).inputValue() !== 'Hangi calisma bicimini tercih edersiniz?') throw new Error('question reopen readback mismatch');
-  await editForm.getByRole('button', { name: '2. soruyu sil', exact: true }).click();
-  await editForm.getByRole('button', { name: '1. soruyu sil', exact: true }).click();
+  // #240 B: sorular başvuru anında YAŞAMALI. Silme kapsamı 3. (deneme) soruyla korunur;
+  // ilk soru (tek seçim) "Yanıtlanması zorunlu" işaretlenir — aday tarafındaki önizleme
+  // kapısı ve backend'in zorunlu-cevap reddi buna dayanır.
+  await editForm.getByRole('button', { name: '3. soruyu sil', exact: true }).click();
+  await editForm.getByLabel('Yanıtlanması zorunlu', { exact: true }).nth(0).check();
   const removeResponsePromise = recruiterPage.waitForResponse(r => relevantPath(r.url()) === `/api/ats/v1/recruiter/jobs/${jobId}` && r.request().method() === 'PUT');
   await editForm.getByRole('button', { name: 'Değişiklikleri kaydet' }).click();
   const removeResponse = await removeResponsePromise;
-  if (removeResponse.status() !== 200 || (await removeResponse.json()).questions.length !== 0) throw new Error('question deletion persistence failed');
-  console.log('PASS recruiter question independent reopen and deletion');
+  if (removeResponse.status() !== 200) throw new Error(`question deletion/required HTTP ${removeResponse.status()}`);
+  const requiredJob = await removeResponse.json();
+  if (requiredJob.questions?.length !== 2) throw new Error('question deletion persistence failed');
+  if (JSON.stringify(requiredJob.questions.map(q => q.questionId)) !== JSON.stringify(reorderedQuestionIds.slice(0, 2))) {
+    throw new Error('question deletion changed surviving ids');
+  }
+  if (requiredJob.questions[0].required !== true || requiredJob.questions[1].required !== false) {
+    throw new Error('question required flag persistence failed');
+  }
+  const singleChoiceQuestionId = requiredJob.questions[0].questionId;
+  const textQuestionId = requiredJob.questions[1].questionId;
+  const remoteOptionId = requiredJob.questions[0].options.find((option) => option.label === 'Uzaktan')?.optionId ?? '';
+  if (!/^qo_[A-Za-z0-9_-]{12}$/u.test(remoteOptionId)) throw new Error('single-choice option id missing');
+  console.log('PASS recruiter question independent reopen, deletion and required flag with stable ids');
   await jobCard.getByRole('button', { name: 'Önizle' }).click();
   const jobPreview = recruiterPage.getByTestId('recruiter-job-preview');
   await waitVisible(jobPreview, 'job preview');
@@ -423,8 +443,39 @@ try {
   await fillIfEmpty('candidate-experience-0-company', 'Örnek Teknoloji');
   await fillIfEmpty('candidate-education-0-school', 'Örnek Üniversitesi');
   await fillIfEmpty('candidate-skills', 'Ürün keşfi, kullanıcı araştırması, analitik');
+  // #240 B: ilan soruları aday formunda kendi bölümünde, İK'nın verdiği sırayla görünür.
+  const questionsSection = candidatePage.getByTestId('candidate-questions');
+  await waitVisible(questionsSection, 'candidate questions section');
+  const questionsText = (await questionsSection.textContent()) ?? '';
+  if (
+    questionsText.indexOf('Hangi calisma bicimini tercih edersiniz?') < 0 ||
+    questionsText.indexOf('Hangi calisma bicimini tercih edersiniz?') > questionsText.indexOf('Hangi teknik alanda deneyiminiz var?')
+  ) {
+    throw new Error('candidate questions are not rendered in recruiter order');
+  }
+  console.log('PASS candidate sees recruiter questions in recruiter order');
+  // Zorunlu soru cevapsızken tek gerçek kapı (önizleme) kapalı kalır; backend de reddederdi.
+  await candidatePage.getByRole('button', { name: 'Başvuruyu kontrol et' }).click();
+  await waitVisible(
+    candidatePage.getByRole('alert').filter({ hasText: 'zorunlu ilan sorularını yanıtlayın' }),
+    'required question gate',
+  );
+  if (await candidatePage.getByTestId('candidate-application-preview').isVisible().catch(() => false)) {
+    throw new Error('preview opened with a required question unanswered');
+  }
+  console.log('PASS candidate preview blocked until required question answered');
+  await candidatePage.getByTestId(`candidate-question-${singleChoiceQuestionId}-${remoteOptionId}`).check();
+  await candidatePage.getByTestId(`candidate-question-${textQuestionId}`).fill('Backend ve veri');
   await candidatePage.getByRole('button', { name: 'Başvuruyu kontrol et' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-preview'), 'candidate preview');
+  await waitVisible(
+    candidatePage.getByTestId(`candidate-preview-question-${singleChoiceQuestionId}`).getByText('Uzaktan', { exact: true }),
+    'single-choice answer preview',
+  );
+  await waitVisible(
+    candidatePage.getByTestId(`candidate-preview-question-${textQuestionId}`).getByText('Backend ve veri', { exact: true }),
+    'text answer preview',
+  );
   await waitVisible(
     candidatePage.getByTestId('candidate-application-preview').getByText(editedCandidateName, {
       exact: true,
@@ -449,6 +500,7 @@ try {
   const submittedKeys = Object.keys(submittedPayload ?? {}).sort();
   const expectedSubmittedKeys = [
     'accuracyConfirmedAt',
+    'answers',
     'city',
     'educationEntries',
     'email',
@@ -475,6 +527,19 @@ try {
   ) {
     throw new Error('candidate submission is not bound to the confirmed resume draft');
   }
+  // #240 B: cevaplar sunucu kimliklerine bağlı gider (etiket/metin DEĞİL), İK sırasıyla;
+  // cevaplanmayan isteğe bağlı soru listeye girmez.
+  const expectedAnswers = [
+    { questionId: singleChoiceQuestionId, optionId: remoteOptionId },
+    { questionId: textQuestionId, text: 'Backend ve veri' },
+  ];
+  if (JSON.stringify(submittedPayload.answers) !== JSON.stringify(expectedAnswers)) {
+    throw new Error(`candidate answers not bound to server ids: ${JSON.stringify(submittedPayload.answers)}`);
+  }
+  if (JSON.stringify(submittedPayload.answers).includes('Uzaktan')) {
+    throw new Error('answer carried a visible option label instead of optionId');
+  }
+  console.log('PASS candidate answers submitted bound to server ids');
   const serializedSubmission = JSON.stringify(submittedPayload);
   if (serializedSubmission.includes('%PDF') || serializedSubmission.includes('fullats-synthetic-resume.pdf')) {
     throw new Error('raw PDF content or filename escaped the browser-local parser boundary');
@@ -887,12 +952,16 @@ try {
       'recruiter-creates-persistent-draft',
       'recruiter-edits-draft',
       'recruiter-question-create-reorder-stable-ids-reopen-delete',
+      'recruiter-question-required-flag-persists',
       'recruiter-previews-draft',
       'recruiter-publishes-job',
       'candidate-opens-dynamic-public-job',
       'candidate-imports-real-pdf-locally',
       'candidate-edits-pdf-autofilled-field',
       'editable-candidate-form',
+      'candidate-sees-recruiter-questions-in-order',
+      'candidate-preview-blocked-until-required-question-answered',
+      'candidate-answers-bound-to-server-ids',
       'explicit-preview-and-confirmation',
       'persistent-receipt-created',
       'candidate-sees-submitted',
