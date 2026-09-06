@@ -584,7 +584,10 @@ images:
     # 2026-09-04 (platform-backend#1024 dilim 2, platform-backend#1130): sha-9f096ac — recording-access
     # preflight now returns the consent-bound speechContextTerms; GHCR package-API manifest digest
     # (method cross-checked against the k3d-test pull of sha-a41b5ce).
-    digest: sha256:41da7a6f53b71bf3ec8fcc8490ffd77f198815ead8838aa29aeb5ac61d266639
+    # backend#1132 / source 089381f8839083c4bb443c24311d003f28c6e4c8:
+    # exact persisted analysis run/spec headers for canonical source readback.
+    # Build-only run 34040070306; TEST customer step tracked by gitops#3399.
+    digest: sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -7327,6 +7330,12 @@ patches:
                         name: meeting-service-secrets
                         key: MEETING_REDIS_PASSWORD
                         optional: false
+                  - name: MEETING_TRANSCRIPT_READ_CLIENT_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: meeting-service-secrets
+                        key: MEETING_ASSIGNEE_DIRECTORY_CLIENT_SECRET
+                        optional: false
                   - name: ANALYSIS_JOB_CAPABILITY_HMAC_SECRET
                     valueFrom:
                       secretKeyRef:
@@ -8139,6 +8148,15 @@ patches:
     patch: |-
       - op: add
         path: /data/MEETING_ASSIGNEE_DIRECTORY_ENABLED
+        value: "true"
+  # gitops#3399 + backend#1132: fixed exact-occurrence client, TEST only.
+  # Reuses the existing least-privilege service identity; no new grant.
+  - target:
+      kind: ConfigMap
+      name: meeting-service-config
+    patch: |-
+      - op: add
+        path: /data/MEETING_TRANSCRIPT_READ_ENABLED
         value: "true"
   # gitops#3537 — Görevler dilim-4b (TEST-only): meeting-service delivers
   # meeting.action.assigned / meeting.action.reassigned outbox events to
