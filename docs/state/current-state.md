@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Meeting exact-source contract repair (2026-09-06)
+
+- Rollback [#3568](https://github.com/Halildeu/platform-k8s-gitops/pull/3568)
+  is verified at `366bacc9755306e98f757e9e84f1e88149ef873b` by
+  [34039307214](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34039307214):
+  meeting-service generation/observedGeneration `27`, ready `1`, unchanged
+  imageID `sha256:41da7a6f53b71bf3ec8fcc8490ffd77f198815ead8838aa29aeb5ac61d266639`,
+  source activation flag and explicit source credential binding absent,
+  full catalog `120s` stability window passed. This supersedes the pending
+  rollback wording below, not the failed source acceptance.
+- [backend#1131](https://github.com/Halildeu/platform-backend/issues/1131)
+  tracks the exact-source customer step under #3399. Current backend
+  `9f096ac68ca4c455b0b185b03f2eaf666775e1bb` omits required
+  `X-Analysis-Run-Id` and `X-Analysis-Spec-Version` in its transcript client.
+  The transcript controller requires both. A bounded TEST probe confirmed
+  token HTTP `200`, correct audience and `transcript:canonical:read` permission;
+  the missing-header upstream read returned HTTP `500`. No secret, token or
+  response body was recorded; localhost port-forwards were terminated.
+- [backend#1132](https://github.com/Halildeu/platform-backend/pull/1132)
+  at `089381f8839083c4bb443c24311d003f28c6e4c8` forwards the persisted
+  run/spec on initial and retry calls and refuses incomplete tuples locally.
+  Sixteen focused JDK21 tests and the meeting-service reactor build passed.
+  [Image build 34040070306](https://github.com/Halildeu/platform-backend/actions/runs/34040070306)
+  passed and created provenance for meeting-service digest
+  `sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d`.
+  This TEST overlay pins that artifact and activates source read through the
+  existing service identity. Seventy-five focused overlay/evidence tests pass.
+  Immutable TEST rollout and fresh strict source-read acceptance are pending;
+  no runtime fix or normal-persona delivery is claimed here. On health or source
+  acceptance failure, revert this image/activation patch via GitOps to the
+  verified #3568 rollback state; no imperative workload mutation is authorized.
+
 ## Live Delta — Meeting TEST canonical source activation (2026-09-06)
 
 - Meeting-first work remains tracked by [#3399](https://github.com/Halildeu/platform-k8s-gitops/issues/3399).
