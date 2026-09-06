@@ -7859,7 +7859,7 @@ patches:
       # rotation so ArgoCD replaces the pod with the newly synced Secret.
       - op: add
         path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1tpm-vault-credential-rev
-        value: "2913-approle-secret-20260728-1"
+        value: "2828-approle-secret-20260906-1"
   - target:
       kind: ConfigMap
       name: endpoint-admin-service-config
