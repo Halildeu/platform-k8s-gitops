@@ -233,4 +233,5 @@ images:
     # Kaynak 01e0fde — #1096 consent-trust onarimini DA icerir (1651f489 atasi).
     # 2026-08-02: platform-backend#1098 stale CONTROL stream liveness repair.
     # Source 58ccbed4, build run 30766730747, endpoint-admin job 91546668965.
-    digest: sha256:260bec36e7f44999394e8fb84bb61b3f3d079123ce5660641e92b358a3292dba
+    # #2828 same-image template alignment only; not an active Argo application.
+    digest: sha256:dc18c0d2b83dcc99d52137898107f0b49dff2b63eb79a5170f102088aab2881f
