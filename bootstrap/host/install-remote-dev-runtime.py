@@ -21,10 +21,14 @@ subprocess.run(['sudo', '-n', 'install', '-d', '-o', 'halil', '-g', 'halil', '-m
 if subprocess.check_output(['findmnt', '-T', str(generated), '-n', '-o', 'FSTYPE'], text=True).strip() != 'tmpfs':
     raise SystemExit('Generated DEV configuration must reside on tmpfs')
 
-def write(name, content, persistent=False):
-    p=(base if persistent else generated)/name
-    p.write_text(content)
-    p.chmod(0o600)
+def write_runtime(name, content):
+    # Secret delivery files are allowed only on the verified, private tmpfs above.
+    # Establish restrictive mode before writing and refuse file symlinks.
+    p = generated / name
+    descriptor = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, 'w') as stream:
+        stream.write(content)
     return str(p)
 
 pg_image='postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94'
@@ -44,14 +48,14 @@ realm={'realm':'platform-dev','enabled':True,'sslRequired':'none','registrationA
        'credentials':[{'type':'password','value':secret['developer'],'temporary':False}]},
        {'username':'viewer','enabled':True,'emailVerified':True,'email':'viewer@example.invalid','firstName':'DEV','lastName':'Viewer','realmRoles':['VIEWER'],
        'credentials':[{'type':'password','value':secret['developer'],'temporary':False}]}]}
-realm_file=write('realm.json',json.dumps(realm))
-write('postgres.env',f"POSTGRES_USER=platform\nPOSTGRES_DB=platform\nPOSTGRES_PASSWORD={secret['postgres']}\n")
-write('keycloak.env',f"KC_BOOTSTRAP_ADMIN_USERNAME=dev-admin\nKC_BOOTSTRAP_ADMIN_PASSWORD={secret['keycloak_admin']}\nKC_DB=postgres\nKC_DB_URL=jdbc:postgresql://127.0.0.1:5432/keycloak\nKC_DB_USERNAME=platform\nKC_DB_PASSWORD={secret['postgres']}\nKC_HOSTNAME=http://127.0.0.1:33081\nKC_HEALTH_ENABLED=true\n")
-write('openfga.env',f"OPENFGA_DATASTORE_ENGINE=postgres\nOPENFGA_DATASTORE_URI=postgres://platform:{secret['postgres']}@127.0.0.1:5432/openfga?sslmode=disable\nOPENFGA_HTTP_ADDR=127.0.0.1:34080\nOPENFGA_GRPC_ADDR=127.0.0.1:34081\nOPENFGA_PLAYGROUND_ENABLED=false\nOPENFGA_METRICS_ADDR=127.0.0.1:34112\n")
+realm_file=write_runtime('realm.json',json.dumps(realm))
+write_runtime('postgres.env',f"POSTGRES_USER=platform\nPOSTGRES_DB=platform\nPOSTGRES_PASSWORD={secret['postgres']}\n")
+write_runtime('keycloak.env',f"KC_BOOTSTRAP_ADMIN_USERNAME=dev-admin\nKC_BOOTSTRAP_ADMIN_PASSWORD={secret['keycloak_admin']}\nKC_DB=postgres\nKC_DB_URL=jdbc:postgresql://127.0.0.1:5432/keycloak\nKC_DB_USERNAME=platform\nKC_DB_PASSWORD={secret['postgres']}\nKC_HOSTNAME=http://127.0.0.1:33081\nKC_HEALTH_ENABLED=true\n")
+write_runtime('openfga.env',f"OPENFGA_DATASTORE_ENGINE=postgres\nOPENFGA_DATASTORE_URI=postgres://platform:{secret['postgres']}@127.0.0.1:5432/openfga?sslmode=disable\nOPENFGA_HTTP_ADDR=127.0.0.1:34080\nOPENFGA_GRPC_ADDR=127.0.0.1:34081\nOPENFGA_PLAYGROUND_ENABLED=false\nOPENFGA_METRICS_ADDR=127.0.0.1:34112\n")
 schemas=['auth_service','user_service','permission_service','variant_service','core_data_service','meeting_service','budget_service']
-init=write('postgres-init.sql',"CREATE ROLE platform_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '"+secret['postgres']+"';\nCREATE DATABASE keycloak;\n"+''.join(f'CREATE SCHEMA IF NOT EXISTS {s} AUTHORIZATION platform_app;\n' for s in schemas))
+init=write_runtime('postgres-init.sql',"CREATE ROLE platform_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '"+secret['postgres']+"';\nCREATE DATABASE keycloak;\n"+''.join(f'CREATE SCHEMA IF NOT EXISTS {s} AUTHORIZATION platform_app;\n' for s in schemas))
 with Path(init).open('a') as f:
-    f.write('CREATE DATABASE openfga;\n')
+    f.write_runtime('CREATE DATABASE openfga;\n')
 # The Postgres entrypoint reads this init script as its container user.
 Path(init).chmod(0o644)
 common={'network_mode':'host','restart':'unless-stopped','logging':{'driver':'local','options':{'max-size':'10m','max-file':'3'}}}
@@ -92,7 +96,11 @@ for i,(svc,port) in enumerate(ports.items()):
     jars=list(Path('/srv/platform-dev/repos/platform-backend',svc,'target').glob('*.jar'))
     jars=[p for p in jars if not p.name.endswith(('-sources.jar','-javadoc.jar'))]
     if len(jars)!=1:raise SystemExit(f'Expected one executable jar for {svc}')
-    env_file=write(svc+'.env',''.join(f'{k}={v}\n' for k,v in env.items()))
+    env_file=write_runtime(svc+'.env',''.join(f'{k}={v}\n' for k,v in env.items()))
     services[svc]={**common,'image':java_image,'env_file':[env_file],'command':['java','-Xms64m','-Xmx512m','-jar','/app/app.jar'],'volumes':[f'{jars[0]}:/app/app.jar:ro'],'mem_limit':'1g','depends_on':{'postgres':{'condition':'service_healthy'}}}
-write('compose.json',json.dumps({'name':'platform-dev-runtime','services':services,'volumes':{'dev-postgres':{}}},indent=2), persistent=True)
+compose_text=json.dumps({'name':'platform-dev-runtime','services':services,'volumes':{'dev-postgres':{}}},indent=2)
+if any(value in compose_text for value in secret.values()):
+    raise SystemExit('Refusing to persist inline DEV credential material')
+(base/'compose.json').write_text(compose_text)
+(base/'compose.json').chmod(0o600)
 print('DEV_COMPOSE_PREPARED',len(services),'services; encrypted credential store; generated configuration on tmpfs')
