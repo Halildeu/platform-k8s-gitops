@@ -1,5 +1,26 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Retired host remote DEV workspace (#3582, 2026-09-06)
+
+- Owner authorized removal of retired old-host backups because active aiserver
+  holds newer data. Host .53 identity and stopped/masked old Docker were checked;
+  `/var/lib/docker` and `/srv/platform/archive/aiserver-backup` are absent.
+  Measured recovered capacity: 326,087,487,488 bytes. No active .15 data changed.
+- Separate `/srv/platform-dev` workspace, Docker daemon/socket, Java 21, Node 22,
+  pnpm and Codex are live on `staging-sw-legacy` (`10.9.10.53`). Old Docker and
+  containerd units remain masked. All three canonical source projects are saved
+  as remote SSH projects in the Codex app; remote Codex authentication passed.
+- Developer acceptance: frontend 100 tests and shell build; backend 85 tests;
+  remote Docker execution, volume reopen and loopback network-binding proof;
+  Mac SSH preview HTTP 200 and rendered frontend login page. Exact source and
+  environment details: [remote DEV runbook](../operations/RUNBOOKS/RB-remote-dev-legacy-host.md).
+- This is remote coding/build/test plus frontend development serving. DEV
+  application DB/Keycloak/backend deployment and full login/API product journeys
+  are not asserted. Existing local tasks/worktrees/history were not transferred.
+- Twenty inactive local `node_modules` trees were removed with unchanged Git
+  status/diff and lockfile hashes. Measured gain is 1,840,959,488 bytes, not their
+  approximately 22 GiB logical size. Local source and credentials are preserved.
+
 ## Live Delta - Endpoint TEST uninstall owner exception consumed (2026-09-06)
 
 - Under [#2828](https://github.com/Halildeu/platform-k8s-gitops/issues/2828), the
