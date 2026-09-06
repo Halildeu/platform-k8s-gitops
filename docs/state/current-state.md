@@ -28,8 +28,15 @@
   rollback contract, [#3568](https://github.com/Halildeu/platform-k8s-gitops/pull/3568)
   reverts only the #3566 activation; rollback live readback is pending.
 - Local Mac HTTPS now returns `200`; Chrome loads the authenticated canonical
-  meeting list. Earlier DNS failure below is historical. Attended mic/loopback,
-  browser source interaction and normal-customer persona remain unverified.
+  meeting list. Earlier DNS failure below is historical. For synthetic meeting
+  `178a8328-bcb6-4cf8-b2f8-8be578237931`, Chrome displays the persisted summary,
+  one decision, two actions/tasks and 22 transcript segments after page reload.
+  Clicking a summary citation changes the URL to its visible segment anchor.
+  This separate UI transcript path is not the failed exact analysis-run source
+  API; the existing authenticated session is not verified as a normal persona.
+  Source time labels display an invalid-looking `29811731:00`; live stream is
+  not configured in this web view. Attended mic/loopback and normal-customer
+  end-to-end acceptance remain unverified.
 - [backend#1126 source correction](https://github.com/Halildeu/platform-backend/issues/1126#issuecomment-5559790049):
   cumulative context fix #1127 exists at `2f63a7481b043c532185cf89fcf12e23a3bd60af`.
   GitHub ancestry confirms the later overlay-declared build `9f096ac68ca4c455b0b185b03f2eaf666775e1bb`
