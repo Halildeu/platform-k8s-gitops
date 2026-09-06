@@ -1,6 +1,9 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
-# Current pin (2026-09-06): ats@d5e48e4, #240 A questions + #256 Tomcat fix.
-#   digest  sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0
+# Current pin (2026-09-06): ats@2e5158f, #240 B candidate answers (V24) + #258 option cap 10
+#   (on top of #240 A questions + #256 Tomcat fix).
+#   digest  sha256:1cd9e5b259a22fc7e501e1c71fc8592833dd41dd6a5b9c3640cddb456349b32a
+#   (GHCR packages API manifest digest; cross-checked against the previous
+#   cluster-validated pin sha-d5e48e4 → 957e00da…; pod imageID re-verified after rollout)
 # The older source/build notes below describe previous rollout history.
 #
 # Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
@@ -181,10 +184,10 @@ resources:
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
-  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34025974278
-  # Rollback image: sha256:8897132f1ac49f2154c7cf07f461a3a3e478b2800cd640b6df057843056d335e
+  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34033796475
+  # Rollback image: sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:957e00da44a284256caa183ea3ddd90fd29ad27f2d9c57e27a035331fc70bdd0
+    digest: sha256:1cd9e5b259a22fc7e501e1c71fc8592833dd41dd6a5b9c3640cddb456349b32a
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
