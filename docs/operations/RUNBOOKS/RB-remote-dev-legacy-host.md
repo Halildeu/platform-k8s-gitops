@@ -126,7 +126,8 @@ of its old data. No installer deletes old data or re-enables old services.
 
 Build all backend modules first with Java 21 and the shared Maven cache:
 `./mvnw -Dmaven.repo.local=/srv/platform-dev/cache/maven -DskipTests package`.
-Copy the Python runtime/fixture scripts and browser verification script from `bootstrap/host/` to
+Copy the Python runtime/fixture scripts (including `remote_dev_credentials.py`),
+browser verification script and runtime-config unit from `bootstrap/host/` to
 `/srv/platform-dev/ops/`. Run the following on the verified old host as `halil`:
 
 ```bash
@@ -149,9 +150,30 @@ Subsequent persistence verification omits `--activate-fixture`. Browser acceptan
 uses `node /srv/platform-dev/ops/verify-remote-dev-browser.cjs` after installing
 the frontend Playwright Chromium browser and its Linux OS dependencies.
 
-The generator creates new DEV-only random secrets in `runtime/secrets/` (0700,
-credential files 0600). A human can read `developer-login.txt` in their own SSH
-terminal to obtain the DEV login; never print it to chat, logs or GitHub.
+The generator stores DEV-only random credentials in authenticated Fernet ciphertext
+at `runtime/secrets/credentials.enc` (0600). Its key is in the separate root-owned
+`/etc/platform-dev/secret-store/credential.key` (0600, parent 0700), accessed through
+the existing operator sudo authorization. An unavailable key fails closed; it is
+never silently replaced for an existing encrypted store. Python's OS-provided
+`cryptography` package is required. Legacy DEV values are encrypted without rotation
+and compared in memory before obsolete plaintext helper files are removed.
+
+Generated env, realm import and database-init files live in the verified tmpfs
+`/run/platform-dev-config` (0700); no duplicate plaintext credential JSON or login
+text file is retained. `platform-dev-runtime-config.service` renders this directory
+before `platform-dev-docker.service` starts. Install/enable the config unit and add
+`Requires=platform-dev-runtime-config.service` plus
+`After=platform-dev-runtime-config.service` to the Docker unit's `[Unit]` drop-in.
+This keeps required bind-mounted files available after a host/daemon cold start.
+Docker's privileged runtime metadata still contains its normal container environment;
+this setup does not claim full-disk encryption of Docker state. Empty-runtime-directory restart, all eight backend health checks,
+real browser login and profile persistence passed after this transition. The
+missing-key path refused regeneration; fifteen obsolete plaintext files were
+removed only after the encrypted values and authenticated behavior matched.
+
+For the synthetic DEV login, a human may run
+`python3 /srv/platform-dev/ops/remote_dev_credentials.py --show-dev-login` in their
+own SSH terminal. Never paste its output into chat, logs or GitHub.
 Postgres uses a persistent named volume. Application connections use
 `platform_app` with `NOSUPERUSER NOBYPASSRLS`; infrastructure owns its own database
 setup. Hibernate `update` is scoped to this synthetic DEV bootstrap, not a claim

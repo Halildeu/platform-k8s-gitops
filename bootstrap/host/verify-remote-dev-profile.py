@@ -15,7 +15,8 @@ args = parser.parse_args()
 if socket.gethostname() != 'stagingsw' or '10.9.10.53' not in subprocess.check_output(['hostname', '-I'], text=True).split():
     raise SystemExit('Unexpected host')
 base = Path('/srv/platform-dev')
-secret = json.loads((base/'runtime/secrets/credentials.json').read_text())
+from remote_dev_credentials import load_credentials
+secret = load_credentials()
 url = 'http://127.0.0.1:33000/api/v1/users/me/profile'
 
 def token():

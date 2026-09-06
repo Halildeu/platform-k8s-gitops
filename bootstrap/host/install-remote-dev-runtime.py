@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-import secrets
 import socket
 import subprocess
 
@@ -15,18 +14,15 @@ base.chmod(0o700)
 secret_dir = base / 'secrets'
 secret_dir.mkdir(mode=0o700, exist_ok=True)
 secret_dir.chmod(0o700)
-secret_file = secret_dir / 'credentials.json'
-if not secret_file.exists():
-    secret_file.write_text(json.dumps({k: secrets.token_urlsafe(32) for k in ['postgres','keycloak_admin','developer','service']}))
-    secret_file.chmod(0o600)
-secret_file.chmod(0o600)
-secret = json.loads(secret_file.read_text())
-login_file=secret_dir/'developer-login.txt'
-login_file.write_text('URL: http://127.0.0.1:33000/\nUsername: developer\nPassword: '+secret['developer']+'\n')
-login_file.chmod(0o600)
+from remote_dev_credentials import initialize_credentials
+secret = initialize_credentials()
+generated = Path('/run/platform-dev-config')
+subprocess.run(['sudo', '-n', 'install', '-d', '-o', 'halil', '-g', 'halil', '-m', '700', str(generated)], check=True)
+if subprocess.check_output(['findmnt', '-T', str(generated), '-n', '-o', 'FSTYPE'], text=True).strip() != 'tmpfs':
+    raise SystemExit('Generated DEV configuration must reside on tmpfs')
 
-def write(name, content):
-    p=base/name
+def write(name, content, persistent=False):
+    p=(base if persistent else generated)/name
     p.write_text(content)
     p.chmod(0o600)
     return str(p)
@@ -60,9 +56,9 @@ with Path(init).open('a') as f:
 Path(init).chmod(0o644)
 common={'network_mode':'host','restart':'unless-stopped','logging':{'driver':'local','options':{'max-size':'10m','max-file':'3'}}}
 services={
- 'openfga':{**common,'image':fga_image,'env_file':[str(base/'openfga.env')],'command':['run'],'mem_limit':'512m','depends_on':{'postgres':{'condition':'service_healthy'}}},
- 'postgres':{**common,'image':pg_image,'env_file':[str(base/'postgres.env')],'command':['postgres','-c','listen_addresses=127.0.0.1'],'volumes':['dev-postgres:/var/lib/postgresql/data',f'{init}:/docker-entrypoint-initdb.d/01-dev.sql:ro'],'healthcheck':{'test':['CMD-SHELL','pg_isready -U platform -d platform'],'interval':'5s','timeout':'3s','retries':30},'mem_limit':'1g'},
- 'keycloak':{**common,'image':kc_image,'env_file':[str(base/'keycloak.env')],'command':['start-dev','--http-host=127.0.0.1','--http-port=33081','--import-realm'],'volumes':[f'{realm_file}:/opt/keycloak/data/import/platform-dev.json:ro'],'depends_on':{'postgres':{'condition':'service_healthy'}},'mem_limit':'1500m'}
+ 'openfga':{**common,'image':fga_image,'env_file':[str(generated/'openfga.env')],'command':['run'],'mem_limit':'512m','depends_on':{'postgres':{'condition':'service_healthy'}}},
+ 'postgres':{**common,'image':pg_image,'env_file':[str(generated/'postgres.env')],'command':['postgres','-c','listen_addresses=127.0.0.1'],'volumes':['dev-postgres:/var/lib/postgresql/data',f'{init}:/docker-entrypoint-initdb.d/01-dev.sql:ro'],'healthcheck':{'test':['CMD-SHELL','pg_isready -U platform -d platform'],'interval':'5s','timeout':'3s','retries':30},'mem_limit':'1g'},
+ 'keycloak':{**common,'image':kc_image,'env_file':[str(generated/'keycloak.env')],'command':['start-dev','--http-host=127.0.0.1','--http-port=33081','--import-realm'],'volumes':[f'{realm_file}:/opt/keycloak/data/import/platform-dev.json:ro'],'depends_on':{'postgres':{'condition':'service_healthy'}},'mem_limit':'1500m'}
 }
 # Keycloak reads the import file as uid 1000, not host root.
 Path(realm_file).chmod(0o644)
@@ -98,5 +94,5 @@ for i,(svc,port) in enumerate(ports.items()):
     if len(jars)!=1:raise SystemExit(f'Expected one executable jar for {svc}')
     env_file=write(svc+'.env',''.join(f'{k}={v}\n' for k,v in env.items()))
     services[svc]={**common,'image':java_image,'env_file':[env_file],'command':['java','-Xms64m','-Xmx512m','-jar','/app/app.jar'],'volumes':[f'{jars[0]}:/app/app.jar:ro'],'mem_limit':'1g','depends_on':{'postgres':{'condition':'service_healthy'}}}
-write('compose.json',json.dumps({'name':'platform-dev-runtime','services':services,'volumes':{'dev-postgres':{}}},indent=2))
-print('DEV_COMPOSE_PREPARED',len(services),'services; credentials remain in protected runtime files')
+write('compose.json',json.dumps({'name':'platform-dev-runtime','services':services,'volumes':{'dev-postgres':{}}},indent=2), persistent=True)
+print('DEV_COMPOSE_PREPARED',len(services),'services; encrypted credential store; generated configuration on tmpfs')

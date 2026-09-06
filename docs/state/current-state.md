@@ -30,6 +30,11 @@
   deletion was performed. Existing task routing still requires supported handoff;
   twelve credential-like local files are held separately. Approximately 174 GiB
   remains free on the old server after transfer and Linux toolchain setup.
+- DEV credential hardening: encrypted master store with separate root-owned key;
+  generated configuration on tmpfs, rendered before the dedicated Docker daemon.
+  Empty-runtime-directory restart, eight backend health responses, real browser
+  login and profile persistence passed. Old plaintext credential/helper files
+  were removed after in-memory value comparison and authenticated readback.
 - Variant authz-revision calls return 503: [backend #1138](https://github.com/Halildeu/platform-backend/issues/1138).
   Reports/schema/external-AI journeys and native Apple builds are not accepted.
 - Twenty inactive local `node_modules` trees were removed with unchanged Git
