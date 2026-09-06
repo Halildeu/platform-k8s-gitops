@@ -733,6 +733,15 @@ fi
             "'answers',",
             "candidate answers not bound to server ids",
             "answer carried a visible option label instead of optionId",
+            # #240 C: İK cevabı soru METNİYLE (anlık görüntü), İK sırasında, karar
+            # eylemlerinin ÜSTÜNDE ve seçenek etiketiyle görür — kimlik sızmaz.
+            "recruiter-application-answers",
+            "recruiter-application-answer-${singleChoiceQuestionId}",
+            "Tek seçim · zorunlu",
+            "recruiter candidate answers not in recruiter order",
+            "recruiter candidate answers leak ids instead of labels",
+            "recruiter candidate answers must precede the decision actions",
+            "'recruiter-reads-candidate-answers-with-question-text',",
             "candidate-experience-0-title",
             "'experienceEntries'",
             "'educationEntries'",
