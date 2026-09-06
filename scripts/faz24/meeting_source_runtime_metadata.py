@@ -18,7 +18,7 @@ def snapshot(read_fn=read):
     report = {"schemaVersion": "faz24.meetingSourceRuntimeMetadata.v1",
               "context": "k3d-test", "namespace": "platform-test",
               "runtimeMutation": False, "secretRead": False, "services": {}}
-    for name in ("meeting-service", "transcript-service", "audio-gateway-service"):
+    for name in ("meeting-service", "transcript-service", "audio-gateway"):
         deployment = read_fn("deployment", name)
         report["services"][name] = {
             "generation": deployment["metadata"]["generation"],

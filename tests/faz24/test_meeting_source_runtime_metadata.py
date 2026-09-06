@@ -28,3 +28,5 @@ def test_metadata_does_not_publish_config_or_unrelated_pods():
     assert report["secretRead"] is False
     assert report["runtimeMutation"] is False
     assert {kind for kind, _ in calls} == {"deployment", "pods", "configmap"}
+    assert {name for kind, name in calls if kind == "deployment"} == {
+        "meeting-service", "transcript-service", "audio-gateway"}
