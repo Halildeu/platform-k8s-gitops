@@ -3,6 +3,18 @@
 Tracking: [#3582](https://github.com/Halildeu/platform-k8s-gitops/issues/3582).
 User request: move development storage and execution away from the nearly full Mac.
 
+## Verification hold before local deletion (2026-09-07)
+
+The historical HTTP/browser checks below are not sufficient evidence of restart
+recovery. A later [runtime finding](https://github.com/Halildeu/platform-k8s-gitops/issues/3582#issuecomment-5561732482)
+reported all eleven Docker containers exited with orphan processes still serving
+ports. Fresh SSH attempts on September 7 timed out; the Mac route to the server
+used its normal network gateway despite a connected VPN indicator. Current
+runtime and restart recovery are **unverified**, and wholesale Mac cleanup is
+**blocked**. Restore connectivity, verify Docker PID/cgroup ownership and volumes,
+then repeat real authenticated journeys and lifecycle recovery before deletion.
+Do not infer that the old container finding is still current without live access.
+
 ## Environment and scope
 
 | Item | Value |

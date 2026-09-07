@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Verification hold — Remote DEV before Mac cleanup (#3582, 2026-09-07)
+
+- Fresh SSH checks to `10.9.10.53:22` timed out on 2026-09-07 at approximately
+  06:21 UTC. macOS reported FortiClient VPN connected, but the route to `.53`
+  used the ordinary `en0` gateway, not a VPN interface. Local preview/identity
+  listeners were absent. Current remote runtime is **unverified**; local deletion
+  is **blocked** pending access and end-to-end checks.
+- A later [independent runtime observation](https://github.com/Halildeu/platform-k8s-gitops/issues/3582#issuecomment-5561732482)
+  contradicts the earlier restart acceptance below: Docker reported all eleven
+  containers exited while 44 orphan processes still served ports. This is a
+  recorded 2026-09-06 observation, not a fresh remote measurement today.
+  Earlier HTTP/browser success does not prove Docker lifecycle recovery.
+- Re-acceptance must correlate Docker running state, actual init PIDs/cgroups,
+  exact artifacts, persistent volumes and API behavior, then repeat after a
+  controlled DEV restart. Investigate the interaction of `live-restore`,
+  `KillMode=process` and volatile `RuntimeDirectory` before changing the host;
+  a root cause has not yet been established from live evidence.
+- The installed bootstrap source has no reports/schema services and explicitly
+  disables meeting AI, transcript reads and notifications. Those workflows
+  cannot be described as fully migrated functional product journeys. Variant
+  authorization still has the previously recorded backend #1138 finding.
+- No local source, history, disk image or held credential was deleted in this
+  verification pass. Historical copy hashes below do not cover later edits.
+
 ## Live Delta — Retired host remote DEV workspace (#3582, 2026-09-06)
 
 - Owner authorized removal of retired old-host backups because active aiserver
