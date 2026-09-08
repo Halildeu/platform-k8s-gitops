@@ -10,14 +10,16 @@
 set -uo pipefail
 
 WORK=$(mktemp -d)
-ID_A=aaaa1111cafe0000000000000000000000000000000000000000000000000001
-ID_B=bbbb2222cafe0000000000000000000000000000000000000000000000000002
+ID_A=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+ID_B=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
 CG_A=/sys/fs/cgroup/docker-$ID_A.scope
 CG_B=/sys/fs/cgroup/docker-$ID_B.scope
 rc=0
+executed=0
+owned_cgroups=()
 
 cleanup() {
-  for d in "$CG_A" "$CG_B"; do
+  for d in "${owned_cgroups[@]}"; do
     [ -d "$d" ] || continue
     while read -r p; do kill -9 "$p" 2>/dev/null || true; done < <(sudo -n cat "$d/cgroup.procs" 2>/dev/null)
     sleep 1
@@ -30,15 +32,17 @@ trap cleanup EXIT
 run_case() {
   local label="$1" running="$2" cid="$3" cg="$4" expect_dead="$5"
 
-  sudo -n mkdir -p "$cg" || { echo "SKIP $label: cannot create $cg"; return 0; }
+  sudo -n mkdir "$cg" || { echo "FAIL $label: cannot create $cg"; rc=1; return 1; }
+  owned_cgroups+=("$cg")
 
   sleep 600 &
   local pid=$!
   echo "$pid" | sudo -n tee "$cg/cgroup.procs" >/dev/null || {
-    echo "SKIP $label: cannot move pid into cgroup"; kill -9 "$pid" 2>/dev/null; return 0; }
+    echo "FAIL $label: cannot move pid into cgroup"; kill -9 "$pid" 2>/dev/null; rc=1; return 1; }
 
   local populated
   populated=$(sudo -n bash -c "[ -n \"\$(head -c1 '$cg/cgroup.procs')\" ] && echo yes || echo no")
+  [ "$populated" = "yes" ] || { echo "FAIL $label: fixture is empty"; rc=1; return 1; }
   echo "--- $label"
   echo "    pid=$pid cgroup=$(basename "$cg") populated_before=$populated reported_size=$(sudo -n stat -c %s "$cg/cgroup.procs")"
 
@@ -53,7 +57,10 @@ esac
 EOF
   chmod +x "$WORK/docker"
 
-  sudo -n env DOCKER="$WORK/docker" /srv/platform-dev/ops/clear-orphan-cgroups.sh 2>&1 | sed 's/^/    /'
+  if ! sudo -n env DOCKER="$WORK/docker" /srv/platform-dev/ops/clear-orphan-cgroups.sh 2>&1 | sed 's/^/    /'; then
+    echo "FAIL $label: cleanup helper failed"; rc=1; return 1
+  fi
+  executed=$((executed + 1))
 
   sleep 2
   local alive=no
@@ -75,5 +82,6 @@ EOF
 echo "=== kill-path test: real script, fake docker, real cgroups, no real container touched"
 run_case "case A  State.Running=false -> must kill" false "$ID_A" "$CG_A" yes
 run_case "case B  State.Running=true  -> must not kill" true "$ID_B" "$CG_B" no
+[ "$executed" -eq 2 ] || rc=1
 echo "=== overall: $([ $rc = 0 ] && echo ALL PASS || echo FAILURES)"
 exit $rc

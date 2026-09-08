@@ -225,3 +225,18 @@ login/reload, profil kalıcılığı ve varyant akışı yeniden geçti.
 Kanıt: `/srv/platform-dev/evidence/recovery-20260908/pr3590-autostart-retest.json`.
 Bu, gerçek yetim süreç arızasının yeniden üretildiği veya fiziksel makinenin
 reboot edildiği iddiası değildir.
+
+## Test düzeneği başarısızlığı başarı sayılmaz
+
+İlk testte sudo/cgroup hazırlığı başarısız olduğunda iki case SKIP dönüyor,
+ancak genel sonuç ALL PASS ve exit 0 oluyordu. Bu, sudo'yu hata döndüren bir
+shim ile değiştirerek yeniden üretildi: iki SKIP, sıfır PASS, exit 0.
+Düzeltilmiş sürüm iki case'in gerçekten çalışmasını zorunlu tutar; kurulum,
+süreci taşıma ve helper hatası testi başarısız yapar. Cgroup kimlikleri her
+koşumda benzersizdir ve cleanup yalnız o koşumun oluşturduğu grupları temizler.
+
+Bağımsız tekrar: iki gerçek süreç/cgroup case'i PASS; eksik sudo case'i
+nonzero ve ALL PASS yok. 18 canlı konteynerin PID'leri değişmedi, test cgroup'u
+kalmadı. Bu sentetik Docker-state + gerçek kernel sonlandırma kanıtıdır;
+doğal bir Docker orphan olayının yeniden oluştuğu iddiası değildir.
+Özel kanıt: `/srv/platform-dev/evidence/killpath-review-20260908/fixed-result.json`.

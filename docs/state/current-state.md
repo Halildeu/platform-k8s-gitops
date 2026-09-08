@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Isolated cgroup termination regression verified (2026-09-08)
+
+- PR #3591 was merged into the combined DEV branch as
+  `6138cad2dc2483ae71e7cf5bd8e311e7ec816ab3`. The test uses fake Docker
+  responses and real, disposable kernel cgroups/processes; it does not select
+  a real container. Both not-running -> terminate and running -> preserve
+  passed independently. All 18 real container PIDs remained unchanged.
+- A negative setup test found a false success in the initial test: denying sudo
+  produced two SKIPs, zero executed cases, exit 0 and ALL PASS. The test now
+  requires both cases to execute, fails on missing prerequisites/helper errors,
+  uses unique fixture IDs and cleans only cgroups created by its own invocation.
+  Both positive cases and the missing-sudo negative case passed after the fix.
+- The fixture cgroups were read back absent. Test source SHA-256:
+  `4d7afc0b0993e263a4f8aaeb1803405acde3c5fb1021210c8e90d15ef63a40ec`.
+  Private evidence: `/srv/platform-dev/evidence/killpath-review-20260908/`.
+- This closes the isolated termination-branch test gap. A naturally occurring
+  Docker orphan incident after runtime-directory preservation and a physical
+  host reboot have not been reproduced by this synthetic test.
+- Mac cleanup remains a separate acceptance boundary: no local deletion in
+  this pass. Clean working status alone does not prove remote branch/stash
+  preservation. Package caches must be distinguished from local Maven installs,
+  active app runtimes and VM data.
+
 ## Live Delta — Automatic DEV start verified; review correction (2026-09-08)
 
 - PR #3590 head `21190621f8f808b148e46c5ef9bc3ecfe2aa8732` was merged into
