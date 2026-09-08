@@ -76,6 +76,36 @@ Sağlıklı sistemde ölçülen sonuç:
 orphan_cgroups=0 skipped_running_containers=18 dry_run=1
 ```
 
+## Sonlandırma kolu doğrulaması
+
+`RuntimeDirectoryPreserve=yes` sonrası gerçek yetim arızası yeniden üretilemediği
+için, betiğin **fiilen süreç sonlandıran** kolu canlı yığın üzerinden
+gözlemlenemez. O kolu test edilmemiş bırakmak, kurtarmanın kritik yarısını
+doğrulanmamış bırakmak demektir.
+
+`bootstrap/host/test-clear-orphan-cgroups.sh` bu boşluğu kapatır. Sahte bir
+`docker` (betiğin `DOCKER` değişkeni üzerinden enjekte edilir) tek bir container
+bildirir; gerçek bir cgroup içinde gerçek bir `sleep` süreci tutulur. Hiçbir
+gerçek container'a dokunulmaz.
+
+```bash
+sudo bootstrap/host/test-clear-orphan-cgroups.sh
+```
+
+İki durum birlikte sınanır, çünkü yalnız öldüren bir kurtarma yolu hiç
+öldürmeyen kadar yanlıştır:
+
+| Durum | Beklenen | 2026-09-08 ölçümü |
+|---|---|---|
+| `State.Running=false` + dolu cgroup | süreç sonlandırılır | `orphan_cgroups=1`, süreç öldü |
+| `State.Running=true` + dolu cgroup | dokunulmaz | `skipped_running_containers=1`, süreç yaşıyor |
+
+Test çıktısı `reported_size=0` satırıyla cgroupfs boyut tuzağını da her koşuda
+yeniden gösterir: dosya doludur ama bildirilen boyut sıfırdır.
+
+Koşum sonrası canlı yığın etkilenmedi: 18 container `running`, artık test
+cgroup'u yok, PostgreSQL süreç kimliği değişmedi, Keycloak realm 200.
+
 ## Arızanın kendisi ayrıca kapatıldı
 
 `platform-dev-docker.service` üzerine `RuntimeDirectoryPreserve=yes` eklendikten
