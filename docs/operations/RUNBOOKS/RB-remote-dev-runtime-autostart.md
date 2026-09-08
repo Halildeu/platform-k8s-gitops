@@ -34,6 +34,41 @@ Unit root olarak çalışır (cgroup.kill root gerektirir), daemon soketini bekl
 yetim cgroup'ları temizler ve compose yığınını başlatır. Daemon'a eklenen
 `Wants=` drop-in'i sayesinde daemon her başladığında bu unit de başlatılır.
 
+## Yetim temizliği yalnız Docker'ın çalıştırmadığı container'a dokunur
+
+İlk sürümde temizlik satır içi bir kabuk döngüsüydü ve iki ayrı kusuru vardı.
+
+**Kusur 1 — sessiz ölü kod.** Boşluk kontrolü `[ -s "$cg/cgroup.procs" ]` idi.
+cgroupfs altındaki dosyalar her zaman 0 boyut raporlar, bu yüzden test cgroup
+dolu olsa bile daima yanlış döner. Canlı ölçüm: `stat -c %s cgroup.procs` = 0
+iken gerçek süreç sayısı 1. Sonuç olarak temizlik hiçbir zaman çalışmadı;
+unit'in kurtarma etkisi yalnız `docker compose up -d` adımından geliyordu.
+
+**Kusur 2 — sağlıklı container'ı kesme riski.** Seçim `docker ps -aq` üzerindeydi
+ve container'ın çalışıp çalışmadığına bakmıyordu. Boşluk kontrolü düzeltilseydi
+seçim, PostgreSQL ve SQL Server dahil 18 sağlıklı container'ın tamamını
+kapsayacaktı. Ölçülen değer: düzeltilmiş boşluk kontrolüyle aday sayısı 18.
+
+`bootstrap/host/clear-orphan-cgroups.sh` ikisini birden kapatır. Bir baytlık
+okuma ile gerçek boşluk kontrolü yapar ve yalnız `State.Running` değeri `false`
+olan container'lara dokunur. `--dry-run` seçeneği hiçbir süreci durdurmadan neyi
+seçeceğini yazar.
+
+Sağlıklı sistemde ölçülen sonuç:
+
+```
+orphan_cgroups=0 skipped_running_containers=18 dry_run=1
+```
+
+## Arızanın kendisi ayrıca kapatıldı
+
+`platform-dev-docker.service` üzerine `RuntimeDirectoryPreserve=yes` eklendikten
+sonra daemon yeniden başlatması artık yetim süreç bırakmıyor. 2026-09-08 ölçümü:
+yapılandırma yeniden üretilip daemon yeniden başlatıldıktan sonra 18 container
+`running`, `exited` 0, yetim aday sayısı 0 ve PostgreSQL süreç kimliği
+değişmedi. Bu unit'teki temizlik artık ikincil bir savunma katmanıdır; birincil
+işlevi daemon açılışında yığının ayakta olmasını garanti etmektir.
+
 ## Kurtarma bir başlatma yolu olmalı, durdurma yolu değil
 
 Bu unit'in ilk sürümünde `PartOf=platform-dev-docker.service` ve
