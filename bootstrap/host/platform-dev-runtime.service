@@ -1,0 +1,22 @@
+[Unit]
+Description=Isolated DEV runtime compose stack (postgres, keycloak, openfga, backend services)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/3586
+Requires=platform-dev-docker.service
+After=platform-dev-docker.service
+PartOf=platform-dev-docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DOCKER_HOST=unix:///run/platform-dev/docker.sock
+# Wait for the isolated daemon socket to accept connections.
+ExecStartPre=/bin/bash -c "for i in $(seq 1 60); do /usr/bin/docker info >/dev/null 2>&1 && exit 0; sleep 2; done; exit 1"
+# live-restore leaves orphaned container processes after a daemon restart; their
+# non-empty cgroups make runc refuse to recreate the container. Clear them first.
+ExecStartPre=/bin/bash -c "for c in $(/usr/bin/docker ps -aq --filter label=com.docker.compose.project=platform-dev-runtime); do for f in $(find /sys/fs/cgroup -type d -name \"*$c*\" 2>/dev/null); do [ -f \"$f/cgroup.procs\" ] && [ -s \"$f/cgroup.procs\" ] && [ -f \"$f/cgroup.kill\" ] && echo 1 > \"$f/cgroup.kill\" 2>/dev/null; done; done; sleep 3; exit 0"
+ExecStart=/usr/bin/docker compose -f /srv/platform-dev/runtime/compose.json up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f /srv/platform-dev/runtime/compose.json stop
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
