@@ -1,0 +1,17 @@
+[Unit]
+Description=SSH tunnel to aiserver k3d API servers (k3d-test 7443, k3d-prod 6443)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/3586
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=halil
+Group=halil
+# The k3d API servers on aiserver bind to 127.0.0.1 only, so reach them over SSH.
+# Local ports match the existing kubeconfig entries, which therefore need no edit.
+ExecStart=/usr/bin/ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:7443:127.0.0.1:7443 -L 127.0.0.1:6443:127.0.0.1:6443 aiserver
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
