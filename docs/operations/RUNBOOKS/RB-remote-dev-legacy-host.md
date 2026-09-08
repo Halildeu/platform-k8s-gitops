@@ -3,6 +3,12 @@
 Tracking: [#3582](https://github.com/Halildeu/platform-k8s-gitops/issues/3582).
 User request: move development storage and execution away from the nearly full Mac.
 
+Automatic compose startup is now supplied by the merged #3590 units and helper.
+Install it using [the autostart runbook](./RB-remote-dev-runtime-autostart.md).
+A subsequent daemon restart, with no manual compose call, preserved all 18 PIDs
+and triggered a new runtime-service invocation; real login/profile/variant checks
+passed afterward. The historical manual cold test below is a separate proof.
+
 ## Current verified scope (2026-09-08)
 
 - SSH to `stagingsw` (`10.9.10.53`) works. The prior eleven-exited-container

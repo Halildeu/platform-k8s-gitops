@@ -4,21 +4,27 @@ Tetik: `/srv/platform-dev` uzak DEV ortamında runtime container'ları `Exited (
 durumunda ve `docker compose up -d` şu hatayı veriyor:
 `runc create failed: container's cgroup is not empty: N process(es) found`.
 
-## Kök neden
+## Tarihsel arıza ve güncel durum
 
-`/etc/platform-dev/docker.json` içinde `live-restore: true` var.
-`platform-dev-runtime-config.service` tmpfs yapılandırmasını yeniden ürettiğinde
-`platform-dev-docker.service` yeniden başlar. Live-restore container süreçlerini
-öldürmez, ancak yeni daemon durumu onları `Exited` sayar. Süreçler cgroup'larda
-yetim kalır; cgroup boş olmadığı için `unless-stopped` yeniden başlatma politikası
-container'ı yeniden yaratamaz. Runtime, kimse elle müdahale edene kadar kapalı kalır
-(2026-09-06 → 2026-09-08 arası 46 saat kapalı kaldı).
+İlk olayda live-restore ile yaşayan süreçler varken daemon runtime dizini
+korunmuyordu. Yeni daemon konteynerleri Exited olarak görürken süreçler dolu
+cgroup'larda kalıyor ve runc yeniden yaratmayı reddediyordu. Bu gözlem
+`live-restore: true` ayarının tek başına her yeniden başlatmada arıza ürettiği
+anlamına gelmez.
+
+`RuntimeDirectoryPreserve=yes` sonrasında bu arıza tekrar üretilemedi.
+Aşağıdaki unit'in güncel rolü otomatik compose başlangıcıdır; yetim temizliği
+yalnız Docker'ın çalışmıyor bildirdiği, dolu cgroup'u olan konteynerler içindir.
+Sağlıklı restart testi, gerçek yetim öldürme yolunun pozitif testi değildir.
 
 ## Kalıcı düzeltme
 
 `bootstrap/host/platform-dev-runtime.service` kurulur ve etkinleştirilir:
 
 ```bash
+sudo install -m 0755 -o root -g root \
+  bootstrap/host/clear-orphan-cgroups.sh \
+  /srv/platform-dev/ops/clear-orphan-cgroups.sh
 sudo install -m 0644 -o root -g root \
   bootstrap/host/platform-dev-runtime.service \
   /etc/systemd/system/platform-dev-runtime.service
@@ -54,6 +60,16 @@ okuma ile gerçek boşluk kontrolü yapar ve yalnız `State.Running` değeri `fa
 olan container'lara dokunur. `--dry-run` seçeneği hiçbir süreci durdurmadan neyi
 seçeceğini yazar.
 
+Kuru çalışmayı doğru izole daemon ortamıyla başlat:
+
+```bash
+sudo env DOCKER_HOST=unix:///run/platform-dev/docker.sock \
+  /srv/platform-dev/ops/clear-orphan-cgroups.sh --dry-run
+```
+
+Ortam değişkeni olmadan sudo altında varsayılan Docker soketi seçilebilir;
+0/0 sonucu 18 konteynerin kontrol edildiği anlamına gelmez.
+
 Sağlıklı sistemde ölçülen sonuç:
 
 ```
@@ -74,9 +90,10 @@ işlevi daemon açılışında yığının ayakta olmasını garanti etmektir.
 Bu unit'in ilk sürümünde `PartOf=platform-dev-docker.service` ve
 `ExecStop=docker compose stop` vardı. Bu kombinasyon ters etki yaptı: daemon her
 yeniden başladığında systemd durdurmayı yayıyor, unit tüm yığını kapatıyor ve
-hiçbir şey geri başlatmıyordu. Ölçülen sonuç 2026-09-08 20:38'de 18 container'ın
-tamamının durması oldu; bu, unit'in engellemek için var olduğu kesintiden daha
-kötüdür.
+hiçbir şey geri başlatmıyordu. Bu ilişki kaldırıldı. Ancak 2026-09-08 20:38
+kaydı Codex'in planlı soğuk testiyle örtüşür: stop 20:37:22–20:38:08,
+compose up 20:38:18, doğrulama 20:40:34. O kaydı kendiliğinden oluşmuş bir
+kesintinin tek başına kanıtı olarak kullanmayın.
 
 Şimdiki tasarımda `PartOf=` ve `ExecStop=` yoktur. Kurtarma yalnız başlatma
 yoluyla olur: daemon başlar, `Wants=` bu unit'i tetikler, unit yetim cgroup'ları
@@ -168,3 +185,13 @@ sudo systemctl daemon-reload
 # aiserver'da:
 cp ~/.ssh/authorized_keys.bak-<damga> ~/.ssh/authorized_keys
 ```
+
+## Birleşik paket üzerinde bağımsız yeniden kontrol
+
+2026-09-08 18:38:13Z: yalnız daemon restart, elle compose yok; runtime unit
+InvocationID değişti. 18/18 konteyner kimliği, süreç kimliği ve image aynı;
+PostgreSQL/MSSQL PID'leri korundu. Backend, frontend, OIDC, gerçek browser
+login/reload, profil kalıcılığı ve varyant akışı yeniden geçti.
+Kanıt: `/srv/platform-dev/evidence/recovery-20260908/pr3590-autostart-retest.json`.
+Bu, gerçek yetim süreç arızasının yeniden üretildiği veya fiziksel makinenin
+reboot edildiği iddiası değildir.

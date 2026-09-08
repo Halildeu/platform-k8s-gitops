@@ -1,5 +1,31 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Automatic DEV start verified; review correction (2026-09-08)
+
+- PR #3590 head `21190621f8f808b148e46c5ef9bc3ecfe2aa8732` was merged into
+  `codex/remote-dev-3582` as `95a199544e7ac0c2d701c44e5b46b4a711622b79`.
+  PR #3585 remains the combined DEV package; main/TEST/prod were not deployed.
+- Direct retest at 18:38:13Z restarted only the dedicated DEV Docker daemon.
+  No manual compose command was used. The runtime service's InvocationID changed,
+  proving automatic execution. All 18 container IDs/PIDs/images remained identical,
+  including PostgreSQL and SQL Server; all 13 backend health, 11 frontend and OIDC
+  responses passed. Real browser login/reload, profile new-session persistence
+  and variant create/read/delete passed afterward.
+- Exact installed script/units match the reviewed source. The new cleanup dry run
+  with `DOCKER_HOST=unix:///run/platform-dev/docker.sock` selects zero groups
+  and skips 18 running containers. Shellcheck passed.
+- Correction to the previous Codex review: its read-only selector read file
+  content, while the old actual command used `test -s`. Live cgroupfs reports zero
+  bytes despite nonempty content, so the old command was a no-op; saying it would
+  immediately kill all 18 was too strong. The selection would become unsafe if
+  only the emptiness check were fixed. The current script fixes both conditions.
+- This test verifies automatic compose reconciliation and healthy-process
+  preservation. It does not reproduce an actual orphan after runtime-directory
+  preservation, nor claim positive orphan-kill or physical machine reboot proof.
+- Private receipt: `/srv/platform-dev/evidence/recovery-20260908/pr3590-autostart-retest.json`.
+  Installation and historical corrections:
+  [autostart runbook](../operations/RUNBOOKS/RB-remote-dev-runtime-autostart.md).
+
 ## Live Delta — Remote DEV recovery (#3582, 2026-09-08)
 
 - SSH to `stagingsw` (`10.9.10.53`) works. The prior eleven-exited-container
