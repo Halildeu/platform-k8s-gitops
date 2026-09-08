@@ -1,30 +1,53 @@
 # Current State — Platform K8s Migration
 
-## Verification hold — Remote DEV before Mac cleanup (#3582, 2026-09-07)
+## Live Delta — Remote DEV recovery (#3582, 2026-09-08)
 
-- Fresh SSH checks to `10.9.10.53:22` timed out on 2026-09-07 at approximately
-  06:21 UTC. macOS reported FortiClient VPN connected, but the route to `.53`
-  used the ordinary `en0` gateway, not a VPN interface. Local preview/identity
-  listeners were absent. Current remote runtime is **unverified**; local deletion
-  is **blocked** pending access and end-to-end checks.
-- A later [independent runtime observation](https://github.com/Halildeu/platform-k8s-gitops/issues/3582#issuecomment-5561732482)
-  contradicts the earlier restart acceptance below: Docker reported all eleven
-  containers exited while 44 orphan processes still served ports. This is a
-  recorded 2026-09-06 observation, not a fresh remote measurement today.
-  Earlier HTTP/browser success does not prove Docker lifecycle recovery.
-- Re-acceptance must correlate Docker running state, actual init PIDs/cgroups,
-  exact artifacts, persistent volumes and API behavior, then repeat after a
-  controlled DEV restart. Investigate the interaction of `live-restore`,
-  `KillMode=process` and volatile `RuntimeDirectory` before changing the host;
-  a root cause has not yet been established from live evidence.
-- The installed bootstrap source has no reports/schema services and explicitly
-  disables meeting AI, transcript reads and notifications. Those workflows
-  cannot be described as fully migrated functional product journeys. Variant
-  authorization still has the previously recorded backend #1138 finding.
-- No local source, history, disk image or held credential was deleted in this
-  verification pass. Historical copy hashes below do not cover later edits.
+- SSH to `stagingsw` (`10.9.10.53`) works. The prior eleven-exited-container
+  finding was reproduced: 44 orphan processes retained ports while Docker lost
+  ownership. Volatile runtime-directory removal with live-restore processes was
+  the cause. `RuntimeDirectoryPreserve=yes` retains the daemon runtime sockets.
+  Three PostgreSQL dumps were read back before scoped graceful shutdown.
+- Eighteen containers now match configured immutable images, server-local mounts,
+  JAR hashes and Docker-owned PIDs/cgroups. Thirteen backend health endpoints,
+  eleven frontend federation endpoints and OIDC discovery respond. Added services:
+  notification, endpoint-admin, ethics, report, schema, SQL Server and Mailpit.
+- Live-daemon restart retained the process identities. Cold recovery stopped all
+  containers and config delivery, verified tmpfs removal, then regenerated it and
+  started the stack. All 18 acquired new owned PIDs with identical artifacts and
+  mounts; zero orphan container cgroups remained. This is controlled service
+  recovery, not a physical machine reboot claim.
+- Real DEV login opens user, meeting, report, schema and endpoint screens without
+  observed page/API errors. Profile update/new-session readback and variant
+  create/new-session read/delete passed after cold recovery. An API-created meeting
+  remained visible in the browser after cold start and reload, then was deleted
+  and read back absent. Wrong notification tenant returns 403; anonymous variant
+  access returns 401.
+- Variant authz JWT forwarding is fixed in [backend PR #1139](https://github.com/Halildeu/platform-backend/pull/1139),
+  commit `81a5f6f84b8c31af0a39a27249bed50b1aaf83ae`. Nineteen targeted tests and
+  all 24 PR checks passed. Mounted JAR SHA-256:
+  `20a0afda2675664b0980c8760846c2ce065b810d4fef5aea454624d0f4fed6dd`.
+  Wrong-hash/outside-root overrides fail closed; restored config hashes match.
+- OpenFGA uses the canonical 17-type model, preserving all nine old definitions;
+  ten allow/deny fixtures pass. Developer claims use the canonical user identity.
+  The dedicated `REMOTE_DEV` role was assigned/read back through permission APIs.
+- SQL has two synthetic fixture tables and one FK; reader SELECT passes and INSERT
+  is denied. The users-overview report returns DEV rows. Real ERP financial data,
+  external AI/transcription, physical endpoint enrollment and native Apple builds
+  are not accepted. Meeting AI/transcript and outbound notification dispatch remain
+  explicitly disabled. Ethics retains its secure-transport guard.
+- All 45 checked DEV TCP listeners are loopback-only, including mapped IPv4
+  loopback. Legacy docker/containerd stay masked/inactive. Remote Claude/Codex
+  authentication and tmux work. Mac Docker resolves to `stagingsw` and
+  `/srv/platform-dev/docker`. Approximately 168 GiB is free on .53.
+- Receipts: `/srv/platform-dev/evidence/recovery-20260908/`, especially
+  `cold-acceptance.json`, `post-cold.json`, `meeting-browser.json`,
+  `api-modules.json`, `browser-modules.json` and `network-units.json`.
+  See the [runbook](../operations/RUNBOOKS/RB-remote-dev-legacy-host.md).
+  Historical copy hashes below are snapshots and do not cover later Mac edits.
+  Local source/history deletion was not performed; held credentials, unique later
+  edits and live task handoff remain outside this DEV acceptance.
 
-## Live Delta — Retired host remote DEV workspace (#3582, 2026-09-06)
+## Historical snapshot — Retired host remote DEV workspace (#3582, 2026-09-06)
 
 - Owner authorized removal of retired old-host backups because active aiserver
   holds newer data. Host .53 identity and stopped/masked old Docker were checked;

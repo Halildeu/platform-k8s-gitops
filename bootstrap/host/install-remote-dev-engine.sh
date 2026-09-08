@@ -50,6 +50,8 @@ Restart=on-failure
 RestartSec=5
 RuntimeDirectory=platform-dev
 RuntimeDirectoryMode=0755
+# live-restore keeps shims alive; their sockets must survive stop/restart too.
+RuntimeDirectoryPreserve=yes
 Delegate=yes
 KillMode=process
 TimeoutStartSec=90

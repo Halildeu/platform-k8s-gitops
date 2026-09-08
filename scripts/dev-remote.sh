@@ -20,7 +20,8 @@ case "${1:-status}" in
     done
     exec ssh -N -o ExitOnForwardFailure=yes "${forwards[@]}" "$host"
     ;;
+  verify) exec ssh "$host" 'python3 /srv/platform-dev/ops/verify-remote-dev-runtime.py && python3 /srv/platform-dev/ops/verify-remote-dev-profile.py && python3 /srv/platform-dev/ops/verify-remote-dev-variant.py' ;;
   runtime-status) exec ssh "$host" 'docker --host unix:///run/platform-dev/docker.sock compose -f /srv/platform-dev/runtime/compose.json ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}"' ;;
   code) exec code --remote "ssh-remote+$host" /srv/platform-dev/platform-dev.code-workspace ;;
-  *) echo 'Usage: dev-remote.sh status|shell|session|test-web|test-backend|build-web|preview|runtime-status|code' >&2; exit 2 ;;
+  *) echo 'Usage: dev-remote.sh status|shell|session|test-web|test-backend|build-web|preview|runtime-status|verify|code' >&2; exit 2 ;;
 esac

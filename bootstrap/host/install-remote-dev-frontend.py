@@ -32,11 +32,13 @@ base.mkdir(parents=True, exist_ok=True)
 lines = [
     "MFE_SHELL_URL=http://127.0.0.1:33000/remoteEntry.js",
     "VITE_SHELL_ENABLE_ENDPOINT_ADMIN_REMOTE=1",
+    "VITE_SHELL_ENABLE_MEETING_REMOTE=1",
     "MFE_MEETING_DEV_FEDERATION=1",
     "VITE_FRONTEND_PUBLIC_ORIGIN=http://127.0.0.1:33000",
     "VITE_KEYCLOAK_URL=http://127.0.0.1:33081",
     "VITE_KEYCLOAK_REALM=platform-dev",
     "VITE_ENABLE_FAKE_AUTH=false",
+    "VITE_KEYCLOAK_ENABLE_SILENT_CHECK_SSO=true",
 ]
 units = ["platform-dev-preview.service"]
 for app, (port, key) in apps.items():

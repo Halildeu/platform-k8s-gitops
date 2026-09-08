@@ -3,17 +3,52 @@
 Tracking: [#3582](https://github.com/Halildeu/platform-k8s-gitops/issues/3582).
 User request: move development storage and execution away from the nearly full Mac.
 
-## Verification hold before local deletion (2026-09-07)
+## Current verified scope (2026-09-08)
 
-The historical HTTP/browser checks below are not sufficient evidence of restart
-recovery. A later [runtime finding](https://github.com/Halildeu/platform-k8s-gitops/issues/3582#issuecomment-5561732482)
-reported all eleven Docker containers exited with orphan processes still serving
-ports. Fresh SSH attempts on September 7 timed out; the Mac route to the server
-used its normal network gateway despite a connected VPN indicator. Current
-runtime and restart recovery are **unverified**, and wholesale Mac cleanup is
-**blocked**. Restore connectivity, verify Docker PID/cgroup ownership and volumes,
-then repeat real authenticated journeys and lifecycle recovery before deletion.
-Do not infer that the old container finding is still current without live access.
+- SSH to `stagingsw` (`10.9.10.53`) works. The prior eleven-exited-container
+  finding was reproduced: 44 orphan processes retained ports while Docker lost
+  ownership. Volatile runtime-directory removal with live-restore processes was
+  the cause. `RuntimeDirectoryPreserve=yes` retains the daemon runtime sockets.
+  Three PostgreSQL dumps were read back before scoped graceful shutdown.
+- Eighteen containers now match configured immutable images, server-local mounts,
+  JAR hashes and Docker-owned PIDs/cgroups. Thirteen backend health endpoints,
+  eleven frontend federation endpoints and OIDC discovery respond. Added services:
+  notification, endpoint-admin, ethics, report, schema, SQL Server and Mailpit.
+- Live-daemon restart retained the process identities. Cold recovery stopped all
+  containers and config delivery, verified tmpfs removal, then regenerated it and
+  started the stack. All 18 acquired new owned PIDs with identical artifacts and
+  mounts; zero orphan container cgroups remained. This is controlled service
+  recovery, not a physical machine reboot claim.
+- Real DEV login opens user, meeting, report, schema and endpoint screens without
+  observed page/API errors. Profile update/new-session readback and variant
+  create/new-session read/delete passed after cold recovery. An API-created meeting
+  remained visible in the browser after cold start and reload, then was deleted
+  and read back absent. Wrong notification tenant returns 403; anonymous variant
+  access returns 401.
+- Variant authz JWT forwarding is fixed in [backend PR #1139](https://github.com/Halildeu/platform-backend/pull/1139),
+  commit `81a5f6f84b8c31af0a39a27249bed50b1aaf83ae`. Nineteen targeted tests and
+  all 24 PR checks passed. Mounted JAR SHA-256:
+  `20a0afda2675664b0980c8760846c2ce065b810d4fef5aea454624d0f4fed6dd`.
+  Wrong-hash/outside-root overrides fail closed; restored config hashes match.
+- OpenFGA uses the canonical 17-type model, preserving all nine old definitions;
+  ten allow/deny fixtures pass. Developer claims use the canonical user identity.
+  The dedicated `REMOTE_DEV` role was assigned/read back through permission APIs.
+- SQL has two synthetic fixture tables and one FK; reader SELECT passes and INSERT
+  is denied. The users-overview report returns DEV rows. Real ERP financial data,
+  external AI/transcription, physical endpoint enrollment and native Apple builds
+  are not accepted. Meeting AI/transcript and outbound notification dispatch remain
+  explicitly disabled. Ethics retains its secure-transport guard.
+- All 45 checked DEV TCP listeners are loopback-only, including mapped IPv4
+  loopback. Legacy docker/containerd stay masked/inactive. Remote Claude/Codex
+  authentication and tmux work. Mac Docker resolves to `stagingsw` and
+  `/srv/platform-dev/docker`. Approximately 168 GiB is free on .53.
+- Receipts: `/srv/platform-dev/evidence/recovery-20260908/`, especially
+  `cold-acceptance.json`, `post-cold.json`, `meeting-browser.json`,
+  `api-modules.json`, `browser-modules.json` and `network-units.json`.
+  The installation and recovery procedures follow below.
+  Historical copy hashes below are snapshots and do not cover later Mac edits.
+  Local source/history deletion was not performed; held credentials, unique later
+  edits and live task handoff remain outside this DEV acceptance.
 
 ## Environment and scope
 
@@ -33,21 +68,13 @@ Do not infer that the old container finding is still current without live access
 | Dependency caches | `/srv/platform-dev/cache/pnpm`, `/srv/platform-dev/cache/maven` |
 | Evidence | `/srv/platform-dev/evidence` |
 
-The isolated DEV runtime now includes PostgreSQL, a real Keycloak `platform-dev`
-realm, OpenFGA, and eight Java services: gateway, auth, user, permission, variant,
-core-data, meeting, and budget. Eleven frontend development processes use this
-runtime. All DEV listeners, including metrics/management, bind to loopback and
-are accessed through SSH. No active production database or credential was imported.
-
-Acceptance is bounded: real browser login returns to `/home`; the synthetic
-`developer` can update their profile, obtain a new OIDC session, read the persisted
-change and restore the original profile. OpenFGA's ten positive/negative fixture
-checks pass. This does not establish every product journey. Variant retrieval
-returns 503 because its authz-revision client omits authentication; tracked separately
-in [backend #1138](https://github.com/Halildeu/platform-backend/issues/1138).
-Reports/schema and external AI/provider workflows have not been deployed/accepted
-as part of this bootstrap. Native macOS/iOS builds still require an Apple toolchain
-host or an independently configured compatible build service.
+The current runtime has PostgreSQL, Keycloak, OpenFGA, SQL Server Developer,
+Mailpit and thirteen Java services: gateway, auth, user, permission, variant,
+core-data, meeting, budget, notification, endpoint-admin, ethics, report and schema.
+Eleven frontend processes use this isolated stack. All DEV listeners bind loopback
+and are reached through SSH. No active production data/credential was imported.
+Mailpit is a local capture service; outbound dispatch remains disabled. Native
+macOS/iOS builds still require an Apple toolchain host.
 
 The old `docker.service` and `containerd.service` stay masked/inactive. The
 dedicated developer daemon starts its own containerd under its separate root.
@@ -62,6 +89,7 @@ On the Mac, `/Users/halilkocoglu/.local/bin/platform-dev` is a copy of
 ```bash
 platform-dev status
 platform-dev runtime-status
+platform-dev verify
 platform-dev shell
 platform-dev session
 platform-dev test-web
@@ -82,20 +110,20 @@ The Mac's default Docker context now points to the verified remote daemon
 containers and zero named volumes, then stopped; the remote context was read back
 after stopping it. Local Docker disk/source files were not removed by this step.
 
-`preview` keeps an SSH tunnel in the foreground; Ctrl-C closes that tunnel.
-Visit `http://127.0.0.1:33000/`. The setup session also opened three temporary
-background tunnels with control sockets `/tmp/platform-dev-3582-preview.sock`
-`/tmp/platform-dev-3582-mfes.sock`, and `/tmp/platform-dev-3582-identity.sock`. Close those before starting the
-foreground tunnel on the same ports:
+`preview` keeps an SSH tunnel in the foreground; Ctrl-C closes it.
+Visit `http://127.0.0.1:33000/`. The September 8 setup has a temporary background
+tunnel at `/tmp/platform-dev-20260908.sock`; close it before starting another
+tunnel on the same ports:
 
 ```bash
-ssh -S /tmp/platform-dev-3582-preview.sock -O exit staging-sw-legacy
-ssh -S /tmp/platform-dev-3582-mfes.sock -O exit staging-sw-legacy
-ssh -S /tmp/platform-dev-3582-identity.sock -O exit staging-sw-legacy
+ssh -S /tmp/platform-dev-20260908.sock -O exit staging-sw-legacy
+platform-dev preview
 ```
 
 `code` opens `/srv/platform-dev/platform-dev.code-workspace` through VS Code
-Remote SSH. The workspace includes all nine source repositories. Dependencies
+Remote SSH. The workspace includes nine source repositories and two active worktrees:
+`/srv/platform-dev/worktrees/remote-dev-3582` and
+`/srv/platform-dev/worktrees/variant-authz-1138`. Dependencies
 must be installed on Linux; don't copy Mac `node_modules` or binary caches.
 
 For Codex, Settings > Connections > SSH must show `staging-sw-legacy` connected.
@@ -124,6 +152,8 @@ of its old data. No installer deletes old data or re-enables old services.
    `MAVEN_OPTS=-Dmaven.repo.local=/srv/platform-dev/cache/maven`.
 4. Run `sudo bash bootstrap/host/install-remote-dev-engine.sh`. Docker data,
    socket, runtime state, bridge subnet, and network pools are DEV-specific.
+   `RuntimeDirectoryPreserve=yes` is mandatory with live-restore: do not remove
+   runtime sockets while the child container processes remain alive.
    Both default bridge and user-defined bridge published ports default to
    loopback; explicit user port mappings can still override Docker defaults.
    Local container logs rotate at 10 MB with three files.
@@ -143,14 +173,18 @@ of its old data. No installer deletes old data or re-enables old services.
 
 Build all backend modules first with Java 21 and the shared Maven cache:
 `./mvnw -Dmaven.repo.local=/srv/platform-dev/cache/maven -DskipTests package`.
-Copy the Python runtime/fixture scripts (including `remote_dev_credentials.py`),
+Build `schema-service` separately with its standalone POM after installing
+`common-auth` and required reactor dependencies in the shared cache; it is not
+in the root reactor. Copy the Python runtime/fixture scripts (including `remote_dev_credentials.py`),
 browser verification script and runtime-config unit from `bootstrap/host/` to
 `/srv/platform-dev/ops/`. Run the following on the verified old host as `halil`:
 
 ```bash
 export DOCKER_HOST=unix:///run/platform-dev/docker.sock
 python3 /srv/platform-dev/ops/install-remote-dev-runtime.py
-docker compose -f /srv/platform-dev/runtime/compose.json up -d postgres
+docker compose -f /srv/platform-dev/runtime/compose.json up -d postgres mssql
+# Wait for SQL readiness before seeding its isolated synthetic fixture:
+python3 /srv/platform-dev/ops/seed-remote-dev-mssql.py
 docker compose -f /srv/platform-dev/runtime/compose.json run --rm --no-deps openfga migrate
 docker compose -f /srv/platform-dev/runtime/compose.json up -d openfga
 python3 /srv/platform-dev/ops/seed-remote-dev-openfga.py
@@ -158,6 +192,9 @@ python3 /srv/platform-dev/ops/install-remote-dev-runtime.py
 docker compose -f /srv/platform-dev/runtime/compose.json up -d
 # After the identity and user services are ready, initial synthetic fixture only:
 python3 /srv/platform-dev/ops/verify-remote-dev-profile.py --activate-fixture
+python3 /srv/platform-dev/ops/seed-remote-dev-identity.py
+# Wait for permission bootstrap and authz readiness:
+python3 /srv/platform-dev/ops/seed-remote-dev-role.py
 ```
 
 The permission service bootstraps the synthetic admin using the explicitly
@@ -183,8 +220,10 @@ before `platform-dev-docker.service` starts. Install/enable the config unit and 
 `After=platform-dev-runtime-config.service` to the Docker unit's `[Unit]` drop-in.
 This keeps required bind-mounted files available after a host/daemon cold start.
 Docker's privileged runtime metadata still contains its normal container environment;
-this setup does not claim full-disk encryption of Docker state. Empty-runtime-directory restart, all eight backend health checks,
-real browser login and profile persistence passed after this transition. The
+this setup does not claim full-disk encryption of Docker state. The September 8 cold recovery re-rendered absent tmpfs configuration, restarted
+18 owned containers and checked 13 backend health responses plus persistent
+meeting/profile/variant behavior. Earlier HTTP-only checks had missed orphan
+processes and are superseded for runtime lifecycle acceptance. The
 missing-key path refused regeneration; fifteen obsolete plaintext files were
 removed only after the encrypted values and authenticated behavior matched.
 
@@ -196,6 +235,34 @@ Postgres uses a persistent named volume. Application connections use
 setup. Hibernate `update` is scoped to this synthetic DEV bootstrap, not a claim
 of production migration parity. OpenFGA remains real and enabled; security
 startup guards were not disabled to make a service start.
+
+## Artifact overrides and daily verification
+
+`runtime/artifact-overrides.json` selects a built JAR by service using `path`,
+`sha256` and `source_commit`. Its resolved path must be under
+`/srv/platform-dev/artifacts/`; a wrong hash or outside-root path refuses runtime
+generation. Keep the file private (0600). The current variant override is built
+from the active backend worktree; other jars retain their recorded build sources.
+Changing the selected artifact requires fresh behavior checks.
+
+```bash
+python3 /srv/platform-dev/ops/verify-remote-dev-runtime.py
+python3 /srv/platform-dev/ops/verify-remote-dev-profile.py
+python3 /srv/platform-dev/ops/verify-remote-dev-variant.py
+node /srv/platform-dev/ops/verify-remote-dev-browser.cjs
+```
+
+`platform-dev verify` runs the first three remotely. Profile/variant verification
+creates and reverses narrowly scoped synthetic data. The browser check verifies
+real authentication, the users API and visible identity after a page reload.
+These checks are not acceptance of every customer workflow.
+
+For controlled cold recovery (interrupts only this DEV stack), preserve volumes:
+`docker compose stop --timeout 45`, stop the dedicated Docker and config units,
+then start the Docker unit (which requires config regeneration). Run
+`docker compose up -d`: explicitly stopped containers do not auto-resume via
+`unless-stopped`. Allow several minutes for thirteen Java services on four CPUs.
+Re-run behavior verification after health returns. Never use `down -v` here.
 
 ## Development data and history migration
 
