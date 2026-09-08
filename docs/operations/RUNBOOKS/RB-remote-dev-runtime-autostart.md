@@ -22,26 +22,47 @@ container'ı yeniden yaratamaz. Runtime, kimse elle müdahale edene kadar kapal�
 sudo install -m 0644 -o root -g root \
   bootstrap/host/platform-dev-runtime.service \
   /etc/systemd/system/platform-dev-runtime.service
+sudo mkdir -p /etc/systemd/system/platform-dev-docker.service.d
+sudo install -m 0644 -o root -g root \
+  bootstrap/host/platform-dev-docker.service.d/runtime-autostart.conf \
+  /etc/systemd/system/platform-dev-docker.service.d/runtime-autostart.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now platform-dev-runtime.service
 ```
 
 Unit root olarak çalışır (cgroup.kill root gerektirir), daemon soketini bekler,
-yetim cgroup'ları temizler ve compose yığınını başlatır. `PartOf=` sayesinde
-daemon her yeniden başladığında birlikte hareket eder.
+yetim cgroup'ları temizler ve compose yığınını başlatır. Daemon'a eklenen
+`Wants=` drop-in'i sayesinde daemon her başladığında bu unit de başlatılır.
+
+## Kurtarma bir başlatma yolu olmalı, durdurma yolu değil
+
+Bu unit'in ilk sürümünde `PartOf=platform-dev-docker.service` ve
+`ExecStop=docker compose stop` vardı. Bu kombinasyon ters etki yaptı: daemon her
+yeniden başladığında systemd durdurmayı yayıyor, unit tüm yığını kapatıyor ve
+hiçbir şey geri başlatmıyordu. Ölçülen sonuç 2026-09-08 20:38'de 18 container'ın
+tamamının durması oldu; bu, unit'in engellemek için var olduğu kesintiden daha
+kötüdür.
+
+Şimdiki tasarımda `PartOf=` ve `ExecStop=` yoktur. Kurtarma yalnız başlatma
+yoluyla olur: daemon başlar, `Wants=` bu unit'i tetikler, unit yetim cgroup'ları
+temizleyip compose yığınını ayağa kaldırır. `Wants=` (Requires değil) seçilmiştir,
+böylece runtime hatası daemon'un kendisini bloke etmez.
 
 ## Doğrulama
+
+Doğrulama elle compose çağrısı içermemelidir; aksi halde otomatik kurtarma değil,
+elle toparlama ölçülmüş olur.
 
 ```bash
 sudo systemctl restart platform-dev-runtime-config.service
 sudo systemctl restart platform-dev-docker.service
-sudo systemctl restart platform-dev-runtime.service
-sleep 120
+sleep 150   # elle compose komutu yok
 DOCKER_HOST=unix:///run/platform-dev/docker.sock docker ps --format '{{.Names}} {{.Status}}'
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:33081/realms/platform-dev
 ```
 
-Beklenen: 14 container `Up`, `exited` sayısı 0, Keycloak realm `200`.
+Ölçülen sonuç (2026-09-08): 18 container `Up`, `exited` 0, Keycloak realm `200`,
+`platform-dev-runtime.service` `active`. Hiçbir elle adım atılmadı.
 Uçtan uca giriş kanıtı: `node /srv/platform-dev/ops/verify-remote-dev-browser.cjs`.
 
 ## Rollback
@@ -49,6 +70,7 @@ Uçtan uca giriş kanıtı: `node /srv/platform-dev/ops/verify-remote-dev-browse
 ```bash
 sudo systemctl disable --now platform-dev-runtime.service
 sudo rm /etc/systemd/system/platform-dev-runtime.service
+sudo rm /etc/systemd/system/platform-dev-docker.service.d/runtime-autostart.conf
 sudo systemctl daemon-reload
 ```
 

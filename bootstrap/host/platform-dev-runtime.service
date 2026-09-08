@@ -3,7 +3,6 @@ Description=Isolated DEV runtime compose stack (postgres, keycloak, openfga, bac
 Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/3586
 Requires=platform-dev-docker.service
 After=platform-dev-docker.service
-PartOf=platform-dev-docker.service
 
 [Service]
 Type=oneshot
@@ -15,7 +14,10 @@ ExecStartPre=/bin/bash -c "for i in $(seq 1 60); do /usr/bin/docker info >/dev/n
 # non-empty cgroups make runc refuse to recreate the container. Clear them first.
 ExecStartPre=/bin/bash -c "for c in $(/usr/bin/docker ps -aq --filter label=com.docker.compose.project=platform-dev-runtime); do for f in $(find /sys/fs/cgroup -type d -name \"*$c*\" 2>/dev/null); do [ -f \"$f/cgroup.procs\" ] && [ -s \"$f/cgroup.procs\" ] && [ -f \"$f/cgroup.kill\" ] && echo 1 > \"$f/cgroup.kill\" 2>/dev/null; done; done; sleep 3; exit 0"
 ExecStart=/usr/bin/docker compose -f /srv/platform-dev/runtime/compose.json up -d --remove-orphans
-ExecStop=/usr/bin/docker compose -f /srv/platform-dev/runtime/compose.json stop
+# No ExecStop and no PartOf on purpose. An earlier revision had both; a daemon
+# restart then propagated a stop that tore the whole stack down without bringing
+# it back, which is worse than the outage this unit exists to prevent. The
+# daemon's Wants= drop-in starts this unit instead, so recovery is a start path.
 TimeoutStartSec=600
 
 [Install]
