@@ -116,13 +116,12 @@ jobs:
                 scripts/deploy/verify-testai-backend-runtime.sh \
                 scripts/deploy/verify-pod-digest.sh \
                 scripts/deploy/gate-stability-window.sh || contract_changed=true
-              # The overlay file itself is deliberately not in the contract list:
-              # every digest bump changes it, and that must not force all 13
-              # stability windows. It still decides the unchanged-map case below.
-              overlay_changed=false
-              git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- "$KUSTOMIZATION" || overlay_changed=true
+              # The overlay file itself is deliberately not in the contract list
+              # (as before): a frontend-only overlay change with an unchanged
+              # backend map keeps skipping, and a digest bump must not force all
+              # 13 stability windows.
               if [[ "$before" == "$current" ]]; then
-                if [[ "$contract_changed" == "false" && "$overlay_changed" == "false" ]]; then
+                if [[ "$contract_changed" == "false" ]]; then
                   should_verify=false
                   echo "::notice::test overlay changed outside the backend image/rollout contract; backend verification skipped"
                 else

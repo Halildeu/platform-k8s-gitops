@@ -36,6 +36,18 @@ class RolloutVerifySupersededTests(unittest.TestCase):
         self.assertIn("actions: read", self.workflow)
         self.assertNotIn("before.get(k) != v", self.workflow)
 
+    def test_unchanged_backend_map_skip_semantics_are_preserved(self):
+        # A frontend-only overlay change with an unchanged backend map and an
+        # unchanged verifier contract keeps skipping, exactly as before
+        # (Codex 01a08891 round 2): the overlay file is not part of the
+        # contract diff and no extra overlay condition is added.
+        self.assertIn('if [[ "$contract_changed" == "false" ]]; then', self.workflow)
+        self.assertNotIn("overlay_changed", self.workflow)
+        push_diff = re.search(r'git diff --quiet "\$BEFORE_SHA" "\$CURRENT_REVISION" -- \\\n(?P<paths>.*?)\|\| contract_changed=true', self.workflow, re.DOTALL)
+        self.assertIsNotNone(push_diff)
+        self.assertNotIn("kustomize/overlays/test/kustomization.yaml", push_diff.group("paths"))
+        self.assertIn("scripts/automation/testai-last-verified-map.py", push_diff.group("paths"))
+
     def test_runtime_verifier_scopes_stability_windows_to_changed_services(self):
         self.assertIn('CHANGED_SERVICES="${CHANGED_SERVICES:-}"', self.runtime)
         self.assertIn("is_changed_service()", self.runtime)

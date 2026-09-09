@@ -8,7 +8,7 @@ windows, and the next push's before/after diff no longer lists that service.
 
 The scope is therefore derived from the last *successfully verified* backend
 map — the ``expectedDigests`` of the newest successful run's
-``testai-backend-diagnostic-*`` evidence artifact whose runtime report says
+``testai-backend-acceptance-*`` evidence artifact whose runtime report says
 ``verdict == "PASS"``. Every service whose current digest differs from that
 map (or is absent from it) still owes a window. By induction every service in
 a PASS map was verified by that run or an earlier one.
@@ -29,7 +29,9 @@ import zipfile
 from typing import Callable, Iterable
 
 RUNTIME_REPORT = "testai-backend-runtime-verification.json"
-ARTIFACT_PREFIX = "testai-backend-diagnostic-"
+# A successful run publishes its evidence as testai-backend-acceptance-<rev>-<run>-<attempt>
+# (see the workflow's artifact_kind=acceptance); "diagnostic" only exists on failed runs.
+ARTIFACT_PREFIX = "testai-backend-acceptance-"
 
 
 def changed_services(current: dict[str, str], verified: dict[str, str] | None, contract_changed: bool) -> list[str]:
