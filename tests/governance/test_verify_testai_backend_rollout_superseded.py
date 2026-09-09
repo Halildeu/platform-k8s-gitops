@@ -26,10 +26,15 @@ class RolloutVerifySupersededTests(unittest.TestCase):
         cls.runtime = RUNTIME.read_text(encoding="utf-8")
         cls.reconcile = RECONCILE.read_text(encoding="utf-8")
 
-    # --- stability windows scoped to the services this push moved ---------
-    def test_pin_step_exports_changed_services(self):
+    # --- stability windows scoped to the services still owing one -----------
+    def test_pin_step_scopes_windows_from_the_last_pass_evidence(self):
+        # Not the push's before/after diff: a service moved by a superseded or
+        # failed earlier push must still get its window (Codex 01a08891 P1).
         self.assertIn('echo "changed_services=$changed_services"', self.workflow)
-        self.assertIn("before.get(k) != v", self.workflow)
+        self.assertIn("scripts/automation/testai-last-verified-map.py", self.workflow)
+        self.assertIn('--contract-changed "$contract_changed"', self.workflow)
+        self.assertIn("actions: read", self.workflow)
+        self.assertNotIn("before.get(k) != v", self.workflow)
 
     def test_runtime_verifier_scopes_stability_windows_to_changed_services(self):
         self.assertIn('CHANGED_SERVICES="${CHANGED_SERVICES:-}"', self.runtime)
@@ -62,9 +67,37 @@ class RolloutVerifySupersededTests(unittest.TestCase):
         self.assertEqual(2, self.runtime.count('return "$SUPERSEDED_EXIT"'), "runtime map + contract fences")
         self.assertEqual(2, self.reconcile.count('return "$SUPERSEDED_EXIT"'), "reconcile map + contract fences")
         self.assertIn('VERDICT="SUPERSEDED"', self.runtime)
+        self.assertIn('VERDICT="SUPERSEDED"', self.reconcile)
         self.assertNotIn("FAIL: runtime backend map was superseded on main", self.runtime)
-        # the convergence loop propagates the fence status instead of flattening it to 1
-        self.assertIn('fence_status=$?\n      exit "$fence_status"', self.reconcile)
+        # the convergence loop calls the fence as a plain statement so `set -e`
+        # exits with the fence's own status; `if ! fn` would read $? as 0
+        self.assertNotIn("if ! refresh_semantic_main_fence", self.reconcile)
+        self.assertEqual(2, len(re.findall(r"^\s*refresh_semantic_main_fence\s*$", self.reconcile, re.M)))
+
+    def test_git_diff_status_distinguishes_supersession_from_git_errors(self):
+        # `git diff --quiet`: 1 = differs, >1 = git error (128); only 1 is a supersession
+        for source in (self.runtime, self.reconcile):
+            self.assertIn('if git diff --quiet "$REVISION" "$latest_main" --', source)
+            self.assertIn('diff_status=$?', source)
+            self.assertIn('case "$diff_status" in', source)
+            self.assertIn("unable to compare the verifier contract with main", source)
+
+    def test_missing_evidence_report_fails_even_when_superseded(self):
+        for source in (self.runtime, self.reconcile):
+            block = re.search(r"if ! write_report; then\n(?P<body>.*?)\n  fi", source, re.DOTALL)
+            self.assertIsNotNone(block)
+            self.assertIn("original_status=1", block.group("body"))
+            self.assertNotIn("original_status == 0", block.group("body"))
+
+    def test_set_e_propagates_a_function_status_through_the_exit_trap(self):
+        # the mechanism the plain fence call relies on
+        import subprocess
+        proc = subprocess.run(
+            ["bash", "-c", 'set -euo pipefail; trap \'exit $?\' EXIT; f() { return 75; }; f; echo unreachable'],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(75, proc.returncode)
+        self.assertNotIn("unreachable", proc.stdout)
 
     def test_workflow_records_superseded_instead_of_failing(self):
         self.assertEqual(2, self.workflow.count('if [[ "$rc" -eq 75 ]]; then'))
@@ -72,6 +105,9 @@ class RolloutVerifySupersededTests(unittest.TestCase):
         self.assertIn("steps.reconcile.outputs.superseded != 'true'", self.workflow)
         self.assertIn("steps.verify.outputs.superseded != 'true'", self.workflow)
         self.assertIn('echo "kind=superseded" >> "$GITHUB_OUTPUT"', self.workflow)
+        # superseded is only accepted with its own evidence report on disk
+        self.assertEqual(2, self.workflow.count("jq -e '.verdict == \"SUPERSEDED\"' \"$REPORT_PATH\""))
+        self.assertIn("if-no-files-found: error", self.workflow)
         # a real failure still propagates
         self.assertEqual(2, self.workflow.count('exit "$rc"'))
 

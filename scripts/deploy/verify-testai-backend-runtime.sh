@@ -66,7 +66,10 @@ assert_current_backend_map() {
     echo "SUPERSEDED: runtime backend map was superseded on main by ${latest_main}; the newer push owns verification" >&2
     return "$SUPERSEDED_EXIT"
   }
-  git diff --quiet "$REVISION" "$latest_main" -- \
+  # `git diff --quiet` answers 1 for "differs" and >1 for a git error; only the
+  # former is a supersession, the latter stays a real failure (Codex 01a08891).
+  local diff_status=0
+  if git diff --quiet "$REVISION" "$latest_main" -- \
     docs/operations/services.yaml \
     .github/workflows/deploy-backend-testai.yml \
     .github/workflows/verify-testai-backend-rollout.yml \
@@ -78,11 +81,23 @@ assert_current_backend_map() {
     scripts/deploy/ensure-argocd-cli.sh \
     scripts/deploy/verify-testai-backend-runtime.sh \
     scripts/deploy/verify-pod-digest.sh \
-    scripts/deploy/gate-stability-window.sh || {
+    scripts/deploy/gate-stability-window.sh; then
+    diff_status=0
+  else
+    diff_status=$?
+  fi
+  case "$diff_status" in
+    0) ;;
+    1)
       VERDICT="SUPERSEDED"
       echo "SUPERSEDED: runtime verifier contract was superseded on main by ${latest_main}; the newer push owns verification" >&2
       return "$SUPERSEDED_EXIT"
-    }
+      ;;
+    *)
+      echo "FAIL: unable to compare the verifier contract with main (git diff exit ${diff_status})" >&2
+      return 1
+      ;;
+  esac
 }
 is_changed_service() {
   local service="$1" candidate
@@ -147,9 +162,9 @@ finalize_report() {
   trap - EXIT
   if ! write_report; then
     echo "FAIL: backend runtime evidence report could not be published" >&2
-    if (( original_status == 0 )); then
-      original_status=1
-    fi
+    # Any outcome without its evidence is a failure — including a superseded
+    # run (exit 75), which the workflow would otherwise record as green.
+    original_status=1
   fi
   exit "$original_status"
 }

@@ -10,6 +10,7 @@ on:
       - ".github/workflows/deploy-backend-testai.yml"
       - ".github/workflows/verify-testai-backend-rollout.yml"
       - "scripts/automation/backend-testai-digest-contract.py"
+      - "scripts/automation/testai-last-verified-map.py"
       - "scripts/automation/sync-test-overlay.sh"
       - "scripts/automation/apply-test-overlay-digests.py"
       - "scripts/deploy/reconcile-testai-backend-sequential.sh"
@@ -21,6 +22,9 @@ on:
 
 permissions:
   contents: read
+  # gitops#3618: read the newest successful run's evidence artifact to scope
+  # stability windows to services not yet verified (read-only).
+  actions: read
 
 concurrency:
   group: testai-backend-promotion
@@ -46,6 +50,7 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           CURRENT_REVISION: ${{ github.sha }}
           KUSTOMIZATION: kustomize/overlays/test/kustomization.yaml
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           current=$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
@@ -89,25 +94,35 @@ jobs:
             fi
           fi
 
+          contract_changed=false
           if [[ "$EVENT_NAME" == "push" && "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
             before_file="$RUNNER_TEMP/backend-overlay-before.yaml"
             if git show "${BEFORE_SHA}:${KUSTOMIZATION}" > "$before_file" 2>/dev/null; then
               before=$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
                 --kustomization "$before_file")
+              # One contract diff for both decisions below (gitops#3618): a git
+              # error also counts as "changed" — fail-closed to full verification.
+              git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
+                docs/operations/services.yaml \
+                .github/workflows/deploy-backend-testai.yml \
+                .github/workflows/verify-testai-backend-rollout.yml \
+                argocd/applications/platform-test.yaml \
+                scripts/automation/backend-testai-digest-contract.py \
+                scripts/automation/testai-last-verified-map.py \
+                scripts/automation/sync-test-overlay.sh \
+                scripts/automation/apply-test-overlay-digests.py \
+                scripts/deploy/reconcile-testai-backend-sequential.sh \
+                scripts/deploy/ensure-argocd-cli.sh \
+                scripts/deploy/verify-testai-backend-runtime.sh \
+                scripts/deploy/verify-pod-digest.sh \
+                scripts/deploy/gate-stability-window.sh || contract_changed=true
+              # The overlay file itself is deliberately not in the contract list:
+              # every digest bump changes it, and that must not force all 13
+              # stability windows. It still decides the unchanged-map case below.
+              overlay_changed=false
+              git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- "$KUSTOMIZATION" || overlay_changed=true
               if [[ "$before" == "$current" ]]; then
-                if git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
-                  docs/operations/services.yaml \
-                  .github/workflows/deploy-backend-testai.yml \
-                  .github/workflows/verify-testai-backend-rollout.yml \
-                  argocd/applications/platform-test.yaml \
-                  scripts/automation/backend-testai-digest-contract.py \
-                  scripts/automation/sync-test-overlay.sh \
-                  scripts/automation/apply-test-overlay-digests.py \
-                  scripts/deploy/reconcile-testai-backend-sequential.sh \
-                  scripts/deploy/ensure-argocd-cli.sh \
-                  scripts/deploy/verify-testai-backend-runtime.sh \
-                  scripts/deploy/verify-pod-digest.sh \
-                  scripts/deploy/gate-stability-window.sh; then
+                if [[ "$contract_changed" == "false" && "$overlay_changed" == "false" ]]; then
                   should_verify=false
                   echo "::notice::test overlay changed outside the backend image/rollout contract; backend verification skipped"
                 else
@@ -117,19 +132,18 @@ jobs:
             fi
           fi
 
-          # gitops#3618: which services this push actually moved. Only they get the
-          # 2-3 min stability windows; exact imageID + readiness stay for all 13.
-          # Empty (non-push, or before-state unavailable) = every service.
-          changed_services=""
-          if [[ "$EVENT_NAME" == "push" && "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] \
-            && [[ -s "${RUNNER_TEMP}/backend-overlay-before.yaml" ]]; then
-            changed_services=$(BEFORE_MAP="$before" CURRENT_MAP="$current" python3 -c '
-          import json, os
-          before = json.loads(os.environ["BEFORE_MAP"]); current = json.loads(os.environ["CURRENT_MAP"])
-          print(" ".join(sorted(k for k, v in current.items() if before.get(k) != v)))
-          ')
-            echo "::notice::services moved by this push: ${changed_services:-none}"
-          fi
+          # gitops#3618: which services still owe a stability window — those whose
+          # digest differs from the newest *successfully verified* map (the last
+          # PASS evidence artifact), so a service moved by a superseded or failed
+          # earlier push is never skipped. Exact imageID + readiness stay for all
+          # 13. Empty = every service (no usable evidence, or this push also
+          # changed the verifier contract — see contract_changed above).
+          changed_services=$(python3 scripts/automation/testai-last-verified-map.py \
+            --current-map "$current" \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow-file verify-testai-backend-rollout.yml \
+            --contract-changed "$contract_changed")
+          echo "::notice::stability windows this run: ${changed_services:-all services} (contract_changed=$contract_changed)"
 
           {
             echo "should_verify=$should_verify"
@@ -153,6 +167,9 @@ jobs:
           # gitops#3618: exit 75 = a newer main superseded this run's map mid-run;
           # that push owns verification. Record it and free the runner — not red.
           if [[ "$rc" -eq 75 ]]; then
+            # superseded is only acceptable with its own evidence on disk
+            jq -e '.verdict == "SUPERSEDED"' "$REPORT_PATH" >/dev/null || {
+              echo "::error::convergence exited 75 without a SUPERSEDED evidence report"; exit 1; }
             echo "superseded=true" >> "$GITHUB_OUTPUT"
             echo "::notice::backend map superseded on main during convergence; newer push owns verification"
             exit 0
@@ -177,6 +194,8 @@ jobs:
           rc=$?
           set -e
           if [[ "$rc" -eq 75 ]]; then
+            jq -e '.verdict == "SUPERSEDED"' "$REPORT_PATH" >/dev/null || {
+              echo "::error::runtime verification exited 75 without a SUPERSEDED evidence report"; exit 1; }
             echo "superseded=true" >> "$GITHUB_OUTPUT"
             echo "::notice::backend map superseded on main during runtime verification; newer push owns verification"
             exit 0
