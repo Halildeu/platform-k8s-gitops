@@ -1948,7 +1948,13 @@ images:
     # permission-service /authz/me grants REPORT (shell hasModule parity);
     # any authenticated JWT no longer reads the catalogue. Codex 01a08807
     # AGREE. Digest read back from GHCR by tag (never build logs).
-    digest: sha256:527358b9f6d7b431c963d06c163cb7babd08c3c6e5c937e4a2c5b65402dc3d96
+    #
+    # 2026-09-10 bump: sha-ca10b8f — platform-backend#1147 (gitops#3603). Every
+    # identifier case conversion uses Locale.ROOT (22 sites); a Turkish default
+    # locale no longer blanks column search / lookup / lineage / AI matching for
+    # identifiers containing an i. Codex 01a0881d AGREE. Digest read from GHCR
+    # by tag (never build logs).
+    digest: sha256:3efc9e621ce696d98f09069eafbd4f22dc1a043e442cd06e681675759dd43cf0
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
