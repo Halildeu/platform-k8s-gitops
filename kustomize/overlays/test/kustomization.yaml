@@ -1928,7 +1928,16 @@ images:
     # the whole view per join match per table (CPU pinned at the 750m limit until
     # the liveness probe killed the pod, exit 143), and the parser upper-cased
     # with the default locale. Digest read back from GHCR by tag (never build logs).
-    digest: sha256:4a1fbff3a36f1c054e3d4ba05c004a198f90f2bac8be0b1482a6a014feef99e8
+    #
+    # 2026-09-09 bump: sha-f170a1b — platform-backend#1143 (gitops#3605). Every
+    # snapshot-backed endpoint the Schema Explorer's panels use (/tables,
+    # /search/columns, /impact, /domains, /hubs, /path, /health-score, /drift,
+    # /suggestions) now honours ?source= and resolves that source's default
+    # schema; previously only /snapshot and /schemas did, so an Explorer on IFS
+    # would have shown Workcube's table detail under an IFS name. Snapshot
+    # metadata.dbType now reports the reader's engine. Digest read back from
+    # GHCR by tag (never build logs).
+    digest: sha256:43fff641c96b39450e3c9dca947fe41ae3884f20c1691c8306a6129ea42a12fa
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
