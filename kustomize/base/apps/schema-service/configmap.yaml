@@ -11,6 +11,15 @@ data:
   REPORT_PG_URL: "jdbc:postgresql://postgres:5432/schemas_db"
   SCHEMA_MSSQL_ENABLED: "true"   # feature flag
 
+  # gitops#3594 — IFS ERP Oracle catalog source. Off in base: it needs both the
+  # Vault path (kv/platform/oracle-ifs) and the egress NetworkPolicy, so only an
+  # overlay that has provisioned both turns it on. JDBC URL, username and
+  # password arrive from the ExternalSecret, never from here.
+  SCHEMA_ORACLE_ENABLED: "false"
+  SCHEMA_ORACLE_SOURCE_ID: "ifs"
+  # IFS publishes business data through the IFSAPP view layer.
+  SCHEMA_ORACLE_DEFAULT_SCHEMA: "IFSAPP"
+
   # Spring Boot
   SERVER_PORT: "8096"
   # Actuator ayrı port (Spring Boot native): 8081'de yayınlanır, Spring Security

@@ -8472,6 +8472,17 @@ patches:
       - op: add
         path: /data/SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS
         value: "300"
+      # gitops#3594: IFS ERP Oracle source. This cluster has both prerequisites
+      # — Vault kv/platform/oracle-ifs and allow-egress-ifs-oracle (PR #3596,
+      # pod-level reachability measured after merge).
+      - op: add
+        path: /data/SCHEMA_ORACLE_ENABLED
+        value: "true"
+      # The dictionary read spans 205,874 columns on the measured IFS instance
+      # and takes ~22s, so the 60s MSSQL-sized default is uncomfortably tight.
+      - op: add
+        path: /data/SCHEMA_ORACLE_QUERY_TIMEOUT_SECONDS
+        value: "300"
 
   - target:
       kind: ConfigMap
