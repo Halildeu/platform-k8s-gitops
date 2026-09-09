@@ -1194,7 +1194,12 @@ fi
         # shape unchanged, runtime behaviour unchanged for RESOLVED path today.
         # Faz 25 ATS promotion state remains invariant (no ATS DTO / catalog /
         # recruiter-scope contract touched).
-        current_permission = "sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02"
+        # 2026-09-10: gitops#3606 (platform-backend#1148) bumps permission-service
+        # to sha-54eff6d (sha256:5c12e381…): unknown route → 404 instead of the
+        # INTERNAL_ERROR 500 catch-all; 405/415/406 carry their own status.
+        # Error-mapping only; Faz 25 ATS promotion state is invariant (no ATS
+        # DTO / catalog / recruiter-scope contract touched).
+        current_permission = "sha256:5c12e3817f4036d6e290d4f10a6bb69a2b0f76001d445ded7552a07ee05bce5f"
         promoted = {
             "frontend": self.frontend_pin["digest"],
             "tag": self.frontend_pin["tag"],
