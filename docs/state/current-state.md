@@ -1,5 +1,45 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Remote DEV pre-deletion preservation verified (2026-09-09)
+
+- The current private snapshot is
+  `/srv/platform-dev/migration/snapshots/20260909-predelete/`.
+  All 2,894,057 selected source files were checked with SHA-256; no content
+  mismatch remains. Git HEAD/working-state comparisons passed for 1,425
+  accessible Git areas, and all 387 common-repository user branch/tag/stash
+  sets matched. One existing no-HEAD repository and three already broken
+  local worktree links are retained as explicit source limitations.
+- Four dirty worktrees were restored into an independent Git object store:
+  full fsck, all 2,854 user refs, staged/unstaged changes, and 295 untracked
+  files passed. The restore test accepts existing shallow boundaries and
+  uses full object IDs in patch comparisons; neither source history depth
+  nor diff abbreviation is silently treated as lost work.
+- The two encrypted history archives were decrypted on the server; every
+  archived file hash and both sets of six SQLite backup-API snapshots passed.
+  These are point-in-time archives, not live Codex task handoffs.
+- Live DEV again passed 18-container ownership/artifact checks, all 13 backend
+  health checks, 11 frontend responses, OIDC, real browser login/user-list
+  reload, profile write/new-session readback/restore, and variant
+  create/new-session readback/delete plus anonymous 401.
+  The isolated cgroup terminate/preserve test also passed.
+- The 40 GiB stopped Docker Desktop disk still matches the prior verified
+  backup hash. Its copied ext4 filesystem was mounted read-only and read
+  successfully, then unmounted and detached. Historical application volumes
+  were not started; this is filesystem recovery evidence, not database
+  application acceptance.
+- All 294 named cleanup candidates passed a final local source fence.
+  Their measured allocation is about 9.96 GiB; four explicitly named package
+  cache directories add about 2.69 GiB. These are estimates, not a promise
+  of APFS space reclaimed. The old 25.5 GiB blanket estimate is not used.
+  Original Mac source directories were not deleted. Active local task/app
+  data, credentials, VM data, and unnamed caches are outside this list.
+- Private acceptance, Git recovery, source-fence and archive receipts are
+  attached to the snapshot's `evidence/` directory and issue #3582.
+  Source snapshot access is currently protected by a read-only bind mount;
+  a write probe was refused. Recheck this mount after host reboot.
+  PR #3585 remains the combined DEV package; no main/TEST/prod deployment
+  is implied by this evidence.
+
 ## Live Delta — Isolated cgroup termination regression verified (2026-09-08)
 
 - PR #3591 was merged into the combined DEV branch as

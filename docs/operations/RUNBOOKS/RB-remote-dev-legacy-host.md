@@ -404,3 +404,64 @@ production service units. The old backup deletion was owner-authorized and
 irreversible; no rollback backup was manufactured. The Mac's original source
 repositories remain available. Reinstall a removed worktree's dependencies with
 its preserved `pnpm-lock.yaml` if that old local workflow is needed again.
+
+
+## 2026-09-09 — Verified cleanup boundary and recovery
+
+The private acceptance root is
+`/srv/platform-dev/migration/snapshots/20260909-predelete/`.
+Use `evidence/migration-acceptance.json`, `dirty-work-recovery.json`,
+`git-comparison.json`, `candidate-source-fence.json`, and the history restore
+receipts to decide whether a particular local path is covered. Keep raw
+inventories, histories, SQLite files and recovery keys out of GitHub and Git.
+
+A clean Git status is insufficient. Preserve user branches/tags/stashes,
+detached heads, staged and unstaged changes, untracked source files, locally
+installed Maven artifacts, and separate credentials. The verified candidate
+CSV names 294 old worktree directories and four package-cache directories.
+It is not permission to recursively remove Documents, ~/.codex, ~/.claude,
+~/.ssh, ~/.docker, VM storage, or the active local project.
+
+### Recovery checks that caught real verification problems
+
+1. GNU Git on this host rewrites an index while running `git diff`, even with
+   `GIT_OPTIONAL_LOCKS=0`; a measured index grew by 64 bytes. Git semantic
+   verification therefore ran before the final byte-preservation correction.
+   The 1,412 affected indexes were recopied from unchanged Mac sources and
+   rehashed; one actively written scheduler log was frozen and rehashed.
+   The full file pass plus all 1,413 targeted corrections leave zero
+   mismatches. Do not run ordinary Git mutations against a backup snapshot.
+2. Fetching from a shallow source initially omitted one branch with
+   "shallow roots are not allowed to be updated". The independent restore
+   uses `git fetch --update-shallow`, then compares the complete user-ref set
+   and runs full fsck. This preserves the source's existing history boundary.
+3. Comparing default abbreviated diff headers produced a two-byte false
+   mismatch between object stores of different sizes. Recovery compares
+   `git diff --full-index --binary` and actual working-file hashes instead.
+4. History files continue to grow while agents are active. The authenticated
+   encrypted base and later delta are explicit time cuts. SQLite files use
+   the backup API and are reopened with `PRAGMA quick_check`; archives are
+   not copied into a live agent database as a substitute for supported
+   remote-task handoff.
+
+The source snapshot is mounted read-only for the current session. The
+read-only mount must be checked again after host reboot. Recover into a
+separate writable Git clone/worktree; the four verified examples are under
+`recovery-test/`. Never overwrite an active server repository to test recovery.
+
+The encrypted history format is AES-256-GCM over tar.gz with a per-file
+SHA-256 manifest. The key is separate in a root-only store. Use the private
+`verify-history.py` with the archive, key path and an isolated restore
+directory; it authenticates the entire archive, checks every entry and
+reopens the SQLite snapshots. Preserve the base archive together with its
+delta; existing older archives remain available.
+
+The copied Docker Desktop disk was mounted ext4 with `ro,noload`, read,
+unmounted and detached. This proves filesystem access; it does not claim
+that every historical application volume was booted or its database tested.
+The Mac Docker disk is outside the current deletion candidate list.
+
+Before deleting a named candidate, repeat its source fence if anything has
+written there since the recorded acceptance. Use the remote saved projects
+for new Codex development tasks. The calling local task cannot hand itself
+off; archived history is not an active remote task.
