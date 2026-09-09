@@ -1,0 +1,34 @@
+# gitops#3594 — IFS ERP Oracle read-only reporting source.
+#
+# `default-deny-egress` selects every pod in the namespace, so a pod reaches an
+# external database only through an explicit allowlist entry. Measured before
+# writing this file (2026-09-09): the staging host reaches 10.9.101.110:1521
+# fine, while `schema-service` times out from inside the pod — the destination
+# was simply absent from the allowlist. This mirrors allow-egress-workcube-mssql
+# one-for-one, differing only in destination host and port.
+#
+# Credentials live in Vault at kv/platform/oracle-ifs (never in this repo).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-ifs-oracle
+  annotations:
+    platform.acik.com/adr: "0005"
+    platform.acik.com/direct-routing: "pod direct via Calico containerIPForwarding (same lane as Workcube MSSQL)"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - report-service
+          - schema-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.9.101.110/32       # IFS ERP Oracle 19c host
+      ports:
+        - protocol: TCP
+          port: 1521                    # Oracle TNS listener
