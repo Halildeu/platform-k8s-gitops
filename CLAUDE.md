@@ -76,10 +76,12 @@ mavis communication peers
 
 ### 0.1 Durumsal Cross-AI İstişare — Az Kanal + Sağlayıcı/Model Esnek (2026-07-20)
 
+> **2026-09-09 — MiniMax ve GLM emekli.** Kullanıcı kararı: bu iki kanal artık kullanılmıyor. Ölçüm aynı gün: MiniMax'in giriş noktası kırık sembolik bağ, GLM/ZCode'un başsız `--prompt` yolu var ama model yapılandırması yok. Geriye **Claude ve Codex** kalıyor. Implementer her zaman bu ikisinden biri olduğu için `dual` (iki sağlayıcı-ayrık reviewer) **yapısal olarak sağlanamaz**; bu yüzden `dual` escalation yolu boşaltıldı ve o yollar `single` tabanında. Emekli kanalların receipt alanları artık **yasaklı**: eski bir gövdedeki `MiniMax receipt` / `GLM receipt` sessizce yok sayılmaz, gürültüyle reddedilir.
+
 > **GEÇİCİ ASKI (kullanıcı 2026-07-20):** Cross-AI istişare/review şu an
-> **zorunlu değil, opt-in**. Agent otomatik olarak Codex/GLM/MiniMax'a danışmaz
+> **zorunlu değil, opt-in**. Agent otomatik olarak Codex'e danışmaz
 > ve ikinci-görüş açmaz — yalnız kullanıcı açıkça isteyince ("Codex'e sor",
-> "GLM'e danış", "ikinci görüş al"). Merge tarafında `cross-ai-audit` main
+> "ikinci görüş al"). Merge tarafında `cross-ai-audit` main
 > required-check'ten çıkarıldı (advisory'de kaldı; koşar, bloklamaz). Aşağıdaki
 > mode disiplini referans mimari olarak kalır ama otomatik zorlanmaz. Bir
 > istişare *fiilen yapılırsa* sabit guard'lar geçerli (implementer≠reviewer;
@@ -92,18 +94,18 @@ mavis communication peers
   eksikse, consultation governance dosyası değişiyorsa veya branch
   `auto-promotion/` ise gate `none` kabul etmez; en az `single` gerekir.
 - İkinci görüş gerçekten gerekiyorsa `Consultation mode: single`. Kanal, mevcut
-  ve doğrulanabilir sağlayıcılardan biri olur: **Claude (Anthropic), Codex
-  (OpenAI), MiniMax veya GLM (Z.ai)**. Her sağlayıcı içinde model seçimi
-  esnektir; `claude-opus-4-8`, `gpt-5.6-sol`, `MiniMax-M3` gibi spesifik model
+  ve doğrulanabilir sağlayıcılardan biri olur: **Claude (Anthropic) veya Codex
+  (OpenAI)**. Her sağlayıcı içinde model seçimi
+  esnektir; `claude-opus-4-8`, `gpt-5.6-sol` gibi spesifik model
   kilidi YOKTUR — o sağlayıcının o an aktif ve doğrulanabilir modeli kullanılır.
   Çıktıdaki gerçek `modelUsage`/provider kimliği audit'e kaydedilir (uydurulmaz).
   Implementer sağlayıcısıyla aynı sağlayıcı bağımsız `single` görüş sayılmaz;
   bu durumda provider-distinct ikinci kanal ile `dual` gerekir.
 - Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
   gerektiren noktada `Consultation mode: dual`. İki provider-distinct kanal
-  Codex/Claude/MiniMax/GLM'den mevcut ve doğrulanabilir olan farklı iki
-  sağlayıcı olur. Toplam iki kanal aşılmaz. MiniMax ve GLM reviewer olarak
-  kabul edilir.
+  Claude ve Codex'ten farklı iki sağlayıcı olur. Implementer her zaman bu
+  ikisinden biri olduğu için `dual` pratikte sağlanamaz ve hiçbir yol onu
+  zorunlu kılmaz (2026-09-09).
 - Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
@@ -177,12 +179,12 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 > aşağıdaki karar kuralları "gerçek ikinci görüş noktası" tetiklendiğinde
 > uygulanır — ki bu tetik artık **yalnız kullanıcı açık talebi** (otomatik
 > risk-path tetikleyicisi askıda). Askı kalkana kadar normal akışta hiçbir
-> Codex/GLM/MiniMax çağrısı otomatik yapılmaz.
+> Codex çağrısı otomatik yapılmaz.
 
 **Karar verme kuralı**:
 - Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
 - Gerçek ikinci görüş noktasında mevcut ve doğrulanabilir sağlayıcılardan
-  (Claude/Codex/MiniMax/GLM) birini kullan; her sağlayıcı içinde model seçimi
+  (Claude/Codex) birini kullan; her sağlayıcı içinde model seçimi
   esnektir (spesifik model kilidi yok).
 - Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
   provider-distinct kanal kullan; bu kanal implementer sağlayıcısıyla aynı

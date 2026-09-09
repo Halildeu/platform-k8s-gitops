@@ -25,7 +25,11 @@ import { argv, env, exit } from 'node:process';
 
 // User 2026-07-20 flexibility: MiniMax and GLM re-admitted as valid Cross-AI
 // providers. `other` remains for `none`-mode implementers that don't identify.
-const VALID_PROVIDERS = new Set(['claude', 'codex', 'minimax', 'zai', 'gemini', 'other']);
+// User 2026-09-09: MiniMax and GLM/Z.ai are retired as consultation channels.
+// Measured the same day: MiniMax's entry point is a dangling symlink and
+// GLM/ZCode has a headless flag but no model configuration, so neither could
+// serve a review even when a rule demanded one.
+const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
 const VALID_VERDICTS = new Set(['AGREE', 'REVISE', 'PARTIAL', 'RED']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
@@ -80,17 +84,14 @@ const CONSULTATION_RECEIPTS = {
   'codex receipt': {
     provider: 'codex',
   },
-  'minimax receipt': {
-    provider: 'minimax',
-  },
-  'glm receipt': {
-    provider: 'zai',
-  },
 };
 // User 2026-07-20 decision: MiniMax and GLM are re-admitted as valid Cross-AI
-// reviewer channels alongside Claude and Codex. No provider is forbidden as
-// long as its receipt carries a real, machine-verifiable provider identity.
-const FORBIDDEN_CONSULTATION_FIELDS = new Set();
+// User 2026-09-09: the retired channels become FORBIDDEN fields rather than
+// merely unknown ones. Dropping them from CONSULTATION_RECEIPTS alone would let
+// a body still carrying `MiniMax receipt:` be silently ignored — the audit would
+// read past a receipt the author believed was counted. Listing them here makes a
+// stale body fail loudly and name the reason.
+const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt', 'glm receipt']);
 const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
@@ -99,19 +100,17 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  // Tombstone: deleting the retired wrapper remains a governance change, and
-  // any future MiniMax-named review helper cannot be reintroduced under none.
-  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
   /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
-const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
-  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
-  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
-];
+// Retired with the MiniMax/GLM channels (user 2026-09-09). `dual` needs two
+// provider-distinct reviewers; the reachable providers are now Claude and
+// Codex, and the implementer is always one of them, so no path can satisfy it.
+// A rule that cannot be met is not a gate — it is a permanent block, and the
+// change that would relax it is itself on the list. These paths keep the
+// `single` floor below, which one Codex review does satisfy.
+const CONSULTATION_DUAL_GOVERNANCE_PATHS = [];
 const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
   /(?:^|\/)vault\/polic(?:y|ies)\/[^/]+\.hcl$/i,
@@ -165,15 +164,6 @@ const PROVIDER_ALIASES = {
   gemini: 'gemini',
   'google gemini': 'gemini',
   'gemini pro': 'gemini',
-  // minimax family (user 2026-07-20 re-admission)
-  minimax: 'minimax',
-  'minimax m3': 'minimax',
-  'minimax-m3': 'minimax',
-  // glm / z.ai family (user 2026-07-20 re-admission)
-  glm: 'zai',
-  zai: 'zai',
-  'z.ai': 'zai',
-  zcode: 'zai',
   // grok family
   grok: 'other',
   'xai grok': 'other',
@@ -1105,10 +1095,9 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
 
   const fields = extractFields(section);
   appendDuplicateFieldFinding(findings, fields);
-  // User 2026-07-20 flexibility: FORBIDDEN_CONSULTATION_FIELDS is now empty;
-  // MiniMax and GLM receipts are accepted alongside Claude and Codex. This
-  // finding stays as a defense-in-depth stub so any future forbidden field
-  // (added intentionally by ADR) still shows up here.
+  // User 2026-09-09: MiniMax and GLM receipts are forbidden again — the
+  // channels were retired, so a body carrying one is stale and must say so
+  // rather than have that receipt quietly not count.
   const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
     Object.hasOwn(fields, field)
   );
