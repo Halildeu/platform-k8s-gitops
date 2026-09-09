@@ -1429,9 +1429,10 @@ fi
         self.assertEqual(workflow.group(1), runtime.group(1))
 
     def test_consultation_defaults_to_none_then_flexible_provider_and_max_two(self):
-        # User 2026-07-20 flexibility: provider list is now {Claude, Codex,
-        # MiniMax, GLM}, model choice is free within any provider, no specific
-        # model slug is locked, MiniMax is re-admitted as a valid reviewer.
+        # User 2026-09-09: MiniMax and GLM are retired, leaving {Claude, Codex}.
+        # Model choice stays free within a provider. `dual` is no longer required
+        # anywhere — the implementer is always one of the two remaining
+        # providers, so a second provider-distinct reviewer cannot exist.
         # Fixed HARD RULES stay: provider-distinct, Cursor forbidden,
         # AI-app-window forbidden, tracked_pending on quota/auth/empty output.
         rule = "Durumsal Cross-AI istişare — varsayılan az kanal + sağlayıcı/model esnek"
@@ -1440,22 +1441,25 @@ fi
         # Modes are still declared, but not gated to a specific model slug.
         self.assertIn("`single`", self.agents)
         self.assertIn("`dual`", self.agents)
-        self.assertIn("toplam iki kanal aşılmaz", self.agents)
         # Flexibility markers.
-        self.assertIn("Claude (Anthropic), Codex (OpenAI), MiniMax veya GLM", self.agents)
+        self.assertIn("Claude (Anthropic) veya Codex (OpenAI)", self.agents)
         self.assertIn("spesifik model kilidi yoktur", self.agents)
-        self.assertIn("MiniMax ve GLM `single`/`dual` reviewer olarak kabul edilir", self.agents)
+        self.assertIn("MiniMax ve GLM emekli", self.agents)
+        self.assertIn("`dual` yapısal olarak sağlanamaz", self.agents)
         # Preserved HARD RULES.
         self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
         self.assertIn("consultation governance dosyası", self.agents)
-        self.assertIn("audit/evidence enforcement kodunun kendisi `dual` ister", self.agents)
+        self.assertIn(
+            "audit/evidence enforcement kodunun kendisi de `single` tabanındadır",
+            self.agents,
+        )
         # Canonical rule set updates. Short keyphrases only (multi-line safe).
         self.assertIn("provider-distinct", self.context_rules)
-        self.assertIn("`dual` gerekir", self.context_rules)
         self.assertIn("Claude (Anthropic)", self.context_rules)
         self.assertIn("Codex (OpenAI)", self.context_rules)
-        self.assertIn("MiniMax", self.context_rules)
-        self.assertIn("GLM (Z.ai)", self.context_rules)
+        # The retired channels may only appear as history, never as a live
+        # instruction to consult them.
+        self.assertIn("emekli", self.context_rules)
         self.assertIn("model seçimi", self.context_rules.lower())
         self.assertIn("esnektir", self.context_rules)
         self.assertIn("model kilidi yoktur", self.context_rules)
@@ -1471,7 +1475,10 @@ fi
         )
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
         self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
-        self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
+        self.assertIn(
+            "**`dual` — pratikte erişilemez, hiçbir yol zorunlu kılmaz",
+            self.context_rules,
+        )
         self.assertIn(
             "İstişare bir teslimat ritüeli değil, yalnız karar",
             self.context_rules,

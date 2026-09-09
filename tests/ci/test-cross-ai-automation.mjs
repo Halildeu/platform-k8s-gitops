@@ -562,12 +562,15 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GOVERNANCE_PATH] }, 0],
-  ['explicit single mode rejects consultation enforcement changes that require dual',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 1],
-  ['retired MiniMax wrapper tombstone requires dual governance review',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 1],
-  ['retired MiniMax wrapper deletion passes only with exact dual review',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 0],
+  // User 2026-09-09: the dual escalation list is empty. With MiniMax and GLM
+  // retired the reachable providers are Claude and Codex, and the implementer
+  // is always one of them, so no PR could ever produce two provider-distinct
+  // reviewers. Enforcement paths now sit at the `single` floor, which one
+  // Codex review satisfies.
+  ['consultation enforcement changes are satisfied by single, not blocked on an unreachable dual',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
+  ['a MiniMax-named helper path carries no special escalation now that the channel is retired',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 0],
   ['explicit dual mode accepts consultation enforcement changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
   ['explicit none mode rejects a high-confidence RBAC path',
@@ -610,24 +613,22 @@ const cases = [
       body: `${explicitSingleBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode accepts Claude plus Codex provider-distinct channels',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
-  // User 2026-07-20 flexibility: MiniMax is a valid secondary reviewer now.
-  // Codex + MiniMax is a legitimate two-channel dual (both provider-distinct
-  // from a Claude implementer). Expectation flipped: accept rather than reject.
-  ['explicit dual mode accepts MiniMax as a valid secondary channel',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
+  // User 2026-09-09: MiniMax is retired as a channel. A body still offering a
+  // MiniMax receipt must fail loudly — the dangerous alternative is the audit
+  // reading past it and the author believing a second channel was counted.
+  ['a MiniMax receipt is refused now that the channel is retired',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_has_no_forbidden_fields' }, 1],
   ['explicit dual mode accepts the exact Claude+Codex pair for a Codex implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts the exact Claude+Codex pair for a Claude implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts reverse evidence publication timestamps',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_CODEX_EVIDENCE }, 0],
-  // A three-channel body (Claude+Codex+MiniMax) still fails because dual mode
-  // requires exactly two receipts; the reject reason is the channel-count
-  // check, no longer a MiniMax-specific rejection.
-  ['explicit dual mode rejects a three-channel receipt mixture (dual = 2 channels only)',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_dual_exact_channel_count' }, 1],
-  // MiniMax in none/single is now accepted alongside Claude/Codex. Removed the
-  // two `explicit none/single rejects retired MiniMax receipt` rows.
+  // A Claude+Codex+MiniMax body is refused on the retired channel before the
+  // channel-count check is reached — the forbidden field is the earlier and
+  // more specific reason.
+  ['a three-channel body is refused on the retired MiniMax channel',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_has_no_forbidden_fields' }, 1],
   ['explicit dual mode rejects an empty third receipt key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],

@@ -1907,7 +1907,13 @@ images:
     # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
     # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
     # reported this rollout-scope digest behind backend image run 28131649696.
-    digest: sha256:bfe2e825c575b04221f539cdc5d79b1277b51593e4cf080591a75d039474f5c2
+    #
+    # 2026-09-09 bump: sha-977d27f — platform-backend#1140 (gitops#3594) adds
+    # the IFS ERP Oracle catalog source. Without this image the pod ignores
+    # SCHEMA_ORACLE_ENABLED entirely: the flag and the ExternalSecret landed in
+    # #3597 but the running code has no second source to switch on. Digest read
+    # back from GHCR by tag sha-977d27f (never from build logs).
+    digest: sha256:63743d4ded3e9d28d2e255ed00caa90dd296963e1f919745c79c371ed9747825
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
