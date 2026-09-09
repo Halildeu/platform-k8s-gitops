@@ -1937,7 +1937,12 @@ images:
     # would have shown Workcube's table detail under an IFS name. Snapshot
     # metadata.dbType now reports the reader's engine. Digest read back from
     # GHCR by tag (never build logs).
-    digest: sha256:43fff641c96b39450e3c9dca947fe41ae3884f20c1691c8306a6129ea42a12fa
+    #
+    # 2026-09-10 bump: sha-4d2cc0d — platform-backend#1144 (gitops#3605). The
+    # dbType fix that #1143 claimed but did not carry: snapshot metadata now
+    # reports the reader's engine ("oracle" for ifs) instead of the "mssql"
+    # literal. Digest read back from GHCR by tag (never build logs).
+    digest: sha256:c5af352c4677edfb2798f2518ea8ba53cf23071661ce809521487e7112bc34e3
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
