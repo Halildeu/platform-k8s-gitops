@@ -2339,7 +2339,12 @@ images:
     # imagePullPolicy IfNotPresent. Durable fix stays tracked in #2885.
     # Cross-AI: Codex thread 019fb47c — M4/M2 mechanism ruling; #1028 rollout
     # named as the first, lowest-risk unblock.
-    digest: sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02
+    #
+    # 2026-09-10 bump: sha-54eff6d — platform-backend#1148 (gitops#3606). Unknown
+    # route answers 404 (was INTERNAL_ERROR 500 with a stack trace); 405/415/406
+    # carry their own status. Codex 01a08828 AGREE. Digest read from GHCR by
+    # tag (never build logs).
+    digest: sha256:5c12e3817f4036d6e290d4f10a6bb69a2b0f76001d445ded7552a07ee05bce5f
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
