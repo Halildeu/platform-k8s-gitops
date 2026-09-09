@@ -62,20 +62,31 @@ const now = () => Date.now();
   //    corporate button hands off to Keycloak, then back to the route.
   const t0 = now();
   await page.goto(`${baseURL}/admin/schema-explorer`, { waitUntil: 'domcontentloaded' });
+  // Anonymous users land on the shell /login page (no automatic KC redirect);
+  // the corporate button starts the route-scoped KC flow. `isVisible()` does
+  // not wait, so a still-rendering SPA read as "no button" and the click was
+  // skipped, while waitForURL matched the pre-redirect URL — the first run
+  // reported loginMs 77 and sat on /login. Wait for whichever renders first.
   const corporateButton = page.getByTestId('corporate-login-button');
-  if (await corporateButton.isVisible({ timeout: 15_000 }).catch(() => false)) {
+  const sourcePicker = page.getByTestId('se-source-select');
+  const landed = await Promise.race([
+    corporateButton.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'login'),
+    sourcePicker.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'app'),
+  ]).catch(() => 'neither');
+  if (landed === 'login') {
     await corporateButton.click();
     await page.waitForURL(/\/realms\/platform-test\//u, { timeout: 30_000 });
     await page.locator('#username').fill(username);
     await page.locator('#password').fill(password);
-    await page.locator('#kc-login, button[type=submit]').first().click();
+    await page.locator('#kc-login').click();
+  } else if (landed === 'neither') {
+    throw new Error(`neither the login button nor the Explorer rendered within 30s (url ${page.url()})`);
   }
-  await page.waitForURL(/\/admin\/schema-explorer/u, { timeout: 60_000 });
+  await page.waitForURL((u) => u.pathname.startsWith('/admin/schema-explorer'), { timeout: 60_000 });
   timings.loginMs = now() - t0;
 
   // 2. The source picker only renders once /sources answered with >0 sources.
   const t1 = now();
-  const sourcePicker = page.getByTestId('se-source-select');
   await sourcePicker.waitFor({ state: 'visible', timeout: 60_000 });
   const sourceOptions = await sourcePicker.locator('option').allTextContents();
   await page.screenshot({ path: path.join(evidenceDir, '01-explorer-default.png'), fullPage: false });
