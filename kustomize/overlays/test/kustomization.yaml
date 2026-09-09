@@ -1921,7 +1921,14 @@ images:
     # sys.schemas answered ORA-00942 in 40ms. #1141 makes the MSSQL pool an
     # explicit @Primary, reads Oracle NUMBER safely, and resolves the schema
     # before caching. Digest read back from GHCR by tag (never build logs).
-    digest: sha256:7a5df59fad0b143385fa4c81bccbf213697e61f096183201d9022c4ce335fec3
+    #
+    # 2026-09-09 bump: sha-efeaafe — platform-backend#1142 (gitops#3594). The IFS
+    # snapshot never finished on sha-7e05576: Oracle JDBC fetched LONG selects one
+    # row per round trip (138s for 10,885 view texts), alias resolution scanned
+    # the whole view per join match per table (CPU pinned at the 750m limit until
+    # the liveness probe killed the pod, exit 143), and the parser upper-cased
+    # with the default locale. Digest read back from GHCR by tag (never build logs).
+    digest: sha256:4a1fbff3a36f1c054e3d4ba05c004a198f90f2bac8be0b1482a6a014feef99e8
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
