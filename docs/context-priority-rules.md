@@ -343,7 +343,7 @@ Mavis bildirimi **yerine geçmez**:
 > **GEÇİCİ ASKI — kullanıcı 2026-07-20:** Cross-AI istişare/review şu an
 > **zorunlu değil, opt-in**. Agent otomatik ikinci-görüş / challenger review
 > AÇMAZ; istişare yalnız kullanıcı açıkça isteyince yapılır ("Codex'e sor",
-> "GLM'e danış", "ikinci görüş al", "cross-AI review yap" vb.). Merge tarafında
+> "ikinci görüş al", "cross-AI review yap" vb.). Merge tarafında
 > gate advisory'ye indirildi: main branch protection'dan `cross-ai-audit`
 > required-status-check çıkarıldı (2026-07-20; check hâlâ koşuyor ama
 > bloklamıyor). Bu askı kalkana kadar aşağıdaki 11.1–11.5 mimarisi **referans
@@ -363,8 +363,9 @@ Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2
 ve [#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638)
 kararları, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır.
 Kullanıcı 2026-07-20 kararıyla ayrıca tek-sağlayıcı ve tek-model kilidini de
-kaldırır: istişareye açık sağlayıcı listesi Codex (OpenAI), Claude (Anthropic),
-MiniMax ve GLM (Z.ai) arasından o an **mevcut ve doğrulanabilir** olan(lar)dır.
+kaldırır: istişareye açık sağlayıcı listesi Codex (OpenAI) ve Claude
+(Anthropic) arasından o an **mevcut ve doğrulanabilir** olan(lar)dır (MiniMax
+ve GLM 2026-09-09'da emekli edildi).
 Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
 adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
 belirsizliği veya risk için kullanılan sınırlı araçtır.
@@ -376,24 +377,25 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    Changed-files kanıtı eksikse, consultation governance dosyası, yüksek güvenli
    RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa veya
    branch `auto-promotion/` ise gate en az `single` zorunlu tutar. Audit/evidence
-   enforcement kodunun kendisi değişiyorsa mekanik taban `dual` olur.
+   enforcement kodunun kendisi değişiyorsa mekanik taban da `single`'dır
+   (2026-09-09: `dual` yolu boşaltıldı — gerekçe §11 sonundaki nota bakınız).
 2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek doğrudan headless
-   kanal kullanılır. Kanal, tercih sırasıyla Claude (Anthropic), Codex (OpenAI),
-   MiniMax veya GLM (Z.ai) sağlayıcılarından o an mevcut, kimliği doğrulanabilir
+   kanal kullanılır. Kanal, tercih sırasıyla Claude (Anthropic) veya Codex
+   (OpenAI) sağlayıcılarından o an mevcut, kimliği doğrulanabilir
    ve boş/error/quota-lock döndürmeyen ilk kanaldır. Model seçimi her sağlayıcı
-   içinde esnektir; `claude-opus-4-8`, `gpt-5.6-sol`, `MiniMax-M3` gibi spesifik
+   içinde esnektir; `claude-opus-4-8`, `gpt-5.6-sol` gibi spesifik
    model kilidi yoktur — sağlayıcının o an aktif ve JSON/CLI çıktısında
    doğrulanabilir modeli kullanılır. Çıktıdaki gerçek model kimliği audit'e
    kaydedilir (uydurulmaz). Implementer sağlayıcısı ile aynı sağlayıcının
-   session'ı bağımsız `single` görüş sayılmaz; bu durumda provider-distinct
-   ikinci kanal ile `dual` gerekir.
-3. **`dual` — istisnai yüksek risk:** Yalnız geri döndürülemez, çok yüksek
-   riskli veya açık insan/yetkili kararı gerektiren noktada iki provider-distinct
-   headless kanal kullanılır. İki kanal Codex, Claude, MiniMax ve GLM'den mevcut
-   ve doğrulanabilir olan farklı iki sağlayıcı olur. Toplam iki kanal aşılmaz.
-   Implementer bu iki sağlayıcıdan biri olsa bile diğer kanal provider-distinct
-   bağımsız reviewer alt sınırını sağlar. Her sağlayıcı içinde model seçimi
-   esnektir; kilit yoktur.
+   session'ı bağımsız `single` görüş sayılmaz; bağımsız görüş diğer sağlayıcıdan
+   alınır.
+3. **`dual` — pratikte erişilemez, hiçbir yol zorunlu kılmaz (2026-09-09):**
+   `dual` iki provider-distinct **reviewer** ister. MiniMax ve GLM emekli
+   edildikten sonra geriye Claude ve Codex kalıyor ve implementer her zaman bu
+   ikisinden biri; dolayısıyla ikinci bir provider-distinct reviewer kalmıyor.
+   Mod tanım olarak duruyor ama `CONSULTATION_DUAL_GOVERNANCE_PATHS` boş: hiçbir
+   dosya yolu `dual` talep etmez. Sağlanamayan bir kural kapı değil kalıcı
+   engeldir — üstelik onu gevşetecek değişiklik de aynı listede olurdu.
 
 Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
 ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,
@@ -431,7 +433,7 @@ aynı scope yeniden incelenir.
 PR structured alanları:
 
 ```yaml
-Implementer AI: Codex|Claude|MiniMax|GLM|other # other yalnız none modunda
+Implementer AI: Codex|Claude|other        # other yalnız none modunda
 Consultation mode: none|single|dual
 Consultation reason: <neden bu mod seçildi>
 Risk trigger: <kategori>: <somut açıklama> # yalnız dual
@@ -444,8 +446,6 @@ Consultation scope: <single/dual content SHA-256>
 # iki farklı sağlayıcıya ait olanı taşınır:
 Claude receipt: <single/dual — Anthropic Claude exact receipt>
 Codex receipt: <single/dual — OpenAI Codex exact receipt>
-MiniMax receipt: <single/dual — MiniMax exact receipt>
-GLM receipt: <single/dual — Z.ai GLM exact receipt>
 ```
 
 `Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
@@ -457,8 +457,7 @@ olarak bilinmelidir; gerçek sağlayıcıyı saklayabilen `other` bu iki modda
 fail-closed reddedilir. `other` yalnız receipt taşımayan `none` modunda kullanılabilir.
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
 risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field
-taşıyamaz; `single` yalnız bir provider receipt'i taşır (Claude, Codex, MiniMax
-veya GLM), `dual` iki farklı sağlayıcıya ait iki receipt taşır. Herhangi bir
+taşıyamaz; `single` yalnız bir provider receipt'i taşır (Claude veya Codex). Herhangi bir
 sağlayıcı için model kilidi yoktur; her sağlayıcı içinde model seçimi çıktıdaki
 gerçek `modelUsage`/provider kimliğinden doğrulanır ve audit'e kaydedilir.
 `dual` yayın sırası zorunlu değildir; paralel çağrı kabul edilir. `single/dual`
@@ -477,7 +476,7 @@ döndürülemez başka bir karar path adına yansımıyorsa agent doğru
 `Consultation mode` içermeyen tarihsel PR gövdeleri GitHub'da immutable kayıt
 olarak kalabilir; güncel gate bunları yeniden doğrulamaz ve `PASS`/acceptance
 üretmez. Yalnız dar `docs-only historical` allowlist'i receiptsiz muafiyet
-olarak kalır. Güncel parser'da görülen her MiniMax receipt fail-closed reddedilir.
+olarak kalır. Güncel parser'da görülen her MiniMax veya GLM receipt fail-closed reddedilir (kanallar 2026-09-09'da emekli edildi).
 Yeni PR şablonu yalnız açık `none|single|dual` sözleşmesini üretir ve dual için
 Claude + Codex ister.
 
@@ -505,7 +504,7 @@ Tarihsel politika (artık yürürlükten kaldırılmış) aynı exact scope üze
 üç headless kanalı zorunlu sayıyordu:
 
 1. ~~**Anthropic:** doğrudan Claude CLI ile **`claude-opus-4-8`**.~~ (artık zorunlu değil)
-2. ~~**MiniMax:** resmi bundled headless provider CLI ile **`minimax/MiniMax-M3`**.~~ (artık zorunlu değil)
+2. ~~**MiniMax:** resmi bundled headless provider CLI ile **`minimax/MiniMax-M3`**.~~ (kanal 2026-09-09'da emekli)
 3. ~~**OpenAI:** doğrudan Codex CLI ile **`gpt-5.6-sol`**.~~ (artık zorunlu değil)
 
 Cursor kullanım yolu, kullanıcının 2026-07-17 tarihli doğrudan üç sağlayıcı
