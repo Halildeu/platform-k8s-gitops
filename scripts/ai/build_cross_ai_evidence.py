@@ -67,10 +67,22 @@ COOKIE_HEADER_RE = re.compile(
     r"^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$",
     re.IGNORECASE | re.MULTILINE,
 )
-PROVIDER_MODELS = {
-    "anthropic": "claude-opus-4-8",
-    "openai": "gpt-5.6-sol",
-}
+# Valid consultation providers. The model slug is deliberately NOT pinned here:
+# the 2026-07-20 flexibility decision (CLAUDE.md §0.1, and the matching comment
+# in scripts/ci/pr-cross-ai-audit.mjs) says a provider's currently active,
+# verifiable model is used and whatever the live CLI reports is what gets
+# recorded. This file kept a single-slug lock long after the audit dropped it,
+# which made the two disagree: a consultation run on the provider's current
+# model could not produce an evidence artifact at all, and the only way to get
+# one was to write a slug that had not been used — exactly the fabrication the
+# rule forbids.
+#
+# What still holds: the recorded identity must be real. `requested` and
+# `actual` must both be present, must look like model identifiers, and must
+# agree with each other, mirroring the audit's own receipt check so a receipt
+# cannot silently drop or diverge from its modelUsage record.
+VALID_PROVIDERS = ("anthropic", "openai")
+MODEL_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
 MAX_RESPONSE_BYTES = 48_000
 MAX_EVIDENCE_BYTES = 60_000
 
@@ -113,7 +125,7 @@ def contains_sensitive_response(response: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=sorted(PROVIDER_MODELS), required=True)
+    parser.add_argument("--provider", choices=sorted(VALID_PROVIDERS), required=True)
     parser.add_argument("--requested-model", required=True)
     parser.add_argument("--actual-model", required=True)
     parser.add_argument("--base-tip-sha", required=True)
@@ -122,8 +134,14 @@ def main() -> None:
     parser.add_argument("--scope-sha256", required=True)
     args = parser.parse_args()
 
-    expected_model = PROVIDER_MODELS[args.provider]
-    if args.requested_model != expected_model or args.actual_model != expected_model:
+    if not MODEL_SLUG_RE.fullmatch(args.requested_model) \
+            or not MODEL_SLUG_RE.fullmatch(args.actual_model):
+        fail("invalid_model_identifier")
+    if args.requested_model != args.actual_model:
+        # A genuine fallback (the provider served a different model than was
+        # asked for) is a real event, but it is not something this script can
+        # verify, and the audit rejects a divergent receipt anyway. Fail here so
+        # the divergence is noticed while the run is still in hand.
         fail("provider_model_mismatch")
     for value in (args.base_tip_sha, args.base_sha, args.head_sha):
         if not COMMIT_SHA_RE.fullmatch(value):
