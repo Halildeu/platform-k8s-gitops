@@ -209,6 +209,14 @@ path "kv/data/platform/mssql-external" {
   capabilities = ["read"]
 }
 
+# --- gitops#3594 IFS ERP Oracle reporting source (schema-service ES) ---
+# The policy is a per-path allowlist, so a newly seeded Vault path is invisible
+# to ESO until it is named here: the ExternalSecret reports
+# SecretSyncedError / 403 permission denied and no Secret is ever created.
+path "kv/data/platform/oracle-ifs" {
+  capabilities = ["read"]
+}
+
 # --- S2-B3 smoke-client bearer token (blackbox allow probe) ---
 path "kv/data/platform/keycloak/smoke-client" {
   capabilities = ["read"]
