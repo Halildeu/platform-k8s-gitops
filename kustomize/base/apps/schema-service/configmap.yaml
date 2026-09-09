@@ -57,3 +57,13 @@ data:
   # ISSUER to ai.acik.com (see overlays/prod/kustomization.yaml patches).
   KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+
+  # 2026-09-10 gitops#3608: REPORT module gate on /api/v1/schema/** — the
+  # API-side twin of the shell's REPORT route guard. schema-service asks
+  # permission-service /authz/me with the caller's own bearer and allows only
+  # when that projection grants REPORT (platform-backend#1145). Base URL is the
+  # intra-ns shortname report-service already uses. The image's k8s profile
+  # defaults the gate to on and refuses to start with it off; ENABLED is pinned
+  # here so the intent is visible in gitops, not because the image needs it.
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+  SCHEMA_REPORT_GATE_ENABLED: "true"
