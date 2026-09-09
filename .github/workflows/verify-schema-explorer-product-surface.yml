@@ -1,0 +1,89 @@
+# Schema Explorer authenticated product-surface verify (gitops#3605).
+#
+# Real browser journey on testai with the synthetic planner persona:
+# route-scoped KC login -> /admin/schema-explorer -> source picker "ifs" ->
+# IFSAPP -> the IFS Oracle snapshot renders -> TRYPE_ALL_VOUCHER_QRY columns.
+# Same design as the Budget Workspace verify: the expected frontend digest is
+# read from the canonical overlay pin at run time, and no rollback automation
+# is coupled to failure.
+name: Verify Schema Explorer product surface
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schema-explorer-product-surface
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Planner persona browser journey
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout canonical acceptance harness
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 1
+
+      - name: Prepare evidence workspace
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="$RUNNER_TEMP/schema-explorer-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$EVIDENCE_DIR"
+          echo "EVIDENCE_DIR=$EVIDENCE_DIR" >> "$GITHUB_ENV"
+
+      - name: Bind frontend runtime to the canonical overlay pin
+        id: pin
+        run: |
+          set -euo pipefail
+          pin="$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
+            --kustomization kustomize/overlays/test/kustomization.yaml)"
+          digest="$(jq -er '.digest | select(type == "string" and test("^sha256:[a-f0-9]{64}$"))' <<<"$pin")"
+          echo "EXPECTED_FRONTEND_DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - name: Verify live frontend pod runs exactly the pinned digest
+        run: |
+          set -euo pipefail
+          bash scripts/deploy/verify-pod-digest.sh \
+            --context k3d-test --namespace platform-test \
+            --selector "app.kubernetes.io/name=frontend" \
+            --expected-digest "$EXPECTED_FRONTEND_DIGEST"
+
+      - name: Run planner persona browser journey
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="$EVIDENCE_DIR" \
+          EXPECTED_FRONTEND_DIGEST="$EXPECTED_FRONTEND_DIGEST" \
+            bash scripts/acceptance/schema-explorer-browser-smoke.sh
+
+      - name: Publish non-secret outcome
+        if: always()
+        run: |
+          {
+            echo "## Schema Explorer product-surface verify"
+            echo ""
+            echo "- environment: testai (TEST realm platform-test)"
+            echo "- persona: synthetic planner (budget-smoke-planner; password stays host-side)"
+            echo "- journey: route-scoped login -> /admin/schema-explorer -> source=ifs -> IFSAPP -> TRYPE_ALL_VOUCHER_QRY columns"
+            echo "- frontend digest authority: canonical overlay pin, verified against the live pod imageID"
+            echo "- rollback coupling: none (fail = red run + evidence only)"
+            if [ -f "$EVIDENCE_DIR/journey.json" ]; then
+              echo '```json'
+              cat "$EVIDENCE_DIR/journey.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: schema-explorer-browser-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14

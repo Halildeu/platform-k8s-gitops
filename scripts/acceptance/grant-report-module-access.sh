@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Grant the budget smoke planner the REPORT module through role membership
-# (gitops#3479). The Budget Workspace lives under /admin/reports/*, whose
+# Grant the budget smoke planner a product module through role membership
+# (gitops#3479 for REPORT; gitops#3605 generalised it with --module so the
+# Schema Explorer lane, gated on THEME, uses the same discover-first path). The Budget Workspace lives under /admin/reports/*, whose
 # shell guard requires modules.REPORT >= VIEW from /authz/me — a product
 # permission, granted the same way the access UI does it: by joining an
 # existing permission-service role that already carries the REPORT module
@@ -20,7 +21,7 @@ MODE=""
 ROLE_NAME=""
 ALLOWED_GRANULES=""
 TARGET_EMAIL="${TARGET_EMAIL:-budget-smoke-planner@synthetic.test}"
-OUT_PATH="${OUT_PATH:-/tmp/budget-planner-report-access.json}"
+OUT_PATH="${OUT_PATH:-}"
 
 readonly BASE_URL="https://testai.acik.com"
 readonly VAULT_CONTAINER="platform-vault-test"
@@ -28,18 +29,19 @@ readonly VAULT_INIT_JSON="${VAULT_INIT_JSON:-/srv/platform/secrets/backup-auth/v
 readonly VAULT_ADMIN_PERSONA_PATH="kv/platform/d35-3"
 readonly VAULT_SMOKE_CLIENT_PATH="kv/platform/keycloak/smoke-client"
 readonly KC_ROPC_CLIENT_ID="smoke-client"
-readonly REQUIRED_MODULE_KEY="REPORT"
+MODULE_KEY="REPORT"
 readonly FORBIDDEN_GRANULE_KEYS="ATS_RETENTION_EXECUTE ERASURE_EXECUTE DSAR_WRITE EXPORT_REPAIR"
 
 usage() {
   cat <<'EOF'
 Usage:
-  grant-report-module-access.sh --discover
-  grant-report-module-access.sh --dry-run --role "NAME" --allowed-granules "K1 K2 ..."
-  grant-report-module-access.sh --apply   --role "NAME" --allowed-granules "K1 K2 ..."
+  grant-report-module-access.sh [--module KEY] --discover
+  grant-report-module-access.sh [--module KEY] --dry-run --role "NAME" --allowed-granules "K1 K2 ..."
+  grant-report-module-access.sh [--module KEY] --apply   --role "NAME" --allowed-granules "K1 K2 ..."
 
---discover lists roles carrying the REPORT module granule (full granule sets,
-no mutation). --apply joins the budget smoke planner to the named role only
+--module selects the product module granule to look for (default REPORT; the
+Schema Explorer route needs THEME). --discover lists roles carrying that module
+granule (full granule sets, no mutation). --apply joins the budget smoke planner to the named role only
 when the role's granules exactly stay within the reviewed allowlist.
 EOF
 }
@@ -51,11 +53,15 @@ while [[ $# -gt 0 ]]; do
     --apply) MODE="apply"; shift ;;
     --role) ROLE_NAME="$2"; shift 2 ;;
     --allowed-granules) ALLOWED_GRANULES="$2"; shift 2 ;;
+    --module) MODULE_KEY="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 [[ -n "$MODE" ]] || { usage >&2; exit 2; }
+[[ "$MODULE_KEY" =~ ^[A-Z_]+$ ]] || { echo "FATAL: --module must be an upper-case key" >&2; exit 2; }
+readonly REQUIRED_MODULE_KEY="$MODULE_KEY"
+OUT_PATH="${OUT_PATH:-/tmp/budget-planner-$(printf %s "$REQUIRED_MODULE_KEY" | tr "[:upper:]" "[:lower:]")-access.json}"
 if [[ "$MODE" != "discover" ]]; then
   [[ -n "$ROLE_NAME" && -n "$ALLOWED_GRANULES" ]] \
     || { echo "FATAL: $MODE requires --role and --allowed-granules" >&2; exit 2; }
@@ -121,7 +127,7 @@ if [[ "$MODE" == "discover" ]]; then
           granules: [($g[0].granules? // $g[0])[]? | {type, key, level}]}' >> "$OUT_PATH"
     fi
   done < <(jq -r '(.items? // .)[]? | [(.id|tostring), .name] | @tsv' "$ROLES_JSON")
-  echo "DISCOVER: REPORT taşıyan roller $OUT_PATH içinde"
+  echo "DISCOVER: $REQUIRED_MODULE_KEY taşıyan roller $OUT_PATH içinde"
   jq -r '.roleName' "$OUT_PATH" 2>/dev/null | sed 's/^/  - /' || true
   exit 0
 fi
