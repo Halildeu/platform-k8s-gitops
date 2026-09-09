@@ -1942,7 +1942,13 @@ images:
     # dbType fix that #1143 claimed but did not carry: snapshot metadata now
     # reports the reader's engine ("oracle" for ifs) instead of the "mssql"
     # literal. Digest read back from GHCR by tag (never build logs).
-    digest: sha256:c5af352c4677edfb2798f2518ea8ba53cf23071661ce809521487e7112bc34e3
+    #
+    # 2026-09-10 bump: sha-b5094ac — platform-backend#1145 (gitops#3608). REPORT
+    # module gate on /api/v1/schema/**: every JWT call is allowed only when
+    # permission-service /authz/me grants REPORT (shell hasModule parity);
+    # any authenticated JWT no longer reads the catalogue. Codex 01a08807
+    # AGREE. Digest read back from GHCR by tag (never build logs).
+    digest: sha256:527358b9f6d7b431c963d06c163cb7babd08c3c6e5c937e4a2c5b65402dc3d96
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
