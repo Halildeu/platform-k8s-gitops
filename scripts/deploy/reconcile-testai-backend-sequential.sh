@@ -13,6 +13,9 @@ REVISION="${REVISION:-${GITHUB_SHA:-}}"
 REQUESTED_REVISION="$REVISION"
 DIGEST_MAP="${DIGEST_MAP:-}"
 FULL_SYNC_TIMEOUT="${FULL_SYNC_TIMEOUT:-900}"
+# gitops#3618: distinct exit status when a newer main superseded this run's
+# map or verifier contract — the workflow records "superseded", not a failure.
+SUPERSEDED_EXIT=75
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
 EXPECTED_TARGET_REVISION="${EXPECTED_TARGET_REVISION:-main}"
 REQUIRED_STABLE_POLLS="${REQUIRED_STABLE_POLLS:-2}"
@@ -146,7 +149,7 @@ refresh_semantic_main_fence() {
   rm -f "$latest_file"
   [[ "$latest_map" == "$NORMALIZED_DIGEST_MAP" ]] || {
     echo "FAIL: requested backend map was superseded on main" >&2
-    return 1
+    return "$SUPERSEDED_EXIT"
   }
   git diff --quiet "$REVISION" "$latest_main" -- \
     docs/operations/services.yaml \
@@ -167,7 +170,7 @@ refresh_semantic_main_fence() {
     scripts/ats/fullats-live-browser-acceptance.cjs \
     scripts/ats/d29-smoke.sh || {
       echo "FAIL: backend verifier contract was superseded on main" >&2
-      return 1
+      return "$SUPERSEDED_EXIT"
     }
 
   echo "NOTICE: adopting newer main revision with the same immutable backend map and verifier contract"
@@ -352,7 +355,8 @@ while (( SECONDS < deadline )); do
     if (( stable_polls >= REQUIRED_STABLE_POLLS )); then
       CURRENT_PHASE="main-revision-fence"
       if ! refresh_semantic_main_fence; then
-        exit 1
+        fence_status=$?
+        exit "$fence_status"
       fi
       if [[ "$REVISION_ADVANCED" == "true" ]]; then
         stable_polls=0
@@ -403,7 +407,8 @@ while (( SECONDS < deadline )); do
   if (( SECONDS - last_supersession_check >= SUPERSESSION_CHECK_INTERVAL )); then
     CURRENT_PHASE="main-revision-fence"
     if ! refresh_semantic_main_fence; then
-      exit 1
+      fence_status=$?
+      exit "$fence_status"
     fi
     if [[ "$REVISION_ADVANCED" == "true" ]]; then
       stable_polls=0

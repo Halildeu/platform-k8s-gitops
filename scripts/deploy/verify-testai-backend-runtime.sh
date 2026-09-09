@@ -10,6 +10,16 @@ CRI_NODE_CONTAINER="${BACKEND_CRI_NODE_CONTAINER:-k3d-test-server-0}"
 REVISION="${REVISION:-${GITHUB_SHA:-}}"
 DIGEST_MAP="${DIGEST_MAP:-}"
 REPORT_PATH="${REPORT_PATH:-}"
+# gitops#3618: the services whose digest this push moved (space-separated).
+# Empty = every runtime service (non-push events, contract changes). Exact
+# imageID and readiness are still checked for all 13; only the 2-3 min
+# stability windows are scoped to what actually rolled — 13 sequential
+# windows made this step ~30 min and held the single self-hosted runner.
+CHANGED_SERVICES="${CHANGED_SERVICES:-}"
+# Distinct exit status when a newer main superseded this run's backend map or
+# verifier contract mid-run: the newer push owns verification, so the workflow
+# records "superseded" instead of a red failure and frees the runner.
+SUPERSEDED_EXIT=75
 CURRENT_GATE="preflight"
 VERDICT="FAIL"
 AUTH_GATE="required-p5-view-persona"
@@ -52,8 +62,9 @@ assert_current_backend_map() {
   fi
   rm -f "$latest_file"
   [[ "$latest_map" == "$NORMALIZED_DIGEST_MAP" ]] || {
-    echo "FAIL: runtime backend map was superseded on main" >&2
-    return 1
+    VERDICT="SUPERSEDED"
+    echo "SUPERSEDED: runtime backend map was superseded on main by ${latest_main}; the newer push owns verification" >&2
+    return "$SUPERSEDED_EXIT"
   }
   git diff --quiet "$REVISION" "$latest_main" -- \
     docs/operations/services.yaml \
@@ -68,9 +79,18 @@ assert_current_backend_map() {
     scripts/deploy/verify-testai-backend-runtime.sh \
     scripts/deploy/verify-pod-digest.sh \
     scripts/deploy/gate-stability-window.sh || {
-      echo "FAIL: runtime verifier contract was superseded on main" >&2
-      return 1
+      VERDICT="SUPERSEDED"
+      echo "SUPERSEDED: runtime verifier contract was superseded on main by ${latest_main}; the newer push owns verification" >&2
+      return "$SUPERSEDED_EXIT"
     }
+}
+is_changed_service() {
+  local service="$1" candidate
+  [[ -n "$CHANGED_SERVICES" ]] || return 0
+  for candidate in $CHANGED_SERVICES; do
+    [[ "$candidate" == "$service" ]] && return 0
+  done
+  return 1
 }
 
 write_report() {
@@ -213,7 +233,14 @@ done
 
 CURRENT_GATE="stability-window"
 for spec in "${SERVICE_SPECS[@]}"; do
-  IFS='|' read -r _service selector <<< "$spec"
+  IFS='|' read -r service selector <<< "$spec"
+  if ! is_changed_service "$service"; then
+    echo "SKIP: $service stability window (digest unchanged by this push)"
+    continue
+  fi
+  # A newer main may have replaced this map while earlier windows ran; stop
+  # within one window instead of spending the remaining ones on a stale map.
+  assert_current_backend_map
   bash scripts/deploy/gate-stability-window.sh \
     --service "$selector" \
     --context "$TEST_CONTEXT" \

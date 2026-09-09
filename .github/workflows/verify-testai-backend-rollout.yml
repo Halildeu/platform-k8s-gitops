@@ -117,34 +117,76 @@ jobs:
             fi
           fi
 
+          # gitops#3618: which services this push actually moved. Only they get the
+          # 2-3 min stability windows; exact imageID + readiness stay for all 13.
+          # Empty (non-push, or before-state unavailable) = every service.
+          changed_services=""
+          if [[ "$EVENT_NAME" == "push" && "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] \
+            && [[ -s "${RUNNER_TEMP}/backend-overlay-before.yaml" ]]; then
+            changed_services=$(BEFORE_MAP="$before" CURRENT_MAP="$current" python3 -c '
+          import json, os
+          before = json.loads(os.environ["BEFORE_MAP"]); current = json.loads(os.environ["CURRENT_MAP"])
+          print(" ".join(sorted(k for k, v in current.items() if before.get(k) != v)))
+          ')
+            echo "::notice::services moved by this push: ${changed_services:-none}"
+          fi
+
           {
             echo "should_verify=$should_verify"
             echo "reconcile_revision=$reconcile_revision"
             echo "digest_map=$current"
+            echo "changed_services=$changed_services"
           } >> "$GITHUB_OUTPUT"
 
       - name: Wait for sync-wave auto-sync and exact Application convergence
+        id: reconcile
         if: steps.pin.outputs.should_verify == 'true'
         env:
           REVISION: ${{ steps.pin.outputs.reconcile_revision }}
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
           REPORT_PATH: ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
-        run: bash scripts/deploy/reconcile-testai-backend-sequential.sh
+        run: |
+          set +e
+          bash scripts/deploy/reconcile-testai-backend-sequential.sh
+          rc=$?
+          set -e
+          # gitops#3618: exit 75 = a newer main superseded this run's map mid-run;
+          # that push owns verification. Record it and free the runner — not red.
+          if [[ "$rc" -eq 75 ]]; then
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::backend map superseded on main during convergence; newer push owns verification"
+            exit 0
+          fi
+          echo "superseded=false" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Verify exact pod digests, public edge, readiness and stability
-        if: steps.pin.outputs.should_verify == 'true'
+        id: verify
+        if: steps.pin.outputs.should_verify == 'true' && steps.reconcile.outputs.superseded != 'true'
         env:
           REVISION: ${{ steps.pin.outputs.reconcile_revision }}
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
+          CHANGED_SERVICES: ${{ steps.pin.outputs.changed_services }}
           REPORT_PATH: ${{ runner.temp }}/testai-backend-runtime-verification.json
           SMOKE_AUTH_USERNAME: ${{ secrets.P5_SMOKE_AUTH_USERNAME }}
           SMOKE_AUTH_PASSWORD: ${{ secrets.P5_SMOKE_AUTH_PASSWORD }}
           SMOKE_CLIENT_SECRET: ${{ secrets.P5_SMOKE_CLIENT_SECRET }}
-        run: bash scripts/deploy/verify-testai-backend-runtime.sh
+        run: |
+          set +e
+          bash scripts/deploy/verify-testai-backend-runtime.sh
+          rc=$?
+          set -e
+          if [[ "$rc" -eq 75 ]]; then
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::backend map superseded on main during runtime verification; newer push owns verification"
+            exit 0
+          fi
+          echo "superseded=false" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Validate terminal backend evidence contract
         id: evidence_contract
-        if: always() && steps.pin.outputs.should_verify == 'true'
+        if: always() && steps.pin.outputs.should_verify == 'true' && steps.reconcile.outputs.superseded != 'true' && steps.verify.outputs.superseded != 'true'
         env:
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
           RECONCILE_REVISION: ${{ steps.pin.outputs.reconcile_revision }}
@@ -200,14 +242,30 @@ jobs:
           fi
           [[ "$evidence_passed" == "true" ]]
 
+      - name: Resolve evidence artifact kind
+        id: artifact
+        if: always() && steps.pin.outputs.should_verify == 'true'
+        env:
+          SUPERSEDED: ${{ steps.reconcile.outputs.superseded == 'true' || steps.verify.outputs.superseded == 'true' }}
+          KIND: ${{ steps.evidence_contract.outputs.artifact_kind }}
+          REVISION: ${{ steps.evidence_contract.outputs.artifact_revision || steps.pin.outputs.reconcile_revision }}
+        run: |
+          if [[ "$SUPERSEDED" == "true" ]]; then
+            echo "kind=superseded" >> "$GITHUB_OUTPUT"
+          else
+            echo "kind=${KIND:-diagnostic}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+
       - name: Upload GitOps reconciliation evidence
         if: always() && steps.pin.outputs.should_verify == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: testai-backend-${{ steps.evidence_contract.outputs.artifact_kind }}-${{ steps.evidence_contract.outputs.artifact_revision }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: testai-backend-${{ steps.artifact.outputs.kind }}-${{ steps.artifact.outputs.revision }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
             ${{ runner.temp }}/testai-backend-runtime-verification.json
+          # both scripts write their report from an EXIT trap, also when superseded
           if-no-files-found: error
           retention-days: 14
 
@@ -220,7 +278,8 @@ jobs:
             echo "- merged revision: \`${{ github.sha }}\`"
             echo "- reconciled revision: \`${{ steps.pin.outputs.reconcile_revision }}\`"
             echo "- backend verification required: \`${{ steps.pin.outputs.should_verify }}\`"
-            echo "- runtime services: \`13\`"
+            echo "- superseded by a newer main mid-run: \`${{ steps.reconcile.outputs.superseded == 'true' || steps.verify.outputs.superseded == 'true' }}\`"
+            echo "- runtime services: \`13\` (exact imageID + readiness); stability windows: \`${{ steps.pin.outputs.changed_services || 'all' }}\`"
             echo "- rollout order: test-overlay ArgoCD sync waves (10..22; api-gateway last)"
             echo "- reconciliation owner: ArgoCD auto-sync on merged desired state"
             echo "- verifier mode: read-only exact revision convergence"
