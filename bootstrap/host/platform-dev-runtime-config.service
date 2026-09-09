@@ -1,0 +1,17 @@
+[Unit]
+Description=Render isolated DEV configuration from the encrypted credential store
+Before=platform-dev-docker.service
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=halil
+Group=halil
+RuntimeDirectory=platform-dev-config
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/python3 /srv/platform-dev/ops/install-remote-dev-runtime.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

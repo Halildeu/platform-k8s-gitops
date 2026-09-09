@@ -1,5 +1,185 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Remote DEV pre-deletion preservation verified (2026-09-09)
+
+- The current private snapshot is
+  `/srv/platform-dev/migration/snapshots/20260909-predelete/`.
+  All 2,894,057 selected source files were checked with SHA-256; no content
+  mismatch remains. Git HEAD/working-state comparisons passed for 1,425
+  accessible Git areas, and all 387 common-repository user branch/tag/stash
+  sets matched. One existing no-HEAD repository and three already broken
+  local worktree links are retained as explicit source limitations.
+- Four dirty worktrees were restored into an independent Git object store:
+  full fsck, all 2,854 user refs, staged/unstaged changes, and 295 untracked
+  files passed. The restore test accepts existing shallow boundaries and
+  uses full object IDs in patch comparisons; neither source history depth
+  nor diff abbreviation is silently treated as lost work.
+- The two encrypted history archives were decrypted on the server; every
+  archived file hash and both sets of six SQLite backup-API snapshots passed.
+  These are point-in-time archives, not live Codex task handoffs.
+- Live DEV again passed 18-container ownership/artifact checks, all 13 backend
+  health checks, 11 frontend responses, OIDC, real browser login/user-list
+  reload, profile write/new-session readback/restore, and variant
+  create/new-session readback/delete plus anonymous 401.
+  The isolated cgroup terminate/preserve test also passed.
+- The 40 GiB stopped Docker Desktop disk still matches the prior verified
+  backup hash. Its copied ext4 filesystem was mounted read-only and read
+  successfully, then unmounted and detached. Historical application volumes
+  were not started; this is filesystem recovery evidence, not database
+  application acceptance.
+- All 294 named cleanup candidates passed a final local source fence.
+  Their measured allocation is about 9.96 GiB; four explicitly named package
+  cache directories add about 2.69 GiB. These are estimates, not a promise
+  of APFS space reclaimed. The old 25.5 GiB blanket estimate is not used.
+  Original Mac source directories were not deleted. Active local task/app
+  data, credentials, VM data, and unnamed caches are outside this list.
+- Private acceptance, Git recovery, source-fence and archive receipts are
+  attached to the snapshot's `evidence/` directory and issue #3582.
+  Source snapshot access is currently protected by a read-only bind mount;
+  a write probe was refused. Recheck this mount after host reboot.
+  PR #3585 remains the combined DEV package; no main/TEST/prod deployment
+  is implied by this evidence.
+
+## Live Delta — Isolated cgroup termination regression verified (2026-09-08)
+
+- PR #3591 was merged into the combined DEV branch as
+  `6138cad2dc2483ae71e7cf5bd8e311e7ec816ab3`. The test uses fake Docker
+  responses and real, disposable kernel cgroups/processes; it does not select
+  a real container. Both not-running -> terminate and running -> preserve
+  passed independently. All 18 real container PIDs remained unchanged.
+- A negative setup test found a false success in the initial test: denying sudo
+  produced two SKIPs, zero executed cases, exit 0 and ALL PASS. The test now
+  requires both cases to execute, fails on missing prerequisites/helper errors,
+  uses unique fixture IDs and cleans only cgroups created by its own invocation.
+  Both positive cases and the missing-sudo negative case passed after the fix.
+- The fixture cgroups were read back absent. Test source SHA-256:
+  `4d7afc0b0993e263a4f8aaeb1803405acde3c5fb1021210c8e90d15ef63a40ec`.
+  Private evidence: `/srv/platform-dev/evidence/killpath-review-20260908/`.
+- This closes the isolated termination-branch test gap. A naturally occurring
+  Docker orphan incident after runtime-directory preservation and a physical
+  host reboot have not been reproduced by this synthetic test.
+- Mac cleanup remains a separate acceptance boundary: no local deletion in
+  this pass. Clean working status alone does not prove remote branch/stash
+  preservation. Package caches must be distinguished from local Maven installs,
+  active app runtimes and VM data.
+
+## Live Delta — Automatic DEV start verified; review correction (2026-09-08)
+
+- PR #3590 head `21190621f8f808b148e46c5ef9bc3ecfe2aa8732` was merged into
+  `codex/remote-dev-3582` as `95a199544e7ac0c2d701c44e5b46b4a711622b79`.
+  PR #3585 remains the combined DEV package; main/TEST/prod were not deployed.
+- Direct retest at 18:38:13Z restarted only the dedicated DEV Docker daemon.
+  No manual compose command was used. The runtime service's InvocationID changed,
+  proving automatic execution. All 18 container IDs/PIDs/images remained identical,
+  including PostgreSQL and SQL Server; all 13 backend health, 11 frontend and OIDC
+  responses passed. Real browser login/reload, profile new-session persistence
+  and variant create/read/delete passed afterward.
+- Exact installed script/units match the reviewed source. The new cleanup dry run
+  with `DOCKER_HOST=unix:///run/platform-dev/docker.sock` selects zero groups
+  and skips 18 running containers. Shellcheck passed.
+- Correction to the previous Codex review: its read-only selector read file
+  content, while the old actual command used `test -s`. Live cgroupfs reports zero
+  bytes despite nonempty content, so the old command was a no-op; saying it would
+  immediately kill all 18 was too strong. The selection would become unsafe if
+  only the emptiness check were fixed. The current script fixes both conditions.
+- This test verifies automatic compose reconciliation and healthy-process
+  preservation. It does not reproduce an actual orphan after runtime-directory
+  preservation, nor claim positive orphan-kill or physical machine reboot proof.
+- Private receipt: `/srv/platform-dev/evidence/recovery-20260908/pr3590-autostart-retest.json`.
+  Installation and historical corrections:
+  [autostart runbook](../operations/RUNBOOKS/RB-remote-dev-runtime-autostart.md).
+
+## Live Delta — Remote DEV recovery (#3582, 2026-09-08)
+
+- SSH to `stagingsw` (`10.9.10.53`) works. The prior eleven-exited-container
+  finding was reproduced: 44 orphan processes retained ports while Docker lost
+  ownership. Volatile runtime-directory removal with live-restore processes was
+  the cause. `RuntimeDirectoryPreserve=yes` retains the daemon runtime sockets.
+  Three PostgreSQL dumps were read back before scoped graceful shutdown.
+- Eighteen containers now match configured immutable images, server-local mounts,
+  JAR hashes and Docker-owned PIDs/cgroups. Thirteen backend health endpoints,
+  eleven frontend federation endpoints and OIDC discovery respond. Added services:
+  notification, endpoint-admin, ethics, report, schema, SQL Server and Mailpit.
+- Live-daemon restart retained the process identities. Cold recovery stopped all
+  containers and config delivery, verified tmpfs removal, then regenerated it and
+  started the stack. All 18 acquired new owned PIDs with identical artifacts and
+  mounts; zero orphan container cgroups remained. This is controlled service
+  recovery, not a physical machine reboot claim.
+- Real DEV login opens user, meeting, report, schema and endpoint screens without
+  observed page/API errors. Profile update/new-session readback and variant
+  create/new-session read/delete passed after cold recovery. An API-created meeting
+  remained visible in the browser after cold start and reload, then was deleted
+  and read back absent. Wrong notification tenant returns 403; anonymous variant
+  access returns 401.
+- Variant authz JWT forwarding is fixed in [backend PR #1139](https://github.com/Halildeu/platform-backend/pull/1139),
+  commit `81a5f6f84b8c31af0a39a27249bed50b1aaf83ae`. Nineteen targeted tests and
+  all 24 PR checks passed. Mounted JAR SHA-256:
+  `20a0afda2675664b0980c8760846c2ce065b810d4fef5aea454624d0f4fed6dd`.
+  Wrong-hash/outside-root overrides fail closed; restored config hashes match.
+- OpenFGA uses the canonical 17-type model, preserving all nine old definitions;
+  ten allow/deny fixtures pass. Developer claims use the canonical user identity.
+  The dedicated `REMOTE_DEV` role was assigned/read back through permission APIs.
+- SQL has two synthetic fixture tables and one FK; reader SELECT passes and INSERT
+  is denied. The users-overview report returns DEV rows. Real ERP financial data,
+  external AI/transcription, physical endpoint enrollment and native Apple builds
+  are not accepted. Meeting AI/transcript and outbound notification dispatch remain
+  explicitly disabled. Ethics retains its secure-transport guard.
+- All 45 checked DEV TCP listeners are loopback-only, including mapped IPv4
+  loopback. Legacy docker/containerd stay masked/inactive. Remote Claude/Codex
+  authentication and tmux work. Mac Docker resolves to `stagingsw` and
+  `/srv/platform-dev/docker`. Approximately 168 GiB is free on .53.
+- Receipts: `/srv/platform-dev/evidence/recovery-20260908/`, especially
+  `cold-acceptance.json`, `post-cold.json`, `meeting-browser.json`,
+  `api-modules.json`, `browser-modules.json` and `network-units.json`.
+  See the [runbook](../operations/RUNBOOKS/RB-remote-dev-legacy-host.md).
+  Historical copy hashes below are snapshots and do not cover later Mac edits.
+  Local source/history deletion was not performed; held credentials, unique later
+  edits and live task handoff remain outside this DEV acceptance.
+
+## Historical snapshot — Retired host remote DEV workspace (#3582, 2026-09-06)
+
+- Owner authorized removal of retired old-host backups because active aiserver
+  holds newer data. Host .53 identity and stopped/masked old Docker were checked;
+  `/var/lib/docker` and `/srv/platform/archive/aiserver-backup` are absent.
+  Measured recovered capacity: 326,087,487,488 bytes. No active .15 data changed.
+- Separate `/srv/platform-dev` workspace, Docker daemon/socket, Java 21, Node 22,
+  pnpm and Codex are live on `staging-sw-legacy` (`10.9.10.53`). Old Docker and
+  containerd units remain masked. All three canonical source projects are saved
+  as remote SSH projects in the Codex app; remote Codex authentication passed.
+- Developer acceptance: frontend 100 tests and shell build; backend 85 tests;
+  remote Docker execution, volume reopen and loopback network-binding proof;
+  Mac SSH preview HTTP 200 and rendered frontend login page. Exact source and
+  environment details: [remote DEV runbook](../operations/RUNBOOKS/RB-remote-dev-legacy-host.md).
+- Scope expanded to nine remote repositories and a synthetic DEV runtime with
+  PostgreSQL, Keycloak, OpenFGA and eight backend services. Real browser login,
+  profile persistence across a new OIDC session, and ten allow/deny fixture checks
+  passed. Desktop 652 tests, mobile typecheck, ATS/backend packaging, Python/Go
+  checks are recorded in the runbook. Both Codex and Claude are authenticated.
+- Source/worktree copy verified: 2,922,977 selected entries present, with no
+  selected still-existing source file missing only on the target; 1,430 valid
+  HEADs/tracked diffs, 386 local branch/tag/stash sets and 27,914 selected working
+  file SHA-256 values matched. Explicit cache exclusions explain the normalized
+  status differences. Nine active repositories imported 3,500 local branch refs.
+- History archive: 36,290,785,280 bytes, matching source/target SHA-256, successful
+  gzip/tar readback and matching 1,962-entry count. Stopped Docker Desktop sparse
+  disk backup also passed full SHA-256 comparison. No local source/history
+  deletion was performed. Existing task routing still requires supported handoff;
+  twelve credential-like local files are held separately. Approximately 174 GiB
+  remains free on the old server after transfer and Linux toolchain setup.
+- Mac Docker defaults to `platform-dev-remote`; readback resolves to the isolated
+  server daemon. Empty local Colima was stopped, and remote default selection was
+  reverified. This changes where Docker runs; it does not delete local source/data.
+- DEV credential hardening: encrypted master store with separate root-owned key;
+  generated configuration on tmpfs, rendered before the dedicated Docker daemon.
+  Empty-runtime-directory restart, eight backend health responses, real browser
+  login and profile persistence passed. Old plaintext credential/helper files
+  were removed after in-memory value comparison and authenticated readback.
+- Variant authz-revision calls return 503: [backend #1138](https://github.com/Halildeu/platform-backend/issues/1138).
+  Reports/schema/external-AI journeys and native Apple builds are not accepted.
+- Twenty inactive local `node_modules` trees were removed with unchanged Git
+  status/diff and lockfile hashes. Measured gain is 1,840,959,488 bytes, not their
+  approximately 22 GiB logical size. Local source and credentials are preserved.
+
 ## Live Delta - Endpoint TEST uninstall owner exception consumed (2026-09-06)
 
 - Under [#2828](https://github.com/Halildeu/platform-k8s-gitops/issues/2828), the

@@ -1,0 +1,25 @@
+[Unit]
+Description=Isolated DEV runtime compose stack (postgres, keycloak, openfga, backend services)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/3586
+Requires=platform-dev-docker.service
+After=platform-dev-docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DOCKER_HOST=unix:///run/platform-dev/docker.sock
+# Wait for the isolated daemon socket to accept connections.
+ExecStartPre=/bin/bash -c "for i in $(seq 1 60); do /usr/bin/docker info >/dev/null 2>&1 && exit 0; sleep 2; done; exit 1"
+# Clear only cgroups whose container Docker no longer runs. The script refuses to
+# touch a running container, so healthy databases are never cut. Run it with
+# --dry-run by hand to see what it would select.
+ExecStartPre=/srv/platform-dev/ops/clear-orphan-cgroups.sh
+ExecStart=/usr/bin/docker compose -f /srv/platform-dev/runtime/compose.json up -d --remove-orphans
+# No ExecStop and no PartOf on purpose. An earlier revision had both; a daemon
+# restart then propagated a stop that tore the whole stack down without bringing
+# it back, which is worse than the outage this unit exists to prevent. The
+# daemon's Wants= drop-in starts this unit instead, so recovery is a start path.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

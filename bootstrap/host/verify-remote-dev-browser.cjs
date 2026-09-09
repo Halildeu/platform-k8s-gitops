@@ -1,0 +1,30 @@
+// Real synthetic DEV browser login proof; does not assert every product journey.
+if (require('os').hostname() !== 'stagingsw') throw new Error('Unexpected host');
+const {chromium}=require('/srv/platform-dev/repos/platform-web/node_modules/@playwright/test');
+const fs=require('fs');
+(async()=>{
+ const developerPassword=require('child_process').execFileSync('python3',['-c',"import sys; sys.path.insert(0, '/srv/platform-dev/ops'); from remote_dev_credentials import load_credentials; print(load_credentials()['developer'])"],{encoding:'utf8'}).trim();
+ const browser=await chromium.launch({headless:true});const page=await browser.newPage();
+ const errors=[];page.on('pageerror',e=>errors.push(e.name));
+ await page.goto('http://127.0.0.1:33000/',{waitUntil:'domcontentloaded',timeout:60000});
+ await page.getByRole('link',{name:'Güvenli Kurumsal Giriş'}).click();
+ await page.locator('#username').fill('developer');await page.locator('#password').fill(developerPassword);
+ await page.locator('#kc-login').click();
+ await page.waitForURL('http://127.0.0.1:33000/home',{timeout:60000});
+ const isUserList = response => new URL(response.url()).pathname === '/api/v1/users' && response.status() === 200;
+ const firstList = page.waitForResponse(isUserList, {timeout:60000});
+ await page.goto('http://127.0.0.1:33000/admin/users');
+ await firstList;
+ await page.getByText('DEV Developer',{exact:true}).waitFor({timeout:60000});
+ const reloadedList = page.waitForResponse(isUserList, {timeout:60000});
+ await page.reload();
+ await reloadedList;
+ await page.getByText('DEV Developer',{exact:true}).waitFor({timeout:60000});
+ const body=await page.locator('body').innerText();
+ const result={url:page.url().split('?')[0].split('#')[0],loginReturned:true,authenticatedUserVisible:true,reloadRestored:true,usersApi:200,bodyLength:body.length,pageErrorTypes:errors};
+ await page.screenshot({path:'/srv/platform-dev/evidence/dev-login-browser.png',fullPage:true});
+ fs.writeFileSync('/srv/platform-dev/evidence/dev-login-browser.json',JSON.stringify(result,null,2));
+ if (errors.length) throw new Error('Browser page errors');
+ console.log(JSON.stringify(result));
+ await browser.close();
+})().catch(e=>{console.error(e.name+': '+e.message.split('\n')[0]);process.exit(1)});
