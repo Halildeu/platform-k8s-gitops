@@ -1954,7 +1954,13 @@ images:
     # locale no longer blanks column search / lookup / lineage / AI matching for
     # identifiers containing an i. Codex 01a0881d AGREE. Digest read from GHCR
     # by tag (never build logs).
-    digest: sha256:3efc9e621ce696d98f09069eafbd4f22dc1a043e442cd06e681675759dd43cf0
+    #
+    # 2026-09-10 bump: sha-90f07c0 — platform-backend#1150 (#1149, gitops#3605).
+    # Every source's default snapshot is built right after start-up on a daemon
+    # thread (Workcube ~100 s, IFS ~40 s measured cold), cache key normalised so
+    # the Explorer's default lane hits the warm entry, @Cacheable sync=true.
+    # Codex 01a08856 AGREE. Digest read from GHCR by tag (never build logs).
+    digest: sha256:3eac49a01d532103d590d993aa0a35b634499058d43ed6cea47be92208f647b7
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
