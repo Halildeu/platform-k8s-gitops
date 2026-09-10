@@ -61,6 +61,7 @@ docker run --rm --ipc=host --network host \
   -e PLANNER_PASSWORD_FILE=/run/secrets/planner.password \
   -e EVIDENCE_DIR=/evidence \
   -e EXPECTED_FRONTEND_DIGEST="${EXPECTED_FRONTEND_DIGEST:-}" \
+  -e EXPECTED_LABELS="${EXPECTED_LABELS:-}" \
   -e PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
   -e PLAYWRIGHT_INTEGRITY="$PLAYWRIGHT_INTEGRITY" \
   -v "$REPO_ROOT:/work:ro" \
