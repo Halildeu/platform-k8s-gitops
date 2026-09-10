@@ -121,14 +121,22 @@ const now = () => Date.now();
   const t2 = now();
   await page.getByPlaceholder('Search tables...').fill(expectedTable);
   await page.getByText(expectedTable, { exact: true }).first().click();
-  // The name cell may carry a key marker before the name and an IFS label after it
-  // (platform-web#1157), so match the cell's leading identifier, not its whole text.
-  for (const col of expectedColumns) {
-    const cell = page.locator('.se-col-table td').filter({
-      hasText: new RegExp(`^\\s*(?:\\uD83D\\uDD11\\s*)?${col}(?![A-Z0-9_])`, 'u'),
-    });
-    await cell.first().waitFor({ state: 'visible', timeout: 30_000 });
-  }
+  // The name cell renders the key marker, the name and the IFS label as separate
+  // nodes ("🔑 " text, name text, label <div> — platform-web#1157), so the cell's
+  // textContent is "🔑 COMPANYCompany". Match the name as its own text node.
+  await page.waitForFunction(
+    (cols) => {
+      const cells = Array.from(document.querySelectorAll('.se-col-table td'));
+      const names = new Set();
+      for (const td of cells) {
+        for (const node of td.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE) names.add((node.textContent || '').trim());
+        }
+      }
+      return cols.every((c) => names.has(c));
+    },
+    expectedColumns, { timeout: 30_000 },
+  );
   // gitops#3631: the IFS dictionary's PROMPT labels and FLAGS key columns reach the screen.
   // Off unless EXPECTED_LABELS is set, so the smoke still runs against a service that
   // does not carry labels yet; when set, every listed label must be rendered and at least
