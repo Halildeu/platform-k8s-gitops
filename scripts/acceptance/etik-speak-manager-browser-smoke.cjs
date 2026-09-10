@@ -21,13 +21,12 @@ const username = process.env.PERSONA_USERNAME;
 const password = fs.readFileSync(process.env.PERSONA_PASSWORD_FILE, 'utf8').trim();
 const evidenceDir = process.env.EVIDENCE_DIR;
 const expectedLevel = Number(process.env.EXPECTED_LEVEL || 1);
-// Known, pre-existing console noise on the manager surface — measured 2026-09-10 on the
-// first run of this smoke, both present before ES-301 and tracked on the board
-// (platform-web: AG Grid Enterprise licence banner; nginx CSP `style-src 'self'` vs
-// AG Grid's inline styles). Reported in journey.json, never counted as a failure.
-// Anything else in the console still fails closed.
-const knownNoise = (process.env.CONSOLE_ERROR_ALLOWLIST
-  || 'AG Grid and AG Charts Enterprise License|violates the following Content Security Policy directive \'style-src')
+// Known, pre-existing console noise on the manager surface, tracked as platform-web#1155:
+// the AG Grid Enterprise licence banner. (The CSP style-src violations that were on this
+// list collapsed the grid; platform-web#1156 fixed the policy and the entry was removed
+// so a regression fails this smoke again.) Reported in journey.json, never counted as a
+// failure. Anything else in the console still fails closed.
+const knownNoise = (process.env.CONSOLE_ERROR_ALLOWLIST || 'AG Grid and AG Charts Enterprise License')
   .split('|').map((s) => s.trim()).filter(Boolean);
 const isKnownNoise = (line) => knownNoise.some((n) => line.includes(n));
 // "Failed to load resource" console lines carry no URL; the network capture below does,
