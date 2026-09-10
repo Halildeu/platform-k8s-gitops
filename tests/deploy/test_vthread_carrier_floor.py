@@ -48,6 +48,17 @@ REQUIRED_FLAGS = (
     "-Djdk.virtualThreadScheduler.maxPoolSize=8",
 )
 
+# Catalogue services run the same virtual-thread stack but a wider CPU limit
+# (gitops#3635: schema-service 1500m → ActiveProcessorCount=2). Their JDBC
+# dictionary reads pin a carrier for minutes (Oracle/MSSQL sockets inside
+# synchronized), so the scheduler flags are the only thing that keeps the
+# actuator's own virtual thread schedulable: SIGQUIT dump 2026-09-10 11:49Z,
+# worker-1 "Carrying virtual thread #52", liveness 42 s, CPU and heap idle.
+CATALOG_SERVICES = {
+    "schema-service": "-XX:ActiveProcessorCount=2",
+}
+SCHEDULER_FLAGS = REQUIRED_FLAGS[1:]
+
 # Heap must not be silently changed while touching the flag string. The test
 # overlay deliberately lowers auth to 256m and gateway to 384m (base is 512m).
 EXPECTED_HEAP = {
@@ -108,9 +119,25 @@ class VthreadCarrierFloorTests(unittest.TestCase):
                             "into a whole-service stall",
                         )
 
+    def test_catalog_jvms_carry_the_scheduler_flags_with_their_own_cpu_count(self):
+        for overlay, rendered in self.rendered.items():
+            for service, cpu_flag in CATALOG_SERVICES.items():
+                with self.subTest(overlay=overlay, service=service):
+                    value = _java_tool_options(rendered, service)
+                    for flag in SCHEDULER_FLAGS + (cpu_flag,):
+                        occurrences = value.count(flag)
+                        self.assertEqual(
+                            occurrences,
+                            1,
+                            f"{overlay}/{service}: {flag!r} must appear exactly once "
+                            f"in JAVA_TOOL_OPTIONS, found {occurrences} in {value!r} — "
+                            "a dictionary read pins its carrier; without spare carriers "
+                            "the liveness endpoint stalls for the length of the read",
+                        )
+
     def test_parallelism_stays_below_pool_ceiling(self):
         for overlay, rendered in self.rendered.items():
-            for service in HOT_PATH_SERVICES:
+            for service in HOT_PATH_SERVICES + tuple(CATALOG_SERVICES):
                 with self.subTest(overlay=overlay, service=service):
                     value = _java_tool_options(rendered, service)
                     par = int(re.search(r"parallelism=(\d+)", value).group(1))

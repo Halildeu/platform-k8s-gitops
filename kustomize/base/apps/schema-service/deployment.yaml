@@ -56,7 +56,14 @@ spec:
               # dictionary reads and relationship discovery run on the warm-up thread
               # while Explorer requests arrive on Tomcat; one JVM-visible CPU serialised
               # them behind the CFS quota (gitops#3635, 2026-09-10).
-              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=2"
+              # Virtual-thread carriers (gitops#3210 pattern, gitops#3635 evidence): the
+              # service runs spring.threads.virtual=true on JDK 21 and the scheduler's
+              # carrier count follows ActiveProcessorCount (2). Oracle/MSSQL JDBC read
+              # sockets inside synchronized, so every request in a dictionary read pins
+              # its carrier; two concurrent requests left no carrier for the actuator's
+              # own virtual thread — SIGQUIT dump 11:49:21Z: worker-1 "Carrying virtual
+              # thread #52", worker-2 idle, heap 158/242 MB, liveness 42 s, CPU idle.
+              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=2 -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=8"
           envFrom:
             - configMapRef:
                 name: schema-service-config
