@@ -53,6 +53,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # 0 = the verifier contract is identical between <base> and the current
+          # revision; anything else (differs, unknown base, git error) = changed —
+          # callers fail closed to full verification. One list, used for both the
+          # unchanged-map skip (base = previous push) and the stability-window
+          # inheritance (base = the revision the last PASS evidence verified).
+          contract_changed_since() {
+            local base="$1"
+            [[ "$base" =~ ^[a-f0-9]{40}$ ]] || return 1
+            git cat-file -e "${base}^{commit}" 2>/dev/null \
+              || git fetch --quiet --depth=1 origin "$base" 2>/dev/null || return 1
+            git diff --quiet "$base" "$CURRENT_REVISION" -- \
+              docs/operations/services.yaml \
+              .github/workflows/deploy-backend-testai.yml \
+              .github/workflows/verify-testai-backend-rollout.yml \
+              argocd/applications/platform-test.yaml \
+              scripts/automation/backend-testai-digest-contract.py \
+              scripts/automation/testai-last-verified-map.py \
+              scripts/automation/sync-test-overlay.sh \
+              scripts/automation/apply-test-overlay-digests.py \
+              scripts/deploy/reconcile-testai-backend-sequential.sh \
+              scripts/deploy/ensure-argocd-cli.sh \
+              scripts/deploy/verify-testai-backend-runtime.sh \
+              scripts/deploy/verify-pod-digest.sh \
+              scripts/deploy/gate-stability-window.sh
+          }
           current=$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
             --kustomization "$KUSTOMIZATION")
           should_verify=true
@@ -75,6 +100,7 @@ jobs:
                 .github/workflows/verify-testai-backend-rollout.yml \
                 argocd/applications/platform-test.yaml \
                 scripts/automation/backend-testai-digest-contract.py \
+                scripts/automation/testai-last-verified-map.py \
                 scripts/automation/sync-test-overlay.sh \
                 scripts/automation/apply-test-overlay-digests.py \
                 scripts/deploy/reconcile-testai-backend-sequential.sh \
@@ -100,26 +126,7 @@ jobs:
             if git show "${BEFORE_SHA}:${KUSTOMIZATION}" > "$before_file" 2>/dev/null; then
               before=$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
                 --kustomization "$before_file")
-              # One contract diff for both decisions below (gitops#3618): a git
-              # error also counts as "changed" — fail-closed to full verification.
-              git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
-                docs/operations/services.yaml \
-                .github/workflows/deploy-backend-testai.yml \
-                .github/workflows/verify-testai-backend-rollout.yml \
-                argocd/applications/platform-test.yaml \
-                scripts/automation/backend-testai-digest-contract.py \
-                scripts/automation/testai-last-verified-map.py \
-                scripts/automation/sync-test-overlay.sh \
-                scripts/automation/apply-test-overlay-digests.py \
-                scripts/deploy/reconcile-testai-backend-sequential.sh \
-                scripts/deploy/ensure-argocd-cli.sh \
-                scripts/deploy/verify-testai-backend-runtime.sh \
-                scripts/deploy/verify-pod-digest.sh \
-                scripts/deploy/gate-stability-window.sh || contract_changed=true
-              # The overlay file itself is deliberately not in the contract list
-              # (as before): a frontend-only overlay change with an unchanged
-              # backend map keeps skipping, and a digest bump must not force all
-              # 13 stability windows.
+              contract_changed_since "$BEFORE_SHA" || contract_changed=true
               if [[ "$before" == "$current" ]]; then
                 if [[ "$contract_changed" == "false" ]]; then
                   should_verify=false
@@ -137,12 +144,28 @@ jobs:
           # earlier push is never skipped. Exact imageID + readiness stay for all
           # 13. Empty = every service (no usable evidence, or this push also
           # changed the verifier contract — see contract_changed above).
-          changed_services=$(python3 scripts/automation/testai-last-verified-map.py \
+          scope_json="$RUNNER_TEMP/testai-backend-window-scope.json"
+          python3 scripts/automation/testai-last-verified-map.py \
             --current-map "$current" \
             --repo "$GITHUB_REPOSITORY" \
             --workflow-file verify-testai-backend-rollout.yml \
-            --contract-changed "$contract_changed")
-          echo "::notice::stability windows this run: ${changed_services:-all services} (contract_changed=$contract_changed)"
+            --contract-changed "$contract_changed" \
+            --out-json "$scope_json" >/dev/null
+          verified_revision=$(jq -r '.verified_revision // empty' "$scope_json")
+          changed_services=""
+          scope_basis="all services (no inheritable PASS evidence)"
+          # Inheriting windows from the last PASS evidence is only valid when the
+          # verifier contract is identical between the revision that evidence
+          # verified and this one (Codex 01a08891 round 3); otherwise every
+          # service is verified again.
+          if [[ "$contract_changed" == "false" && -n "$verified_revision" ]] \
+            && contract_changed_since "$verified_revision"; then
+            changed_services=$(jq -r '.changed_services | join(" ")' "$scope_json")
+            # every service already verified at its current digest: no windows at all
+            [[ -n "$changed_services" ]] || changed_services="none"
+            scope_basis="inherited from PASS evidence @ ${verified_revision}"
+          fi
+          echo "::notice::stability windows this run: ${changed_services:-all services} (${scope_basis}; contract_changed=$contract_changed)"
 
           {
             echo "should_verify=$should_verify"

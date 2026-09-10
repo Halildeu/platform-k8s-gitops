@@ -10,11 +10,13 @@ CRI_NODE_CONTAINER="${BACKEND_CRI_NODE_CONTAINER:-k3d-test-server-0}"
 REVISION="${REVISION:-${GITHUB_SHA:-}}"
 DIGEST_MAP="${DIGEST_MAP:-}"
 REPORT_PATH="${REPORT_PATH:-}"
-# gitops#3618: the services whose digest this push moved (space-separated).
-# Empty = every runtime service (non-push events, contract changes). Exact
-# imageID and readiness are still checked for all 13; only the 2-3 min
-# stability windows are scoped to what actually rolled — 13 sequential
-# windows made this step ~30 min and held the single self-hosted runner.
+# gitops#3618: the services that still owe a stability window (space-separated),
+# derived by the workflow from the last PASS evidence. Empty = every runtime
+# service (no inheritable evidence, contract change, non-push events); the
+# literal "none" = every service is already verified at its digest, no
+# windows. Exact imageID and readiness are still checked for all 13 either
+# way — 13 sequential 2-3 min windows made this step ~30 min and held the
+# single self-hosted runner.
 CHANGED_SERVICES="${CHANGED_SERVICES:-}"
 # Distinct exit status when a newer main superseded this run's backend map or
 # verifier contract mid-run: the newer push owns verification, so the workflow
@@ -75,6 +77,7 @@ assert_current_backend_map() {
     .github/workflows/verify-testai-backend-rollout.yml \
     argocd/applications/platform-test.yaml \
     scripts/automation/backend-testai-digest-contract.py \
+    scripts/automation/testai-last-verified-map.py \
     scripts/automation/sync-test-overlay.sh \
     scripts/automation/apply-test-overlay-digests.py \
     scripts/deploy/reconcile-testai-backend-sequential.sh \
@@ -102,6 +105,7 @@ assert_current_backend_map() {
 is_changed_service() {
   local service="$1" candidate
   [[ -n "$CHANGED_SERVICES" ]] || return 0
+  [[ "$CHANGED_SERVICES" != "none" ]] || return 1
   for candidate in $CHANGED_SERVICES; do
     [[ "$candidate" == "$service" ]] && return 0
   done

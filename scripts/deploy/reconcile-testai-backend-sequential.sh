@@ -160,6 +160,7 @@ refresh_semantic_main_fence() {
     .github/workflows/verify-testai-backend-rollout.yml \
     argocd/applications/platform-test.yaml \
     scripts/automation/backend-testai-digest-contract.py \
+    scripts/automation/testai-last-verified-map.py \
     scripts/automation/sync-test-overlay.sh \
     scripts/automation/apply-test-overlay-digests.py \
     scripts/deploy/reconcile-testai-backend-sequential.sh \

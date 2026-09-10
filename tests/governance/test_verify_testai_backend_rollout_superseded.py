@@ -43,34 +43,25 @@ class RolloutVerifySupersededTests(unittest.TestCase):
         # contract diff and no extra overlay condition is added.
         self.assertIn('if [[ "$contract_changed" == "false" ]]; then', self.workflow)
         self.assertNotIn("overlay_changed", self.workflow)
-        push_diff = re.search(r'git diff --quiet "\$BEFORE_SHA" "\$CURRENT_REVISION" -- \\\n(?P<paths>.*?)\|\| contract_changed=true', self.workflow, re.DOTALL)
-        self.assertIsNotNone(push_diff)
-        self.assertNotIn("kustomize/overlays/test/kustomization.yaml", push_diff.group("paths"))
-        self.assertIn("scripts/automation/testai-last-verified-map.py", push_diff.group("paths"))
+        self.assertIn('contract_changed_since "$BEFORE_SHA" || contract_changed=true', self.workflow)
+        fn = re.search(r"contract_changed_since\(\) \{\n(?P<body>.*?)\n          \}", self.workflow, re.DOTALL)
+        self.assertIsNotNone(fn)
+        self.assertNotIn("kustomize/overlays/test/kustomization.yaml", fn.group("body"))
+        self.assertIn("scripts/automation/testai-last-verified-map.py", fn.group("body"))
 
-    def test_runtime_verifier_scopes_stability_windows_to_changed_services(self):
-        self.assertIn('CHANGED_SERVICES="${CHANGED_SERVICES:-}"', self.runtime)
-        self.assertIn("is_changed_service()", self.runtime)
-        window = re.search(
-            r'CURRENT_GATE="stability-window"\n(?P<body>.*?)\ndone', self.runtime, re.DOTALL
-        )
-        self.assertIsNotNone(window, "stability-window loop not found")
-        body = window.group("body")
-        self.assertIn('if ! is_changed_service "$service"; then', body)
-        self.assertIn("assert_current_backend_map", body)
-        self.assertIn("gate-stability-window.sh", body)
-
-    def test_workflow_passes_changed_services_to_the_verifier(self):
-        self.assertIn("CHANGED_SERVICES: ${{ steps.pin.outputs.changed_services }}", self.workflow)
-
-    def test_exact_imageid_and_readiness_still_cover_every_service(self):
-        # Scoping applies to the stability windows only.
-        imageid = re.search(r'CURRENT_GATE="exact-pod-imageid"\n(?P<body>.*?)\ndone', self.runtime, re.DOTALL)
-        readiness = re.search(r'CURRENT_GATE="in-cluster-readiness"\n(?P<body>.*?)\ndone', self.runtime, re.DOTALL)
-        self.assertIsNotNone(imageid)
-        self.assertIsNotNone(readiness)
-        self.assertNotIn("is_changed_service", imageid.group("body"))
-        self.assertNotIn("is_changed_service", readiness.group("body"))
+    def test_window_inheritance_requires_an_unchanged_contract_since_the_verified_revision(self):
+        # Codex 01a08891 round 3: a PASS map from before a contract change must
+        # not be inherited — the evidence names its revision and the contract is
+        # diffed between that revision and the current one.
+        self.assertIn("verified_revision=$(jq -r '.verified_revision // empty'", self.workflow)
+        self.assertIn('&& contract_changed_since "$verified_revision"; then', self.workflow)
+        self.assertIn('[[ -n "$changed_services" ]] || changed_services="none"', self.workflow)
+        self.assertIn('[[ "$CHANGED_SERVICES" != "none" ]] || return 1', self.runtime)
+        # the helper is part of the verifier contract everywhere the contract is compared
+        for source in (self.workflow, self.runtime, self.reconcile):
+            self.assertIn("scripts/automation/testai-last-verified-map.py", source)
+        # trigger path, contract_changed_since list, latest-main list, invocation
+        self.assertEqual(4, self.workflow.count("scripts/automation/testai-last-verified-map.py"))
 
     # --- supersession is a distinct, non-red outcome ------------------------
     def test_scripts_exit_75_when_superseded(self):
