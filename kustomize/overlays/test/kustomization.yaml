@@ -1969,7 +1969,14 @@ images:
     # FLAGS K|P key columns OR-ed with constraints, listSchemas drops Oracle-
     # maintained owners. Codex 01a08a98 AGREE; module verify 299/0.
     # Digest read from GHCR by tag (never build logs).
-    digest: sha256:265ed2a82e178b80af8c91e314c2b0c055ebb03ca151004a36e17f6d1971cd30
+    #
+    # 2026-09-10 bump: sha-8cf12b4 — platform-backend#1156 (gitops#3631 slice 2): IFS REF=
+    # column references become foreign keys (name-then-position pairing, tails,
+    # implicit parents, self-references), composite keys carry every column pair
+    # into the JOIN builders, /path returns bounded shortest alternatives.
+    # Codex 01a08afc AGREE after 4 REVISE rounds; module verify 324/0.
+    # Digest read from GHCR by tag (never build logs).
+    digest: sha256:8bac50981bba3da6a226e221b28ecf1b080bde354d2348f6f8925b5a08438ebc
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
