@@ -121,11 +121,41 @@ const now = () => Date.now();
   const t2 = now();
   await page.getByPlaceholder('Search tables...').fill(expectedTable);
   await page.getByText(expectedTable, { exact: true }).first().click();
-  for (const col of expectedColumns) {
-    await page.getByText(col, { exact: true }).first().waitFor({ state: 'visible', timeout: 30_000 });
+  // The name cell renders the key marker, the name and the IFS label as separate
+  // nodes ("🔑 " text, name text, label <div> — platform-web#1157), so the cell's
+  // textContent is "🔑 COMPANYCompany". Match the name as its own text node.
+  await page.waitForFunction(
+    (cols) => {
+      const cells = Array.from(document.querySelectorAll('.se-col-table td'));
+      const names = new Set();
+      for (const td of cells) {
+        for (const node of td.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE) names.add((node.textContent || '').trim());
+        }
+      }
+      return cols.every((c) => names.has(c));
+    },
+    expectedColumns, { timeout: 30_000 },
+  );
+  // gitops#3631: the IFS dictionary's PROMPT labels and FLAGS key columns reach the screen.
+  // Off unless EXPECTED_LABELS is set, so the smoke still runs against a service that
+  // does not carry labels yet; when set, every listed label must be rendered and at least
+  // one key column must be marked — the measured baseline was zero of each. Point
+  // EXPECTED_TABLE at a keyed entity for this mode (VOUCHER_ROW: 5-column business key,
+  // 118 labels); *_QRY query views carry PROMPT labels but no FLAGS keys (measured
+  // 2026-09-10: TRYPE_ALL_VOUCHER_QRY 62 labels, 0 keys).
+  const expectedLabels = (process.env.EXPECTED_LABELS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  let labels = null;
+  if (expectedLabels.length > 0) {
+    const rendered = await page.getByTestId('se-col-label').allTextContents();
+    const missing = expectedLabels.filter((l) => !rendered.includes(l));
+    const keyColumns = await page.locator('.se-col-table td.se-col--pk').count();
+    labels = { rendered: rendered.length, expected: expectedLabels, missing, keyColumns };
+    if (missing.length > 0) throw new Error(`IFS etiketleri ekranda yok: ${JSON.stringify(missing)} (render edilen ${rendered.length})`);
+    if (keyColumns === 0) throw new Error('FLAGS anahtar kolonu işaretlenmedi (se-col--pk = 0)');
   }
   timings.tableDetailMs = now() - t2;
-  await page.screenshot({ path: path.join(evidenceDir, '03-trype-all-voucher-qry.png'), fullPage: false });
+  await page.screenshot({ path: path.join(evidenceDir, `03-${expectedTable.toLowerCase().replace(/_/gu, '-')}.png`), fullPage: false });
 
   // 5. Evidence and fail-closed checks.
   fs.writeFileSync(path.join(evidenceDir, 'console-errors.txt'), consoleErrors.join('\n') + (consoleErrors.length ? '\n' : ''));
@@ -140,6 +170,7 @@ const now = () => Date.now();
     headerStats: stats.trim(),
     expectedTable,
     expectedColumns,
+    labels,
     ifsRequests: ifsRequests.length,
     schemaRequestsTotal: schemaRequests.length,
     non2xx: bad,
