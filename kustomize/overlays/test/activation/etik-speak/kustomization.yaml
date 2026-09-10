@@ -130,8 +130,11 @@ images:
     # "openjdk version 21.0.12 2026-07-21 LTS, build 21.0.12+10-LTS" (smoke-jre-ver).
     # Kaynak: f35a3161dde8e2946c00134c7e3ad0f50f35fd6e (etiket sha-f35a316).
     # Digest gercek cekisle okundu (smoke-dig-jre pod, k3d-test).
-    # Onceki: d4df8d10 @ sha256:9619cfc7a1f30df0d5...
-    digest: sha256:3c1064b593bf8ea280897ad6c629409dbb7c0f8381f1b02d9b8d65f245ab49e8
+    # ES-301 dilim 1 (#882, platform-backend #1152): eskalasyon olay modeli —
+    # V25/V26 migration, EscalationSweeper, escalationLevel/escalatedAt.
+    # Kaynak: 98b454f395a76712bcb1962fbc8b25b6ca5e3230 (etiket sha-98b454f). Digest GHCR'dan etiketle okundu.
+    # Onceki: f35a3161 @ sha256:3c1064b593bf8ea280...
+    digest: sha256:f40aad2c42d25b0877ad28c8128617d2eba192fd163bf335c4fcd5092d93b8e7
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
@@ -279,6 +282,20 @@ patches:
       - op: add
         path: /data/ETHICS_SLA_CALENDAR_WARNBUSINESSDAYS
         value: "10"
+      # ES-301 dilim 1 (#882, platform-backend #1152) — eskalasyon politikası.
+      # Owner-supplied, kaynakta kapalı; test hücresi burada açar. `steps` yasal son
+      # tarihten SONRAKİ ofsetlerdir: PT0S = ihlal anında seviye 1, P3D = üç gün
+      # sonra seviye 2. Son tarihi OYNATMAZ, yumuşatmaz; bekleme (waiting) ona
+      # ulaşamaz. Kayıtlar threshold_at ile kendini tarif eder: politika sonradan
+      # değişirse eski seviyelerin anlamı değişmez. Prod değeri sahibin kararı.
+      # Env adı: ethics.sla.escalation.enabled -> ETHICS_SLA_ESCALATION_ENABLED,
+      # ethics.sla.escalation.steps -> ETHICS_SLA_ESCALATION_STEPS (virgüllü liste).
+      - op: add
+        path: /data/ETHICS_SLA_ESCALATION_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ETHICS_SLA_ESCALATION_STEPS
+        value: "PT0S,P3D"
       # Faz 35 — CANLI/TEST adres ayrımı (owner kararı 2026-07-23).
       #   etik.acik.com     = CANLI  -> default org ...0001 (gerçek çalışan ihbarları)
       #   speakup.acik.com  = TEST   -> org ...0003 (sentetik doğrulama)
