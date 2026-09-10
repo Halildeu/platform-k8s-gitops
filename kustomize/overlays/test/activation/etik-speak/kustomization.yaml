@@ -134,7 +134,9 @@ images:
     # V25/V26 migration, EscalationSweeper, escalationLevel/escalatedAt.
     # Kaynak: 98b454f395a76712bcb1962fbc8b25b6ca5e3230 (etiket sha-98b454f). Digest GHCR'dan etiketle okundu.
     # Onceki: f35a3161 @ sha256:3c1064b593bf8ea280...
-    digest: sha256:f40aad2c42d25b0877ad28c8128617d2eba192fd163bf335c4fcd5092d93b8e7
+    # 2026-09-10 (gitops#3624) ethics-service: ES-306b tomcat 10.1.59 / netty 4.1.137 / openssl 3.5.8 (platform-backend#1154) uzerine ES-301 dilim 1 (#1152). Etiket sha-e99196c; digest GHCR paket API'sinden (index) okundu,
+    # pin oncesi grype ile tarandi (0 Critical / 0 High). Onceki: sha256:f40aad2c42d25b087...
+    digest: sha256:a3078f27eefb80ee05f73bf29c3fdf5ddf62c7cb533d73184b7ea585ddb8bb72
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
@@ -190,7 +192,9 @@ images:
     # Digest registry'nin Docker-Content-Digest basligindan okundu; etiket TAM
     # 40 karakterlik sha (kisa sha ile HEAD 404 doner).
     # Onceki: sha256:eea78ec3c83abbb34f8d76...
-    digest: sha256:6e3f9fe1398860087b52540c6b1dc488a62cfb49587c3d28921436a3b7002f16
+    # 2026-09-10 (gitops#3624) etik-speak-public: ES-306b nginx-unprivileged stable-alpine tabani (platform-web#1152). Etiket sha-98af84c038fa1db90941ff35f36b158abf1ae870; digest GHCR paket API'sinden (index) okundu,
+    # pin oncesi grype ile tarandi (0 Critical / 0 High). Onceki: sha256:6e3f9fe1398860087...
+    digest: sha256:671a659849503e228f7237e11d9a3cbee83fbd4d80e8a0769a510335baff575f
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
     newName: ghcr.io/halildeu/platform-web-etik-speak-manager
     # platform-web #1081 — manager hücresi ana platformun kabuğunu giydi:
@@ -243,7 +247,9 @@ images:
     # Kaynak: 2d9e77b6b248d312c0b6d9ede81c2f951b643372 (etiket TAM sha).
     # Digest gercek cekisle okundu (smoke-dig-m2 pod, k3d-test).
     # Onceki: 0586b7d7 @ sha256:b82142fb5e2fbc0b8...
-    digest: sha256:e96e172fcd20362e77e15d1abc25edbf8c2f2089edd569e7eb65705d66230244
+    # 2026-09-10 (gitops#3624) etik-speak-manager: ES-306b nginx tabani (platform-web#1152) + ES-301 dilim 2 SLA eskalasyonu sutunu (platform-web#1154). Etiket sha-9d3c02e696994cc5206543eb055f838761b4626c; digest GHCR paket API'sinden (index) okundu,
+    # pin oncesi grype ile tarandi (0 Critical / 0 High). Onceki: sha256:e96e172fcd20362e7...
+    digest: sha256:c9b49da26033312c071a76fef1fde8aee0e0ef84fe0b33a7dbb7b0fa745ea799
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
