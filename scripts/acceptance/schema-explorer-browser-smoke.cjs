@@ -154,6 +154,16 @@ const now = () => Date.now();
     if (missing.length > 0) throw new Error(`IFS etiketleri ekranda yok: ${JSON.stringify(missing)} (render edilen ${rendered.length})`);
     if (keyColumns === 0) throw new Error('FLAGS anahtar kolonu işaretlenmedi (se-col--pk = 0)');
   }
+  // gitops#3643: a composite key is listed once with every column (web#1160). Off unless
+  // EXPECTED_FK_CARD is set; when set, one FK card's text must contain it, e.g.
+  // "COMPANY, ACCOUNTING_YEAR, VOUCHER_TYPE, VOUCHER_NO".
+  const expectedFkCard = (process.env.EXPECTED_FK_CARD || '').trim();
+  let fkCards = null;
+  if (expectedFkCard) {
+    const texts = await page.getByTestId('se-fk-card').allTextContents();
+    fkCards = { count: texts.length, expected: expectedFkCard, matched: texts.some((t) => t.includes(expectedFkCard)) };
+    if (!fkCards.matched) throw new Error(`bileşik FK kartı ekranda yok: ${JSON.stringify(expectedFkCard)} (${texts.length} kart: ${JSON.stringify(texts.slice(0, 5))})`);
+  }
   timings.tableDetailMs = now() - t2;
   await page.screenshot({ path: path.join(evidenceDir, `03-${expectedTable.toLowerCase().replace(/_/gu, '-')}.png`), fullPage: false });
 
@@ -171,6 +181,7 @@ const now = () => Date.now();
     expectedTable,
     expectedColumns,
     labels,
+    fkCards,
     ifsRequests: ifsRequests.length,
     schemaRequestsTotal: schemaRequests.length,
     non2xx: bad,
