@@ -150,8 +150,14 @@ images:
   # Digest registry index manifest'inden cozuldu (syft'in verdigi platform
   # manifest digest'i cekilemiyordu — pin edilecek digest pull edilebilmeli).
   # Onceki: 1.4.3 @ sha256:75fb5fd95fcbe1d7e6d24...
+  # 2026-09-10 bump (ES-306b, #3624): gate 2026-08-25'ten beri kirmiziydi — 1.5'in
+  # tabanindaki libcrypto3/libssl3 3.5.7-r0 ve libcurl 8.21.0-r0 6 Critical / 21 High
+  # biriktirdi. Guncel clamav:stable index digest'i (linux/amd64) ayni ACCEPTED
+  # listesiyle grype ile pin oncesi tarandi: 0 Critical / 0 High. Ikinci baglama
+  # (evidence-worker-config ETHICS_EVIDENCE_PARSER_DIGEST) ayni commit'te tasindi.
+  # Onceki: 1.5 @ sha256:24cab211a882e9f767b84b76afe197d8...
   - name: docker.io/clamav/clamav
-    digest: sha256:24cab211a882e9f767b84b76afe197d82554306ad6d43b782f80cd6aa1e61427
+    digest: sha256:1fdfd24c6f0a0fb60788481487459a6d4eda8a9b448641594e04db8410d34422
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     # platform-web #1016 — indirilen erisim dosyasiyla posta kutusu acilir,
