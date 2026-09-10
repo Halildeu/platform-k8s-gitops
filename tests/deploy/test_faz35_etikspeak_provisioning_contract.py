@@ -2005,6 +2005,33 @@ spec:
             "tarayici guncellenirken bu deger de tasinmali",
         )
 
+    def test_recorded_scanner_digest_in_every_worker_config_is_the_deployed_clamav(self):
+        """ES-306b (#3624): the *other* provenance field had already drifted.
+
+        `ETHICS_EVIDENCE_SCANNER_DIGEST` is written into every derivation manifest as the
+        scanner identity, in both the evidence worker and the CDR worker. When the ClamAV
+        pin moved from 1.4.3 to 1.5 on 2026-08-02 only PARSER_DIGEST followed (the test
+        above binds it); SCANNER_DIGEST kept the 1.4.3 digest for five weeks, so every
+        attachment scanned since recorded a scanner that never touched it. Same failure
+        class, second field — bound the same way, in both configs.
+        """
+        deployed = re.search(
+            r"docker\.io/clamav/clamav\s*\n\s*digest:\s*(sha256:[0-9a-f]{64})",
+            self.activation_kustomization,
+        )
+        self.assertIsNotNone(deployed, "overlay pins no clamav image digest")
+        cdr_worker_config = (ROOT / "kustomize/base/apps/etik-speak/cdr-worker-config.yaml").read_text()
+        for name, config in (("evidence-worker", self.evidence_worker_config), ("cdr-worker", cdr_worker_config)):
+            recorded = re.search(
+                r'ETHICS_EVIDENCE_SCANNER_DIGEST:\s*"(sha256:[0-9a-f]{64})"', config
+            )
+            self.assertIsNotNone(recorded, f"{name} config carries no scanner digest")
+            self.assertEqual(
+                recorded.group(1),
+                deployed.group(1),
+                f"{name}: kanit kokenine yazilan SCANNER digest'i dagitilan clamav imajiyla ayni degil",
+            )
+
     def test_manager_ui_is_isolated_at_the_exact_test_path(self):
         self.assertIn("name: etik-speak-manager-ui", self.manager_ui_ingress)
         self.assertIn("host: testai.acik.com", self.manager_ui_ingress)

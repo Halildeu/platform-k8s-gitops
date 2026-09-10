@@ -46,7 +46,7 @@ data:
   # Pinned scanner identity. The digest is the clamav image actually deployed
   # alongside this worker; the rules version is the definition set baked into
   # that image, because freshclam updates are disabled (no internet egress).
-  ETHICS_EVIDENCE_SCANNER_DIGEST: "sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
+  ETHICS_EVIDENCE_SCANNER_DIGEST: "sha256:1fdfd24c6f0a0fb60788481487459a6d4eda8a9b448641594e04db8410d34422"
   ETHICS_EVIDENCE_SANITIZER_DIGEST: "sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
   ETHICS_EVIDENCE_PARSER_DIGEST: "sha256:1fdfd24c6f0a0fb60788481487459a6d4eda8a9b448641594e04db8410d34422"
   # This is not a label we choose: the processor compares it byte-for-byte with
