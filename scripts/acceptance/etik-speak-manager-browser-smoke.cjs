@@ -103,8 +103,23 @@ const now = () => Date.now();
   const topText = ((await topCell.textContent()) || '').trim();
   const topTone = (await topCell.getAttribute('class')) || '';
   const topSubject = ((await page.locator('.ag-row[row-index="0"] .ag-cell[col-id="subject"]').textContent()) || '').trim();
+  // Layout, not only DOM: platform-web#1155 showed a grid whose cells were all present and
+  // all stacked vertically (CSP had blocked AG Grid's injected styles). A row is laid out
+  // when its cells sit on one line and the escalation cell is to the right of the subject.
+  const layout = await page.evaluate(() => {
+    const row = document.querySelector('.ag-row[row-index="0"]');
+    const subject = row?.querySelector('.ag-cell[col-id="subject"]');
+    const esc = row?.querySelector('.ag-cell[col-id="escalationText"]');
+    if (!row || !subject || !esc) return null;
+    const r = row.getBoundingClientRect(); const a = subject.getBoundingClientRect(); const b = esc.getBoundingClientRect();
+    return { rowHeight: r.height, sameLine: Math.abs(a.top - b.top) < 2, leftToRight: b.left > a.right - 1, rows: document.querySelectorAll('.ag-row').length };
+  });
   timings.gridMs = now() - t1;
   await page.screenshot({ path: path.join(evidenceDir, '02-grid-sorted-by-escalation.png'), fullPage: false });
+  if (!layout) throw new Error('üst satırın hücreleri bulunamadı');
+  if (!layout.sameLine || !layout.leftToRight || layout.rowHeight > 120) {
+    throw new Error(`grid görsel olarak çökük (satır yüksekliği ${Math.round(layout.rowHeight)}px, aynı satır=${layout.sameLine}, soldan sağa=${layout.leftToRight}) — bkz. platform-web#1155`);
+  }
   const levelInGrid = Number((/Seviye (\d+)/u.exec(topText) || [])[1] || 0);
   if (levelInGrid < expectedLevel) throw new Error(`en yüksek seviye ${topText}, beklenen >= Seviye ${expectedLevel}`);
   if (!/is-danger/u.test(topTone)) throw new Error(`eskalasyon hücresi danger tonu taşımıyor: ${topTone}`);
@@ -132,7 +147,7 @@ const now = () => Date.now();
     persona: username,
     route: '/ethic/',
     headers,
-    topRow: { subject: topSubject, escalation: topText, cellClass: topTone },
+    topRow: { subject: topSubject, escalation: topText, cellClass: topTone, layout },
     detail: { text: detailText, level: detailLevel, acknowledgement: ackText },
     ethicsRequestsTotal: ethicsRequests.length,
     non2xx: bad,
