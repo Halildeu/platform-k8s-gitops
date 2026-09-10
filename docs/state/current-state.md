@@ -1,5 +1,39 @@
 # Current State — Platform K8s Migration
 
+## DESKTOP live-analysis candidate and Windows package (2026-09-10 13:36 UTC)
+
+- Backend [#1159](https://github.com/Halildeu/platform-backend/pull/1159) merged
+  as `23d860a4b35190c29bc66241cb11b0bf16f89c9c` after all 24 source-head checks.
+  Merged-tree audio-gateway verify: 53 suites / 440 tests / zero failures,
+  errors or skips. Per-meeting single-flight, latest cumulative coalescing,
+  timeout/error release and configurable 15s cadence; no PT6M/finalization,
+  auth/consent, session-result ownership or production change.
+- [Image run 34483205193](https://github.com/Halildeu/platform-backend/actions/runs/34483205193)
+  succeeded. `gh attestation verify` binds audio-gateway digest
+  `sha256:7d4b9d85b57ad4e89df69daad1b0f3dccb537103e71c9ac4da68bd7b64f11c5d`
+  to that main source and workflow. This overlay stages that candidate with
+  `LIVE_ANALYZE_MIN_INTERVAL_MS=15000`; rendered timeout stays 120000ms.
+  At this pre-merge observation TEST still runs prior digest
+  `sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773`.
+  Post-reconcile runtime and normal-user panel acceptance remain unverified.
+  Rollback: restore the prior digest in overlay and verifier, remove the new
+  cadence setting, use GitOps reconciliation; never imperative workload patch.
+- Windows desktop [#132](https://github.com/Halildeu/platform-desktop/pull/132)
+  package artifact [10152325892](https://github.com/Halildeu/platform-desktop/actions/runs/34477696961/artifacts/10152325892)
+  binds source `59e66bc11f55a006dc17b114bfe451f087540fc0`.
+  Setup EXE SHA256 `00eceee099b1107ecfeed9b7e15a7fadcab6d3e29aa37ebf5d55892d76260fc2`,
+  103966684 bytes, TEST config and #132 gateway-client bytes verified.
+  Native Windows copy in `C:\platform-test-artifacts\desktop-132` has matching
+  Get-FileHash/size, Authenticode `NotSigned`; installer was not executed.
+  Internal TEST only, no security-policy bypass or Windows acceptance claim.
+- Installer mail 13:12:43Z: recipient guard, Graph HTTP202 and Sent Items exact
+  body/To Zeynep/CC Halil at current acik.com addresses verified. This is not
+  a delivery/read receipt. [Package evidence](https://github.com/Halildeu/platform-k8s-gitops/issues/3593#issuecomment-5619257872).
+- Normal TEST account identity is not selected. Normal-persona recording,
+  durable result/source/reopen, multi-session isolation, stop-to-result latency,
+  dictionary/assignment/notification remain unverified. ADMIN and synthetic
+  component tests are not that acceptance. Tracked by #3440 and #3593.
+
 ## Live Delta - Endpoint TEST uninstall owner exception consumed (2026-09-06)
 
 - Under [#2828](https://github.com/Halildeu/platform-k8s-gitops/issues/2828), the

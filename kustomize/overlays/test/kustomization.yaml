@@ -484,7 +484,11 @@ images:
     # 2026-09-04 (platform-backend#1024 dilim 2, platform-backend#1130): sha-9f096ac — meeting-contract
     # speechContextTerms merged ahead of the recorder's contextTerms (SpeechContextTermMerger) before
     # Speechmatics additional_vocab; GHCR package-API manifest digest.
-    digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
+    # 2026-09-10 backend#1159 / gitops#3440: per-meeting live-analysis
+    # single-flight and cumulative coalescing. Source 23d860a4, attested
+    # build 34483205193. Finalization/PT6M unchanged; normal-user gate pending.
+    # Rollback digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
+    digest: sha256:7d4b9d85b57ad4e89df69daad1b0f3dccb537103e71c9ac4da68bd7b64f11c5d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -9945,6 +9949,10 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS
         value: "120000"
+      # Per-meeting request-start cadence; busy windows coalesce, not queue.
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_MIN_INTERVAL_MS
+        value: "15000"
       # I2-T web izleyici canli transkript SSE hub'i — ayni pakette acilir;
       # ephemeral pub/sub, kalicilik yok, drop-oldest back-pressure.
       - op: replace
