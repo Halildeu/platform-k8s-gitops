@@ -512,7 +512,9 @@ def main() -> None:
         # speechContextTerms on the meeting contract (platform-backend#1129); the
         # durable-finalization surface this verifier pins is untouched.
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d",
+        # 2026-09-10 (backend#1135, gitops#3533): sha-58048b9 scopes stale
+        # result rejection to the capability-bound transcript session.
+        "sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
