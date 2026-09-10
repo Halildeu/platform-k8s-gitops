@@ -2350,7 +2350,13 @@ images:
     # route answers 404 (was INTERNAL_ERROR 500 with a stack trace); 405/415/406
     # carry their own status. Codex 01a08828 AGREE. Digest read from GHCR by
     # tag (never build logs).
-    digest: sha256:5c12e3817f4036d6e290d4f10a6bb69a2b0f76001d445ded7552a07ee05bce5f
+    #
+    # 2026-09-10 bump: sha-fc8f4b3 — platform-backend#1151 (platform-backend#1146).
+    # /authz/me REPORT module invariant is derived after the reports.<GROUP> /
+    # <GROUP> alias deny-wins merge (catalogued groups only): a denied group no
+    # longer projects modules.REPORT / REPORT_VIEW. Codex 01a08984 AGREE.
+    # Digest read from GHCR by tag (never build logs).
+    digest: sha256:f103c00de707b0bfd227fda6754db3302d1391ca602a45952b058dc7c0480b66
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)

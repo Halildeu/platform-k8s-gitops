@@ -1199,7 +1199,10 @@ fi
         # INTERNAL_ERROR 500 catch-all; 405/415/406 carry their own status.
         # Error-mapping only; Faz 25 ATS promotion state is invariant (no ATS
         # DTO / catalog / recruiter-scope contract touched).
-        current_permission = "sha256:5c12e3817f4036d6e290d4f10a6bb69a2b0f76001d445ded7552a07ee05bce5f"
+        # 2026-09-10: platform-backend#1146 (#1151) bumps permission-service to
+        # sha-fc8f4b3: /authz/me REPORT invariant derived after the alias deny-wins
+        # merge. Projection only; Faz 25 ATS promotion state invariant.
+        current_permission = "sha256:f103c00de707b0bfd227fda6754db3302d1391ca602a45952b058dc7c0480b66"
         promoted = {
             "frontend": self.frontend_pin["digest"],
             "tag": self.frontend_pin["tag"],
