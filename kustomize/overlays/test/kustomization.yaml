@@ -588,7 +588,10 @@ images:
     # backend#1132 / source 089381f8839083c4bb443c24311d003f28c6e4c8:
     # exact persisted analysis run/spec headers for canonical source readback.
     # Build-only run 34040070306; TEST customer step tracked by gitops#3399.
-    digest: sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d
+    # backend#1135 / merge 58048b92fdd85228841cf0014a4e16bc8edb9cde:
+    # preserve independent session results; same-session stale guards remain.
+    # Provenance-verified image run 34467658000; tracked by gitops#3533/#3399.
+    digest: sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
