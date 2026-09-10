@@ -249,7 +249,11 @@ images:
     # Onceki: 0586b7d7 @ sha256:b82142fb5e2fbc0b8...
     # 2026-09-10 (gitops#3624) etik-speak-manager: ES-306b nginx tabani (platform-web#1152) + ES-301 dilim 2 SLA eskalasyonu sutunu (platform-web#1154). Etiket sha-9d3c02e696994cc5206543eb055f838761b4626c; digest GHCR paket API'sinden (index) okundu,
     # pin oncesi grype ile tarandi (0 Critical / 0 High). Onceki: sha256:e96e172fcd20362e7...
-    digest: sha256:c9b49da26033312c071a76fef1fde8aee0e0ef84fe0b33a7dbb7b0fa745ea799
+    # 2026-09-10 (platform-web#1156, #1155 P1): manager CSP style-src 'unsafe-inline' — AG Grid'in
+    # enjekte ettigi stiller artik engellenmiyor, vaka grid'i gorsel olarak duzeldi (smoke layout
+    # assert'i). Etiket sha-81e4301beeecebc654df3054e166fe29115f3835; digest GHCR paket API'sinden (index), pin oncesi grype tarandi.
+    # Onceki: sha256:c9b49da26033312c0...
+    digest: sha256:7cabc336a788d9fd08c22945f75eb81ce7a49652ef02b152e0b7d8b1103b2125
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
