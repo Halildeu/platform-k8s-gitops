@@ -121,13 +121,21 @@ const now = () => Date.now();
   const t2 = now();
   await page.getByPlaceholder('Search tables...').fill(expectedTable);
   await page.getByText(expectedTable, { exact: true }).first().click();
+  // The name cell may carry a key marker before the name and an IFS label after it
+  // (platform-web#1157), so match the cell's leading identifier, not its whole text.
   for (const col of expectedColumns) {
-    await page.getByText(col, { exact: true }).first().waitFor({ state: 'visible', timeout: 30_000 });
+    const cell = page.locator('.se-col-table td').filter({
+      hasText: new RegExp(`^\\s*(?:\\uD83D\\uDD11\\s*)?${col}(?![A-Z0-9_])`, 'u'),
+    });
+    await cell.first().waitFor({ state: 'visible', timeout: 30_000 });
   }
   // gitops#3631: the IFS dictionary's PROMPT labels and FLAGS key columns reach the screen.
   // Off unless EXPECTED_LABELS is set, so the smoke still runs against a service that
   // does not carry labels yet; when set, every listed label must be rendered and at least
-  // one key column must be marked — the measured baseline was zero of each.
+  // one key column must be marked — the measured baseline was zero of each. Point
+  // EXPECTED_TABLE at a keyed entity for this mode (VOUCHER_ROW: 5-column business key,
+  // 118 labels); *_QRY query views carry PROMPT labels but no FLAGS keys (measured
+  // 2026-09-10: TRYPE_ALL_VOUCHER_QRY 62 labels, 0 keys).
   const expectedLabels = (process.env.EXPECTED_LABELS || '').split(',').map((s) => s.trim()).filter(Boolean);
   let labels = null;
   if (expectedLabels.length > 0) {
@@ -139,7 +147,7 @@ const now = () => Date.now();
     if (keyColumns === 0) throw new Error('FLAGS anahtar kolonu işaretlenmedi (se-col--pk = 0)');
   }
   timings.tableDetailMs = now() - t2;
-  await page.screenshot({ path: path.join(evidenceDir, '03-trype-all-voucher-qry.png'), fullPage: false });
+  await page.screenshot({ path: path.join(evidenceDir, `03-${expectedTable.toLowerCase().replace(/_/gu, '-')}.png`), fullPage: false });
 
   // 5. Evidence and fail-closed checks.
   fs.writeFileSync(path.join(evidenceDir, 'console-errors.txt'), consoleErrors.join('\n') + (consoleErrors.length ? '\n' : ''));
