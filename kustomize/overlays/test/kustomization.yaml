@@ -1976,7 +1976,13 @@ images:
     # into the JOIN builders, /path returns bounded shortest alternatives.
     # Codex 01a08afc AGREE after 4 REVISE rounds; module verify 324/0.
     # Digest read from GHCR by tag (never build logs).
-    digest: sha256:8bac50981bba3da6a226e221b28ecf1b080bde354d2348f6f8925b5a08438ebc
+    #
+    # 2026-09-10 bump: sha-373046f — platform-backend#1158 (gitops#3643): IFS REF= targets —
+    # already-uppercase LU names kept as-is (325 live refs) and the views own
+    # LU= comment index as fallback (103 more, 278 ambiguous counted).
+    # Codex 01a08b5b review; module verify 325/0.
+    # Digest read from GHCR by tag (never build logs).
+    digest: sha256:0c5eeb4e2603f2cc9ca3f970604bef379c17053f040bf25e0065b11ce408afb4
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
