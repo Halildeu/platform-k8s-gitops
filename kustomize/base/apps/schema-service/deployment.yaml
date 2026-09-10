@@ -52,7 +52,11 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"
             - name: JAVA_TOOL_OPTIONS
-              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+              # ActiveProcessorCount follows the CPU limit below (1500m → 2): the
+              # dictionary reads and relationship discovery run on the warm-up thread
+              # while Explorer requests arrive on Tomcat; one JVM-visible CPU serialised
+              # them behind the CFS quota (gitops#3635, 2026-09-10).
+              value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=2"
           envFrom:
             - configMapRef:
                 name: schema-service-config
@@ -70,7 +74,12 @@ spec:
               cpu: "150m"
             limits:
               memory: "768Mi"       # Spring Boot 3 + Flyway + Tomcat ≈ 600 MB (512 OOM)
-              cpu: "750m"           # D22: limit cömert, request≠limit
+              # 750m → 1500m (gitops#3635, 2026-09-10): cgroup cpu.stat on the test pod
+              # showed 78 s throttled against 72 s used in its first 7 minutes — boot
+              # JIT, the 300 s Workcube warm-up and the 52 s IFS warm-up (10,886 views,
+              # 205,874 columns) all sit at the old quota, and an Explorer request
+              # landing in that window starved the actuator port.
+              cpu: "1500m"
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -78,14 +87,22 @@ spec:
             failureThreshold: 60
             periodSeconds: 10        # 60*10 = 600 sn bütçe; ölçülen worst-case boot 243 sn (2026-07-23)
             timeoutSeconds: 3
+          # Liveness tolerates ~100 s of an unresponsive actuator (6 × 15 s + 10 s).
+          # A JVM that is building a catalogue snapshot is busy, not dead: with the old
+          # 3 s × 3 budget the kubelet killed the pod twice in five minutes on
+          # 2026-09-10 (exit 137 after "Commencing graceful shutdown", memory flat at
+          # ~400 Mi) each time a browser request coincided with the start-up warm-up,
+          # and every kill restarted the same 6-minute warm-up. Readiness below keeps
+          # its tight budget: the pod honestly leaves the Service while it is starved
+          # instead of being restarted into the same starvation (gitops#3635).
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: management
             initialDelaySeconds: 0
             periodSeconds: 15
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
