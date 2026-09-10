@@ -13,6 +13,9 @@ REVISION="${REVISION:-${GITHUB_SHA:-}}"
 REQUESTED_REVISION="$REVISION"
 DIGEST_MAP="${DIGEST_MAP:-}"
 FULL_SYNC_TIMEOUT="${FULL_SYNC_TIMEOUT:-900}"
+# gitops#3618: distinct exit status when a newer main superseded this run's
+# map or verifier contract — the workflow records "superseded", not a failure.
+SUPERSEDED_EXIT=75
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
 EXPECTED_TARGET_REVISION="${EXPECTED_TARGET_REVISION:-main}"
 REQUIRED_STABLE_POLLS="${REQUIRED_STABLE_POLLS:-2}"
@@ -108,9 +111,9 @@ finalize_report() {
   trap - EXIT
   if ! write_report; then
     echo "FAIL: ArgoCD convergence evidence report could not be published" >&2
-    if (( original_status == 0 )); then
-      original_status=1
-    fi
+    # Any outcome without its evidence is a failure — including a superseded
+    # run (exit 75), which the workflow would otherwise record as green.
+    original_status=1
   fi
   if [[ -n "$CORE_KUBECONFIG" && -e "$CORE_KUBECONFIG" ]]; then
     if ! rm -f -- "$CORE_KUBECONFIG" || [[ -e "$CORE_KUBECONFIG" ]]; then
@@ -145,15 +148,19 @@ refresh_semantic_main_fence() {
   fi
   rm -f "$latest_file"
   [[ "$latest_map" == "$NORMALIZED_DIGEST_MAP" ]] || {
+    VERDICT="SUPERSEDED"
     echo "FAIL: requested backend map was superseded on main" >&2
-    return 1
+    return "$SUPERSEDED_EXIT"
   }
-  git diff --quiet "$REVISION" "$latest_main" -- \
+  # `git diff --quiet`: 1 = differs (supersession), >1 = git error (real failure).
+  local diff_status=0
+  if git diff --quiet "$REVISION" "$latest_main" -- \
     docs/operations/services.yaml \
     .github/workflows/deploy-backend-testai.yml \
     .github/workflows/verify-testai-backend-rollout.yml \
     argocd/applications/platform-test.yaml \
     scripts/automation/backend-testai-digest-contract.py \
+    scripts/automation/testai-last-verified-map.py \
     scripts/automation/sync-test-overlay.sh \
     scripts/automation/apply-test-overlay-digests.py \
     scripts/deploy/reconcile-testai-backend-sequential.sh \
@@ -165,10 +172,23 @@ refresh_semantic_main_fence() {
     scripts/ats/verify-fullats-live-runtime.sh \
     scripts/ats/fullats-live-browser-acceptance.sh \
     scripts/ats/fullats-live-browser-acceptance.cjs \
-    scripts/ats/d29-smoke.sh || {
+    scripts/ats/d29-smoke.sh; then
+    diff_status=0
+  else
+    diff_status=$?
+  fi
+  case "$diff_status" in
+    0) ;;
+    1)
+      VERDICT="SUPERSEDED"
       echo "FAIL: backend verifier contract was superseded on main" >&2
+      return "$SUPERSEDED_EXIT"
+      ;;
+    *)
+      echo "FAIL: unable to compare the verifier contract with main (git diff exit ${diff_status})" >&2
       return 1
-    }
+      ;;
+  esac
 
   echo "NOTICE: adopting newer main revision with the same immutable backend map and verifier contract"
   REVISION="$latest_main"
@@ -351,9 +371,10 @@ while (( SECONDS < deadline )); do
     echo "STABLE: exact healthy convergence poll ${stable_polls}/${REQUIRED_STABLE_POLLS}"
     if (( stable_polls >= REQUIRED_STABLE_POLLS )); then
       CURRENT_PHASE="main-revision-fence"
-      if ! refresh_semantic_main_fence; then
-        exit 1
-      fi
+      # Plain call on purpose: under `set -e` a non-zero return (1 = failure,
+      # 75 = superseded) exits with that exact status through the EXIT trap;
+      # `if ! fn` would have turned $? into the negation's 0 (Codex 01a08891).
+      refresh_semantic_main_fence
       if [[ "$REVISION_ADVANCED" == "true" ]]; then
         stable_polls=0
         CURRENT_PHASE="argocd-auto-sync-convergence"
@@ -402,9 +423,10 @@ while (( SECONDS < deadline )); do
 
   if (( SECONDS - last_supersession_check >= SUPERSESSION_CHECK_INTERVAL )); then
     CURRENT_PHASE="main-revision-fence"
-    if ! refresh_semantic_main_fence; then
-      exit 1
-    fi
+    # Plain call on purpose: under `set -e` a non-zero return (1 = failure,
+    # 75 = superseded) exits with that exact status through the EXIT trap;
+    # `if ! fn` would have turned $? into the negation's 0 (Codex 01a08891).
+    refresh_semantic_main_fence
     if [[ "$REVISION_ADVANCED" == "true" ]]; then
       stable_polls=0
       out_of_sync_since=-1
