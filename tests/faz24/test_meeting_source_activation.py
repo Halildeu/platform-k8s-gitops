@@ -29,7 +29,7 @@ def test_source_activation_uses_fixed_artifact_and_existing_identity_in_test():
     }
     assert container["image"] == (
         "ghcr.io/halildeu/platform-backend-meeting-service@"
-        "sha256:e11c77ab4c0f9f9b660f54ad0a831a66bb2a65c9bd58e6937f2bbd77ce33691d"
+        "sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1"
     )
     assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 1
 
