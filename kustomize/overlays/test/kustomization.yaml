@@ -7175,7 +7175,10 @@ images:
     # dilim-4b) — topic catalog meeting.action.assigned/reassigned + V28
     # fixed-copy templates (tr-TR, en-US). Registry digest from the k3d-test
     # pull (smoke pod imageID), not a build log.
-    digest: sha256:2efe8b11dc69b404df0f2dc98a3b0a7203b3eafbbb0c39999fa89ae773a54158
+    # 2026-09-11 (platform-backend#1161, ES-301b #1153): V29 ethics.case.escalated sablonu
+    # (tr-TR/en-US, seviye parametreli, sabit kopya). Etiket sha-f4749ec (kaynak f4749ec98de825af0127aa76da4fd9dcb739139c); digest GHCR paket
+    # API'sinden (index), pin oncesi grype. Onceki: sha256:2efe8b11dc69b404d...
+    digest: sha256:abc24cce84bef64be2040b9c48d8ee94a03339b83355cb44066c5fc8d2f54f20
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.3.30:
