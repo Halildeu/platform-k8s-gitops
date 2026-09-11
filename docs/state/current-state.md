@@ -1,5 +1,61 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — ATS Dilim C recruiter answer readback strict TEST acceptance (2026-09-11 18:52 UTC)
+
+This delta supersedes the September 6 Dilim B delta only on the exact TEST artifacts
+below. It claims a synthetic TEST customer journey for job-posting screening
+questions end to end (recruiter question → candidate answer → recruiter reads the
+answer next to the question text before the shortlist decision); it does not claim
+production or legal acceptance.
+
+- ATS backend [ats#260](https://github.com/Halildeu/ats/pull/260) source
+  `aabdbdb7` (Dilim C: `RecruiterApplicationDto` gains `answers`, `questionsSnapshot`,
+  `jobVersion`; `CandidateApplication` carries the three V24 columns; the recruiter
+  inbox summary deliberately does not; erased rows stay NOT_FOUND on the recruiter
+  read path). [Build 34042994691](https://github.com/Halildeu/ats/actions/runs/34042994691)
+  passed build, scan and push. GitOps [#3578](https://github.com/Halildeu/platform-k8s-gitops/pull/3578)
+  (`01097be7`) pinned `sha256:5e4496643069a44693a1f886c3c9323405634f6ecbee55f76a484183504186df`;
+  `k3d-test/platform-test/ats-interview-evidence` desired image equals that pin and the
+  ready pod imageID matched it at promotion time and again on 18:52 (pod `ats-interview-evidence-5ff8b5fc75-znqh7`, Running 1/1, restarts 0).
+  Live recruiter detail `GET /api/ats/v1/applications/{ref}` returns `answers`,
+  `questionsSnapshot` and `jobVersion`; the inbox item keys carry none of them.
+- Frontend [web#1146](https://github.com/Halildeu/platform-web/pull/1146) source
+  `c19e8a96` (recruiter review panel "Aday yanıtları" section: rows in question
+  `order`, kind label + "zorunlu" marker, option label resolved by id, blank text =
+  "Yanıtlanmadı", tolerant of an older backend; `QUESTION_KIND_LABELS` single source).
+  Promoted through GitOps [#3579](https://github.com/Halildeu/platform-k8s-gitops/pull/3579)
+  (`0271feda`, digest `sha256:f67cbd9a…`, build-info `c19e8a96`), since superseded by
+  the frontend on `14a3e0e0` (`sha256:ba1582c661f281f685866341bf0d83d7a3249668594886c9e07d720cf55a18ad`),
+  of which `c19e8a96` is an ancestor (measured 2026-09-11); public build-info sha `14a3e0e0`.
+- Acceptance harness [#3576](https://github.com/Halildeu/platform-k8s-gitops/pull/3576)
+  (`9e14ccc6`) adds journey `recruiter-reads-candidate-answers-with-question-text`:
+  after the review panel opens, the answers section is visible with exactly two rows,
+  both question texts and kind markers, the candidate's answers ("Uzaktan",
+  "Backend ve veri"), no raw question/option id anywhere in the panel text, no
+  "Yanıtlanmadı", and the section precedes the shortlist-decision heading in DOM order.
+  Contract test pins every new marker (30 tests). Provider-distinct review: Codex
+  AGREE with exact-scope receipt (comment 5560471550).
+- Two dispatches on `9e14ccc6` ([34633731655](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34633731655),
+  [34634086857](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34634086857))
+  failed in the runtime-binding step before any journey ran: the workflow still expected
+  permission-service `sha256:264901f4…` while [#3622](https://github.com/Halildeu/platform-k8s-gitops/pull/3622)
+  had promoted `sha-fc8f4b3` → `sha256:f103c00de707b0bfd227fda6754db3302d1391ca602a45952b058dc7c0480b66`
+  (deployment 1/1 Ready, gen=obs=22; the verifier reports image inequality under the same
+  "desired/ready state mismatch" message). [#3680](https://github.com/Halildeu/platform-k8s-gitops/pull/3680)
+  (`2ffc55f6`) moved the forward expectation (workflow env + contract constant) to the live
+  digest, cross-checked against the GHCR package API tag; the compensating-rollback tuple
+  stays on the historical #2636 values. The same failures showed the compensating rollback
+  itself is dead (MiniMax-receipt guard on the historical promotion body, stale tuple) —
+  tracked as [#3679](https://github.com/Halildeu/platform-k8s-gitops/issues/3679); the
+  runtime was never touched.
+- Strict browser acceptance [run 34634588331](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34634588331)
+  on GitOps `2ffc55f6`: **PASS**. The 33-journey chain (`summary.json` sha256 `44f002943ea1640d368b503f196310d869be91c341435015040d2410e4d3fb4b`, `syntheticOnly=true`) carries the six A/B/C journeys `recruiter-question-create-reorder-stable-ids-reopen-delete`, `recruiter-question-required-flag-persists`, `candidate-sees-recruiter-questions-in-order`, `candidate-preview-blocked-until-required-question-answered`, `candidate-answers-bound-to-server-ids` and, as journey 19, `recruiter-reads-candidate-answers-with-question-text`. The artifact's `publicRefSha256` `eea9d7d10716e9c3792d4acf959f9889da810eaad76ec102c067daad776ca22c` equals sha256 of the application the recruiter API returns as newest, `app_9BI-3gsUhC1aEdIzezSbYneW` (created 18:52:02Z, `jobVersion` 3): `answers` `[{questionId q_BrCsvlZrX_5Oq2Tn, optionId qo_PN6x41FZQAQp}, {questionId q_cEyuYKKGxMTrRWsn, text "Backend ve veri"}]` with no option label stored, `questionsSnapshot` with the single-choice question (`order` 1, options Ofis/Uzaktan, `required=true`) and the short-text question (`order` 2, `required=false`); the recruiter inbox items carry no `answers`/`questionsSnapshot` keys (in-band smoke recruiter token on aiserver, no secret printed). Runtime binding (ready pod
+  imageID equal to desired): ATS `sha256:5e449664…`, permission `sha256:f103c00d…`,
+  frontend `sha256:ba1582c6…` (frontend source `14a3e0e0`).
+- [ats#240](https://github.com/Halildeu/ats/issues/240): question editor A, candidate
+  answers B and recruiter answer readback C are all measured on TEST with synthetic data;
+  the issue is closed as completed and the board item is Done. No production mutation.
+
 ## DESKTOP live deadline TEST deployment (2026-09-11 06:38 UTC)
 
 - Tracked by [#3649](https://github.com/Halildeu/platform-k8s-gitops/issues/3649),
