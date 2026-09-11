@@ -257,7 +257,11 @@ images:
     # basligi tasiyor (senkron token snapshot'i; /api/v1/variants 401 -> 2xx) ve AG Grid lisans
     # anahtari imajda (CSP-uyumlu runtime-env asset'i; banner yok). Etiket sha-747666b94ed5a01328fa991aaa4b5c95d485617c; digest
     # GHCR paket API'sinden (index), pin oncesi grype tarandi.
-    digest: sha256:c5b61ced286276ccb57834c5d58ed8720fd2ce6931c9ebde9d2a41c1a9fbadf6
+    # 2026-09-11 (platform-web#1167, #1155 P2 kapanis): vaka grid'i variant entegrasyonu olmadan
+    # calisir (ETIK_SPEAK_MANAGER rolunde VARIANTS_READ yok -> 403 sozlesme geregi; preset yetkisi
+    # gitops#3665 urun karari). Etiket sha-24e40f6dc5875e4a70ef793d032e270b0638efb8; digest GHCR paket API'sinden (index), pin oncesi
+    # grype tarandi.
+    digest: sha256:f148f320529de9e9e8138a5f4c0cb339d5bb6962f38fed8e8f7a5c3ddc2a4be4
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
