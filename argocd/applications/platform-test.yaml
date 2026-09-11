@@ -82,10 +82,44 @@ spec:
         - .spec.data[].remoteRef.decodingStrategy
         - .spec.data[].remoteRef.metadataPolicy
         - .spec.data[].remoteRef.nullBytePolicy
+    # gitops#3653 (2026-09-11): the HPA and self-heal were fighting over
+    # spec.replicas. Every HPA-managed Deployment in this overlay pins
+    # `replicas: 1` in git; when the HPA scaled one to 2 (schema-service
+    # warm-up, 2026-09-10) self-heal applied the git value back within
+    # seconds and the second pod was deleted mid-warm-up — measured today:
+    # a replica change on a Deployment is reverted 1.2 s later, owner
+    # `argocd-controller`. So the HPA could never keep a scale-up on test.
+    #
+    # The ignore is scoped to the FIELD MANAGER, not the field: the HPA
+    # controller writes replicas through the scale subresource as manager
+    # `k3s` (k3s bundles kube-controller-manager; live managedFields show
+    # `k3s Update scale`), while `kubectl scale` writes as manager
+    # `kubectl` — measured on both today. A field owned by `k3s` is left
+    # alone; a field owned by anything else (a manual scale, including
+    # scale=0) is still self-healed to the git value. That keeps the
+    # HARD RULE — TEST Cluster Scale-to-Zero YASAK guard (2026-05-10) intact:
+    # a plain `/spec/replicas` jsonPointer ignore would have reopened it.
+    # RespectIgnoreDifferences=true above makes the sync carry the live
+    # value of a k3s-owned field into the applied manifest instead of
+    # forcing the git value back.
+    #
+    # Scope, stated honestly (Codex 01a091c6 P2): the rule matches EVERY
+    # Deployment of this Application (28 rendered, 10 with an HPA) and every
+    # field manager `k3s` owns on them, not only spec.replicas. Today that is
+    # the scale-subresource replicas write and the deployment controller's
+    # `deployment.kubernetes.io/revision` annotation; nothing under
+    # spec.template is written by k3s. Consequence accepted: while k3s owns
+    # replicas, a git change of `replicas` on that Deployment is not applied
+    # — the HPA wins; change the HPA bounds instead.
+    - group: apps
+      kind: Deployment
+      managedFieldsManagers:
+        - k3s
   # 2026-05-10: D17 scale-to-zero ignoreDifferences DEPRECATED.
   # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10
   # kararı): multi-Claude paralel session geliştirme modelinde scale-down
   # unsafe; ArgoCD self-heal manuel scale=0 drift'ini geri alır.
   # Eski yorum: "test-toggle.sh ile 1'e çekildiğinde ArgoCD drift düzeltmesin"
-  # Yeni davranış: hiç scale=0 olmamalı; drift olursa ArgoCD self-heal 1'e
-  # geri çekecek. ignoreDifferences boş bırakıldı (test cluster).
+  # Davranış: hiç scale=0 olmamalı; manuel drift olursa ArgoCD self-heal 1'e
+  # geri çeker. Yalnız HPA'nın (manager `k3s`) yazdığı replicas serbest —
+  # gitops#3653 kuralı yukarıda.
