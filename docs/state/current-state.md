@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## DESKTOP live deadline diagnosis and next TEST pin (2026-09-11)
+## DESKTOP live deadline TEST deployment (2026-09-11 06:38 UTC)
 
 - Tracked by [#3649](https://github.com/Halildeu/platform-k8s-gitops/issues/3649),
   parent #3440 / product slice #3399. New mail/review triage found no new human
@@ -17,18 +17,56 @@
   and two actions in 29.531s and 4.641s. No durable writes or listener changes.
   Worker total 34.172s versus Ollama HTTP total 14.701s; queue wait measured zero.
   This is isolated engineering evidence, not packaged normal-persona acceptance.
-- Live deployed source and hardened ledger remain `ff179d92c8051e3d8d1cf7c4a81e0db15ac3fda7`.
+- Before this deployment, source and ledger were `ff179d92c8051e3d8d1cf7c4a81e0db15ac3fda7`.
   One native live probe returned 504 at 60.227s; later native calls returned 200
   in 8.296s and 7.313s. Direct model calls also alternated timeout/success.
   Intermittent root cause is not proven; successful later samples do not erase
   the failures. [Readback](https://github.com/Halildeu/platform-k8s-gitops/issues/3649#issuecomment-5630152435).
-- Policy stages only the new exact AI commit. Windows startup-script SHA256
+- TEST source, hardened ledger and STT runtime now match `6223fd22916e5607015ee445a6620d4f1a95ea18`;
+  ledger previous commit remains `ff179d92c8051e3d8d1cf7c4a81e0db15ac3fda7`.
+  The first deployment supervisor was deliberately stopped after a deterministic
+  acceptance mismatch: startup requires live VAD true (silence-hallucination
+  protection, #3484), while the old updater required false. No workload was
+  stopped by that supervisor-abort action and no acceptance was claimed for it.
+  [AI #337](https://github.com/Halildeu/platform-ai/pull/337) fixes the predicate
+  with a startup-policy regression test: 63 repo tests and Windows contract CI
+  passed. Supported `ControllerCommit=a7a48414185235eda7705af67b06d8ff5388087e`
+  then redeployed the same 6223fd2 target, retaining all other acceptance gates.
+- Three exact-target native STT receipts were read back under
+  `C:\ProgramData\Acik\platform-ai\acceptance-receipts\`:
+  `20260911T063449978-sample-tr-cv17-001-r1.json`,
+  `20260911T063457777-sample-tr-cv17-002-r1.json`, and
+  `20260911T063529607-sample-tr-cv17-001-r5.json`.
+  Each has verdict `accepted`, zero failed checks and terminal sequence
+  `eof_ack, drained`. WER was 0.0 and 0.375 against the existing per-fixture
+  bounds; the separate draft-path run produced four partials and seven finals.
+  These are synthetic native stream checks, not normal-persona acceptance.
+- [GitOps #3655](https://github.com/Halildeu/platform-k8s-gitops/pull/3655)
+  policy/permit binds GitOps `65aade397b2d7f3cb436770b2e145c00afdc9704`, policy
+  SHA256 `b10d05228a8b964175b4b7f924e1414e454987d1f38106ff88e842a38a98f74d`.
+  Disabled-consumer collection passed before scoped-token signing; fresh permit
+  file SHA256 `c698b94dd0bf4ead88b4c672cecabae176da00c73a5789bf181a0c2fecb3b643`
+  matched on transfer and activation receipt exists. Runtime consumer is enabled,
+  ready, worker running, processing/dead-letter zero, outboxed 29; delivery is
+  ready with pending/in-flight/dead-letter zero. DPAPI backup stays host-local.
+  Windows startup-script SHA256
   `d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e`
   was read from the separate Windows checkout. The approved trust-root pin is
   still `91f37a433626ab017390e0b728159814606d291f764c71537ac6671066a96804`.
-  Fresh disabled-consumer evidence, signing, activation and actual TEST runtime
-  verification are required before calling this pin deployed. Rollback uses the
-  prior policy/AI commit with a fresh bound permit, never a permit bypass.
+  No trust rotation, encryption-key rotation or production mutation occurred.
+  Rollback uses the prior policy/AI commit with a fresh bound permit and the
+  corrected merged controller, never a permit bypass.
+- Actual TEST audio-gateway mTLS `/analyze/live` returned HTTP200 in 28.568564s
+  and 7.282017s on the new target, each with partial summary, one decision and
+  two actions. Without a client certificate, TLS refused the request (curl56,
+  certificate-required alert, HTTP000). New metrics: queue acquired 2/sum0s,
+  worker success 2/sum35.687s, Ollama HTTP 2/sum20.807s. Labels contain no content
+  or identities. Two samples do not establish a latency SLO or prove the earlier
+  intermittent timeout cause; PT6M finalization is unchanged.
+- Normal TEST account identity remains unspecified. Packaged start/stop,
+  persistent result/source/reopen, multi-session isolation, stop-to-result
+  timing and dictionary/assignment/notification acceptance remain unverified
+  under #3440/#3399. ADMIN and synthetic checks do not satisfy that boundary.
 
 
 ## DESKTOP live-analysis candidate and Windows package (2026-09-10 13:36 UTC)
