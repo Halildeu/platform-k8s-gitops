@@ -10,6 +10,11 @@
 #
 # Usage:
 #   ./seed-graph-read-kv.sh --client-id <app-client-id> [--tenant-id <tenant-id>] [--ssh-host HOST]
+#   pbpaste | ./seed-graph-read-kv.sh --client-id <app-client-id> --secret-stdin
+#
+# --secret-stdin reads the secret from a pipe instead of the prompt (e.g. straight
+# from the clipboard after the portal's "copy" button), so the value never has to
+# be typed, echoed, or held by anything but the pipe. Still never an argument.
 #
 # --tenant-id is optional: both apps live in the same tenant, so by default the
 # value is copied on aiserver from kv/platform/graph (graph_tenant_id) inside the
@@ -26,11 +31,12 @@ VAULT_INIT_FILE="${GRAPH_MAIL_VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth
 KV_PATH="kv/platform/graph-read"
 CLIENT_ID=""
 TENANT_ID=""
+SECRET_STDIN=0
 GUID_RE='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
 
 usage() {
     cat <<'USAGE'
-Usage: seed-graph-read-kv.sh --client-id <GUID> [--tenant-id <GUID>] [--ssh-host HOST]
+Usage: seed-graph-read-kv.sh --client-id <GUID> [--tenant-id <GUID>] [--ssh-host HOST] [--secret-stdin]
 
 Writes graph_client_id / graph_tenant_id / graph_client_secret to kv/platform/graph-read
 on the production Vault. --tenant-id defaults to graph_tenant_id of kv/platform/graph
@@ -46,6 +52,7 @@ while [[ $# -gt 0 ]]; do
         --client-id) CLIENT_ID="$2"; shift 2 ;;
         --tenant-id) TENANT_ID="$2"; shift 2 ;;
         --ssh-host) SSH_HOST="$2"; shift 2 ;;
+        --secret-stdin) SECRET_STDIN=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; die "unknown argument: $1" ;;
     esac
@@ -53,10 +60,15 @@ done
 
 [[ "$CLIENT_ID" =~ $GUID_RE ]] || die "--client-id must be the app's client GUID"
 [[ -z "$TENANT_ID" || "$TENANT_ID" =~ $GUID_RE ]] || die "--tenant-id must be the tenant GUID (or omit it to reuse kv/platform/graph)"
-[[ -t 0 ]] || die "run from an interactive terminal: the secret is prompted, never piped or passed as an argument"
-
-read -rs -p "acik-mail-graph-read client secret (input hidden): " CLIENT_SECRET
-echo >&2
+if [[ "$SECRET_STDIN" == "1" ]]; then
+    [[ ! -t 0 ]] || die "--secret-stdin expects the secret on a pipe (e.g. pbpaste | ...)"
+    IFS= read -r CLIENT_SECRET || true
+    CLIENT_SECRET="${CLIENT_SECRET%$'\r'}"
+else
+    [[ -t 0 ]] || die "run from an interactive terminal (or pass --secret-stdin with the secret on a pipe); the secret is never an argument"
+    read -rs -p "acik-mail-graph-read client secret (input hidden): " CLIENT_SECRET
+    echo >&2
+fi
 [[ ${#CLIENT_SECRET} -ge 16 ]] || die "client secret is implausibly short"
 [[ "$CLIENT_SECRET" != *$'\n'* && "$CLIENT_SECRET" != *$'\r'* ]] || die "client secret must be a single line"
 
