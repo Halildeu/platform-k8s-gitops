@@ -65,6 +65,23 @@ def load_catalog_services() -> set[str]:
     return {svc["name"] for svc in catalog.get("services", []) if "name" in svc}
 
 
+LEDGER_FILENAME_RE = re.compile(r"^(?P<sha>[a-f0-9]{40,64})(?:-(?P<service>[a-z0-9][a-z0-9-]*))?\.json$")
+
+
+def split_ledger_filename(filename: str) -> tuple[str | None, str | None]:
+    """Return (git_sha, service) parsed from a ledger file name.
+
+    Accepted shapes (gitops#3677):
+      <git_sha>.json            — legacy, one service per commit
+      <git_sha>-<service>.json  — one entry per (commit, service)
+    Returns (None, None) when the name matches neither.
+    """
+    m = LEDGER_FILENAME_RE.match(filename)
+    if not m:
+        return None, None
+    return m.group("sha"), m.group("service")
+
+
 def validate_one(path: Path, schema: dict[str, Any], catalog_services: set[str]) -> list[str]:
     """Return list of error messages; empty list = OK."""
     errors: list[str] = []
@@ -99,19 +116,38 @@ def validate_one(path: Path, schema: dict[str, Any], catalog_services: set[str])
 
     if in_ledger_dir:
         if len(rel_path.parts) != 2:
-            errors.append(f"{path}: layout violation — expected release-candidates/<repo>/<sha>.json")
+            errors.append(
+                f"{path}: layout violation — expected release-candidates/<repo>/<sha>.json "
+                f"or release-candidates/<repo>/<sha>-<service>.json"
+            )
         else:
             path_repo, path_filename = rel_path.parts
-            path_sha = path_filename.removesuffix(".json")
+            path_sha, path_service = split_ledger_filename(path_filename)
 
             if entry.get("repo") != path_repo:
                 errors.append(
                     f"{path}: repo field='{entry.get('repo')}' but path implies repo='{path_repo}'"
                 )
-            if entry.get("git_sha") != path_sha:
+            if path_sha is None:
                 errors.append(
-                    f"{path}: git_sha field='{entry.get('git_sha')}' but filename implies sha='{path_sha}'"
+                    f"{path}: filename must be <git_sha>.json or <git_sha>-<service>.json "
+                    f"(git_sha = 40-64 lowercase hex)"
                 )
+            else:
+                if entry.get("git_sha") != path_sha:
+                    errors.append(
+                        f"{path}: git_sha field='{entry.get('git_sha')}' but filename implies sha='{path_sha}'"
+                    )
+                # gitops#3677: one commit builds several services (f4749ec built
+                # schema-service, permission-service AND notification-orchestrator
+                # with distinct digests). A per-service file name is the only way to
+                # hold one entry per service; when the name carries a service it must
+                # be the entry's service.
+                if path_service is not None and entry.get("service") != path_service:
+                    errors.append(
+                        f"{path}: service field='{entry.get('service')}' but filename implies "
+                        f"service='{path_service}'"
+                    )
 
     # Cross-check 2: service name in catalog (warn, don't fail — new services may be added)
     service = entry.get("service")

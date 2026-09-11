@@ -57,7 +57,7 @@ SHA="1111111111111111111111111111111111111111"
 SHORT="1111111"
 OLD_DIGEST="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 NEW_DIGEST="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-BRANCH="auto-promotion/prod-testrepo-${SHORT}"
+BRANCH="auto-promotion/prod-testrepo-svc-test-${SHORT}"
 
 setup_fixture() {
   TMP="$(mktemp -d)"; export TMP

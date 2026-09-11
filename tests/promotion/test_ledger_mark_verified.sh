@@ -6,7 +6,7 @@
 # Scope: end-to-end exercise of report → target resolution → policy →
 # ledger patch with LEDGER_DRY_RUN=1 (skips git push + PR creation).
 #
-# 4 scenarios:
+# 10 scenarios:
 #   1. Frontend variant report with d29_zanzibar=AMBER → MARK
 #      (variant=frontend-prod-variant, jwt_validates=false from fixture catalog)
 #   2. Frontend variant report with d29_zanzibar=RED   → SKIP
@@ -304,12 +304,265 @@ scenario_4_backend_overlay_amber_skips() {
   trap - RETURN
 }
 
+# --- Scenario 5: no ledger entry + LEDGER_AUTOGENERATE=1 → entry derived from GHCR tags, then MARK
+#     (gitops#3677: CI does not feed the ledger; the digest's sha-* tags on
+#     GHCR name the source commit; two tags share the digest → newest commit wins;
+#     the file is named <git_sha>-<service>.json)
+
+write_fake_gh() {
+  local bindir="$1" calls="$2"
+  mkdir -p "$bindir"
+  cat > "$bindir/gh" <<'GHEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_GH_CALLS"
+case "$*" in
+  *"packages/container/platform-backend-user-service/versions"*)
+    # two tags on the same digest (identical rebuilds)
+    printf '%s\n' "sha-1111111" "sha-2222222"; exit 0 ;;
+  *"repos/halildeu/platform-backend/commits/1111111"*)
+    echo "1111111111111111111111111111111111111111 2026-09-10T10:00:00Z"; exit 0 ;;
+  *"repos/halildeu/platform-backend/commits/2222222"*)
+    echo "2222222222222222222222222222222222222222 2026-09-11T10:00:00Z"; exit 0 ;;
+  *"packages/container/platform-web-frontend/versions"*)
+    printf '%s\n' "sha-5555555"; exit 0 ;;
+  *"repos/halildeu/platform-web/commits/5555555"*)
+    echo "5555555555555555555555555555555555555555 2026-09-11T10:00:00Z"; exit 0 ;;
+  *) echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
+esac
+GHEOF
+  chmod +x "$bindir/gh"
+  : > "$calls"
+}
+
+scenario_5_autogenerate_from_ghcr_tags_then_mark() {
+  echo "Scenario 5: no ledger entry + LEDGER_AUTOGENERATE=1 → [GEN] per-service file from GHCR tags → MARK"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+
+  if ! command -v kubectl >/dev/null 2>&1; then
+    echo "  (skipped — kubectl not available in test env, overlay-render mode requires kubectl kustomize)"
+    return 0
+  fi
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema" "$tmpdir/scripts/promotion"
+  cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  write_backend_overlay "$tmpdir" "$digest"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-backend-user-service@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  local expected="$tmpdir/release-candidates/platform-backend/2222222222222222222222222222222222222222-user-service.json"
+  assert_contains "GEN emitted with the newest commit" "$out" "[GEN] user-service → release-candidates/platform-backend/2222222222222222222222222222222222222222-user-service.json (git_sha 22222222"
+  assert_contains "MARK emitted after generation" "$out" "[MARK] user-service"
+  if [[ -f "$expected" ]]; then
+    echo "  ✓ per-service ledger file written"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ per-service ledger file missing: $expected"; FAIL=$((FAIL + 1))
+  fi
+  assert_contains "entry carries the source commit, not the digest" "$(jq -r '.git_sha + " " + .image.tag + " " + .image.digest' "$expected" 2>/dev/null)" "2222222222222222222222222222222222222222 sha-2222222 ${digest}"
+  assert_contains "entry marked verified" "$(jq -r '.promotion.test.verified_at // "null"' "$expected" 2>/dev/null)" "2026-05-21T00:00:00Z"
+  assert_contains "both tags were resolved through the repo API" "$(cat "$FAKE_GH_CALLS")" "commits/1111111"
+
+  rm -rf "$tmpdir"
+  trap - RETURN
+}
+
+# --- Scenario 6: no ledger entry, autogenerate OFF → SKIP (unchanged default) --
+
+scenario_6_no_entry_without_autogenerate_skips() {
+  echo "Scenario 6: no ledger entry, LEDGER_AUTOGENERATE unset → SKIP, nothing written"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+
+  if ! command -v kubectl >/dev/null 2>&1; then
+    echo "  (skipped — kubectl not available in test env, overlay-render mode requires kubectl kustomize)"
+    return 0
+  fi
+
+  setup_fixture_repo "$tmpdir"
+  local digest="sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  write_backend_overlay "$tmpdir" "$digest"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-backend-user-service@${digest}" "$digest" "${digest#sha256:}"
+
+  local out
+  out=$(run_script "$tmpdir" "$report")
+
+  assert_contains "SKIP for missing entry" "$out" "[SKIP] user-service digest=${digest} — no ledger entry yet"
+  assert_not_contains "no MARK" "$out" "[MARK] user-service"
+  if [[ -z "$(ls "$tmpdir/release-candidates/platform-backend" 2>/dev/null)" ]]; then
+    echo "  ✓ no ledger file written"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ unexpected ledger file written"; FAIL=$((FAIL + 1))
+  fi
+
+  rm -rf "$tmpdir"
+  trap - RETURN
+}
+
+# --- Scenario 7: overlay renders path:tag@digest → package name without the tag (Codex 01a09219 P2)
+
+scenario_7_tagged_render_uses_package_name_without_tag() {
+  echo "Scenario 7: render path:tag@digest → GHCR package queried WITHOUT the tag"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:abababababababababababababababababababababababababababababababab"
+  write_backend_overlay "$tmpdir" "$digest"
+  sed -i.bak "s|@${digest}|:sha-2222222@${digest}|" "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-backend-user-service:sha-2222222@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "target pair carries the untagged path" "$out" "[GEN] user-service"
+  assert_contains "package query has no :tag" "$(cat "$FAKE_GH_CALLS")" "packages/container/platform-backend-user-service/versions"
+  assert_not_contains "package query never carries the tag" "$(cat "$FAKE_GH_CALLS")" "user-service:sha-"
+  assert_contains "entry path is the package path" "$(jq -r .image.path "$tmpdir"/release-candidates/platform-backend/*-user-service.json 2>/dev/null)" "halildeu/platform-backend-user-service"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
+# --- Scenario 8: two services share one image → lookup is by service+digest, not digest alone (Codex 01a09219 P2)
+
+scenario_8_shared_image_second_service_gets_its_own_entry() {
+  echo "Scenario 8: shared image digest → the second service is not matched to the first service's entry"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  cat >> "$tmpdir/docs/operations/services.yaml" <<'YAML'
+  - name: user-worker
+    repo: platform-backend
+    jwt_validates: true
+    environments: {test: enabled, prod: enabled}
+YAML
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+  write_backend_ledger "$tmpdir" "$digest"      # user-service already has an entry for this digest
+  write_backend_overlay "$tmpdir" "$digest"
+  cat >> "$tmpdir/kustomize/overlays/test/kustomization.yaml" <<'YAML'
+  - deploy-user-worker.yaml
+YAML
+  sed -e 's/user-service/user-worker/g' -e "s|platform-backend-user-worker|platform-backend-user-service|" \
+    "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml" > "$tmpdir/kustomize/overlays/test/deploy-user-worker.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-backend-user-service@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "user-service marked on its own entry" "$out" "[MARK] user-service"
+  assert_contains "user-worker generated, not matched to user-service's file" "$out" "[GEN] user-worker"
+  assert_contains "user-worker marked" "$out" "[MARK] user-worker"
+  assert_not_contains "no cross-service WARN skip" "$out" "but render service='user-worker' — skipping"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
+# --- Scenario 9: frontend report with a digest → no git_sha fallback onto the same commit's OTHER artifact
+#     (Codex 01a09219 iter-2 P2): the legacy entry holds SHA X / digest A; the report says SHA X / digest B.
+
+scenario_9_frontend_digest_present_no_sha_fallback() {
+  echo "Scenario 9: frontend report SHA X + digest B, legacy entry SHA X + digest A → no fallback match, generator refuses the collision, no MARK"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local sha="5555555555555555555555555555555555555555"
+  local digest_a="sha256:a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+  local digest_b="sha256:b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5"
+  write_frontend_ledger "$tmpdir" "$digest_a" "$sha"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "frontend-prod-variant" "GREEN" "GREEN" "AMBER" \
+    "ghcr.io/halildeu/platform-web-frontend@${digest_b}" "$digest_b" "$sha"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_not_contains "git_sha fallback not used when a digest is present" "$out" "fallback matched"
+  assert_contains "generator refused the second artifact under the same commit+service" "$out" "[GEN-SKIP] frontend: generate-ledger refused (exit 3)"
+  assert_not_contains "no MARK on the other artifact's entry" "$out" "[MARK] frontend"
+  assert_contains "legacy entry keeps digest A" "$(jq -r .image.digest "$tmpdir/release-candidates/platform-web/$sha.json")" "$digest_a"
+  assert_contains "legacy entry stays unverified" "$(jq -r '.promotion.test.verified_at // "null"' "$tmpdir/release-candidates/platform-web/$sha.json")" "null"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
+# --- Scenario 10: the testai frontend variant in the test overlay is never recorded (ADR-0022)
+
+scenario_10_testai_variant_is_not_recorded() {
+  echo "Scenario 10: overlay renders platform-web-frontend-testai → GEN-SKIP (not promotable), no file"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+  write_backend_overlay "$tmpdir" "$digest"
+  sed -i.bak -e 's/user-service/frontend/g' -e "s|platform-backend-frontend|platform-web-frontend-testai|" \
+    "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-web-frontend-testai@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "testai variant skipped with the ADR-0022 reason" "$out" "[GEN-SKIP] frontend: platform-web-frontend-testai is the env-baked testai variant"
+  assert_not_contains "no GHCR query for the testai package" "$(cat "$FAKE_GH_CALLS")" "platform-web-frontend-testai"
+  assert_not_contains "no MARK" "$out" "[MARK] frontend"
+  if [[ -z "$(ls "$tmpdir/release-candidates/platform-web" 2>/dev/null)" ]]; then
+    echo "  ✓ no ledger file written"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ unexpected ledger file written"; FAIL=$((FAIL + 1))
+  fi
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
 # --- Driver ------------------------------------------------------------------
 
 scenario_1_frontend_variant_amber_marks
 scenario_2_frontend_variant_red_skips
 scenario_3_backend_overlay_all_green_marks
 scenario_4_backend_overlay_amber_skips
+scenario_5_autogenerate_from_ghcr_tags_then_mark
+scenario_6_no_entry_without_autogenerate_skips
+scenario_7_tagged_render_uses_package_name_without_tag
+scenario_8_shared_image_second_service_gets_its_own_entry
+scenario_9_frontend_digest_present_no_sha_fallback
+scenario_10_testai_variant_is_not_recorded
 
 echo
 echo "==== Test summary: $PASS passed, $FAIL failed ===="

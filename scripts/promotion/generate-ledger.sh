@@ -22,12 +22,13 @@
 #   CI_RUN_URL     — full URL to the CI build run (added to audit.ci_run_url)
 #
 # Output:
-#   release-candidates/<repo>/<git_sha>.json
+#   release-candidates/<repo>/<git_sha>-<service>.json  (gitops#3677; legacy <git_sha>.json still valid)
 #
 # Exit:
 #   0 — ledger entry created or already exists
 #   1 — argument validation failed
 #   2 — write error
+#   3 — per-service file exists for a different artifact (collision)
 
 set -euo pipefail
 
@@ -68,15 +69,48 @@ TAG="sha-${GIT_SHA:0:7}"
 
 REPO_ROOT="${PLATFORM_GITOPS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 LEDGER_DIR="$REPO_ROOT/release-candidates/$REPO"
-LEDGER_FILE="$LEDGER_DIR/$GIT_SHA.json"
+# gitops#3677: one entry per (commit, service). One platform-backend commit
+# builds several services with distinct digests (f4749ec → schema-service,
+# permission-service, notification-orchestrator), and the validator pins the
+# file name to git_sha, so <git_sha>.json could hold only one of them — the
+# earlier workaround wrote the image digest as git_sha and a fake tag.
+LEDGER_FILE="$LEDGER_DIR/$GIT_SHA-$SERVICE.json"
+LEGACY_FILE="$LEDGER_DIR/$GIT_SHA.json"
 
 mkdir -p "$LEDGER_DIR"
 
-# Idempotency: if ledger entry already exists, only emit a notice
+# Idempotency: an existing entry is "the same" only when repo, service, image
+# path AND digest all match (Codex 01a09219 P1: a same-service file with another
+# digest is a different artifact — returning it would let the caller stamp
+# this artifact's smoke evidence onto that one). One (commit, service) maps to
+# exactly ONE artifact in this ledger: a per-service OR legacy file of this
+# service that records a different artifact is a hard collision → exit 3
+# (Codex 01a09219 iter-2: two artifacts under one identity would collide again
+# in the scanner's promotion branch). The env-baked frontend variants are kept
+# apart upstream: the testai package is never recorded (ADR-0022).
+same_artifact() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  [[ "$(jq -r '[.repo, .service, .image.path, .image.digest] | join(" ")' "$f" 2>/dev/null)" \
+     == "$REPO $SERVICE $IMAGE_PATH $IMAGE_DIGEST" ]]
+}
 if [[ -f "$LEDGER_FILE" ]]; then
-  echo "[generate-ledger] $LEDGER_FILE already exists — preserving (idempotent)"
-  echo "$LEDGER_FILE"
+  if same_artifact "$LEDGER_FILE"; then
+    echo "[generate-ledger] $LEDGER_FILE already exists — preserving (idempotent)"
+    echo "$LEDGER_FILE"
+    exit 0
+  fi
+  echo "ERR: $LEDGER_FILE exists for a DIFFERENT artifact (have: $(jq -r '.image.path + "@" + .image.digest' "$LEDGER_FILE" 2>/dev/null); want: $IMAGE_PATH@$IMAGE_DIGEST) — refusing to overwrite" >&2
+  exit 3
+fi
+if same_artifact "$LEGACY_FILE"; then
+  echo "[generate-ledger] $LEGACY_FILE already exists for $SERVICE — preserving (idempotent, legacy name)"
+  echo "$LEGACY_FILE"
   exit 0
+fi
+if [[ -f "$LEGACY_FILE" ]] && [[ "$(jq -r '.service // empty' "$LEGACY_FILE" 2>/dev/null)" == "$SERVICE" ]]; then
+  echo "ERR: $LEGACY_FILE already records $SERVICE for a DIFFERENT artifact (have: $(jq -r '.image.path + "@" + .image.digest' "$LEGACY_FILE" 2>/dev/null); want: $IMAGE_PATH@$IMAGE_DIGEST) — one commit+service maps to one artifact; refusing" >&2
+  exit 3
 fi
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
