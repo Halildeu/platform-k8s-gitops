@@ -30,6 +30,16 @@
 # 3. Vault path kv/platform/graph populated with graph_client_id + graph_client_secret +
 #    graph_tenant_id; dedicated graph-mail-ops AppRole provisioned by
 #    scripts/ops/provision-graph-mail-vault-approle.sh
+#
+# Identities (--identity):
+#   graph       legacy app `acik-mail-graph-api` (Mail.Read + Mail.Send), scope
+#               `Mail-Graph-Allowed-Mailboxes` = ai@acik.com only. Default.
+#   graph-read  app `acik-mail-graph-read` (Mail.Read ONLY — Mail.Send is never
+#               granted, so this credential cannot send as anyone), scope
+#               `Mail-Graph-Read-Mailboxes` = ai@acik.com + halil.kocoglu@acik.com.
+#               Vault kv/platform/graph-read, AppRole graph-mail-read-ops.
+#   --show-roles adds the token's Graph app-role claim to the output so the
+#   absence of Mail.Send is a measurable fact, not a promise.
 
 set -euo pipefail
 
@@ -40,7 +50,8 @@ FULL_BODY=0
 SEARCH=""
 FILTER=""
 SSH_HOST="aiadmin@aiserver"
-VAULT_PATH="kv/platform/graph"
+IDENTITY="graph"
+SHOW_ROLES=0
 
 usage() {
     cat <<'EOF'
@@ -54,13 +65,18 @@ Options:
   --search QUERY      Graph $search filter (e.g., "alert", "subject:bounce")
   --filter EXPR       Graph $filter expression (OData)
   --ssh-host HOST     SSH host for Vault access (default: aiadmin@aiserver)
+  --identity NAME     graph (default, legacy Mail.Read+Mail.Send app) or
+                      graph-read (Mail.Read-only app; ai@ + halil.kocoglu@ scope)
+  --show-roles        Include the token's Graph app-role claim (token_roles) in
+                      the output — proves which permissions the identity holds
   -h, --help          Show this help
 
 Output: JSON array of message metadata.
 
 Boundary:
 - Read-only (no Graph write/delete/move)
-- ApplicationAccessPolicy restricts to ai@acik.com only (Exchange policy gate)
+- ApplicationAccessPolicy restricts each identity to its own mailbox group
+  (graph: ai@acik.com only; graph-read: ai@acik.com + halil.kocoglu@acik.com)
 - No persistent token cache; per-call Vault round-trip (~2s latency)
 EOF
 }
@@ -74,6 +90,8 @@ while [[ $# -gt 0 ]]; do
         --search) SEARCH="$2"; shift 2 ;;
         --filter) FILTER="$2"; shift 2 ;;
         --ssh-host) SSH_HOST="$2"; shift 2 ;;
+        --identity) IDENTITY="$2"; shift 2 ;;
+        --show-roles) SHOW_ROLES=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
     esac
@@ -83,6 +101,13 @@ if [[ $TOP -lt 1 || $TOP -gt 50 ]]; then
     echo "ERROR: --top must be 1..50 (got $TOP)" >&2
     exit 1
 fi
+
+case "$IDENTITY" in
+    graph|graph-read) ;;
+    *) echo "ERROR: --identity must be graph or graph-read (got $IDENTITY)" >&2; exit 1 ;;
+esac
+# The KV leaf IS the identity name; the remote side re-derives and re-checks it.
+VAULT_PATH="kv/platform/${IDENTITY}"
 
 # Build $select fields based on --include-body / --full-body.
 # ccRecipients is always selected: whether a thread keeps its stakeholder in the
@@ -120,14 +145,30 @@ fi
 # credentials (CLIENT_SECRET, VAULT_TOKEN, ACCESS_TOKEN) from ever leaving
 # the server, and avoids the double-expansion that breaks OData $-prefixed params.
 ssh -o BatchMode=yes "$SSH_HOST" \
-    "VAULT_PATH='${VAULT_PATH}' MAILBOX='${MAILBOX}' GRAPH_QUERY='${GRAPH_QUERY}' bash -s" <<'EOSSH'
+    "IDENTITY='${IDENTITY}' SHOW_ROLES='${SHOW_ROLES}' VAULT_PATH='${VAULT_PATH}' MAILBOX='${MAILBOX}' GRAPH_QUERY='${GRAPH_QUERY}' bash -s" <<'EOSSH'
 set -euo pipefail
 
 readonly VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
-readonly APPROLE_ROLE_ID_FILE="${APPROLE_ROLE_ID_FILE:-/srv/platform/secrets/graph-mail-vault/role-id}"
-readonly APPROLE_SECRET_ID_FILE="${APPROLE_SECRET_ID_FILE:-/srv/platform/secrets/graph-mail-vault/secret-id}"
-readonly EXPECTED_VAULT_PATH="kv/platform/graph"
-readonly EXPECTED_VAULT_POLICY="graph-mail-ops-ro"
+# Every identity constant is spelled out literally per branch: the contract test
+# pins these strings, and a derived value would let a typo select the wrong role.
+case "${IDENTITY:-}" in
+    graph)
+        readonly APPROLE_ROLE_ID_FILE="${APPROLE_ROLE_ID_FILE:-/srv/platform/secrets/graph-mail-vault/role-id}"
+        readonly APPROLE_SECRET_ID_FILE="${APPROLE_SECRET_ID_FILE:-/srv/platform/secrets/graph-mail-vault/secret-id}"
+        readonly EXPECTED_VAULT_PATH="kv/platform/graph"
+        readonly EXPECTED_VAULT_POLICY="graph-mail-ops-ro"
+        ;;
+    graph-read)
+        readonly APPROLE_ROLE_ID_FILE="${APPROLE_ROLE_ID_FILE:-/srv/platform/secrets/graph-mail-read-vault/role-id}"
+        readonly APPROLE_SECRET_ID_FILE="${APPROLE_SECRET_ID_FILE:-/srv/platform/secrets/graph-mail-read-vault/secret-id}"
+        readonly EXPECTED_VAULT_PATH="kv/platform/graph-read"
+        readonly EXPECTED_VAULT_POLICY="graph-mail-read-ops-ro"
+        ;;
+    *)
+        echo "ERROR: unknown Graph mail identity '${IDENTITY:-}'" >&2
+        exit 2
+        ;;
+esac
 readonly MAX_VAULT_TOKEN_TTL=1800
 
 VAULT_TOKEN=""
@@ -197,7 +238,7 @@ unset ROLE_ID SECRET_ID LOGIN_RESPONSE
 umask 077
 GRAPH_DATA_FILE=$(mktemp)
 VAULT_HTTP_STATUS=$(vault_curl "$VAULT_TOKEN" -sS -o "$GRAPH_DATA_FILE" \
-    -w '%{http_code}' "${VAULT_ADDR}/v1/kv/data/platform/graph") || {
+    -w '%{http_code}' "${VAULT_ADDR}/v1/kv/data/platform/${IDENTITY}") || {
     echo "ERROR: Graph mail Vault read request failed" >&2
     exit 2
 }
@@ -234,6 +275,19 @@ if [[ -z "$ACCESS_TOKEN" ]]; then
     exit 3
 fi
 
+# Optional: surface the app-role claim (e.g. ["Mail.Read"]) — the permission set
+# the tenant actually granted this identity. Only the roles array leaves the
+# server; the token itself never does. Fail-closed to null on any decode error.
+TOKEN_ROLES="null"
+if [[ "${SHOW_ROLES:-0}" == "1" ]]; then
+    TOKEN_ROLES=$(
+        printf '%s' "$ACCESS_TOKEN" | cut -d. -f2 | tr '_-' '/+' |
+            awk '{ pad = (4 - length($0) % 4) % 4; printf "%s%s", $0, substr("==", 1, pad) }' |
+            base64 -d 2>/dev/null | jq -c '.roles // []' 2>/dev/null
+    ) || TOKEN_ROLES="null"
+    [[ -n "$TOKEN_ROLES" ]] || TOKEN_ROLES="null"
+fi
+
 # Graph call (read-only)
 GRAPH_RESPONSE=$(curl -sS \
     "https://graph.microsoft.com/v1.0${GRAPH_QUERY}" \
@@ -243,8 +297,10 @@ GRAPH_RESPONSE=$(curl -sS \
     -H "ConsistencyLevel: eventual")
 
 # Sanitize output — strip @odata.context noise + flatten
-echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
+echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" --arg identity "$IDENTITY" \
+    --argjson token_roles "$TOKEN_ROLES" '{
     mailbox: $mailbox,
+    identity: $identity,
     count: (.value | length),
     error: (.error.code // null),
     messages: [(.value // [])[] | {
@@ -259,8 +315,8 @@ echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
         body_preview: (if .bodyPreview then (.bodyPreview | .[0:500]) else null end),
         body_text: (if .body.content then (.body.content | .[0:6000]) else null end)
     }] | sort_by(.received // "") | reverse
-}'
+} | if $token_roles == null then . else . + {token_roles: $token_roles} end'
 
 # cleanup trap revokes the short-lived Vault token.
-unset ACCESS_TOKEN CLIENT_SECRET GRAPH_DATA TOKEN_RESPONSE VAULT_TOKEN_TTL VAULT_POLICY_MATCH
+unset ACCESS_TOKEN CLIENT_SECRET GRAPH_DATA TOKEN_RESPONSE VAULT_TOKEN_TTL VAULT_POLICY_MATCH TOKEN_ROLES
 EOSSH
