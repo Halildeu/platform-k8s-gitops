@@ -1,5 +1,36 @@
 # Current State — Platform K8s Migration
 
+## DESKTOP live deadline diagnosis and next TEST pin (2026-09-11)
+
+- Tracked by [#3649](https://github.com/Halildeu/platform-k8s-gitops/issues/3649),
+  parent #3440 / product slice #3399. New mail/review triage found no new human
+  review request or newer Zeynep request than September 10 13:43:38 UTC.
+- [AI #336](https://github.com/Halildeu/platform-ai/pull/336) merged as
+  `6223fd22916e5607015ee445a6620d4f1a95ea18`. It rejects expired-budget worker
+  dispatch and adds bounded queue/worker/Ollama timing metrics without content,
+  user or model labels. Timeout, model, prompt, PT6M and auth remain unchanged.
+  Local 378 tests, 87% coverage, Ruff/mypy/Black passed. All seven merged-head
+  [CI checks](https://github.com/Halildeu/platform-ai/actions/runs/34568154320)
+  passed. The reviewed head and merged commit have identical trees.
+- Separate Windows checkout of that exact tree: Python 3.11, 27 focused tests
+  passed; two synthetic real-model pipeline calls returned summary, one decision
+  and two actions in 29.531s and 4.641s. No durable writes or listener changes.
+  Worker total 34.172s versus Ollama HTTP total 14.701s; queue wait measured zero.
+  This is isolated engineering evidence, not packaged normal-persona acceptance.
+- Live deployed source and hardened ledger remain `ff179d92c8051e3d8d1cf7c4a81e0db15ac3fda7`.
+  One native live probe returned 504 at 60.227s; later native calls returned 200
+  in 8.296s and 7.313s. Direct model calls also alternated timeout/success.
+  Intermittent root cause is not proven; successful later samples do not erase
+  the failures. [Readback](https://github.com/Halildeu/platform-k8s-gitops/issues/3649#issuecomment-5630152435).
+- Policy stages only the new exact AI commit. Windows startup-script SHA256
+  `d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e`
+  was read from the separate Windows checkout. The approved trust-root pin is
+  still `91f37a433626ab017390e0b728159814606d291f764c71537ac6671066a96804`.
+  Fresh disabled-consumer evidence, signing, activation and actual TEST runtime
+  verification are required before calling this pin deployed. Rollback uses the
+  prior policy/AI commit with a fresh bound permit, never a permit bypass.
+
+
 ## DESKTOP live-analysis candidate and Windows package (2026-09-10 13:36 UTC)
 
 - Backend [#1159](https://github.com/Halildeu/platform-backend/pull/1159) merged
