@@ -164,6 +164,25 @@ const now = () => Date.now();
     fkCards = { count: texts.length, expected: expectedFkCard, matched: texts.some((t) => t.includes(expectedFkCard)) };
     if (!fkCards.matched) throw new Error(`bileşik FK kartı ekranda yok: ${JSON.stringify(expectedFkCard)} (${texts.length} kart: ${JSON.stringify(texts.slice(0, 5))})`);
   }
+  // gitops#3650: the ER graph reports data-layout=settled once fcose stopped and the view
+  // was fitted (frontends before that build carry no such attribute: then no wait). With
+  // EXPECTED_GRAPH_OVERLAPS set, the canvas's data-overlaps (intersecting table boxes,
+  // labels included) must not exceed it — the 03 screenshot is then the finished layout,
+  // not a frame of the animation.
+  const canvas = page.getByTestId('se-graph-canvas');
+  let graph = null;
+  if (await canvas.count()) {
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="se-graph-canvas"]')?.getAttribute('data-layout') === 'settled',
+      null, { timeout: 30_000 },
+    );
+    const overlaps = Number(await canvas.getAttribute('data-overlaps'));
+    graph = { layout: 'settled', overlaps };
+    const maxOverlaps = process.env.EXPECTED_GRAPH_OVERLAPS;
+    if (maxOverlaps !== undefined && maxOverlaps !== '' && overlaps > Number(maxOverlaps)) {
+      throw new Error(`ER grafiğinde ${overlaps} çakışan düğüm kutusu var (izin verilen ${maxOverlaps})`);
+    }
+  }
   timings.tableDetailMs = now() - t2;
   await page.screenshot({ path: path.join(evidenceDir, `03-${expectedTable.toLowerCase().replace(/_/gu, '-')}.png`), fullPage: false });
 
@@ -182,6 +201,7 @@ const now = () => Date.now();
     expectedColumns,
     labels,
     fkCards,
+    graph,
     ifsRequests: ifsRequests.length,
     schemaRequestsTotal: schemaRequests.length,
     non2xx: bad,
