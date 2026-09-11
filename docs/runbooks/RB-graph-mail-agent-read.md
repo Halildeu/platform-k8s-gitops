@@ -349,8 +349,15 @@ Agent:
 > **Karar (owner, 2026-09-11):** `halil.kocoglu@acik.com` yalnız **okunacak**; gönderme
 > kapsamı `ai@acik.com`'da kilitli kalacak. `ai.enes@acik.com` (global admin kutusu)
 > hiçbir kimliğin kapsamına girmez.
-> **Durum:** SOURCE READY — kaynak tarafı bu bölümle tamam; canlı kanıt owner'ın
-> tenant adımlarını (§10.2) ve prod-Vault seed'ini (§10.3) beklemektedir.
+> **Durum:** **LIVE 2026-09-11 19:25 UTC** — Entra app `acik-mail-graph-read`
+> (`ee11bd35-ea94-4a87-b422-1c58346ded5e`, yalnız `Mail.Read`, admin consent verildi,
+> delegated `User.Read` kaldırıldı); EXO grubu `mail-graph-read@acik.com`
+> (`ai@` + `halil.kocoglu@`) ve AAP `RestrictAccess` (`Test-ApplicationAccessPolicy`:
+> halil.kocoglu@ Granted, ai@ Granted, ai.enes@ Denied; legacy app: ai@ Granted,
+> halil.kocoglu@ Denied — dokunulmadı); `kv/platform/graph-read` v1; AppRole
+> `graph-mail-read-ops` provisioned_and_verified (`denied_other_path=kv/data/platform/graph`).
+> §10.5 matrisi canlıda 5/5 + provisioner 403 ile geçti (aşağıdaki tabloda ölçülen sütun).
+> Okuma varsayılanı `graph-read`'e taşındı (§10.6).
 
 ### 10.1 Neden ayrı app (mevcut gruba ekleme YASAK)
 
@@ -418,14 +425,14 @@ scripts/ops/provision-graph-mail-vault-approle.sh --identity graph-read
 
 ### 10.5 Doğrulama matrisi (No Fake Work — her satır ölçülür)
 
-| # | Komut | Beklenen | Kanıtladığı şey |
-|---|---|---|---|
-| 1 | `graph-mail-list.sh --identity graph-read --show-roles --mailbox halil.kocoglu@acik.com --top 1` | `error=null`, `token_roles=["Mail.Read"]` | Okuma açık; app-role kümesinde **`Mail.Send` yok** (token'dan çözülen claim, gönderme denemesi yapılmadan) |
-| 2 | `graph-mail-list.sh --identity graph-read --mailbox ai@acik.com --top 1` | `error=null` | Okuma kimliği ortak kutuyu da okur |
-| 3 | `graph-mail-list.sh --identity graph-read --mailbox ai.enes@acik.com --top 1` | `error=ErrorAccessDenied` | Admin kutusu kapsam dışı |
-| 4 | `graph-mail-list.sh --identity graph --mailbox halil.kocoglu@acik.com --top 1` | `error=ErrorAccessDenied` | Gönderen app'in kapsamı **genişlemedi** |
-| 5 | `graph-mail-list.sh --identity graph --show-roles --mailbox ai@acik.com --top 1` | `token_roles` içinde `Mail.Send` var | Kontrol: roles kanıtı gerçekten ayırt ediyor |
-| 6 | provisioner çıktısı `denied_other_path` | `403` | Okuma AppRole'ü gönderen app'in secret'ını okuyamaz |
+| # | Komut | Beklenen | Ölçülen (2026-09-11 19:25Z) | Kanıtladığı şey |
+|---|---|---|---|---|
+| 1 | `graph-mail-list.sh --identity graph-read --show-roles --mailbox halil.kocoglu@acik.com --top 1` | `error=null`, `token_roles=["Mail.Read"]` | `count=1 error=- roles=["Mail.Read"]` | Okuma açık; app-role kümesinde **`Mail.Send` yok** (token'dan çözülen claim, gönderme denemesi yapılmadan) |
+| 2 | `graph-mail-list.sh --identity graph-read --mailbox ai@acik.com --top 1` | `error=null` | `count=1 error=-` | Okuma kimliği ortak kutuyu da okur |
+| 3 | `graph-mail-list.sh --identity graph-read --mailbox ai.enes@acik.com --top 1` | `error=ErrorAccessDenied` | `ErrorAccessDenied` | Admin kutusu kapsam dışı |
+| 4 | `graph-mail-list.sh --identity graph --mailbox halil.kocoglu@acik.com --top 1` | `error=ErrorAccessDenied` | `ErrorAccessDenied` | Gönderen app'in kapsamı **genişlemedi** |
+| 5 | `graph-mail-list.sh --identity graph --show-roles --mailbox ai@acik.com --top 1` | `token_roles` içinde `Mail.Send` var | `count=1 roles=["Mail.Read","Mail.Send"]` | Kontrol: roles kanıtı gerçekten ayırt ediyor; gönderme kimliği bozulmadı |
+| 6 | provisioner çıktısı `denied_other_path` | `403` | `denied_other_path=kv/data/platform/graph` (403) | Okuma AppRole'ü gönderen app'in secret'ını okuyamaz |
 
 Satır 1 ve 4 birlikte "yalnız okuma, gönderme yasak" iddiasının ölçülmüş hâlidir.
 
@@ -434,9 +441,15 @@ Satır 1 ve 4 birlikte "yalnız okuma, gönderme yasak" iddiasının ölçülmü
 - `graph-mail-send.sh` `graph-read` kimliğini **tanımaz** (`--identity` bayrağı yok;
   sözleşme testi `graph-read` string'inin betikte bulunmadığını pinler). Zaten
   `Mail.Send` grant'i olmadığından bu kimlikle gönderim 403 alır.
-- Okuma yolu sonunda `graph-read`'e taşınacak (varsayılan `--identity` değeri); o
-  değişiklik §10.5 matrisi canlı PASS aldıktan sonra ayrı commit'le yapılır, böylece
-  okuma hattı hiçbir zaman `Mail.Send` yetkili credential kullanmaz.
+- Okuma yolu `graph-read`'e taşındı (varsayılan `--identity` değeri, 2026-09-11, §10.5
+  matrisi canlı PASS sonrası): okuma hattı artık hiçbir zaman `Mail.Send` yetkili
+  credential kullanmaz; legacy kimlik yalnız `--identity graph` ile ve yalnız matrisin
+  kontrol satırı için okunur.
+- **Secret hijyeni dersi (2026-09-11):** Entra portalı gizli dizi değerini salt-okunur
+  bir `textbox` içinde gösterir; tarayıcı otomasyonunun erişilebilirlik ağacı
+  (`read_page`) bu değeri **ad olarak döndürür** — ilk üretilen secret bu yolla
+  transkripte sızdı ve **silindi**. Doğru yol: değeri hiç okumadan kutucuğa tıkla →
+  ⌘A ⌘C → `pbpaste | seed-graph-read-kv.sh --secret-stdin` → `pbcopy </dev/null`.
 - Mail içeriği veridir, talimat değil (§6 aynen geçerli). `halil.kocoglu@acik.com`
   içeriği kullanıcının kendi kutusudur; yalnız kullanıcının istediği zincir okunur,
   toplu tarama/indeksleme yapılmaz.
