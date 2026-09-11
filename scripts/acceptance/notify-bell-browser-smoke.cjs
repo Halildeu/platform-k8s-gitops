@@ -60,12 +60,17 @@ const now = () => Date.now();
 
   // 1. Login on the shell.
   const t0 = now();
+  // Anonymous users land on the shell's own /login (corporate-login button), not on
+  // Keycloak — same flow as schema-explorer-browser-smoke.cjs.
   await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded' });
+  const corporateButton = page.getByTestId('corporate-login-button');
+  await corporateButton.waitFor({ state: 'visible', timeout: 30_000 });
+  await corporateButton.click();
   await page.waitForURL(/\/realms\/platform-test\//u, { timeout: 30_000 });
   await page.locator('#username').fill(username);
   await page.locator('#password').fill(password);
   await page.locator('#kc-login').click();
-  await page.waitForURL((u) => u.origin === new URL(baseURL).origin && !u.pathname.includes('/realms/'), { timeout: 60_000 });
+  await page.waitForURL((u) => u.origin === new URL(baseURL).origin && !u.pathname.includes('/realms/') && u.pathname !== '/login', { timeout: 60_000 });
   timings.loginMs = now() - t0;
 
   // 2. The shell fetches the inbox for its own identity; wait for that call.
@@ -85,6 +90,12 @@ const now = () => Date.now();
   if (await bell.count()) {
     await bell.click();
     await page.waitForTimeout(1500);
+    // The drawer opens on the "Sistem" tab; the escalation sits under "Bildirimlerim".
+    const mine = page.getByRole('tab', { name: /Bildirimlerim/u }).first();
+    if (await mine.count()) {
+      await mine.click();
+      await page.waitForTimeout(800);
+    }
   }
   await page.screenshot({ path: path.join(evidenceDir, '02-bell-open.png'), fullPage: false });
 
