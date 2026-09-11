@@ -94,13 +94,23 @@ spec:
     # controller writes replicas through the scale subresource as manager
     # `k3s` (k3s bundles kube-controller-manager; live managedFields show
     # `k3s Update scale`), while `kubectl scale` writes as manager
-    # `kubectl` — measured on both today. A field owned by `k3s` is left to
-    # the HPA; a field owned by anything else (a manual scale, including
+    # `kubectl` — measured on both today. A field owned by `k3s` is left
+    # alone; a field owned by anything else (a manual scale, including
     # scale=0) is still self-healed to the git value. That keeps the
     # HARD RULE — TEST Cluster Scale-to-Zero YASAK guard (2026-05-10) intact:
     # a plain `/spec/replicas` jsonPointer ignore would have reopened it.
-    # RespectIgnoreDifferences=true above makes the sync leave the HPA-owned
-    # value in place instead of forcing the git value back.
+    # RespectIgnoreDifferences=true above makes the sync carry the live
+    # value of a k3s-owned field into the applied manifest instead of
+    # forcing the git value back.
+    #
+    # Scope, stated honestly (Codex 01a091c6 P2): the rule matches EVERY
+    # Deployment of this Application (28 rendered, 10 with an HPA) and every
+    # field manager `k3s` owns on them, not only spec.replicas. Today that is
+    # the scale-subresource replicas write and the deployment controller's
+    # `deployment.kubernetes.io/revision` annotation; nothing under
+    # spec.template is written by k3s. Consequence accepted: while k3s owns
+    # replicas, a git change of `replicas` on that Deployment is not applied
+    # — the HPA wins; change the HPA bounds instead.
     - group: apps
       kind: Deployment
       managedFieldsManagers:
