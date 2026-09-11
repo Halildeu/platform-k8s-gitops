@@ -295,7 +295,7 @@ patches:
       # scripts/faz35/provision-test-ethics-escalation-recipient.sh ile mint edildi).
       - op: add
         path: /data/ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED
-        value: "false"
+        value: "true"
       - op: add
         path: /data/ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID
         value: "33"
@@ -369,7 +369,7 @@ patches:
       - op: add
         path: /spec/template/metadata/annotations
         value:
-          etik-speak.acik.com/notification-config-revision: "2026-09-11-es301b-r1"
+          etik-speak.acik.com/notification-config-revision: "2026-09-11-es301b-r2"
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
