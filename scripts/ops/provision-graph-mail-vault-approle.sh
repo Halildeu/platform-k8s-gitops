@@ -4,6 +4,14 @@
 # This is an explicit operator/bootstrap action. It uses the Vault root token only
 # in the remote shell, never emits it, and never installs it for routine helpers.
 # Routine graph-mail-list/send calls authenticate with the generated AppRole files.
+#
+# Two identities exist (--identity):
+#   graph       legacy Entra app (Mail.Read + Mail.Send) -> kv/platform/graph,
+#               policy graph-mail-ops-ro, role graph-mail-ops (default)
+#   graph-read  Mail.Read-only Entra app -> kv/platform/graph-read,
+#               policy graph-mail-read-ops-ro, role graph-mail-read-ops
+# Each role can read exactly its own KV path; the provisioner proves it cannot
+# read the other identity's path.
 
 set -euo pipefail
 
@@ -11,22 +19,22 @@ SSH_HOST="${GRAPH_MAIL_VAULT_SSH_HOST:-aiadmin@aiserver}"
 VAULT_CONTAINER="${GRAPH_MAIL_VAULT_CONTAINER:-platform-vault-prod}"
 VAULT_ADDR="${GRAPH_MAIL_VAULT_ADDR:-http://127.0.0.1:8200}"
 VAULT_INIT_FILE="${GRAPH_MAIL_VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-prod.json}"
-APPROLE_DIR="${GRAPH_MAIL_VAULT_APPROLE_DIR:-/srv/platform/secrets/graph-mail-vault}"
-POLICY_NAME="graph-mail-ops-ro"
-ROLE_NAME="graph-mail-ops"
+IDENTITY="graph"
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
-POLICY_FILE="${REPO_ROOT}/config/vault/policies/graph-mail-ops-ro.hcl"
 
 usage() {
     cat <<'EOF'
-Usage: provision-graph-mail-vault-approle.sh [--ssh-host HOST]
+Usage: provision-graph-mail-vault-approle.sh [--identity graph|graph-read] [--ssh-host HOST]
 
-Creates or rotates the dedicated graph-mail-ops AppRole on the production Vault.
-The role is restricted to the Docker bridge source /32 and the exact
-kv/data/platform/graph read path. Existing AppRole secret-id accessors are revoked
-only after the new credential passes positive and negative authorization tests.
+Creates or rotates the dedicated Graph mail AppRole on the production Vault:
+  --identity graph       graph-mail-ops / graph-mail-ops-ro / kv/data/platform/graph (default)
+  --identity graph-read  graph-mail-read-ops / graph-mail-read-ops-ro / kv/data/platform/graph-read
+The role is restricted to the Docker bridge source /32 and the exact KV read path
+of its identity; it is proven unable to read the other identity's path. Existing
+AppRole secret-id accessors are revoked only after the new credential passes
+positive and negative authorization tests.
 
 No root token, AppRole role-id, secret-id, Vault token, or Graph credential is output.
 EOF
@@ -34,11 +42,35 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --identity) IDENTITY="$2"; shift 2 ;;
         --ssh-host) SSH_HOST="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "ERROR: unknown argument: $1" >&2; usage; exit 1 ;;
     esac
 done
+
+case "$IDENTITY" in
+    graph)
+        POLICY_NAME="graph-mail-ops-ro"
+        ROLE_NAME="graph-mail-ops"
+        APPROLE_DIR_DEFAULT="/srv/platform/secrets/graph-mail-vault"
+        KV_LEAF="graph"
+        DENIED_KV_LEAF="graph-read"
+        ;;
+    graph-read)
+        POLICY_NAME="graph-mail-read-ops-ro"
+        ROLE_NAME="graph-mail-read-ops"
+        APPROLE_DIR_DEFAULT="/srv/platform/secrets/graph-mail-read-vault"
+        KV_LEAF="graph-read"
+        DENIED_KV_LEAF="graph"
+        ;;
+    *)
+        echo "ERROR: --identity must be graph or graph-read (got ${IDENTITY})" >&2
+        exit 1
+        ;;
+esac
+APPROLE_DIR="${GRAPH_MAIL_VAULT_APPROLE_DIR:-$APPROLE_DIR_DEFAULT}"
+POLICY_FILE="${REPO_ROOT}/config/vault/policies/${POLICY_NAME}.hcl"
 
 if [[ ! -f "$POLICY_FILE" ]]; then
     echo "ERROR: policy file missing: $POLICY_FILE" >&2
@@ -48,7 +80,7 @@ fi
 POLICY_B64=$(base64 < "$POLICY_FILE" | tr -d '\n')
 
 ssh -o BatchMode=yes "$SSH_HOST" \
-    "VAULT_CONTAINER='${VAULT_CONTAINER}' VAULT_ADDR='${VAULT_ADDR}' VAULT_INIT_FILE='${VAULT_INIT_FILE}' APPROLE_DIR='${APPROLE_DIR}' POLICY_NAME='${POLICY_NAME}' ROLE_NAME='${ROLE_NAME}' POLICY_B64='${POLICY_B64}' bash -s" <<'EOSSH'
+    "VAULT_CONTAINER='${VAULT_CONTAINER}' VAULT_ADDR='${VAULT_ADDR}' VAULT_INIT_FILE='${VAULT_INIT_FILE}' APPROLE_DIR='${APPROLE_DIR}' POLICY_NAME='${POLICY_NAME}' ROLE_NAME='${ROLE_NAME}' KV_LEAF='${KV_LEAF}' DENIED_KV_LEAF='${DENIED_KV_LEAF}' POLICY_B64='${POLICY_B64}' bash -s" <<'EOSSH'
 set -euo pipefail
 umask 077
 
@@ -193,7 +225,7 @@ if [[ "$POLICY_MATCH" != "true" || ! "$LEASE_DURATION" =~ ^[0-9]+$ || \
 fi
 
 STATUS=$(approle_request "$APPROLE_TOKEN" GET \
-    "/v1/kv/data/platform/graph" "$TMP_DIR/graph.json")
+    "/v1/kv/data/platform/${KV_LEAF}" "$TMP_DIR/graph.json")
 require_status "$STATUS" "200" "allowed Graph KV read"
 KEY_CONTRACT=$(jq -r '
     (.data.data // {}) as $d
@@ -206,8 +238,10 @@ if [[ "$KEY_CONTRACT" != "true" ]]; then
     exit 2
 fi
 
+# The other identity's KV path is the sharpest out-of-scope probe: the read-only
+# role must never see the send-capable app's secret and vice versa.
 STATUS=$(approle_request "$APPROLE_TOKEN" GET \
-    "/v1/kv/data/platform/not-graph" "$TMP_DIR/denied-path.json")
+    "/v1/kv/data/platform/${DENIED_KV_LEAF}" "$TMP_DIR/denied-path.json")
 require_status "$STATUS" "403" "out-of-scope KV read"
 
 # Revoke the first validation token before a second login tests LIST denial.
@@ -264,6 +298,8 @@ jq -n \
     --arg bound_cidr "$BOUND_CIDR" \
     --argjson token_ttl "$LEASE_DURATION" \
     --arg files "$FILE_CONTRACT" \
+    --arg allowed "kv/data/platform/${KV_LEAF}" \
+    --arg denied "kv/data/platform/${DENIED_KV_LEAF}" \
     '{
         status: "provisioned_and_verified",
         role: $role,
@@ -272,8 +308,8 @@ jq -n \
         token_ttl_seconds: $token_ttl,
         token_num_uses: 3,
         default_policy: false,
-        allowed_path: "kv/data/platform/graph",
-        denied_other_path: true,
+        allowed_path: $allowed,
+        denied_other_path: $denied,
         denied_list: true,
         bootstrap_files: $files
     }'
