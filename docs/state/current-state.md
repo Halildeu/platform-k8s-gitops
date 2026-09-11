@@ -3,8 +3,12 @@
 ## DESKTOP live deadline TEST deployment (2026-09-11 06:38 UTC)
 
 - Tracked by [#3649](https://github.com/Halildeu/platform-k8s-gitops/issues/3649),
-  parent #3440 / product slice #3399. New mail/review triage found no new human
-  review request or newer Zeynep request than September 10 13:43:38 UTC.
+  parent #3440 / product slice #3399. Initial mail/review triage found no new human
+  review request or newer Zeynep request than September 10 13:43:38 UTC. A later
+  recheck found her September 11 05:51:09 UTC "FAZ 25" mail: ATS scalar-field
+  normal-user readback evidence plus summary-validation and parser-boundary
+  findings. It explicitly excludes Desktop/Meeting Intelligence/Mobile; handle
+  through platform-web #966 and ATS #213, not as desktop acceptance.
 - [AI #336](https://github.com/Halildeu/platform-ai/pull/336) merged as
   `6223fd22916e5607015ee445a6620d4f1a95ea18`. It rejects expired-budget worker
   dispatch and adds bounded queue/worker/Ollama timing metrics without content,
