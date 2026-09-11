@@ -48,6 +48,11 @@
 2. Ancak bundan sonra imaj geri alınabilir; eski imaja dönmeden önce `PENDING`/`PROCESSING` durumda `CASE_ESCALATED_L*` satırı KALMAMALI (eski worker onları etkinlik olarak birinci kademeye yönlendirir) — kalan varsa teslimini bekle ya da `DEAD_LETTER`'a al.
 3. Tuple silme: seeder'ın `write` gövdesi yerine OpenFGA `deletes` gövdesi.
 
+## Canlı dersler (2026-09-11)
+
+- **Ack net kabul fixture'ını yutar:** 11 gün geriye alınmış vaka, `AckNetWorker` tarafından 50 s içinde otomatik onaylandı (onay yükümlülüğü karşılandı → o yol eskalasyona gitmez). Kabul fixture'ı **geri bildirim yükümlülüğü** üzerinden kurulur: `BACKDATE_DAYS=94` (90 gün + P3D + 1) → FEEDBACK L1+L2.
+- **Sweep yalnız ethics-service'te koşar:** worker'lar `ETHICS_SLA_ESCALATION_ENABLED=true`'yu miras alıp seviyeleri bayrak kapalı kaydetti; seviye kaydı ile sinyal aynı transaction'da olduğu için sinyal bir daha üretilmez (gitops#3674, worker config'lerinde `"false"`, sözleşme testi pinler). Böyle "seviye var, sinyal yok" görürsen önce hangi pod'un `Etik Speak escalation cycle … recorded=` satırını yazdığına bak.
+
 ## Sınırlar
 
 Test realm (platform-test) dışı seed yasak; wildcard subject yasak; şablon kopyası sabit (vaka kimliği, konu, anlatı taşımaz — `EthicsEscalationTemplateSeedTest` render eder); ikinci kademe personası yönetici değildir (Faz 35 en-az-yetki sözleşmesi değişmez); topic tercih kataloğuna eklenmedi (kapsam tercihi; "susturulamaz" garantisi değildir).
