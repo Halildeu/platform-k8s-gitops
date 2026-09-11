@@ -37,7 +37,16 @@ on every PR via `.github/workflows/promotion-ledger-validate.yml`.
 
 ## File naming
 
-`<repo>/<git_sha>.json` where `git_sha` is the FULL 40-char git commit
+`<repo>/<git_sha>-<service>.json` — one entry per (commit, service)
+(gitops#3677). One platform-backend commit builds several services with
+distinct digests (f4749ec → schema-service, permission-service,
+notification-orchestrator), so the commit alone cannot name the file. The
+legacy `<repo>/<git_sha>.json` stays valid for existing entries; the
+validator accepts both and, when the name carries a service, requires it to
+equal the entry's `service`. Never write an image digest into `git_sha` to
+dodge the collision (the `fce3096e…` entry did; its tag is fake).
+
+`git_sha` is the FULL 40-char git commit
 SHA from the upstream repo (NOT the OCI image digest, which is in the
 `image.digest` field). This avoids collision when multiple repos build
 the same code-content.

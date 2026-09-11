@@ -22,7 +22,7 @@
 #   CI_RUN_URL     — full URL to the CI build run (added to audit.ci_run_url)
 #
 # Output:
-#   release-candidates/<repo>/<git_sha>.json
+#   release-candidates/<repo>/<git_sha>-<service>.json  (gitops#3677; legacy <git_sha>.json still valid)
 #
 # Exit:
 #   0 — ledger entry created or already exists
@@ -68,14 +68,26 @@ TAG="sha-${GIT_SHA:0:7}"
 
 REPO_ROOT="${PLATFORM_GITOPS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 LEDGER_DIR="$REPO_ROOT/release-candidates/$REPO"
-LEDGER_FILE="$LEDGER_DIR/$GIT_SHA.json"
+# gitops#3677: one entry per (commit, service). One platform-backend commit
+# builds several services with distinct digests (f4749ec → schema-service,
+# permission-service, notification-orchestrator), and the validator pins the
+# file name to git_sha, so <git_sha>.json could hold only one of them — the
+# earlier workaround wrote the image digest as git_sha and a fake tag.
+LEDGER_FILE="$LEDGER_DIR/$GIT_SHA-$SERVICE.json"
+LEGACY_FILE="$LEDGER_DIR/$GIT_SHA.json"
 
 mkdir -p "$LEDGER_DIR"
 
-# Idempotency: if ledger entry already exists, only emit a notice
+# Idempotency: if ledger entry already exists, only emit a notice. A legacy
+# <git_sha>.json counts only when it is this service's entry.
 if [[ -f "$LEDGER_FILE" ]]; then
   echo "[generate-ledger] $LEDGER_FILE already exists — preserving (idempotent)"
   echo "$LEDGER_FILE"
+  exit 0
+fi
+if [[ -f "$LEGACY_FILE" ]] && [[ "$(jq -r '.service // empty' "$LEGACY_FILE" 2>/dev/null)" == "$SERVICE" ]]; then
+  echo "[generate-ledger] $LEGACY_FILE already exists for $SERVICE — preserving (idempotent, legacy name)"
+  echo "$LEGACY_FILE"
   exit 0
 fi
 

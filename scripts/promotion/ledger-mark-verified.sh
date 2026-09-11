@@ -101,7 +101,7 @@ if [[ "$VARIANT" == "frontend-prod-variant" ]]; then
     exit 1
   fi
   # Single (service, digest) pair — digest may be empty (git_sha fallback only).
-  RENDERED="frontend ${REPORT_DIGEST:-<git-sha-fallback>}"
+  RENDERED="frontend halildeu/platform-web-frontend ${REPORT_DIGEST:-<git-sha-fallback>}"
   echo "[ledger-mark-verified] target-mode=report_driven svc=frontend digest=${REPORT_DIGEST:-<none>} git_sha=${REPORT_GIT_SHA:-<none>}"
 else
   TARGET_MODE="overlay_render"
@@ -122,7 +122,7 @@ for d in docs:
             key = (svc, m.group('dig'))
             if key not in seen:
                 seen.add(key)
-                print(f\"{svc} {m.group('dig')}\")
+                print(f\"{svc} {m.group('path')} {m.group('dig')}\")
 ")
   if [[ -z "$RENDERED" ]]; then
     echo "[ledger-mark-verified] no service+digest pairs in render; nothing to mark"
@@ -130,6 +130,59 @@ for d in docs:
   fi
   echo "[ledger-mark-verified] target-mode=overlay_render pairs=$(echo "$RENDERED" | wc -l | tr -d ' ')"
 fi
+
+# --- gitops#3677: derive a missing ledger entry from the registry ---------
+# The entry's git_sha comes from the sha-<7> tags GHCR attaches to the exact
+# digest the overlay pins (the pull digest); several tags share one digest when
+# consecutive commits rebuild identically, so the NEWEST commit wins. The repo
+# comes from docs/operations/services.yaml. Writes through generate-ledger.sh
+# (per-service file name) and prints the file path; prints nothing and returns
+# 1 when the digest cannot be attributed (no sha-* tag, unknown service).
+autogenerate_entry() {
+  local svc="$1" image_path="$2" digest="$3"
+  local repo
+  repo=$(python3 - "$svc" "$REPO_ROOT/docs/operations/services.yaml" <<'PY'
+import sys, yaml
+svc, path = sys.argv[1], sys.argv[2]
+for s in yaml.safe_load(open(path)).get("services", []):
+    if s.get("name") == svc:
+        print(s.get("repo", ""))
+        break
+PY
+)
+  if [[ -z "$repo" ]]; then
+    echo "  [GEN-SKIP] $svc: no repo in services.yaml" >&2
+    return 1
+  fi
+  local owner="${image_path%%/*}" pkg="${image_path#*/}"
+  local tags
+  tags=$(gh api --paginate "users/${owner}/packages/container/${pkg}/versions?per_page=100" \
+    --jq ".[] | select(.name==\"$digest\") | .metadata.container.tags[]" 2>/dev/null \
+    | grep -E '^sha-[a-f0-9]{7,12}$' || true)
+  if [[ -z "$tags" ]]; then
+    echo "  [GEN-SKIP] $svc: digest $digest carries no sha-* tag on GHCR" >&2
+    return 1
+  fi
+  local best="" best_ts=0 tag short line sha ts
+  while read -r tag; do
+    [[ -z "$tag" ]] && continue
+    short="${tag#sha-}"
+    line=$(gh api "repos/${owner}/${repo}/commits/${short}" --jq '.sha + " " + .commit.committer.date' 2>/dev/null) || continue
+    sha="${line%% *}"
+    ts=$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "${line##* }" 2>/dev/null || echo 0)
+    if [[ "$ts" -gt "$best_ts" ]]; then best="$sha"; best_ts="$ts"; fi
+  done <<< "$tags"
+  if [[ -z "$best" ]]; then
+    echo "  [GEN-SKIP] $svc: none of the tags ($(echo "$tags" | tr '\n' ' ')) resolves to a commit in $repo" >&2
+    return 1
+  fi
+  local file
+  file=$(PLATFORM_GITOPS_REPO="$REPO_ROOT" bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/generate-ledger.sh" \
+    "$repo" "$svc" "$best" "$image_path" "$digest" | tail -1)
+  [[ -f "$file" ]] || return 1
+  echo "  [GEN] $svc → ${file#"$REPO_ROOT"/} (git_sha ${best:0:8}, from GHCR tags: $(echo "$tags" | tr '\n' ' '))" >&2
+  echo "$file"
+}
 
 # Auto-create branch for ledger updates
 TS_FILE=$(date -u +%Y%m%dT%H%M%SZ)
@@ -139,7 +192,7 @@ UPDATED_FILES=()
 cd "$REPO_ROOT" || exit 1
 
 # Iterate (service, digest) pairs and find matching ledger entries
-while IFS=' ' read -r svc digest; do
+while IFS=' ' read -r svc image_path digest; do
   [[ -z "$svc" ]] && continue
 
   # --- Locate ledger entry ---------------------------------------------------
@@ -192,10 +245,16 @@ while IFS=' ' read -r svc digest; do
     # overlay-render mode (backend / generic cluster smoke).
     [[ -z "$digest" ]] && continue
     match=$(grep -l "\"$digest\"" "$LEDGER_DIR"/*/*.json 2>/dev/null | head -1 || true)
+    # gitops#3677: no CI feeds the ledger (backend/web image workflows are
+    # build-only), so with LEDGER_AUTOGENERATE=1 the entry is derived here from
+    # what is observable — the digest's GHCR tags → the newest source commit.
+    if [[ -z "$match" && "${LEDGER_AUTOGENERATE:-0}" == "1" ]]; then
+      match=$(autogenerate_entry "$svc" "$image_path" "$digest" || true)
+    fi
   fi
 
   if [[ -z "$match" ]]; then
-    echo "  [SKIP] $svc digest=$digest — no ledger entry yet (CI hasn't generated one)"
+    echo "  [SKIP] $svc digest=$digest — no ledger entry yet (CI hasn't generated one; LEDGER_AUTOGENERATE=1 derives it from GHCR tags)"
     continue
   fi
 

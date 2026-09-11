@@ -303,6 +303,25 @@ Bu PR:
 Implementation PR'ları (P0b-f):
 - [x] state-mutation (test cluster) — gitops repo değişiklikleri test cluster'a deploy yolunu kuracak
 
+## 2026-09-11 addendum — per-service file names + registry-derived entries (gitops#3677)
+
+Measured on 2026-09-11 while preparing the first prod promotion since June:
+no ledger entry existed for any digest pinned in `overlays/test` (last
+`verified_at` 2026-06-10). Root causes, each fixed here:
+
+| gap | cause | fix |
+|---|---|---|
+| CI never feeds the ledger | `platform-backend` `ci-image-push.yml` and the web image workflow are build-only (ADR-0023 removed the cluster dispatch; the ledger hook was never wired) and a cross-repo commit needs the GitHub App that was never provisioned | `ledger-mark-verified.sh` with `LEDGER_AUTOGENERATE=1` derives the missing entry from what is observable: the overlay's digest → its `sha-<7>` tags on GHCR (pull digest) → the newest source commit via the repo API → `generate-ledger.sh` |
+| one commit, several services | `<git_sha>.json` + validator pin `filename == git_sha` could hold one service per commit; f4749ec built three | file name `<git_sha>-<service>.json`; legacy `<git_sha>.json` stays valid; validator requires the suffix to equal `service` |
+| smoke timers not running | units hard-code `User=halil` and the old checkout path; the host moved to aiserver | `scripts/smoke/systemd/install.sh` renders the units for the current user/checkout and enables the timers (preflight: gh auth, jq, kubectl context) |
+| `ledger-close-prod.sh` never ran | same timer gap | `smoke-prod.timer` (installed by the same script) runs the prod smoke; close-out stays a follow-up on the runbook |
+
+Rules that did not change: the digest pinned and recorded is always the GHCR
+index digest read from the packages API (never a build log); `git_sha` is a
+source commit (never an image digest); prod candidate PRs stay DRAFT with
+`user-approval-required`, and `deploy-prod-gitops.yml` remains the only prod
+deployer behind the `production` environment approval.
+
 ## İlişkili belgeler
 
 - ADR-0011 §2.3 boundary declaration

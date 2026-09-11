@@ -241,7 +241,7 @@ const AUTOMATION_DIFF_ALLOWLIST = {
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
   ],
   'auto-verified/': [
-    /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,
+    /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40,64}(?:-[a-z0-9][a-z0-9-]*)?\.json$/,
   ],
 };
 
