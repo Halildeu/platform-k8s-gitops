@@ -670,6 +670,64 @@ try {
   await assertAxeClean(recruiterPage, 'recruiter-workspace-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-desktop');
 
+  // ats#240 C: İK, adayın cevaplarını soru METNİYLE (cevap anındaki anlık görüntü),
+  // İK sırasında ve karar eylemlerinin ÜSTÜNDE görür; seçenek etiketi görünür, kimlik değil.
+  const answersSection = reviewPanel.getByTestId('recruiter-application-answers');
+  await waitVisible(answersSection, 'recruiter candidate answers section');
+  if ((await answersSection.getByRole('listitem').count()) !== 2) {
+    throw new Error('recruiter candidate answers row count mismatch');
+  }
+  const modeAnswerRow = answersSection.getByTestId(`recruiter-application-answer-${singleChoiceQuestionId}`);
+  const textAnswerRow = answersSection.getByTestId(`recruiter-application-answer-${textQuestionId}`);
+  await waitVisible(
+    modeAnswerRow.getByText('Hangi calisma bicimini tercih edersiniz?', { exact: true }),
+    'recruiter answer carries the question text',
+  );
+  await waitVisible(modeAnswerRow.getByText('Uzaktan', { exact: true }), 'recruiter answer option label');
+  await waitVisible(modeAnswerRow.getByText('Tek seçim · zorunlu', { exact: true }), 'recruiter answer kind and required marker');
+  // İkinci satır KENDİ soru metnini ve tür etiketini taşır (isteğe bağlı → zorunlu işareti yok);
+  // yalnız cevabı aramak, metnin ilk satıra kaymasını yakalamazdı.
+  await waitVisible(
+    textAnswerRow.getByText('Hangi teknik alanda deneyiminiz var?', { exact: true }),
+    'recruiter second answer carries its question text',
+  );
+  await waitVisible(textAnswerRow.getByText('Kısa metin', { exact: true }), 'recruiter second answer kind marker');
+  await waitVisible(textAnswerRow.getByText('Backend ve veri', { exact: true }), 'recruiter answer text');
+  const answersText = (await answersSection.textContent()) ?? '';
+  const modeIndex = answersText.indexOf('Hangi calisma bicimini tercih edersiniz?');
+  const textIndex = answersText.indexOf('Hangi teknik alanda deneyiminiz var?');
+  if (modeIndex < 0 || textIndex < 0 || modeIndex > textIndex) {
+    throw new Error('recruiter candidate answers not in recruiter order');
+  }
+  // Hiçbir soru/seçenek kimliği görünmez: iki sorunun tüm questionId'leri ve tek-seçim
+  // sorusunun tüm optionId'leri (etiketler çözülmüş olmalı).
+  const leakableIds = [
+    ...requiredJob.questions.map((question) => question.questionId),
+    ...requiredJob.questions.flatMap((question) => (question.options ?? []).map((option) => option.optionId)),
+  ].filter(Boolean);
+  if (leakableIds.length < 4 || leakableIds.some((id) => answersText.includes(id))) {
+    throw new Error('recruiter candidate answers leak ids instead of labels');
+  }
+  if (answersText.includes('Yanıtlanmadı')) {
+    throw new Error('recruiter candidate answers show an unanswered row for answered questions');
+  }
+  const answersPrecedeDecision = await reviewPanel.evaluate((panel) => {
+    const section = panel.querySelector('[data-testid="recruiter-application-answers"]');
+    const heading = [...panel.querySelectorAll('h3')].find(
+      (node) => node.textContent?.trim() === 'Açık insan eylemleri',
+    );
+    // Kardeş sırası: başlık bölümün İÇİNDE değil, bölümden SONRA olmalı.
+    return Boolean(
+      section &&
+        heading &&
+        !section.contains(heading) &&
+        section.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+  if (!answersPrecedeDecision) {
+    throw new Error('recruiter candidate answers must precede the decision actions');
+  }
+
   await reviewPanel.getByRole('button', { name: 'İnsan incelemesini başlat' }).click();
   await waitVisible(reviewPanel.getByRole('button', { name: 'Kısa listeye al' }), 'under review transition');
   const refreshStatusButton = candidatePage.getByRole('button', { name: 'Durumu yenile' });
@@ -966,6 +1024,7 @@ try {
       'persistent-receipt-created',
       'candidate-sees-submitted',
       'authorized-recruiter-inbox',
+      'recruiter-reads-candidate-answers-with-question-text',
       'human-controlled-under-review-transition',
       'candidate-sees-under-review',
       'human-controlled-interview-pending-transition',
