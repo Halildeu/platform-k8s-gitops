@@ -216,6 +216,36 @@ print(str(d.get("id","")) if isinstance(d, dict) else "")')
 unset writer_token
 [[ "$first_uid" =~ ^[0-9]+$ ]] || { echo "FATAL: first-tier numeric id not resolved" >&2; exit 1; }
 [ "$first_uid" != "$recipient_uid" ] || { echo "FATAL: the two tiers resolve to one subscriber" >&2; exit 1; }
+# 4. The bell reads the inbox with X-Subscriber-Id and notification-orchestrator's
+#    SubscriberIdentityGuard matches it against the JWT claims subscriberId | userId | sub.
+#    The `userId` claim comes from a realm mapper over the Keycloak user attribute
+#    `userId`; without the attribute the guard answers 403 and the bell stays empty
+#    (measured 2026-09-11 — the first tier had never carried it either). Write the numeric
+#    id as the attribute on both tiers and read it back.
+set_user_id_attribute() { # kc-user-id numeric-id
+  local kc_id=$1 numeric=$2 current
+  current=$(kc "$KC_BASE_URL/admin/realms/$KC_REALM/users/$kc_id")
+  printf '%s' "$current" | python3 -c '
+import json, sys
+u = json.load(sys.stdin)
+attrs = u.get("attributes") or {}
+attrs["userId"] = [sys.argv[1]]
+u["attributes"] = attrs
+print(json.dumps(u))' "$numeric" \
+    | kc -o /dev/null -X PUT -H 'Content-Type: application/json' --data-binary @- \
+        "$KC_BASE_URL/admin/realms/$KC_REALM/users/$kc_id"
+  kc "$KC_BASE_URL/admin/realms/$KC_REALM/users/$kc_id" | python3 -c '
+import json, sys
+u = json.load(sys.stdin)
+sys.exit(0 if (u.get("attributes") or {}).get("userId") == [sys.argv[1]] else 1)' "$numeric" \
+    || { echo "FATAL: userId attribute did not take for $kc_id" >&2; exit 1; }
+}
+set_user_id_attribute "$user_id" "$recipient_uid"
+first_kc_id=$(kc "$KC_BASE_URL/admin/realms/$KC_REALM/users?username=$FIRST_TIER_USERNAME&exact=true" \
+  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
+[ -n "$first_kc_id" ] || { echo "FATAL: first-tier Keycloak user not found" >&2; exit 1; }
+set_user_id_attribute "$first_kc_id" "$first_uid"
+echo "keycloak: userId attribute = numeric id on both tiers (read back)"
 echo "authz: first tier ($FIRST_TIER_USERNAME) subscriberId=$first_uid"
 echo "authz: second tier ($RECIPIENT_USERNAME) subscriberId=$recipient_uid, permissions=[] (least privilege read back)"
 echo "ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID=$first_uid"

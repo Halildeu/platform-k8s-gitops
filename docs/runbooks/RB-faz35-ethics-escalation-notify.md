@@ -51,6 +51,7 @@
 ## Canlı dersler (2026-09-11)
 
 - **Ack net kabul fixture'ını yutar:** 11 gün geriye alınmış vaka, `AckNetWorker` tarafından 50 s içinde otomatik onaylandı (onay yükümlülüğü karşılandı → o yol eskalasyona gitmez). Kabul fixture'ı **geri bildirim yükümlülüğü** üzerinden kurulur: `BACKDATE_DAYS=94` (90 gün + P3D + 1) → FEEDBACK L1+L2.
+- **Zil için `userId` attribute'u şart:** orkestratör kimlik guard'ı `X-Subscriber-Id`'yi JWT `subscriberId | userId | sub` ile eşler; `userId` claim'i KC kullanıcı attribute'u `userId`'dan gelir. Attribute yoksa inbox 403 (birinci kademe bu yüzden hiç zil görmemişti). Persona betiği iki kademeye de yazar; yeni bir alıcı eklerken aynı adım şart.
 - **Sweep yalnız ethics-service'te koşar:** worker'lar `ETHICS_SLA_ESCALATION_ENABLED=true`'yu miras alıp seviyeleri bayrak kapalı kaydetti; seviye kaydı ile sinyal aynı transaction'da olduğu için sinyal bir daha üretilmez (gitops#3674, worker config'lerinde `"false"`, sözleşme testi pinler). Böyle "seviye var, sinyal yok" görürsen önce hangi pod'un `Etik Speak escalation cycle … recorded=` satırını yazdığına bak.
 
 ## Sınırlar
