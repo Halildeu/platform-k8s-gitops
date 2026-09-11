@@ -38,7 +38,11 @@ validate_notify_tuples() {
               and (.object | startswith("template:"))
               and (.object | ltrimstr("template:") | declared_template($templates)))
           ) | not) then "a tuple is outside the allowed shapes (numeric subscriber can_receive declared topic | declared topic -> declared template)"
-    elif (.smoke_checks | all(.relation == "can_receive" and (.object | startswith("template:")) and (.object | ltrimstr("template:") | declared_template($templates)) or (.object | ltrimstr("template:") == "ethics.case.activity")) | not) then "smoke checks must ask can_receive on a declared template (or the activity template as the topic-scope negative)"
+    elif (.smoke_checks | all(
+            .relation == "can_receive"
+            and (.object | startswith("template:"))
+            and (.object | ltrimstr("template:") | (declared_template($templates) or . == "ethics.case.activity"))
+          ) | not) then "smoke checks must ask can_receive on a declared template (or the activity template as the topic-scope negative)"
     else "OK" end' "$json" 2>&1) || { echo "guard: jq could not evaluate $json: $verdict" >&2; return 1; }
   [ "$verdict" = "OK" ] || { echo "guard: $verdict" >&2; return 1; }
   return 0

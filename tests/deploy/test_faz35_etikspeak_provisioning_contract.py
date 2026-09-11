@@ -2412,6 +2412,14 @@ spec:
             "undeclared template": {**doc, "tuples": doc["tuples"] + [
                 {"user": "notification_topic:ethics.case.escalation", "relation": "topic",
                  "object": "template:meeting.action.assigned"}]},
+            # Codex 01a08f67 iter-2: the activity exception must not bypass the relation
+            # and object-type checks.
+            "check with wrong relation": {**doc, "smoke_checks": doc["smoke_checks"] + [
+                {"user": "subscriber:33", "relation": "can_publish",
+                 "object": "template:ethics.case.activity", "expect_allowed": False}]},
+            "check without object type": {**doc, "smoke_checks": doc["smoke_checks"] + [
+                {"user": "subscriber:33", "relation": "can_receive",
+                 "object": "ethics.case.activity", "expect_allowed": False}]},
         }
         with tempfile.TemporaryDirectory() as tmp:
             for name, bad in bad_cases.items():

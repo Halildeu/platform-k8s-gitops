@@ -23,9 +23,15 @@
    ./scripts/faz35/openfga-notify-topic-seed.sh bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json
    ```
    Beklenen: 4 tuple `wrote`/`exists`, 6 smoke_check `PASS` (11 ve 33 escalation şablonunda allow, 11 etkinlikte allow, 33 etkinlikte deny, subscriber:1 ve bilinmeyen deny). `FAIL` → dur.
-4. Env (bu PR): `ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID="11"` (eski imaj da bunu HEMEN kullanır — adım 3 bu yüzden önce), `ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID="33"`, `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` + Deployment pod-template annotation'ı `etik-speak.acik.com/notification-config-revision` (aynı PR'da bump) → ArgoCD rollout; `scripts/deploy/verify-pod-digest.sh` ve pod env'inde üç değer okunur (`kubectl exec … -- env | grep ETHICS_NOTIFICATION_`).
+4. Env (bu PR): `ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID="11"` (eski imaj da bunu HEMEN kullanır — adım 3 bu yüzden önce), `ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID="33"`, `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` + Deployment pod-template annotation'ı `etik-speak.acik.com/notification-config-revision` (aynı PR'da bump) → ArgoCD rollout; `scripts/deploy/verify-pod-digest.sh` ve pod env'inde yalnız üç değer okunur — `env | grep` DEĞİL (aynı önek `ETHICS_NOTIFICATION_CLIENT_SECRET`'ı da yakalar):
+   ```bash
+   kubectl --context k3d-test -n platform-test exec deploy/ethics-service -- printenv \
+     ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID \
+     ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID \
+     ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED
+   ```
 5. İmaj: ethics-service + notification-orchestrator digest'leri (platform-backend#1161 sha) — pin öncesi grype; **bütün** replikalar yeni imageID (`verify-pod-digest.sh`), V27/V29 Flyway logları.
-6. Bayrak: `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="true"` **+ annotation bump** (ayrı PR) → rollout → pod env'inde `true` okunur → sweeper bir sonraki döngüde (15 dk) kaydettiği her seviye için bir sinyal üretir (kurum+seviye başına kayan 24 saatte bir).
+6. Bayrak: `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="true"` **+ annotation bump** (ayrı PR) → rollout → pod env'inde `true` okunur (aynı `printenv` komutu) → sweeper bir sonraki döngüde (15 dk) kaydettiği her seviye için bir sinyal üretir (kurum+seviye başına kayan 24 saatte bir).
 
 ## Kanıt (aynı artifact seti üzerinde, ayrı ayrı)
 
@@ -36,7 +42,7 @@
 
 ## Rollback
 
-1. `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` + annotation bump (PR) → rollout → pod env'inde `false` okunur → `ethics_notification_outbox`'ta yeni `CASE_ESCALATED_L*` satırı oluşmadığı doğrulanır (`select count(*) … where created_at > <rollout>`). Kayıtlı seviyeler ve mevcut outbox satırları kaybolmaz.
+1. `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` + annotation bump (PR) → rollout → pod env'inde `false` okunur (`printenv`) → `ethics_notification_outbox`'ta yeni `CASE_ESCALATED_L*` satırı oluşmadığı doğrulanır (`select count(*) … where created_at > <rollout>`). Kayıtlı seviyeler ve mevcut outbox satırları kaybolmaz.
 2. Ancak bundan sonra imaj geri alınabilir; eski imaja dönmeden önce `PENDING`/`PROCESSING` durumda `CASE_ESCALATED_L*` satırı KALMAMALI (eski worker onları etkinlik olarak birinci kademeye yönlendirir) — kalan varsa teslimini bekle ya da `DEAD_LETTER`'a al.
 3. Tuple silme: seeder'ın `write` gövdesi yerine OpenFGA `deletes` gövdesi.
 
