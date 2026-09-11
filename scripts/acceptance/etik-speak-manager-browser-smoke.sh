@@ -47,6 +47,8 @@ docker run --rm --ipc=host --network host \
   -e PERSONA_PASSWORD_FILE=/run/secrets/persona.password \
   -e EVIDENCE_DIR=/evidence \
   -e EXPECTED_LEVEL="$EXPECTED_LEVEL" \
+  -e CONSOLE_ERROR_ALLOWLIST="${CONSOLE_ERROR_ALLOWLIST:-}" \
+  -e NON2XX_ALLOWLIST="${NON2XX_ALLOWLIST:-}" \
   -e PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
   -e PLAYWRIGHT_INTEGRITY="$PLAYWRIGHT_INTEGRITY" \
   -v "$REPO_ROOT:/work:ro" \
