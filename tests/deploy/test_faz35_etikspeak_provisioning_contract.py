@@ -1701,9 +1701,27 @@ spec:
             'path: /data/ETHICS_NOTIFICATION_DELIVERY_ENABLED',
             self.activation_kustomization,
         )
-        self.assertIn(
+        # ES-301b (platform-backend#1153): recipients are numeric users_db ids — the id the
+        # shell bell reads (/authz/me.subscriberId). 11 = ethics-manager-test (first tier),
+        # 33 = ethics-compliance-test (second tier). The escalation signals ride behind a
+        # rollout flag that must be present in the overlay (its value is flipped by PR).
+        for key, value in (
+            ("ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID", '"11"'),
+            ("ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID", '"33"'),
+        ):
+            self.assertRegex(
+                self.activation_kustomization,
+                rf"path: /data/{key}\n\s+value: {value}",
+                f"{key} must be pinned to its numeric users_db id",
+            )
+        self.assertRegex(
+            self.activation_kustomization,
+            r'path: /data/ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED\n\s+value: "(true|false)"',
+        )
+        self.assertNotIn(
             'value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"',
             self.activation_kustomization,
+            "the Keycloak subject UUID is not a subscriber id the bell can read",
         )
         for destination in (
             "allow-ethics-service-to-auth-service",
@@ -2312,6 +2330,64 @@ spec:
                     + re.escape(value)
                     + r"\"?",
                 )
+
+
+    def test_escalation_notify_tuples_are_bounded_and_seeded_by_the_declared_script(self):
+        """ES-301b (platform-backend#1153): the OpenFGA receive grants for the escalation
+        topic are data (bootstrap JSON) applied by a data-driven seeder whose invariant guard
+        is mirrored here so the file is gated at PR time, not only at run time."""
+        path = ROOT / "bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json"
+        doc = json.loads(path.read_text())
+        topics = set(doc["topics"])
+        templates = set(doc["templates"])
+        self.assertEqual(topics, {"ethics.case.escalation", "ethics.case.activity"})
+        self.assertEqual(templates, {"ethics.case.escalated"})
+        self.assertNotIn("__SECOND_TIER__", path.read_text())
+        for tuple_ in doc["tuples"]:
+            user, relation, obj = tuple_["user"], tuple_["relation"], tuple_["object"]
+            self.assertFalse(user.endswith(":*"), "wildcard subject is forbidden")
+            if relation == "can_receive":
+                self.assertRegex(user, r"^subscriber:[0-9]+$", "numeric users_db subscriber ids only")
+                self.assertTrue(obj.startswith("notification_topic:"))
+                self.assertIn(obj.removeprefix("notification_topic:"), topics)
+            elif relation == "topic":
+                self.assertIn(user.removeprefix("notification_topic:"), topics)
+                self.assertIn(obj.removeprefix("template:"), templates)
+            else:
+                self.fail(f"unexpected relation {relation}")
+        # Both tiers receive the escalation topic; only the first tier the activity topic;
+        # the second tier must be denied the activity template (topic-scoped grant).
+        grants = {(t["user"], t["object"]) for t in doc["tuples"] if t["relation"] == "can_receive"}
+        self.assertIn(("subscriber:11", "notification_topic:ethics.case.escalation"), grants)
+        self.assertIn(("subscriber:33", "notification_topic:ethics.case.escalation"), grants)
+        self.assertIn(("subscriber:11", "notification_topic:ethics.case.activity"), grants)
+        self.assertNotIn(("subscriber:33", "notification_topic:ethics.case.activity"), grants)
+        checks = {(c["user"], c["object"]): c["expect_allowed"] for c in doc["smoke_checks"]}
+        self.assertTrue(checks[("subscriber:33", "template:ethics.case.escalated")])
+        self.assertFalse(checks[("subscriber:33", "template:ethics.case.activity")])
+        self.assertFalse(checks[("subscriber:1", "template:ethics.case.escalated")])
+        seeder = (ROOT / "scripts/faz35/openfga-notify-topic-seed.sh").read_text()
+        self.assertIn("platform-test) : ;;", seeder)
+        self.assertIn("ERP_OPENFGA_STORE_ID", seeder)
+        self.assertIn("__SECOND_TIER__", seeder)
+        self.assertIn(
+            "scripts/faz35/openfga-notify-topic-seed.sh bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json",
+            doc["_apply_via"],
+        )
+
+    def test_sla_escalation_policy_is_pinned_in_the_activation_overlay(self):
+        """ES-301 dilim 1 landed its policy env without a contract pin; ES-301b pins it —
+        the escalation levels the notifications name are only meaningful under this policy."""
+        for key, value in (
+            ("ETHICS_SLA_ESCALATION_ENABLED", '"true"'),
+            ("ETHICS_SLA_ESCALATION_STEPS", '"PT0S,P3D"'),
+            ("ETHICS_SLA_CALENDAR_WARNBUSINESSDAYS", '"10"'),
+        ):
+            self.assertRegex(
+                self.activation_kustomization,
+                rf"path: /data/{key}\n\s+value: {value}",
+                f"{key} must stay pinned",
+            )
 
 
 class Faz35ReporterIdentityKeyIsolationTests(unittest.TestCase):

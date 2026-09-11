@@ -355,3 +355,8 @@ unmanaged workloads and public Ingresses. The database migration is additive;
 do not drop the `ethics` database, schema, receipt grants, messages, or audit
 outbox during rollback. OpenFGA model versions remain append-only. Production
 workloads are not stopped by this runbook.
+
+## Ek (2026-09-11, ES-301b): bildirim alıcıları ve ikinci kademe
+
+Bildirim alıcıları sayısal `users_db` id'leridir (shell zili `/authz/me.subscriberId` ile okur; KC subject UUID'si okunmaz). Birinci kademe 11 (`ethics-manager-test`), ikinci kademe 33 (`ethics-compliance-test`); OpenFGA receive grant'ları `bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json` + `scripts/faz35/openfga-notify-topic-seed.sh`. Tam sıra ve kanıt: [RB-faz35-ethics-escalation-notify.md](RB-faz35-ethics-escalation-notify.md).
+

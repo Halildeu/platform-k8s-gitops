@@ -276,9 +276,25 @@ patches:
       - op: add
         path: /data/ETHICS_NOTIFICATION_DELIVERY_ENABLED
         value: "true"
+      # ES-301b (platform-backend#1153, 2026-09-11): alıcı kimliği KC subject UUID'sinden
+      # sayısal users_db id'sine geçti. Ölçüm: 174 etkinlik inbox satırı UUID altında, shell
+      # zili /authz/me.subscriberId (sayısal) ile okuduğu için hiçbiri görünmemişti.
+      # 11 = ethics-manager-test (birinci kademe). OpenFGA can_receive tuple'ı da sayısal:
+      # bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json.
       - op: add
         path: /data/ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID
-        value: "f8a3b6f6-a984-49d1-b666-c535b11c742f"
+        value: "11"
+      # Eskalasyon sinyalleri (CASE_ESCALATED_L1..L5) ROLLOUT BAYRAĞI: eski worker bu satırları
+      # etkinlik olarak birinci kademeye yönlendirirdi; yalnız her replika yeni imajı
+      # çalıştırdıktan ve tuple seed'i geçtikten sonra "true" yapılır, geri alırken önce "false".
+      # İkinci kademe (uyum/kurul) alıcısı: 33 = ethics-compliance-test (users_db id; persona
+      # scripts/faz35/provision-test-ethics-escalation-recipient.sh ile mint edildi).
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED
+        value: "false"
+      - op: add
+        path: /data/ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID
+        value: "33"
       - op: add
         path: /data/ETHICS_NOTIFICATION_CHANNEL
         # The orchestrator's allow-set spells this `in-app`. `inapp` was
