@@ -141,6 +141,11 @@ def test_root_bootstrap_surfaces_are_exactly_the_provisioner_and_the_seeder():
     assert "--client-secret" not in seeder
     assert "--secret" not in seeder
     assert 'KV_PATH="kv/platform/graph-read"' in seeder
+    # tenant_id is reused from the legacy entry on the server; only the new app's
+    # client id and secret are ever typed by the owner.
+    assert 'exec vault kv get -field=graph_tenant_id "$1"' in seeder
+    assert "' sh kv/platform/graph\n" in seeder
+    assert 'tenant_id copied from kv/platform/graph' in seeder
     # Only key names and version are printed after the write.
     assert "keys: (.data.data | keys)" in seeder
     assert ".data.data.graph_client_secret" not in seeder

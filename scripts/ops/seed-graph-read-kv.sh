@@ -9,7 +9,11 @@
 # printed. Output is limited to the KV path, its key names and the version written.
 #
 # Usage:
-#   ./seed-graph-read-kv.sh --client-id <app-client-id> --tenant-id <tenant-id> [--ssh-host HOST]
+#   ./seed-graph-read-kv.sh --client-id <app-client-id> [--tenant-id <tenant-id>] [--ssh-host HOST]
+#
+# --tenant-id is optional: both apps live in the same tenant, so by default the
+# value is copied on aiserver from kv/platform/graph (graph_tenant_id) inside the
+# same in-band pipe — nothing that Vault already knows has to be retyped.
 #
 # Afterwards: provision-graph-mail-vault-approle.sh --identity graph-read, then
 # graph-mail-list.sh --identity graph-read --show-roles --mailbox halil.kocoglu@acik.com
@@ -26,11 +30,12 @@ GUID_RE='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
 
 usage() {
     cat <<'USAGE'
-Usage: seed-graph-read-kv.sh --client-id <GUID> --tenant-id <GUID> [--ssh-host HOST]
+Usage: seed-graph-read-kv.sh --client-id <GUID> [--tenant-id <GUID>] [--ssh-host HOST]
 
 Writes graph_client_id / graph_tenant_id / graph_client_secret to kv/platform/graph-read
-on the production Vault. The secret is prompted without echo; it is never accepted as
-an argument. Prints only the KV path, key names and the resulting version.
+on the production Vault. --tenant-id defaults to graph_tenant_id of kv/platform/graph
+(same tenant, read on the server). The secret is prompted without echo; it is never
+accepted as an argument. Prints only the KV path, key names and the resulting version.
 USAGE
 }
 
@@ -47,7 +52,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$CLIENT_ID" =~ $GUID_RE ]] || die "--client-id must be the app's client GUID"
-[[ "$TENANT_ID" =~ $GUID_RE ]] || die "--tenant-id must be the tenant GUID"
+[[ -z "$TENANT_ID" || "$TENANT_ID" =~ $GUID_RE ]] || die "--tenant-id must be the tenant GUID (or omit it to reuse kv/platform/graph)"
 [[ -t 0 ]] || die "run from an interactive terminal: the secret is prompted, never piped or passed as an argument"
 
 read -rs -p "acik-mail-graph-read client secret (input hidden): " CLIENT_SECRET
@@ -59,6 +64,20 @@ echo >&2
 # secret meet only inside the docker exec pipe; stdout carries metadata only.
 REMOTE=$(cat <<'EOR'
 set -euo pipefail
+GUID_RE='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+if [[ -z "${TENANT_ID:-}" ]]; then
+    TENANT_ID=$(
+        sudo -n jq -er '.root_token | select(type == "string" and length > 0)' "$VAULT_INIT_FILE" |
+            docker exec -i -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+                set -eu
+                IFS= read -r VAULT_TOKEN
+                export VAULT_TOKEN
+                exec vault kv get -field=graph_tenant_id "$1"
+            ' sh kv/platform/graph
+    )
+    [[ "$TENANT_ID" =~ $GUID_RE ]] || { echo "ERROR: kv/platform/graph carries no usable graph_tenant_id" >&2; exit 2; }
+    echo "tenant_id copied from kv/platform/graph (${TENANT_ID:0:8}…)" >&2
+fi
 {
     sudo -n jq -er '.root_token | select(type == "string" and length > 0)' "$VAULT_INIT_FILE"
     cat
