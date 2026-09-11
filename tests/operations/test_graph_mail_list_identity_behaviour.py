@@ -52,25 +52,25 @@ def fake_ssh(tmp_path):
     return run
 
 
-def test_default_identity_is_the_read_only_app(fake_ssh):
-    # Since 2026-09-11 the read path defaults to the Mail.Read-only identity, so a
-    # plain call never touches the Mail.Send-capable credential.
+def test_default_identity_is_the_legacy_app(fake_ssh):
+    # Reverted 2026-09-11 (owner): graph-read is denied for ai@acik.com by Graph while
+    # Exchange says Granted; the legacy identity stays the default until resolved.
     proc, argv, body = fake_ssh("--top", "1")
-    assert proc.returncode == 0, proc.stderr
-    assert "IDENTITY='graph-read' " in argv
-    assert "VAULT_PATH='kv/platform/graph-read' " in argv
-    assert "SHOW_ROLES='0' " in argv
-    assert "aiadmin@aiserver" in argv
-    assert 'EXPECTED_VAULT_PATH="kv/platform/graph-read"' in body
-    assert "/v1/auth/token/revoke-self" in body
-
-
-def test_legacy_identity_is_explicit_only(fake_ssh):
-    proc, argv, body = fake_ssh("--identity", "graph", "--top", "1")
     assert proc.returncode == 0, proc.stderr
     assert "IDENTITY='graph' " in argv
     assert "VAULT_PATH='kv/platform/graph' " in argv
+    assert "SHOW_ROLES='0' " in argv
+    assert "aiadmin@aiserver" in argv
     assert 'EXPECTED_VAULT_PATH="kv/platform/graph"' in body
+    assert "/v1/auth/token/revoke-self" in body
+
+
+def test_read_only_identity_is_explicit(fake_ssh):
+    proc, argv, body = fake_ssh("--identity", "graph-read", "--top", "1")
+    assert proc.returncode == 0, proc.stderr
+    assert "IDENTITY='graph-read' " in argv
+    assert "VAULT_PATH='kv/platform/graph-read' " in argv
+    assert 'EXPECTED_VAULT_PATH="kv/platform/graph-read"' in body
 
 
 def test_read_identity_selects_its_own_vault_path_and_can_expose_roles(fake_ssh):
