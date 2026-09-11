@@ -136,7 +136,11 @@ images:
     # Onceki: f35a3161 @ sha256:3c1064b593bf8ea280...
     # 2026-09-10 (gitops#3624) ethics-service: ES-306b tomcat 10.1.59 / netty 4.1.137 / openssl 3.5.8 (platform-backend#1154) uzerine ES-301 dilim 1 (#1152). Etiket sha-e99196c; digest GHCR paket API'sinden (index) okundu,
     # pin oncesi grype ile tarandi (0 Critical / 0 High). Onceki: sha256:f40aad2c42d25b087...
-    digest: sha256:a3078f27eefb80ee05f73bf29c3fdf5ddf62c7cb533d73184b7ea585ddb8bb72
+    # 2026-09-11 (platform-backend#1161, ES-301b #1153): eskalasyon bildirimleri — outbox
+    # olaylari CASE_ESCALATED_L1..L5, sinyal butcesi (V27), seviyeye gore birinci/ikinci kademe
+    # yonlendirme; sinyal uretimi ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED bayragi ile
+    # (ayri PR'da acilir). Etiket sha-f4749ec (kaynak f4749ec98de825af0127aa76da4fd9dcb739139c); digest GHCR paket API'sinden (index), pin oncesi grype.
+    digest: sha256:1c474b0b0c7ae3f58b0fd205d7675d339bcc8fd6f575575f308e2b5619423ce4
   # ES-104K dilim 2 (#2930): HEIC donusturucu. Digest hedef host'ta gercek
   # pull + probe ile dogrulandi (imaginary 1.2.4 / libvips 8.10; Apple-kodlu
   # HEIC -> PNG, HTTP 200). Cikti asla turev olmaz — worker in-JVM recode eder.
