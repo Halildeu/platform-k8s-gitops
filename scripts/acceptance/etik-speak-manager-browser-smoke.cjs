@@ -24,16 +24,23 @@ const expectedLevel = Number(process.env.EXPECTED_LEVEL || 1);
 // Known, pre-existing console noise on the manager surface, tracked as platform-web#1155:
 // the AG Grid Enterprise licence banner. (The CSP style-src violations that were on this
 // list collapsed the grid; platform-web#1156 fixed the policy and the entry was removed
-// so a regression fails this smoke again.) Reported in journey.json, never counted as a
-// failure. Anything else in the console still fails closed.
-const knownNoise = (process.env.CONSOLE_ERROR_ALLOWLIST || 'AG Grid and AG Charts Enterprise License')
+// so a regression fails this smoke again.) The licence banner is still on the list on
+// 2026-09-11, but for a different reason than before: platform-web#1162 ships the key in
+// the manager image (measured: window.__env__ carries the same key as the shell), and
+// that key is an expired trial — "Trial Period Expired ... 13 August 2026", product-wide,
+// tracked in gitops#3664. Drop the entry the day a valid key lands. Reported in
+// journey.json, never counted as a failure. Anything else in the console still fails
+// closed. CONSOLE_ERROR_ALLOWLIST (pipe-separated) replaces the default when set.
+const knownNoise = (process.env.CONSOLE_ERROR_ALLOWLIST ?? 'AG Grid and AG Charts Enterprise License|Trial Period Expired|expired on 13 August 2026|purchase a license|\*\*\*\*')
   .split('|').map((s) => s.trim()).filter(Boolean);
 const isKnownNoise = (line) => knownNoise.some((n) => line.includes(n));
 // "Failed to load resource" console lines carry no URL; the network capture below does,
 // so those lines are judged there. Non-ethics failures on this allowlist are known and
-// tracked (platform-web#1155: the grid variant service answers 401 to the ethics
-// persona — pre-existing, not part of the case journey). Everything else fails closed.
-const knownNon2xx = (process.env.NON2XX_ALLOWLIST || '/api/v1/variants:401')
+// tracked. (The /api/v1/variants:401 entry was platform-web#1155: the manager sent no
+// Authorization header to the grid-variants service; platform-web#1162 fixed it, so a
+// 401 there fails this smoke again.) Everything else fails closed. Set NON2XX_ALLOWLIST
+// explicitly (comma-separated path:status) only for a known, tracked exception.
+const knownNon2xx = (process.env.NON2XX_ALLOWLIST ?? '')
   .split(',').map((s) => s.trim()).filter(Boolean);
 const isKnownNon2xx = (r) => knownNon2xx.includes(`${r.path}:${r.status}`);
 const isNetworkEcho = (line) => line.startsWith('console: Failed to load resource');
