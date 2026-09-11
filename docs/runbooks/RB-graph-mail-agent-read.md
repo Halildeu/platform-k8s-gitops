@@ -402,7 +402,7 @@ alır, yalnız stdin üzerinden taşır (argv/env/history/log YOK) ve yalnız an
 adları + sürüm basar:
 
 ```bash
-scripts/ops/seed-graph-read-kv.sh --client-id <graph-read-client-id> --tenant-id <tenant-id>
+scripts/ops/seed-graph-read-kv.sh --client-id <graph-read-client-id>   # tenant_id kv/platform/graph'tan otomatik
 # beklenen çıktı (secret değeri hiçbir zaman basılmaz):
 # {"path":"kv/platform/graph-read","version":1,"created_time":"..."}
 # {"keys":["graph_client_id","graph_client_secret","graph_tenant_id"],"version":1}
