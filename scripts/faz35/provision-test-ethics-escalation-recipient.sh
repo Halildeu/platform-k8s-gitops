@@ -2,6 +2,14 @@
 # Faz 35 ES-301b (platform-backend#1153): the SECOND-TIER escalation recipient for the TEST
 # cell — the compliance/board persona that receives level-2+ escalation notifications.
 #
+# Organisation: the SYNTHETIC channel org (…0003), deliberately. The orchestrator inbox is
+# org-scoped and the shell bell reads it with the user's own org_id claim, so a recipient
+# only ever sees rows whose intent carried its org — and acceptance escalations are
+# produced on synthetic (…0003) cases, never on the live channel (…0001). The recipient
+# ids in ethics-service are cell-level (one per tier), not per org: the first tier
+# (ethics-manager-test, …0001) therefore cannot see org-…0003 rows from the bell — a
+# pre-existing limitation of the single-recipient design, tracked separately.
+#
 # What it is NOT: an Etik Speak manager. It holds no ethics-manager realm role, no
 # ETIK_SPEAK_MANAGER membership, no product tuple; it can log into the platform shell (to
 # see the bell) and nothing else. The Faz 35 least-privilege contract for managers is
@@ -27,7 +35,7 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 RECIPIENT_USERNAME=ethics-compliance-test
-RECIPIENT_ORG_ID=00000000-0000-0000-0000-000000000001
+RECIPIENT_ORG_ID=00000000-0000-0000-0000-000000000003
 RECIPIENT_PASSWORD_FILE=/srv/platform/secrets/faz35-test/ethics-compliance-test.password
 FIRST_TIER_USERNAME=ethics-manager-test
 LOCAL_PORT=18091

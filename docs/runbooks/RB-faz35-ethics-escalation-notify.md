@@ -9,7 +9,9 @@
 | Kademe | Persona | users_db id | Nasıl |
 |---|---|---|---|
 | 1 | `ethics-manager-test` | 11 | mevcut yönetici; `ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID` |
-| 2 | `ethics-compliance-test` | 33 | `scripts/faz35/provision-test-ethics-escalation-recipient.sh` (KC kullanıcı + org_id, şifre 0600, user-service profil → writer aktivasyonu, `/authz/me` sayısal id; **yönetici rolü yok, permissions []**) |
+| 2 | `ethics-compliance-test` | 33 | `scripts/faz35/provision-test-ethics-escalation-recipient.sh` (KC kullanıcı, **org …0003 sentetik kanal**, şifre 0600, user-service profil → writer aktivasyonu, `/authz/me` sayısal id; **yönetici rolü yok, permissions []**) |
+
+**Org kapsamı:** orkestratör inbox'ı org'a göre ayrılır ve shell zili kullanıcının kendi `org_id` claim'iyle okur; bir alıcı yalnız kendi org'unun intent'lerini görür. Alıcı id'leri ethics-service'te hücre düzeyindedir (kademe başına bir), org başına değil — birinci kademe (…0001) sentetik org (…0003) vakalarının satırlarını zilden göremez (tek-alıcı tasarımının bilinen sınırı; org başına yönlendirme ayrı backlog). Kabul bu yüzden ikinci kademeyi sentetik org'a koyar ve L1 kanıtını DB satırıyla verir.
 
 ## Sıra (rollout güvenliği — eski worker yeni olayları birinci kademeye etkinlik gibi yönlendirir; ConfigMap tek başına pod'u yeniden başlatmaz)
 
