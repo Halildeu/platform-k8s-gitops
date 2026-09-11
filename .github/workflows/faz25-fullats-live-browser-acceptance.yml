@@ -122,8 +122,12 @@ jobs:
           EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash scripts/ats/verify-fullats-live-runtime.sh
 
+      # The compensating rollback below is bound to exactly one promotion: PR #2636,
+      # merged as e5a436da768229f0564a5eab238e2b861b09d128 (2026-07-18). It can only
+      # run when the dispatched revision IS that merge; on any later main tip the
+      # chain is skipped and the honest failure summary step below runs instead.
       - name: Require rollback GitHub App credentials after acceptance failure
-        if: failure() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure')
+        if: failure() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && github.sha == 'e5a436da768229f0564a5eab238e2b861b09d128'
         id: rollback-credentials
         env:
           APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
@@ -177,10 +181,23 @@ jobs:
         run: bash scripts/ats/open-fullats-test-rollback-pr.sh
 
       - name: Require compensating rollback completion after acceptance failure
-        if: always() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && steps.rollback.outcome != 'success'
+        if: always() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && github.sha == 'e5a436da768229f0564a5eab238e2b861b09d128' && steps.rollback.outcome != 'success'
         run: |
           echo "::error::Full ATS acceptance failed and protected compensating rollback did not complete"
           echo "convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} final-runtime=${{ steps.final-runtime.outcome }} rollback-gh=${{ steps.rollback-gh.outcome }} rollback-kustomize=${{ steps.rollback-kustomize.outcome }} rollback=${{ steps.rollback.outcome }}"
+          exit 1
+
+      - name: Report acceptance failure without automatic compensation
+        if: always() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && github.sha != 'e5a436da768229f0564a5eab238e2b861b09d128'
+        run: |
+          echo "::error::Full ATS acceptance failed on ${{ github.sha }}; no automatic compensator exists for revisions after promotion PR #2636 — GitOps desired state and the running workloads are untouched. Roll back with a GitOps PR per docs/RB-ats-39d-testai.md (Rollback)."
+          echo "convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} final-runtime=${{ steps.final-runtime.outcome }}"
+          {
+            echo "## Full ATS acceptance FAILED — no automatic rollback"
+            echo "- revision: ${{ github.sha }}"
+            echo "- outcomes: convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} final-runtime=${{ steps.final-runtime.outcome }}"
+            echo "- runtime untouched; rollback = GitOps PR (docs/RB-ats-39d-testai.md → Rollback); generic evidence-bound compensator tracked in #3689"
+          } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
       - name: Upload redacted live browser evidence
