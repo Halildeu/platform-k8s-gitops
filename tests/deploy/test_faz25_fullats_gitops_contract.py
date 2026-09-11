@@ -862,7 +862,7 @@ fi
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
             "ats": "sha256:5e4496643069a44693a1f886c3c9323405634f6ecbee55f76a484183504186df",
-            "permission": "sha256:264901f4a11ea00d2f27fd56bb31bd35536394eb0ae2c83d992763a0b4d3bb02",
+            "permission": "sha256:f103c00de707b0bfd227fda6754db3302d1391ca602a45952b058dc7c0480b66",
             "frontend": self.frontend_pin["digest"],
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
