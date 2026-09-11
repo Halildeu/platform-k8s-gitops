@@ -121,13 +121,19 @@ for d in docs:
     for c in d.get('spec', {}).get('template', {}).get('spec', {}).get('containers', []):
         img = c.get('image', '')
         # <registry>/<path>[:<tag>]@sha256:<hex> — the tag is NOT part of the
-        # GHCR package name (Codex 01a09219 P2: newTag + digest render as path:tag@digest)
-        m = re.match(r'^(?P<reg>[^/]+)/(?P<path>[^@:]+)(?::[^@]+)?@(?P<dig>sha256:[a-f0-9]+)\$', img)
+        # GHCR package name (Codex 01a09219 P2: newTag + digest render as path:tag@digest).
+        # The first component is a registry host only when it looks like one
+        # ('.' or ':' inside, or 'localhost'); a bare 'halildeu/pkg@sha256:…'
+        # ref is owner/package on the default registry (gitops#3677 follow-up:
+        # audio-gateway rendered that way and the owner was lost).
+        m = re.match(r'^(?P<first>[^/]+)/(?P<rest>[^@:]+)(?::[^@]+)?@(?P<dig>sha256:[a-f0-9]+)\$', img)
         if m:
+            first, rest = m.group('first'), m.group('rest')
+            path = rest if ('.' in first or ':' in first or first == 'localhost') else f\"{first}/{rest}\"
             key = (svc, m.group('dig'))
             if key not in seen:
                 seen.add(key)
-                print(f\"{svc} {m.group('path')} {m.group('dig')}\")
+                print(f\"{svc} {path} {m.group('dig')}\")
 ")
   if [[ -z "$RENDERED" ]]; then
     echo "[ledger-mark-verified] no service+digest pairs in render; nothing to mark"
@@ -189,7 +195,8 @@ PY
     echo "  [GEN-SKIP] $svc: GHCR package query failed for ${owner}/${pkg}" >&2
     return 1
   fi
-  tags=$(printf '%s\n' "$versions" | grep -E '^sha-[a-f0-9]{7,12}$' || true)
+  # sha-<7> (backend/web CI) or sha-<40> (the Etik Speak web images tag the full commit)
+  tags=$(printf '%s\n' "$versions" | grep -E '^sha-[a-f0-9]{7,40}$' || true)
   if [[ -z "$tags" ]]; then
     echo "  [GEN-SKIP] $svc: digest $digest carries no sha-* tag on GHCR" >&2
     return 1
