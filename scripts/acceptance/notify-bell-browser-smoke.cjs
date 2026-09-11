@@ -111,7 +111,9 @@ const now = () => Date.now();
   if (unexpectedConsole.length) throw new Error(`console hataları: ${unexpectedConsole.slice(0, 3).join(' | ')}`);
 
   await browser.close();
-  console.log(`PASS bell: ${username} (org ${inboxIdentity?.orgId}, subscriber ${inboxIdentity?.subscriberId}) inbox'ta "${match.subject}" | unread=${journey.unreadCount} | ${JSON.stringify(timings)}`);
+  // The persona name comes from the environment; keep it out of the log line (CodeQL
+  // js/clear-text-logging) — journey.json carries it, the wrapper already echoed it.
+  console.log(`PASS bell: persona inbox (org ${inboxIdentity?.orgId}, subscriber ${inboxIdentity?.subscriberId}) carries "${match.subject}" | unread=${journey.unreadCount} | ${JSON.stringify(timings)}`);
 })().catch(async (error) => {
   console.error(`FAIL: ${error.message}`);
   try {
