@@ -59,4 +59,10 @@ data:
   # (mesajlar idempotency ile tek kaldi). Delivery loop'lariyla ayni disiplin:
   # outbox-sekilli is basina TEK poller, o da istek karsilayan dagitimda.
   ETHICS_ACK_NET_ENABLED: "false"
+  # ES-301b (platform-backend#1153) canli dersi (2026-09-11): ayni miras ile iki worker
+  # eskalasyon sweep'ini de kostu ve seviyeleri istek-karsilayan pod'dan ONCE, bildirim
+  # bayragi kapali olarak kaydetti — seviye var, sinyal yok (ethics-service'in sweep'i
+  # "zaten kayitli" gorup sustu). Seviye kaydi + sinyal ayni per-case transaction'da
+  # oldugu icin sweep de outbox-sekilli istir: TEK poller, o da istek karsilayan dagitimda.
+  ETHICS_SLA_ESCALATION_ENABLED: "false"
   SPRING_FLYWAY_ENABLED: "false"

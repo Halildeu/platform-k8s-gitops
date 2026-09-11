@@ -2447,6 +2447,23 @@ spec:
         ).stdout
         self.assertEqual(rendered.count("etik-speak.acik.com/notification-config-revision:"), 1)
 
+    def test_escalation_sweep_runs_only_in_the_request_facing_deployment(self):
+        """ES-301b live lesson: both workers inherited ETHICS_SLA_ESCALATION_ENABLED=true and
+        recorded the levels with the notification flag off — level present, signal never
+        produced. The sweep is outbox-shaped work: one poller, in ethics-service."""
+        for name in ("evidence-worker-config.yaml", "cdr-worker-config.yaml"):
+            text = (ROOT / "kustomize/base/apps/etik-speak" / name).read_text()
+            self.assertIn('ETHICS_SLA_ESCALATION_ENABLED: "false"', text, name)
+            self.assertIn('ETHICS_ACK_NET_ENABLED: "false"', text, name)
+            self.assertIn('ETHICS_NOTIFICATION_DELIVERY_ENABLED: "false"', text, name)
+        rendered = subprocess.run(
+            ["kubectl", "kustomize", str(ROOT / "kustomize/overlays/test/activation/etik-speak")],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        self.assertEqual(rendered.count('ETHICS_SLA_ESCALATION_ENABLED: "true"'), 1)
+        self.assertEqual(rendered.count('ETHICS_SLA_ESCALATION_ENABLED: "false"'), 2)
+        self.assertEqual(rendered.count("etik-speak.acik.com/worker-config-revision:"), 2)
+
     def test_sla_escalation_policy_is_pinned_in_the_activation_overlay(self):
         """ES-301 dilim 1 landed its policy env without a contract pin; ES-301b pins it —
         the escalation levels the notifications name are only meaningful under this policy."""
