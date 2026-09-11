@@ -549,7 +549,9 @@ def main() -> None:
         # 2026-09-03 (gitops#3486): sha-2f63a74 — platform-backend#1127 makes the
         # live-analyze window cumulative; the durable-finalization surface this
         # verifier pins is untouched.
-        "sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773",
+        # 2026-09-10 backend#1159: per-meeting live-analysis backpressure;
+        # no durable-finalization behavior change. Attested source 23d860a4.
+        "sha256:7d4b9d85b57ad4e89df69daad1b0f3dccb537103e71c9ac4da68bd7b64f11c5d",
     )
     pod_annotation(
         meeting_deploy,

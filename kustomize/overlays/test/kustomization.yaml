@@ -484,7 +484,11 @@ images:
     # 2026-09-04 (platform-backend#1024 dilim 2, platform-backend#1130): sha-9f096ac — meeting-contract
     # speechContextTerms merged ahead of the recorder's contextTerms (SpeechContextTermMerger) before
     # Speechmatics additional_vocab; GHCR package-API manifest digest.
-    digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
+    # 2026-09-10 backend#1159 / gitops#3440: per-meeting live-analysis
+    # single-flight and cumulative coalescing. Source 23d860a4, attested
+    # build 34483205193. Finalization/PT6M unchanged; normal-user gate pending.
+    # Rollback digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
+    digest: sha256:7d4b9d85b57ad4e89df69daad1b0f3dccb537103e71c9ac4da68bd7b64f11c5d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -1976,7 +1980,13 @@ images:
     # into the JOIN builders, /path returns bounded shortest alternatives.
     # Codex 01a08afc AGREE after 4 REVISE rounds; module verify 324/0.
     # Digest read from GHCR by tag (never build logs).
-    digest: sha256:8bac50981bba3da6a226e221b28ecf1b080bde354d2348f6f8925b5a08438ebc
+    #
+    # 2026-09-10 bump: sha-373046f — platform-backend#1158 (gitops#3643): IFS REF= targets —
+    # already-uppercase LU names kept as-is (325 live refs) and the views own
+    # LU= comment index as fallback (103 more, 278 ambiguous counted).
+    # Codex 01a08b5b review; module verify 325/0.
+    # Digest read from GHCR by tag (never build logs).
+    digest: sha256:0c5eeb4e2603f2cc9ca3f970604bef379c17053f040bf25e0065b11ce408afb4
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
@@ -5225,7 +5235,7 @@ images:
     # 2026-07-27 source-document drill-down: platform-web PR #1034,
     # merge 47e8c6592a8569a244923508df81602454371a81; main image build run
     # 30304651440 (testai job 90105784383).
-    # sourceRevision: 90fdfbf2eb348776272d9f3429ab30d1410d2d0f
+    # sourceRevision: 45c8e544bd4541d1c3ad6dfe2a430c0c1d9a3fa6
     # 2026-07-30 token sözleşmesi: platform-web PR #1084 — /admin/ethics rotası
     # kapsam çözücüye eklendi (sessiz SSO etik sözleşmeli token basar); sidebar
     # rota-kapsamlı hedeflere tam sayfa gider. Sahip ekranındaki "Oturum
@@ -5243,7 +5253,7 @@ images:
     # Route-scoped OAuth renewal from platform-web PR #1067, merge
     # 0a7358da14ff31d36ce5222ec0224d9c344dcc9b, is an ancestor of this
     # current artifact (compare to 6c4c1af: ahead_by=1, behind_by=0).
-    newTag: sha-90fdfbf
+    newTag: sha-45c8e54
     # 2026-07-31 bump: sha-c9abae3 — platform-web#1095 (gitops#3211). The user
     # detail drawer gains an MFA section: it reads the Keycloak-side second
     # factor through user-service's narrow admin proxy, resets a lost
@@ -5283,7 +5293,7 @@ images:
     # state, preventing a later promotion from reintroducing an index/imageID
     # mismatch.
     # #2828 request-bound TEST exception UI; web #1145, build 34041913860.
-    digest: sha256:ea2728b94a1d44df04dcdb3f3367865cef7cdf05fb7767ec855b311881146d24
+    digest: sha256:0096895bdfb927ddc012a181cfd21fda1b7aca309a2758eca14bdd9b5ad91068
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -9939,6 +9949,10 @@ patches:
       - op: replace
         path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_TIMEOUT_MS
         value: "120000"
+      # Per-meeting request-start cadence; busy windows coalesce, not queue.
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_MIN_INTERVAL_MS
+        value: "15000"
       # I2-T web izleyici canli transkript SSE hub'i — ayni pakette acilir;
       # ephemeral pub/sub, kalicilik yok, drop-oldest back-pressure.
       - op: replace
