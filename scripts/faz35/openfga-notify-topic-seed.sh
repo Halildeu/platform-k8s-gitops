@@ -42,37 +42,10 @@ case "$KUBE_NS" in
   platform-test) : ;;
   *) err "ADR-0041 invariant: seed is platform-test only (KUBE_NS=${KUBE_NS} refused)"; exit 1 ;;
 esac
-if grep -q '__SECOND_TIER__' "$TUPLES_JSON"; then
-  err "placeholder __SECOND_TIER__ still present — run provision-test-ethics-escalation-recipient.sh first"; exit 1
-fi
-jq -e '(.topics|type)=="array" and (.topics|length)>0 and (.templates|type)=="array" and (.templates|length)>0' "$TUPLES_JSON" >/dev/null \
-  || { err "JSON must declare non-empty .topics and .templates"; exit 1; }
-if jq -e '[(.tuples // [])[].user, (.smoke_checks // [])[].user] | any(endswith(":*") or startswith("user:"))' "$TUPLES_JSON" >/dev/null; then
-  err "invariant: wildcard or user:-typed subject forbidden"; exit 1
-fi
-# Every tuple must be one of the two allowed triple shapes, bound to the declared objects.
-if jq -e '
-  (.topics) as $t | (.templates) as $m |
-  [ .tuples[] |
-    (.object|ltrimstr("notification_topic:")) as $topicObj |
-    (.user|ltrimstr("notification_topic:")) as $topicSubj |
-    (.object|ltrimstr("template:")) as $templateObj |
-    ( .relation=="can_receive"
-      and (.user|test("^subscriber:[0-9]+$"))
-      and (.object|startswith("notification_topic:"))
-      and (($t|index($topicObj))!=null) )
-    or
-    ( .relation=="topic"
-      and (.user|startswith("notification_topic:"))
-      and (($t|index($topicSubj))!=null)
-      and (.object|startswith("template:"))
-      and (($m|index($templateObj))!=null) )
-  ] | all | not' "$TUPLES_JSON" >/dev/null; then
-  err "invariant: a tuple is outside the allowed shapes (numeric subscriber can_receive declared topic | declared topic → declared template)"; exit 1
-fi
-if jq -e '[.smoke_checks[] | .relation=="can_receive" and (.object|test("^template:"))] | all | not' "$TUPLES_JSON" >/dev/null; then
-  err "invariant: smoke checks must ask can_receive on a template (the relation the orchestrator checks)"; exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-notify-tuples-guard.sh
+. "$SCRIPT_DIR/lib-notify-tuples-guard.sh"
+validate_notify_tuples "$TUPLES_JSON" || { err "invariant guard refused ${TUPLES_JSON##*/}"; exit 1; }
 info "invariant guard: PASS (platform-test, no wildcard, $(jq -r '.topics|join(",")' "$TUPLES_JSON") / $(jq -r '.templates|join(",")' "$TUPLES_JSON") only)"
 
 # --- store/model from the permission-service pod env (fail-closed if absent) ---
@@ -88,6 +61,9 @@ pod_post() { # $1=endpoint (body on stdin)
   || { err "curl not available in ${POD_DEPLOY}"; exit 1; }
 
 # --- 1. SEED (per-tuple, idempotent) ---
+TUPLE_ROWS=$(jq -r '.tuples[] | [.user, .relation, .object] | @tsv' "$TUPLES_JSON") || { err "could not read tuples"; exit 1; }
+CHECK_ROWS=$(jq -r '.smoke_checks[] | [.user, .relation, .object, (.expect_allowed|tostring)] | @tsv' "$TUPLES_JSON") || { err "could not read smoke_checks"; exit 1; }
+[ -n "$TUPLE_ROWS" ] && [ -n "$CHECK_ROWS" ] || { err "empty tuples or smoke_checks"; exit 1; }
 written=0; existed=0
 while IFS=$'\t' read -r u r o; do
   [ -n "$u" ] || continue
@@ -103,7 +79,7 @@ while IFS=$'\t' read -r u r o; do
       else err "  write FAILED (HTTP $code) ${u} ${r} ${o}: ${body}"; exit 1; fi ;;
     *) err "  write FAILED (HTTP $code) ${u} ${r} ${o}: ${body}"; exit 1 ;;
   esac
-done < <(jq -r '.tuples[] | [.user, .relation, .object] | @tsv' "$TUPLES_JSON")
+done <<<"$TUPLE_ROWS"
 info "Seed done: ${written} written, ${existed} already-existed"
 
 # --- 2. VERIFY (effective authorization after the write) ---
@@ -117,6 +93,8 @@ while IFS=$'\t' read -r u r o e; do
   if [ "$code" != "200" ]; then err "  /check HTTP $code for ${u} ${r} ${o}: ${body}"; rc=1; continue; fi
   allowed=$(printf '%s' "$body" | jq -r '.allowed // false')
   if [ "$allowed" = "$e" ]; then info "  PASS ${u} ${r} ${o} → allowed=${allowed}"; else err "  FAIL ${u} ${r} ${o} → allowed=${allowed} (expected ${e})"; rc=1; fi
-done < <(jq -r '.smoke_checks[] | [.user, .relation, .object, (.expect_allowed|tostring)] | @tsv' "$TUPLES_JSON")
+done <<<"$CHECK_ROWS"
 [ "$rc" -eq 0 ] || { err "Smoke verification FAILED"; exit 1; }
-info "All ${TUPLES_JSON##*/} smoke_checks PASS"
+checked=$(printf '%s\n' "$CHECK_ROWS" | grep -c .)
+[ "$checked" -ge 1 ] || { err "no smoke check ran"; exit 1; }
+info "All ${checked} ${TUPLES_JSON##*/} smoke_checks PASS"

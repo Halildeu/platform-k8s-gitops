@@ -2369,11 +2369,75 @@ spec:
         seeder = (ROOT / "scripts/faz35/openfga-notify-topic-seed.sh").read_text()
         self.assertIn("platform-test) : ;;", seeder)
         self.assertIn("ERP_OPENFGA_STORE_ID", seeder)
-        self.assertIn("__SECOND_TIER__", seeder)
+        self.assertIn('. "$SCRIPT_DIR/lib-notify-tuples-guard.sh"', seeder)
+        self.assertIn('validate_notify_tuples "$TUPLES_JSON" ||', seeder)
         self.assertIn(
             "scripts/faz35/openfga-notify-topic-seed.sh bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json",
             doc["_apply_via"],
         )
+
+    def _guard(self, path):
+        """Runs the seeder's own invariant guard (the sourced library) on a file."""
+        return subprocess.run(
+            ["bash", "-c", '. "$1"; validate_notify_tuples "$2"', "_",
+             str(ROOT / "scripts/faz35/lib-notify-tuples-guard.sh"), str(path)],
+            capture_output=True, text=True,
+        )
+
+    def test_notify_tuples_guard_accepts_the_file_and_refuses_the_known_bad_shapes(self):
+        """Codex 01a08f67: a guard written as `if jq -e '… | not'` let jq evaluation errors
+        fall through to the write path. The guard is positive validation in a library the
+        seeder sources; these fixtures must be refused before any tuple is written."""
+        good = ROOT / "bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json"
+        result = self._guard(good)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        doc = json.loads(good.read_text())
+        bad_cases = {
+            "smoke_checks null": {**doc, "smoke_checks": None},
+            "smoke_checks empty": {**doc, "smoke_checks": []},
+            "out-of-scope topic": {**doc, "tuples": doc["tuples"] + [
+                {"user": "subscriber:5", "relation": "can_receive",
+                 "object": "notification_topic:outside-declared-topics"}]},
+            "null user": {**doc, "tuples": doc["tuples"] + [
+                {"user": None, "relation": "topic", "object": "template:ethics.case.escalated"}]},
+            "wildcard subject": {**doc, "tuples": doc["tuples"] + [
+                {"user": "subscriber:*", "relation": "can_receive",
+                 "object": "notification_topic:ethics.case.escalation"}]},
+            "uuid subscriber": {**doc, "tuples": doc["tuples"] + [
+                {"user": "subscriber:f8a3b6f6-a984-49d1-b666-c535b11c742f", "relation": "can_receive",
+                 "object": "notification_topic:ethics.case.escalation"}]},
+            "non-boolean expect": {**doc, "smoke_checks": doc["smoke_checks"] + [
+                {"user": "subscriber:11", "relation": "can_receive",
+                 "object": "template:ethics.case.escalated", "expect_allowed": "true"}]},
+            "undeclared template": {**doc, "tuples": doc["tuples"] + [
+                {"user": "notification_topic:ethics.case.escalation", "relation": "topic",
+                 "object": "template:meeting.action.assigned"}]},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, bad in bad_cases.items():
+                path = Path(tmp) / "bad.json"
+                path.write_text(json.dumps(bad))
+                result = self._guard(path)
+                self.assertNotEqual(result.returncode, 0, f"{name} must be refused")
+                self.assertIn("guard:", result.stderr, name)
+            placeholder = Path(tmp) / "placeholder.json"
+            placeholder.write_text(good.read_text().replace("subscriber:33", "subscriber:__SECOND_TIER__"))
+            self.assertNotEqual(self._guard(placeholder).returncode, 0)
+            missing = Path(tmp) / "missing.json"
+            self.assertNotEqual(self._guard(missing).returncode, 0)
+
+    def test_ethics_service_config_changes_roll_the_pod(self):
+        """ConfigMap env is read through envFrom at start; the pod-template revision
+        annotation is what turns a config PR into a rollout (bumped in the same PR)."""
+        self.assertIn(
+            "etik-speak.acik.com/notification-config-revision",
+            self.activation_kustomization,
+        )
+        rendered = subprocess.run(
+            ["kubectl", "kustomize", str(ROOT / "kustomize/overlays/test/activation/etik-speak")],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        self.assertEqual(rendered.count("etik-speak.acik.com/notification-config-revision:"), 1)
 
     def test_sla_escalation_policy_is_pinned_in_the_activation_overlay(self):
         """ES-301 dilim 1 landed its policy env without a contract pin; ES-301b pins it —

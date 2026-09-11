@@ -11,21 +11,21 @@
 | 1 | `ethics-manager-test` | 11 | mevcut yönetici; `ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID` |
 | 2 | `ethics-compliance-test` | 33 | `scripts/faz35/provision-test-ethics-escalation-recipient.sh` (KC kullanıcı + org_id, şifre 0600, user-service profil → writer aktivasyonu, `/authz/me` sayısal id; **yönetici rolü yok, permissions []**) |
 
-## Sıra (rollout güvenliği — eski worker yeni olayları birinci kademeye etkinlik gibi yönlendirir)
+## Sıra (rollout güvenliği — eski worker yeni olayları birinci kademeye etkinlik gibi yönlendirir; ConfigMap tek başına pod'u yeniden başlatmaz)
 
 1. Repo güncel: `cd ~/platform-k8s-gitops && git pull --ff-only`
 2. Persona (idempotent, id'leri basar; şifre basmaz):
    ```bash
    ./scripts/faz35/provision-test-ethics-escalation-recipient.sh
    ```
-3. Env (bu PR): `ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID="11"`, `ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID="33"`, `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` — ArgoCD ile ethics-service yeniden başlar; eski imaj yeni env'i yok sayar.
-4. İmaj: ethics-service + notification-orchestrator digest'leri (platform-backend#1161 sha) — pin öncesi grype; `scripts/deploy/verify-pod-digest.sh` ile **bütün** replikalar yeni.
-5. OpenFGA (erp-stage store; idempotent):
+3. OpenFGA grant'ları **env'den önce** (erp-stage store; idempotent) — birinci kademe `11`'e geçtiği anda etkinlik bildirimleri sayısal grant'a ihtiyaç duyar; grant sonradan eklenirse aradaki intent'ler `BLOCKED_BY_AUTHZ` olur:
    ```bash
    ./scripts/faz35/openfga-notify-topic-seed.sh bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json
    ```
    Beklenen: 4 tuple `wrote`/`exists`, 6 smoke_check `PASS` (11 ve 33 escalation şablonunda allow, 11 etkinlikte allow, 33 etkinlikte deny, subscriber:1 ve bilinmeyen deny). `FAIL` → dur.
-6. Bayrak: `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="true"` (ayrı PR) → sweeper bir sonraki döngüde (15 dk) kaydettiği her seviye için bir sinyal üretir (kurum+seviye başına kayan 24 saatte bir).
+4. Env (bu PR): `ETHICS_NOTIFICATION_RECIPIENT_SUBSCRIBER_ID="11"` (eski imaj da bunu HEMEN kullanır — adım 3 bu yüzden önce), `ETHICS_NOTIFICATION_ESCALATION_RECIPIENT_SUBSCRIBER_ID="33"`, `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` + Deployment pod-template annotation'ı `etik-speak.acik.com/notification-config-revision` (aynı PR'da bump) → ArgoCD rollout; `scripts/deploy/verify-pod-digest.sh` ve pod env'inde üç değer okunur (`kubectl exec … -- env | grep ETHICS_NOTIFICATION_`).
+5. İmaj: ethics-service + notification-orchestrator digest'leri (platform-backend#1161 sha) — pin öncesi grype; **bütün** replikalar yeni imageID (`verify-pod-digest.sh`), V27/V29 Flyway logları.
+6. Bayrak: `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="true"` **+ annotation bump** (ayrı PR) → rollout → pod env'inde `true` okunur → sweeper bir sonraki döngüde (15 dk) kaydettiği her seviye için bir sinyal üretir (kurum+seviye başına kayan 24 saatte bir).
 
 ## Kanıt (aynı artifact seti üzerinde, ayrı ayrı)
 
@@ -36,7 +36,9 @@
 
 ## Rollback
 
-Önce `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` (sinyal üretimi durur; kayıtlı seviyeler ve outbox satırları kaybolmaz), sonra gerekirse imaj geri; L1–L5 backlog'unu eski imaja **okutma** (yanlış yönlendirir). Tuple silme: seeder'ın `write` gövdesi yerine OpenFGA `deletes` gövdesi.
+1. `ETHICS_NOTIFICATION_ESCALATION_SIGNALS_ENABLED="false"` + annotation bump (PR) → rollout → pod env'inde `false` okunur → `ethics_notification_outbox`'ta yeni `CASE_ESCALATED_L*` satırı oluşmadığı doğrulanır (`select count(*) … where created_at > <rollout>`). Kayıtlı seviyeler ve mevcut outbox satırları kaybolmaz.
+2. Ancak bundan sonra imaj geri alınabilir; eski imaja dönmeden önce `PENDING`/`PROCESSING` durumda `CASE_ESCALATED_L*` satırı KALMAMALI (eski worker onları etkinlik olarak birinci kademeye yönlendirir) — kalan varsa teslimini bekle ya da `DEAD_LETTER`'a al.
+3. Tuple silme: seeder'ın `write` gövdesi yerine OpenFGA `deletes` gövdesi.
 
 ## Sınırlar
 

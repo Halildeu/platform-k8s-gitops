@@ -356,6 +356,16 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # ES-301b (platform-backend#1153): ethics-service reads its ConfigMap through envFrom at
+      # start; a ConfigMap-only change never restarts the pod, so a flag flip (or a recipient
+      # change) that stays in the ConfigMap is invisible to the running replica. This pod-
+      # template annotation is BUMPED IN THE SAME PR as any ethics-service-config env change
+      # — that is what turns the config change into a rollout (ADR-0023: git is the only
+      # writer; no kubectl rollout by hand). The contract test pins its presence.
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          etik-speak.acik.com/notification-config-revision: "2026-09-11-es301b-r1"
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
