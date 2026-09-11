@@ -177,10 +177,24 @@ const now = () => Date.now();
       null, { timeout: 30_000 },
     );
     const overlaps = Number(await canvas.getAttribute('data-overlaps'));
-    graph = { layout: 'settled', overlaps };
+    // Which boxes intersect: read through the Cytoscape instance the canvas element
+    // carries (`_cyreg`), so a failure names the pair instead of a count. Diagnostic
+    // only; the count the product reports stays the acceptance number.
+    const overlapPairs = overlaps > 0 ? await page.evaluate(() => {
+      const cy = document.querySelector('[data-testid="se-graph-canvas"]')?._cyreg?.cy;
+      if (!cy) return null;
+      const nodes = cy.nodes('[type="table"]').map((n) => ({ id: n.id(), box: n.boundingBox({ includeLabels: true }), visible: n.visible(), w: n.width(), h: n.height() }));
+      const pairs = [];
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i].box, b = nodes[j].box;
+        if (a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2) pairs.push([nodes[i], nodes[j]]);
+      }
+      return pairs.map(([a, b]) => ({ a: { id: a.id, visible: a.visible, w: Math.round(a.w), h: Math.round(a.h), x1: Math.round(a.box.x1), y1: Math.round(a.box.y1), x2: Math.round(a.box.x2), y2: Math.round(a.box.y2) }, b: { id: b.id, visible: b.visible, w: Math.round(b.w), h: Math.round(b.h), x1: Math.round(b.box.x1), y1: Math.round(b.box.y1), x2: Math.round(b.box.x2), y2: Math.round(b.box.y2) } }));
+    }) : [];
+    graph = { layout: 'settled', overlaps, overlapPairs };
     const maxOverlaps = process.env.EXPECTED_GRAPH_OVERLAPS;
     if (maxOverlaps !== undefined && maxOverlaps !== '' && overlaps > Number(maxOverlaps)) {
-      throw new Error(`ER grafiğinde ${overlaps} çakışan düğüm kutusu var (izin verilen ${maxOverlaps})`);
+      throw new Error(`ER grafiğinde ${overlaps} çakışan düğüm kutusu var (izin verilen ${maxOverlaps}): ${JSON.stringify(overlapPairs)}`);
     }
   }
   timings.tableDetailMs = now() - t2;
