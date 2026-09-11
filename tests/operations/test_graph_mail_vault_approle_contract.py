@@ -11,7 +11,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIST_HELPER = "scripts/ops/graph-mail-list.sh"
 SEND_HELPER = "scripts/ops/graph-mail-send.sh"
-HELPERS = (LIST_HELPER, SEND_HELPER)
+FETCH_HELPER = "scripts/ops/graph-mail-fetch.sh"
+HELPERS = (LIST_HELPER, SEND_HELPER, FETCH_HELPER)
 PROVISIONER = "scripts/ops/provision-graph-mail-vault-approle.sh"
 SEEDER = "scripts/ops/seed-graph-read-kv.sh"
 ROOT_BOOTSTRAP_PATH = "/srv/platform/secrets/backup-auth/vault-init-prod.json"
@@ -46,6 +47,10 @@ def test_graph_helpers_use_only_the_dedicated_approle_bootstrap_files():
     for identity in IDENTITIES.values():
         assert f'{identity["approle_dir"]}/role-id' in listing
         assert f'{identity["approle_dir"]}/secret-id' in listing
+    fetching = read(FETCH_HELPER)
+    read_only = IDENTITIES["graph-read"]
+    assert f'{read_only["approle_dir"]}/role-id' in fetching
+    assert f'{read_only["approle_dir"]}/secret-id' in fetching
 
 
 def test_graph_helpers_fail_closed_on_policy_ttl_and_path_drift():
@@ -58,6 +63,9 @@ def test_graph_helpers_fail_closed_on_policy_ttl_and_path_drift():
     for identity in IDENTITIES.values():
         assert f'EXPECTED_VAULT_PATH="{identity["kv_path"]}"' in listing
         assert f'EXPECTED_VAULT_POLICY="{identity["policy"]}"' in listing
+    fetching = read(FETCH_HELPER)
+    assert 'EXPECTED_VAULT_PATH="kv/platform/graph-read"' in fetching
+    assert 'EXPECTED_VAULT_POLICY="graph-mail-read-ops-ro"' in fetching
     # The KV read follows the identity; the identity is re-derived and re-checked remotely.
     assert "/v1/kv/data/platform/${IDENTITY}" in listing
     assert 'case "${IDENTITY:-}" in' in listing
@@ -156,3 +164,32 @@ def test_root_bootstrap_surfaces_are_exactly_the_provisioner_and_the_seeder():
     # Only key names and version are printed after the write.
     assert "keys: (.data.data | keys)" in seeder
     assert ".data.data.graph_client_secret" not in seeder
+
+
+def test_fetch_helper_is_read_only_and_bound_to_the_read_identity():
+    fetching = read(FETCH_HELPER)
+    legacy = IDENTITIES["graph"]
+    # Never the send-capable identity, never a write verb, never a send endpoint.
+    assert 'IDENTITY="graph-read"' in fetching
+    assert "--identity" not in fetching
+    assert legacy["policy"] not in fetching
+    assert f'{legacy["approle_dir"]}/' not in fetching
+    assert "sendMail" not in fetching
+    for verb in ("-X DELETE", "-X PATCH", "-X PUT"):
+        assert verb not in fetching
+    # The only POSTs are AppRole login, the Entra token request and the Vault
+    # token self-revoke — never a Graph write.
+    assert fetching.count("-X POST") == 3
+    assert "/v1/auth/approle/login" in fetching
+    assert "oauth2/v2.0/token" in fetching
+    assert "/v1/auth/token/revoke-self" in fetching
+    assert "graph.microsoft.com/v1.0" in fetching
+    assert fetching.count('-X POST "${VAULT_ADDR}') == 0  # token/login POSTs use --config/--data forms
+    # MIME + attachment bytes come from $value GETs; the size guard runs before any download.
+    assert "/messages/${ID}/\\$value" in fetching
+    assert "/attachments/${AID}/\\$value" in fetching
+    assert "exceeds --max-total-mb" in fetching
+    assert "tar -C \"$OUT\" -cf - ." in fetching
+    # Work dir is removed and the Vault token is still revoked afterwards.
+    assert 'rm -rf "$WORK"' in fetching
+    assert "(exit \"$rc\")\n    cleanup" in fetching
