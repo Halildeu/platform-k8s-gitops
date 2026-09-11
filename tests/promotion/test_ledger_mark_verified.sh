@@ -6,7 +6,7 @@
 # Scope: end-to-end exercise of report → target resolution → policy →
 # ledger patch with LEDGER_DRY_RUN=1 (skips git push + PR creation).
 #
-# 10 scenarios:
+# 11 scenarios:
 #   1. Frontend variant report with d29_zanzibar=AMBER → MARK
 #      (variant=frontend-prod-variant, jwt_validates=false from fixture catalog)
 #   2. Frontend variant report with d29_zanzibar=RED   → SKIP
@@ -325,6 +325,11 @@ case "$*" in
     echo "2222222222222222222222222222222222222222 2026-09-11T10:00:00Z"; exit 0 ;;
   *"packages/container/platform-web-frontend/versions"*)
     printf '%s\n' "sha-5555555"; exit 0 ;;
+  *"packages/container/platform-web-etik-speak-public/versions"*)
+    # full-sha tag, as the Etik Speak web CI writes it
+    printf '%s\n' "sha-6666666666666666666666666666666666666666" "latest"; exit 0 ;;
+  *"repos/halildeu/platform-web/commits/6666666666666666666666666666666666666666"*)
+    echo "6666666666666666666666666666666666666666 2026-09-11T11:00:00Z"; exit 0 ;;
   *"repos/halildeu/platform-web/commits/5555555"*)
     echo "5555555555555555555555555555555555555555 2026-09-11T10:00:00Z"; exit 0 ;;
   *) echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
@@ -551,6 +556,44 @@ scenario_10_testai_variant_is_not_recorded() {
   rm -rf "$tmpdir"; trap - RETURN
 }
 
+# --- Scenario 11: registry-less image ref + full-sha tag (Etik Speak web images)
+
+scenario_11_registryless_ref_and_full_sha_tag() {
+  echo "Scenario 11: image 'halildeu/pkg@digest' keeps its owner; a sha-<40> tag resolves"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  cat >> "$tmpdir/docs/operations/services.yaml" <<'YAML'
+  - name: etik-speak-public
+    repo: platform-web
+    jwt_validates: false
+    environments: {test: enabled, prod: enabled}
+YAML
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a"
+  write_backend_overlay "$tmpdir" "$digest"
+  sed -i.bak -e 's/user-service/etik-speak-public/g' -e "s|ghcr.io/halildeu/platform-backend-etik-speak-public|halildeu/platform-web-etik-speak-public|" \
+    "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "halildeu/platform-web-etik-speak-public@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "owner kept: package query under users/halildeu" "$(cat "$FAKE_GH_CALLS")" "users/halildeu/packages/container/platform-web-etik-speak-public/versions"
+  assert_contains "full-sha tag resolved" "$out" "[GEN] etik-speak-public → release-candidates/platform-web/6666666666666666666666666666666666666666-etik-speak-public.json"
+  assert_contains "marked" "$out" "[MARK] etik-speak-public"
+  assert_contains "image.path is owner/package" "$(jq -r .image.path "$tmpdir"/release-candidates/platform-web/*-etik-speak-public.json 2>/dev/null)" "halildeu/platform-web-etik-speak-public"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
 # --- Driver ------------------------------------------------------------------
 
 scenario_1_frontend_variant_amber_marks
@@ -563,6 +606,7 @@ scenario_7_tagged_render_uses_package_name_without_tag
 scenario_8_shared_image_second_service_gets_its_own_entry
 scenario_9_frontend_digest_present_no_sha_fallback
 scenario_10_testai_variant_is_not_recorded
+scenario_11_registryless_ref_and_full_sha_tag
 
 echo
 echo "==== Test summary: $PASS passed, $FAIL failed ===="
