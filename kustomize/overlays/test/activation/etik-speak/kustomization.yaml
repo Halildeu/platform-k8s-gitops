@@ -253,7 +253,11 @@ images:
     # enjekte ettigi stiller artik engellenmiyor, vaka grid'i gorsel olarak duzeldi (smoke layout
     # assert'i). Etiket sha-81e4301beeecebc654df3054e166fe29115f3835; digest GHCR paket API'sinden (index), pin oncesi grype tarandi.
     # Onceki: sha256:c9b49da26033312c0...
-    digest: sha256:7cabc336a788d9fd08c22945f75eb81ce7a49652ef02b152e0b7d8b1103b2125
+    # 2026-09-11 (platform-web#1162, #1155 P2): manager grid-variants istegi artik Authorization
+    # basligi tasiyor (senkron token snapshot'i; /api/v1/variants 401 -> 2xx) ve AG Grid lisans
+    # anahtari imajda (CSP-uyumlu runtime-env asset'i; banner yok). Etiket sha-747666b94ed5a01328fa991aaa4b5c95d485617c; digest
+    # GHCR paket API'sinden (index), pin oncesi grype tarandi.
+    digest: sha256:c5b61ced286276ccb57834c5d58ed8720fd2ce6931c9ebde9d2a41c1a9fbadf6
 patches:
   - target: {kind: ConfigMap, name: ethics-service-config}
     patch: |-
