@@ -138,8 +138,15 @@ def test_root_bootstrap_surfaces_are_exactly_the_provisioner_and_the_seeder():
     assert "read -rs -p" in seeder
     assert "graph_client_secret=-" in seeder
     assert "[[ -t 0 ]]" in seeder
+    # Pipe mode exists for clipboard hand-off, but it refuses a terminal on stdin and
+    # the secret is still never an argument.
+    assert "--secret-stdin) SECRET_STDIN=1" in seeder
+    assert '[[ ! -t 0 ]] || die "--secret-stdin expects the secret on a pipe' in seeder
+    # No argument ever carries the secret value: neither a --client-secret flag nor a bare
+    # --secret flag (only --secret-stdin, which names the pipe, is allowed).
     assert "--client-secret" not in seeder
-    assert "--secret" not in seeder
+    assert "--secret)" not in seeder
+    assert "--secret " not in seeder
     assert 'KV_PATH="kv/platform/graph-read"' in seeder
     # tenant_id is reused from the legacy entry on the server; only the new app's
     # client id and secret are ever typed by the owner.
