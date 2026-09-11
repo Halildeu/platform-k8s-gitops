@@ -1,0 +1,49 @@
+{
+  "_comment": "Faz 35 ES-301b (platform-backend#1153) — OpenFGA Layer-2 receive grants for the Etik Speak escalation notifications (topic ethics.case.escalation → template ethics.case.escalated) and the first tier's activity topic re-keyed to the subscriber id the shell bell actually reads.",
+  "_purpose": "notification-orchestrator blocks in-app delivery with BLOCKED_BY_AUTHZ unless `template:<id>#can_receive@subscriber:<id>` resolves; the live model inherits can_receive from the topic (`template.topic: [notification_topic]`, `notification_topic.can_receive: [subscriber]`). Level 1 escalations are addressed to the first tier, levels 2+ to the second tier — BOTH need can_receive on the escalation topic; the tier split is enforced by ethics-service's explicit recipient list, not by OpenFGA (one template, one topic). Measured 2026-09-11: 174 activity inbox rows sat under the Keycloak subject UUID while the shell reads the inbox as /authz/me.subscriberId (numeric) — the first tier's activity grant is therefore re-keyed here as well.",
+  "_scope": "test-only bootstrap exception (same discipline as meeting-action-notify-tuples.json / ADR-0041 §4). k3d-test, realm platform-test, shared erp-stage store (permission-service ERP_OPENFGA_STORE_ID). No production realm tuple is written.",
+  "_subject_model": "subscriber id == platform users_db numeric id (notification-orchestrator RecipientRef.subscriberId == /authz/me subscriberId == the shell's X-Subscriber-Id). subscriber:11 = ethics-manager-test (first tier, org …0001); subscriber:33 = ethics-compliance-test (second tier, org …0003 synthetic channel so the org-scoped inbox/bell can show synthetic-case escalations; minted by scripts/faz35/provision-test-ethics-escalation-recipient.sh, which reports the id). The former UUID-keyed activity tuple (subscriber:f8a3b6f6-…) is left in place; it is unreachable from the UI and harmless.",
+  "_invariants": [
+    "Wildcard subject (subscriber:*, user:*) YASAK — explicit numeric subscriber ids only",
+    "Objects limited to the escalation template/topic and the activity topic; relation ⊂ {can_receive, topic}",
+    "Idempotent: duplicate write → HTTP 400 'cannot write a tuple which already exists' treated as OK (per-tuple writes)",
+    "Canonical/prod path = permission-service tuple writer (DD-EA-2); automatic per-user grant on module membership is tracked separately (gitops#3541)"
+  ],
+  "_apply_via": "scripts/faz35/openfga-notify-topic-seed.sh bootstrap/openfga/faz35-ethics-escalation-notify-tuples.json (host jq + meeting-service pod curl; store/model read from the permission-service pod env).",
+  "topics": ["ethics.case.escalation", "ethics.case.activity"],
+  "templates": ["ethics.case.escalated"],
+  "tuples": [
+    {
+      "_role": "template → topic binding (escalation)",
+      "user": "notification_topic:ethics.case.escalation",
+      "relation": "topic",
+      "object": "template:ethics.case.escalated"
+    },
+    {
+      "_role": "first tier (ethics-manager-test) receives level-1 escalations",
+      "user": "subscriber:11",
+      "relation": "can_receive",
+      "object": "notification_topic:ethics.case.escalation"
+    },
+    {
+      "_role": "first tier (ethics-manager-test) receives activity signals under the id the bell reads",
+      "user": "subscriber:11",
+      "relation": "can_receive",
+      "object": "notification_topic:ethics.case.activity"
+    },
+    {
+      "_role": "second tier (ethics-compliance-test) receives level-2+ escalations",
+      "user": "subscriber:33",
+      "relation": "can_receive",
+      "object": "notification_topic:ethics.case.escalation"
+    }
+  ],
+  "smoke_checks": [
+    { "user": "subscriber:11", "relation": "can_receive", "object": "template:ethics.case.escalated", "expect_allowed": true },
+    { "user": "subscriber:33", "relation": "can_receive", "object": "template:ethics.case.escalated", "expect_allowed": true },
+    { "user": "subscriber:11", "relation": "can_receive", "object": "template:ethics.case.activity", "expect_allowed": true },
+    { "user": "subscriber:33", "relation": "can_receive", "object": "template:ethics.case.activity", "expect_allowed": false, "_why": "topic-scoped: the second tier is not on the activity topic" },
+    { "user": "subscriber:1", "relation": "can_receive", "object": "template:ethics.case.escalated", "expect_allowed": false, "_why": "unrelated subscriber (test admin) stays denied" },
+    { "user": "subscriber:00000000-0000-4000-8000-000000000000", "relation": "can_receive", "object": "template:ethics.case.escalated", "expect_allowed": false, "_why": "unknown subscriber stays denied" }
+  ]
+}
