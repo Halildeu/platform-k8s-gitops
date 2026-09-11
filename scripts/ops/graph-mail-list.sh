@@ -35,13 +35,11 @@
 #   graph-read  app `acik-mail-graph-read` (Mail.Read ONLY — Mail.Send is never
 #               granted, so this credential cannot send as anyone), scope
 #               `Mail-Graph-Read-Mailboxes` = ai@acik.com + halil.kocoglu@acik.com.
-#               Vault kv/platform/graph-read, AppRole graph-mail-read-ops. DEFAULT
-#               since 2026-09-11 (runbook §10.5 matrix measured live): the read
-#               path never touches a Mail.Send-capable credential.
+#               Vault kv/platform/graph-read, AppRole graph-mail-read-ops. Was the
+#               default for ~1h on 2026-09-11; reverted because Graph denies ai@
+#               for this app despite a Granted Exchange policy (runbook §10.6).
 #   graph       legacy app `acik-mail-graph-api` (Mail.Read + Mail.Send), scope
-#               `Mail-Graph-Allowed-Mailboxes` = ai@acik.com only — the send
-#               helper's identity; reading with it is only for the control row
-#               of the runbook matrix.
+#               `Mail-Graph-Allowed-Mailboxes` = ai@acik.com only. DEFAULT.
 #   --show-roles adds the token's Graph app-role claim to the output so the
 #   absence of Mail.Send is a measurable fact, not a promise.
 
@@ -54,7 +52,11 @@ FULL_BODY=0
 SEARCH=""
 FILTER=""
 SSH_HOST="aiadmin@aiserver"
-IDENTITY="graph-read"
+# Default reverted to the legacy identity on 2026-09-11 (owner): graph-read reads
+# halil.kocoglu@ but Graph answers ErrorAccessDenied for ai@acik.com although Exchange
+# Test-ApplicationAccessPolicy says Granted (see runbook §10.6). Pass
+# --identity graph-read explicitly for the owner mailbox until that is resolved.
+IDENTITY="graph"
 SHOW_ROLES=0
 
 usage() {
@@ -69,8 +71,8 @@ Options:
   --search QUERY      Graph $search filter (e.g., "alert", "subject:bounce")
   --filter EXPR       Graph $filter expression (OData)
   --ssh-host HOST     SSH host for Vault access (default: aiadmin@aiserver)
-  --identity NAME     graph-read (default; Mail.Read-only app, ai@ + halil.kocoglu@)
-                      or graph (legacy Mail.Read+Mail.Send app, ai@ only)
+  --identity NAME     graph (default; legacy Mail.Read+Mail.Send app, ai@ only) or
+                      graph-read (Mail.Read-only app; halil.kocoglu@ — ai@ currently denied)
   --show-roles        Include the token's Graph app-role claim (token_roles) in
                       the output — proves which permissions the identity holds
   -h, --help          Show this help

@@ -441,10 +441,12 @@ Satır 1 ve 4 birlikte "yalnız okuma, gönderme yasak" iddiasının ölçülmü
 - `graph-mail-send.sh` `graph-read` kimliğini **tanımaz** (`--identity` bayrağı yok;
   sözleşme testi `graph-read` string'inin betikte bulunmadığını pinler). Zaten
   `Mail.Send` grant'i olmadığından bu kimlikle gönderim 403 alır.
-- Okuma yolu `graph-read`'e taşındı (varsayılan `--identity` değeri, 2026-09-11, §10.5
-  matrisi canlı PASS sonrası): okuma hattı artık hiçbir zaman `Mail.Send` yetkili
-  credential kullanmaz; legacy kimlik yalnız `--identity graph` ile ve yalnız matrisin
-  kontrol satırı için okunur.
+- Okuma varsayılanı 2026-09-11 19:xx'te `graph-read`'e alındı, **aynı gün ~20:45'te owner
+  kararıyla `graph`'a geri alındı**: `graph-read` `halil.kocoglu@`'yu okurken `ai@acik.com` için
+  ~20:27'den itibaren `ErrorAccessDenied` döndü (19:25'te okuyordu; `Test-ApplicationAccessPolicy`
+  ai@ Granted, grup üyeliği yerinde, `Mail-Graph-Read-Mailboxes` RestrictAccess). Sahibin kutusu
+  için `--identity graph-read` açıkça verilir; `ai@` (Zeynep döngüsü) legacy kimlikle okunur.
+  Gözlem izleniyor (bkz. issue); çözülünce varsayılan yeniden `graph-read` olur.
 - **Secret hijyeni dersi (2026-09-11):** Entra portalı gizli dizi değerini salt-okunur
   bir `textbox` içinde gösterir; tarayıcı otomasyonunun erişilebilirlik ağacı
   (`read_page`) bu değeri **ad olarak döndürür** — ilk üretilen secret bu yolla
