@@ -24,12 +24,14 @@ const expectedLevel = Number(process.env.EXPECTED_LEVEL || 1);
 // Known, pre-existing console noise on the manager surface, tracked as platform-web#1155:
 // the AG Grid Enterprise licence banner. (The CSP style-src violations that were on this
 // list collapsed the grid; platform-web#1156 fixed the policy and the entry was removed
-// so a regression fails this smoke again. The licence banner followed on 2026-09-11:
-// platform-web#1162 ships the key in the manager image, so the banner is a regression
-// too and the default allowlist is empty.) Reported in journey.json, never counted as a
-// failure. Anything else in the console still fails closed. Set CONSOLE_ERROR_ALLOWLIST
-// explicitly (pipe-separated) only for a known, tracked exception.
-const knownNoise = (process.env.CONSOLE_ERROR_ALLOWLIST ?? '')
+// so a regression fails this smoke again.) The licence banner is still on the list on
+// 2026-09-11, but for a different reason than before: platform-web#1162 ships the key in
+// the manager image (measured: window.__env__ carries the same key as the shell), and
+// that key is an expired trial — "Trial Period Expired ... 13 August 2026", product-wide,
+// tracked in gitops#3664. Drop the entry the day a valid key lands. Reported in
+// journey.json, never counted as a failure. Anything else in the console still fails
+// closed. CONSOLE_ERROR_ALLOWLIST (pipe-separated) replaces the default when set.
+const knownNoise = (process.env.CONSOLE_ERROR_ALLOWLIST ?? 'AG Grid and AG Charts Enterprise License|Trial Period Expired|expired on 13 August 2026|purchase a license|\*\*\*\*')
   .split('|').map((s) => s.trim()).filter(Boolean);
 const isKnownNoise = (line) => knownNoise.some((n) => line.includes(n));
 // "Failed to load resource" console lines carry no URL; the network capture below does,
