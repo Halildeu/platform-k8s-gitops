@@ -34,6 +34,11 @@ sudo cat "$PERSONA_SECRET_DIR/$PERSONA.password" > "$SECRET_DIR/persona.password
 [[ -s "$SECRET_DIR/persona.password" ]] || { echo "FATAL: persona password file empty/unreadable" >&2; exit 1; }
 chmod 600 "$SECRET_DIR/persona.password"
 
+# Allowlists travel into the container only when the caller set them (an unset variable
+# keeps the harness default; an explicitly empty one means "nothing is known noise").
+ALLOWLIST_ARGS=()
+[ -n "${CONSOLE_ERROR_ALLOWLIST+x}" ] && ALLOWLIST_ARGS+=(-e "CONSOLE_ERROR_ALLOWLIST=$CONSOLE_ERROR_ALLOWLIST")
+[ -n "${NON2XX_ALLOWLIST+x}" ] && ALLOWLIST_ARGS+=(-e "NON2XX_ALLOWLIST=$NON2XX_ALLOWLIST")
 echo "Browser smoke: persona=$PERSONA base=$BASE_URL expected_level>=$EXPECTED_LEVEL"
 docker run --rm --ipc=host --network host \
   --user "$(id -u):$(id -g)" \
@@ -47,6 +52,7 @@ docker run --rm --ipc=host --network host \
   -e PERSONA_PASSWORD_FILE=/run/secrets/persona.password \
   -e EVIDENCE_DIR=/evidence \
   -e EXPECTED_LEVEL="$EXPECTED_LEVEL" \
+  "${ALLOWLIST_ARGS[@]}" \
   -e PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
   -e PLAYWRIGHT_INTEGRITY="$PLAYWRIGHT_INTEGRITY" \
   -v "$REPO_ROOT:/work:ro" \

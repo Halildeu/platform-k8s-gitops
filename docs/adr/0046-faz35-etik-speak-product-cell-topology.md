@@ -76,6 +76,7 @@ Meeting, Endpoint veya suite arızasından etkilenmemelidir.
   |---|---|---|
   | 2026-07-18 | `2fae733d31f574908859307f8af0dbc375e053eb` | (çapa henüz yoktu) |
   | 2026-07-28 | `apps/etik-speak-manager/src/{AuthGate.tsx,auth.ts}` | `1a3de9db7d91ec402f5b1ca1dde66069130c7eb4e0e5ad076f3f4af2d54141de` |
+  | 2026-09-11 | `apps/etik-speak-manager/src/{AuthGate.tsx,auth.ts}` (platform-web#1162: grid-variants istemcisi için senkron token snapshot'ı; async provider, PKCE, check-sso, scope/audience sözleşmesi değişmedi; Codex 01a08f1f 4 tur AGREE) | `2af261db885569c758d7f89ae9e35548d33c181e1f09e8473d023b7280199de6` |
 
   Süregelen koruma bu metinde değil, kaynağın bulunduğu repodadır:
   `apps/etik-speak-manager/src/auth-contract-anchor.test.ts` auth yüzeyi
