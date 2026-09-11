@@ -6,7 +6,7 @@
 # Scope: end-to-end exercise of report → target resolution → policy →
 # ledger patch with LEDGER_DRY_RUN=1 (skips git push + PR creation).
 #
-# 8 scenarios:
+# 10 scenarios:
 #   1. Frontend variant report with d29_zanzibar=AMBER → MARK
 #      (variant=frontend-prod-variant, jwt_validates=false from fixture catalog)
 #   2. Frontend variant report with d29_zanzibar=RED   → SKIP
@@ -323,6 +323,10 @@ case "$*" in
     echo "1111111111111111111111111111111111111111 2026-09-10T10:00:00Z"; exit 0 ;;
   *"repos/halildeu/platform-backend/commits/2222222"*)
     echo "2222222222222222222222222222222222222222 2026-09-11T10:00:00Z"; exit 0 ;;
+  *"packages/container/platform-web-frontend/versions"*)
+    printf '%s\n' "sha-5555555"; exit 0 ;;
+  *"repos/halildeu/platform-web/commits/5555555"*)
+    echo "5555555555555555555555555555555555555555 2026-09-11T10:00:00Z"; exit 0 ;;
   *) echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
 esac
 GHEOF
@@ -478,6 +482,75 @@ YAML
   rm -rf "$tmpdir"; trap - RETURN
 }
 
+# --- Scenario 9: frontend report with a digest → no git_sha fallback onto the same commit's OTHER artifact
+#     (Codex 01a09219 iter-2 P2): the legacy entry holds SHA X / digest A; the report says SHA X / digest B.
+
+scenario_9_frontend_digest_present_no_sha_fallback() {
+  echo "Scenario 9: frontend report SHA X + digest B, legacy entry SHA X + digest A → no fallback match, generator refuses the collision, no MARK"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local sha="5555555555555555555555555555555555555555"
+  local digest_a="sha256:a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+  local digest_b="sha256:b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5"
+  write_frontend_ledger "$tmpdir" "$digest_a" "$sha"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "frontend-prod-variant" "GREEN" "GREEN" "AMBER" \
+    "ghcr.io/halildeu/platform-web-frontend@${digest_b}" "$digest_b" "$sha"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_not_contains "git_sha fallback not used when a digest is present" "$out" "fallback matched"
+  assert_contains "generator refused the second artifact under the same commit+service" "$out" "[GEN-SKIP] frontend: generate-ledger refused (exit 3)"
+  assert_not_contains "no MARK on the other artifact's entry" "$out" "[MARK] frontend"
+  assert_contains "legacy entry keeps digest A" "$(jq -r .image.digest "$tmpdir/release-candidates/platform-web/$sha.json")" "$digest_a"
+  assert_contains "legacy entry stays unverified" "$(jq -r '.promotion.test.verified_at // "null"' "$tmpdir/release-candidates/platform-web/$sha.json")" "null"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
+# --- Scenario 10: the testai frontend variant in the test overlay is never recorded (ADR-0022)
+
+scenario_10_testai_variant_is_not_recorded() {
+  echo "Scenario 10: overlay renders platform-web-frontend-testai → GEN-SKIP (not promotable), no file"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+  write_backend_overlay "$tmpdir" "$digest"
+  sed -i.bak -e 's/user-service/frontend/g' -e "s|platform-backend-frontend|platform-web-frontend-testai|" \
+    "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-web-frontend-testai@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "testai variant skipped with the ADR-0022 reason" "$out" "[GEN-SKIP] frontend: platform-web-frontend-testai is the env-baked testai variant"
+  assert_not_contains "no GHCR query for the testai package" "$(cat "$FAKE_GH_CALLS")" "platform-web-frontend-testai"
+  assert_not_contains "no MARK" "$out" "[MARK] frontend"
+  if [[ -z "$(ls "$tmpdir/release-candidates/platform-web" 2>/dev/null)" ]]; then
+    echo "  ✓ no ledger file written"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ unexpected ledger file written"; FAIL=$((FAIL + 1))
+  fi
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
 # --- Driver ------------------------------------------------------------------
 
 scenario_1_frontend_variant_amber_marks
@@ -488,6 +561,8 @@ scenario_5_autogenerate_from_ghcr_tags_then_mark
 scenario_6_no_entry_without_autogenerate_skips
 scenario_7_tagged_render_uses_package_name_without_tag
 scenario_8_shared_image_second_service_gets_its_own_entry
+scenario_9_frontend_digest_present_no_sha_fallback
+scenario_10_testai_variant_is_not_recorded
 
 echo
 echo "==== Test summary: $PASS passed, $FAIL failed ===="

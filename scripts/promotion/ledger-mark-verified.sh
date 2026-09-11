@@ -173,6 +173,14 @@ PY
     return 1
   fi
   local owner="${image_path%%/*}" pkg="${image_path#*/}"
+  # ADR-0022: the env-baked testai frontend variant is never promoted — the
+  # prod-variant transient smoke (report-driven mode) records the promotable
+  # artifact under the same commit + service; recording the testai digest too
+  # would put two artifacts under one (commit, service) identity.
+  if [[ "$pkg" == *-testai ]]; then
+    echo "  [GEN-SKIP] $svc: $pkg is the env-baked testai variant — not promotable (ADR-0022); the prod-variant smoke records the ledger entry" >&2
+    return 1
+  fi
   local versions tags
   # A failed registry query is reported as such — not as "no tags"; a partial
   # page could otherwise pick an older commit silently.
@@ -199,9 +207,15 @@ PY
     echo "  [GEN-SKIP] $svc: none of the tags ($(echo "$tags" | tr '\n' ' ')) resolves to a commit in $repo" >&2
     return 1
   fi
-  local file
-  file=$(PLATFORM_GITOPS_REPO="$REPO_ROOT" bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/generate-ledger.sh" \
-    "$repo" "$svc" "$best" "$image_path" "$digest" | tail -1)
+  local gen_out gen_rc file
+  gen_out=$(PLATFORM_GITOPS_REPO="$REPO_ROOT" bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/generate-ledger.sh" \
+    "$repo" "$svc" "$best" "$image_path" "$digest" 2>&1)
+  gen_rc=$?
+  if [[ $gen_rc -ne 0 ]]; then
+    echo "  [GEN-SKIP] $svc: generate-ledger refused (exit $gen_rc): $(printf '%s\n' "$gen_out" | tail -1)" >&2
+    return 1
+  fi
+  file=$(printf '%s\n' "$gen_out" | tail -1)
   [[ -f "$file" ]] || return 1
   echo "  [GEN] $svc → ${file#"$REPO_ROOT"/} (git_sha ${best:0:8}, from GHCR tags: $(echo "$tags" | tr '\n' ' '))" >&2
   echo "$file"
@@ -240,8 +254,11 @@ while IFS=' ' read -r svc image_path digest; do
         fi
       done
     fi
-    # Fallback: git_sha single-match (only if digest-primary returned nothing).
-    if [[ -z "$match" && -n "$REPORT_GIT_SHA" ]]; then
+    # Fallback: git_sha single-match — ONLY when the report carries no digest.
+    # With a digest, "no exact artifact" must stay empty so the common
+    # autogenerate path (or an honest SKIP) runs instead of matching the same
+    # commit's OTHER artifact (Codex 01a09219 iter-2 P2).
+    if [[ -z "$match" && -z "$REPORT_DIGEST" && -n "$REPORT_GIT_SHA" ]]; then
       candidates=()
       for f in "$LEDGER_DIR"/platform-web/*.json; do
         [[ -f "$f" ]] || continue

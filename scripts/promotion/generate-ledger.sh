@@ -82,11 +82,12 @@ mkdir -p "$LEDGER_DIR"
 # Idempotency: an existing entry is "the same" only when repo, service, image
 # path AND digest all match (Codex 01a09219 P1: a same-service file with another
 # digest is a different artifact — returning it would let the caller stamp
-# this artifact's smoke evidence onto that one). A legacy <git_sha>.json of
-# this service with the same artifact is preserved; with a different artifact
-# it is left alone and the per-service file is written next to it. A
-# per-service file with the SAME name but a different artifact is a hard
-# collision (one commit + service cannot map to two digests) → exit 3.
+# this artifact's smoke evidence onto that one). One (commit, service) maps to
+# exactly ONE artifact in this ledger: a per-service OR legacy file of this
+# service that records a different artifact is a hard collision → exit 3
+# (Codex 01a09219 iter-2: two artifacts under one identity would collide again
+# in the scanner's promotion branch). The env-baked frontend variants are kept
+# apart upstream: the testai package is never recorded (ADR-0022).
 same_artifact() {
   local f="$1"
   [[ -f "$f" ]] || return 1
@@ -106,6 +107,10 @@ if same_artifact "$LEGACY_FILE"; then
   echo "[generate-ledger] $LEGACY_FILE already exists for $SERVICE — preserving (idempotent, legacy name)"
   echo "$LEGACY_FILE"
   exit 0
+fi
+if [[ -f "$LEGACY_FILE" ]] && [[ "$(jq -r '.service // empty' "$LEGACY_FILE" 2>/dev/null)" == "$SERVICE" ]]; then
+  echo "ERR: $LEGACY_FILE already records $SERVICE for a DIFFERENT artifact (have: $(jq -r '.image.path + "@" + .image.digest' "$LEGACY_FILE" 2>/dev/null); want: $IMAGE_PATH@$IMAGE_DIGEST) — one commit+service maps to one artifact; refusing" >&2
+  exit 3
 fi
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)

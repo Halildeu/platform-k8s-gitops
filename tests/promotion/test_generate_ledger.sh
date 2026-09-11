@@ -41,9 +41,10 @@ out=$(run platform-web frontend "$SHA2" halildeu/platform-web-frontend "$D1"); r
 [[ $rc -eq 0 && "$(printf '%s\n' "$out" | tail -1)" == "$T/release-candidates/platform-web/$SHA2.json" ]] && ok "legacy preserved" || bad "legacy" "$out"
 [[ ! -f "$T/release-candidates/platform-web/$SHA2-frontend.json" ]] && ok "no duplicate per-service file" || bad "duplicate written" ""
 
-echo "6. legacy <sha>.json of the same service but ANOTHER digest → not idempotent, per-service file written"
+echo "6. legacy <sha>.json of the same service but ANOTHER digest → collision (exit 3), nothing written (one commit+service = one artifact)"
 out=$(run platform-web frontend "$SHA2" halildeu/platform-web-frontend "$D2"); rc=$?
-[[ $rc -eq 0 && -f "$T/release-candidates/platform-web/$SHA2-frontend.json" ]] && ok "new artifact gets its own file" || bad "legacy other digest" "$out"
+[[ $rc -eq 3 ]] && ok "exit 3 on legacy collision" || bad "legacy other digest rc=$rc" "$out"
+[[ ! -f "$T/release-candidates/platform-web/$SHA2-frontend.json" ]] && ok "no per-service file written beside the legacy one" || bad "file written" ""
 [[ "$(jq -r .image.digest "$T/release-candidates/platform-web/$SHA2.json")" == "$D1" ]] && ok "legacy entry untouched" || bad "legacy mutated" ""
 
 echo; echo "==== $PASS passed, $FAIL failed ===="; [[ $FAIL -eq 0 ]]
