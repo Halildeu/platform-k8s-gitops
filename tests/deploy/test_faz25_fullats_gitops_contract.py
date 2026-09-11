@@ -1038,6 +1038,32 @@ fi
             self.fullats_browser_workflow,
         )
 
+    def test_fullats_compensator_is_gated_to_its_only_valid_revision(self):
+        # The #2636 compensator cannot run on any later main tip; the workflow must
+        # skip the whole rollback chain there and report the failure honestly instead
+        # of failing on a receipt-policy guard that never applies.
+        sha = "e5a436da768229f0564a5eab238e2b861b09d128"
+        self.assertIn(
+            f"steps.final-runtime.outcome == 'failure') && github.sha == '{sha}'\n        id: rollback-credentials",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            f"github.sha == '{sha}' && steps.rollback.outcome != 'success'",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn("Report acceptance failure without automatic compensation", self.fullats_browser_workflow)
+        self.assertIn(f"github.sha != '{sha}'", self.fullats_browser_workflow)
+        self.assertIn("no automatic compensator exists for revisions after promotion PR #2636", self.fullats_browser_workflow)
+        self.assertIn("GitOps desired state and the running workloads are untouched", self.fullats_browser_workflow)
+        self.assertIn(f'PROMOTION_MERGE_SHA="{sha}"', self.rollback_script)
+        self.assertIn('[[ "$FAILED_SHA" == "$PROMOTION_MERGE_SHA" ]]', self.rollback_script)
+        self.assertIn("no automatic rollback exists for ${FAILED_SHA}", self.rollback_script)
+        # The precondition must come before any promotion-body/receipt check.
+        self.assertLess(
+            self.rollback_script.index('PROMOTION_MERGE_SHA="'),
+            self.rollback_script.index("MiniMax receipt is forbidden by forward policy"),
+        )
+
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
         self.assertIn("timeout-minutes: 90", self.fullats_browser_workflow)
         self.assertIn("id: preflight", self.fullats_browser_workflow)

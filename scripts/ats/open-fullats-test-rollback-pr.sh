@@ -28,6 +28,14 @@ PROMOTION_BASE_SHA="aa93f4743dc8254ce8e22a0317f92db1f5819268"
   echo "[fullats-rollback] failed workflow SHA is invalid" >&2
   exit 2
 }
+# This compensator restores exactly one reviewed promotion (#2636). Any other
+# revision has no automatic rollback: say so before any body/receipt check can
+# produce a misleading policy error (2026-09-11 runs 34633731655/34634086857).
+PROMOTION_MERGE_SHA="e5a436da768229f0564a5eab238e2b861b09d128"
+[[ "$FAILED_SHA" == "$PROMOTION_MERGE_SHA" ]] || {
+  echo "[fullats-rollback] bound to promotion PR #${PROMOTION_PR} merge ${PROMOTION_MERGE_SHA}; no automatic rollback exists for ${FAILED_SHA} (runtime untouched; roll back via GitOps PR, docs/RB-ats-39d-testai.md)" >&2
+  exit 3
+}
 [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_ATTEMPT" =~ ^[0-9]+$ ]] || {
   echo "[fullats-rollback] run identity is invalid" >&2
   exit 2
