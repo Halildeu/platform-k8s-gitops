@@ -1,5 +1,40 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Graph mail read-only identity `graph-read` LIVE (2026-09-11 19:25 UTC)
+
+Owner decision (2026-09-11): `halil.kocoglu@acik.com` is read-only for the agent; the send
+scope stays locked to `ai@acik.com`. Because Exchange `ApplicationAccessPolicy` is app-wide
+(Mail.Read and Mail.Send share one scope), the guarantee lives in the permission layer: a
+second Entra app that is never granted Mail.Send.
+
+- Entra app `acik-mail-graph-read` (`ee11bd35-ea94-4a87-b422-1c58346ded5e`, single tenant):
+  Application permission **Mail.Read only**, tenant admin consent granted, the default
+  delegated `User.Read` removed (created through the owner's signed-in Entra session on the
+  owner's instruction). The first client secret leaked into the automation transcript through
+  the portal's accessibility tree and was **deleted**; the second was copied from the value
+  textbox straight to the clipboard and piped into Vault without ever being read.
+- Exchange Online: mail-enabled security group `mail-graph-read@acik.com`
+  (`Mail-Graph-Read-Mailboxes`: `ai@acik.com`, `halil.kocoglu@acik.com`) and
+  `New-ApplicationAccessPolicy … RestrictAccess` for the new app. `Test-ApplicationAccessPolicy`:
+  halil.kocoglu@ Granted, ai@ Granted, ai.enes@ Denied. The legacy app `acik-mail-graph-api`
+  (`6e3e5b4b…`) and its policy (`Mail-Graph-Allowed-Mailboxes`) are untouched: ai@ Granted,
+  halil.kocoglu@ Denied.
+- Production Vault (`platform-vault-prod`): `kv/platform/graph-read` v1
+  (`graph_client_id`/`graph_client_secret`/`graph_tenant_id`, tenant copied from
+  `kv/platform/graph`); AppRole `graph-mail-read-ops` / policy `graph-mail-read-ops-ro`
+  `provisioned_and_verified`, `denied_other_path=kv/data/platform/graph` (403).
+- Runbook `RB-graph-mail-agent-read.md` §10.5 matrix measured live at 19:25Z: graph-read →
+  halil.kocoglu@ `count=1`, token `roles=["Mail.Read"]` (no Mail.Send); graph-read → ai@
+  `count=1`; graph-read → ai.enes@ `ErrorAccessDenied`; legacy → halil.kocoglu@
+  `ErrorAccessDenied`; legacy → ai@ `count=1`, `roles=["Mail.Read","Mail.Send"]`.
+- Source: [#3683](https://github.com/Halildeu/platform-k8s-gitops/pull/3683) (identity model,
+  `--identity`, `--show-roles`, seed script, tests, runbook §10),
+  [#3685](https://github.com/Halildeu/platform-k8s-gitops/pull/3685) (tenant id reused from
+  Vault), [#3686](https://github.com/Halildeu/platform-k8s-gitops/pull/3686) (`--secret-stdin`);
+  this delta's PR flips the read default of `graph-mail-list.sh` to `graph-read`, so the read
+  path never uses a Mail.Send-capable credential. `graph-mail-send.sh` is unchanged and pinned
+  to the legacy identity. Board [#3678](https://github.com/Halildeu/platform-k8s-gitops/issues/3678).
+
 ## Live Delta — ATS Dilim C recruiter answer readback strict TEST acceptance (2026-09-11 18:52 UTC)
 
 This delta supersedes the September 6 Dilim B delta only on the exact TEST artifacts
