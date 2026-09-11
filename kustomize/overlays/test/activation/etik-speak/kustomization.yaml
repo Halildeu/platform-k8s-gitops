@@ -384,6 +384,12 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # ES-301b: worker ConfigMap'i envFrom ile okunur; config degisince pod'u yeniden
+      # baslatan bu pod-template annotation'idir (ethics-service ile ayni disiplin).
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          etik-speak.acik.com/worker-config-revision: "2026-09-11-es301b-r1"
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
@@ -397,6 +403,12 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # ES-301b: worker ConfigMap'i envFrom ile okunur; config degisince pod'u yeniden
+      # baslatan bu pod-template annotation'idir (ethics-service ile ayni disiplin).
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          etik-speak.acik.com/worker-config-revision: "2026-09-11-es301b-r1"
       - op: add
         path: /spec/template/spec/priorityClassName
         value: etik-speak-test
