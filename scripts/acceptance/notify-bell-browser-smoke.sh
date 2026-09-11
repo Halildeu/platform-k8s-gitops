@@ -65,5 +65,5 @@ NODE
     node scripts/acceptance/notify-bell-browser-smoke.cjs
   '
 
-echo "PASS Etik Speak manager gerçek browser yolculuğu (ES-301)"
+echo "PASS shell bildirim zili gerçek browser yolculuğu (ES-301b)"
 echo "EVIDENCE_DIR=$EVIDENCE_DIR"

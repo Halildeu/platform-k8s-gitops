@@ -2366,6 +2366,11 @@ spec:
         self.assertTrue(checks[("subscriber:33", "template:ethics.case.escalated")])
         self.assertFalse(checks[("subscriber:33", "template:ethics.case.activity")])
         self.assertFalse(checks[("subscriber:1", "template:ethics.case.escalated")])
+        persona = (ROOT / "scripts/faz35/provision-test-ethics-escalation-recipient.sh").read_text()
+        # The bell's identity guard matches X-Subscriber-Id against the `userId` claim, which
+        # is a realm mapper over the Keycloak user attribute — the persona must carry it.
+        self.assertIn('attrs["userId"] = [sys.argv[1]]', persona)
+        self.assertIn("set_user_id_attribute", persona)
         seeder = (ROOT / "scripts/faz35/openfga-notify-topic-seed.sh").read_text()
         self.assertIn("platform-test) : ;;", seeder)
         self.assertIn("ERP_OPENFGA_STORE_ID", seeder)
