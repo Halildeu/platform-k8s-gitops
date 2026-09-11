@@ -1084,6 +1084,22 @@ patches:
       - op: replace
         path: /data/NOTIFY_DISPATCH_ENABLED
         value: "true"
+      # 2026-09-11 (#3547) — prod mail send path SMTP → Microsoft Graph app-only,
+      # same flags as the test overlay (Faz 23.8, live in test since 2026-06-12).
+      # Owner decision: the expired ai@acik.com SMTP password is not rotated.
+      # GraphMailAdapter @ConditionalOnProperty(notify.adapters.graph.enabled=true)
+      # → SmtpAdapter inactive; SMTP config above stays for flag-flip rollback.
+      # Credential: kv/platform/notification-orchestrator.graph_* via ESO (3 keys
+      # re-enabled in overlays/prod/eso/notify/externalsecret-notify.yaml).
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SENDER_MAILBOX
+        value: "ai@acik.com"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS
+        value: "true"
 
   # Faz 22.5 P2-A A1 first prod deploy — endpoint-admin-service ConfigMap
   # prod realm override + OpenFGA authz wiring (Codex 019e8cca post-impl
