@@ -28,6 +28,7 @@
 #   0 — ledger entry created or already exists
 #   1 — argument validation failed
 #   2 — write error
+#   3 — per-service file exists for a different artifact (collision)
 
 set -euo pipefail
 
@@ -78,14 +79,30 @@ LEGACY_FILE="$LEDGER_DIR/$GIT_SHA.json"
 
 mkdir -p "$LEDGER_DIR"
 
-# Idempotency: if ledger entry already exists, only emit a notice. A legacy
-# <git_sha>.json counts only when it is this service's entry.
+# Idempotency: an existing entry is "the same" only when repo, service, image
+# path AND digest all match (Codex 01a09219 P1: a same-service file with another
+# digest is a different artifact — returning it would let the caller stamp
+# this artifact's smoke evidence onto that one). A legacy <git_sha>.json of
+# this service with the same artifact is preserved; with a different artifact
+# it is left alone and the per-service file is written next to it. A
+# per-service file with the SAME name but a different artifact is a hard
+# collision (one commit + service cannot map to two digests) → exit 3.
+same_artifact() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  [[ "$(jq -r '[.repo, .service, .image.path, .image.digest] | join(" ")' "$f" 2>/dev/null)" \
+     == "$REPO $SERVICE $IMAGE_PATH $IMAGE_DIGEST" ]]
+}
 if [[ -f "$LEDGER_FILE" ]]; then
-  echo "[generate-ledger] $LEDGER_FILE already exists — preserving (idempotent)"
-  echo "$LEDGER_FILE"
-  exit 0
+  if same_artifact "$LEDGER_FILE"; then
+    echo "[generate-ledger] $LEDGER_FILE already exists — preserving (idempotent)"
+    echo "$LEDGER_FILE"
+    exit 0
+  fi
+  echo "ERR: $LEDGER_FILE exists for a DIFFERENT artifact (have: $(jq -r '.image.path + "@" + .image.digest' "$LEDGER_FILE" 2>/dev/null); want: $IMAGE_PATH@$IMAGE_DIGEST) — refusing to overwrite" >&2
+  exit 3
 fi
-if [[ -f "$LEGACY_FILE" ]] && [[ "$(jq -r '.service // empty' "$LEGACY_FILE" 2>/dev/null)" == "$SERVICE" ]]; then
+if same_artifact "$LEGACY_FILE"; then
   echo "[generate-ledger] $LEGACY_FILE already exists for $SERVICE — preserving (idempotent, legacy name)"
   echo "$LEGACY_FILE"
   exit 0

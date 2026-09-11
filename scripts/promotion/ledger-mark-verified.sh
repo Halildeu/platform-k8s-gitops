@@ -101,7 +101,10 @@ if [[ "$VARIANT" == "frontend-prod-variant" ]]; then
     exit 1
   fi
   # Single (service, digest) pair — digest may be empty (git_sha fallback only).
-  RENDERED="frontend halildeu/platform-web-frontend ${REPORT_DIGEST:-<git-sha-fallback>}"
+  # The image path comes from the report's image ref (registry/path[:tag]@digest);
+  # the documented default is the prod-variant frontend package.
+  REPORT_IMAGE_PATH=$(printf '%s' "$REPORT_IMAGE" | sed -nE 's|^[^/]+/([^@:]+)(:[^@]+)?(@sha256:[a-f0-9]{64})?$|\1|p')
+  RENDERED="frontend ${REPORT_IMAGE_PATH:-halildeu/platform-web-frontend} ${REPORT_DIGEST:-<git-sha-fallback>}"
   echo "[ledger-mark-verified] target-mode=report_driven svc=frontend digest=${REPORT_DIGEST:-<none>} git_sha=${REPORT_GIT_SHA:-<none>}"
 else
   TARGET_MODE="overlay_render"
@@ -117,7 +120,9 @@ for d in docs:
     if not svc: continue
     for c in d.get('spec', {}).get('template', {}).get('spec', {}).get('containers', []):
         img = c.get('image', '')
-        m = re.match(r'^(?P<reg>[^/]+)/(?P<path>[^@]+)@(?P<dig>sha256:[a-f0-9]+)\$', img)
+        # <registry>/<path>[:<tag>]@sha256:<hex> — the tag is NOT part of the
+        # GHCR package name (Codex 01a09219 P2: newTag + digest render as path:tag@digest)
+        m = re.match(r'^(?P<reg>[^/]+)/(?P<path>[^@:]+)(?::[^@]+)?@(?P<dig>sha256:[a-f0-9]+)\$', img)
         if m:
             key = (svc, m.group('dig'))
             if key not in seen:
@@ -130,6 +135,19 @@ for d in docs:
   fi
   echo "[ledger-mark-verified] target-mode=overlay_render pairs=$(echo "$RENDERED" | wc -l | tr -d ' ')"
 fi
+
+# Entry lookup by (service, digest) across every ledger file.
+find_entry() {
+  local svc="$1" digest="$2" f
+  for f in "$LEDGER_DIR"/*/*.json; do
+    [[ -f "$f" ]] || continue
+    if jq -e --arg s "$svc" --arg d "$digest" 'select(.service == $s and .image.digest == $d)' "$f" >/dev/null 2>&1; then
+      echo "$f"
+      return 0
+    fi
+  done
+  return 0
+}
 
 # --- gitops#3677: derive a missing ledger entry from the registry ---------
 # The entry's git_sha comes from the sha-<7> tags GHCR attaches to the exact
@@ -155,10 +173,15 @@ PY
     return 1
   fi
   local owner="${image_path%%/*}" pkg="${image_path#*/}"
-  local tags
-  tags=$(gh api --paginate "users/${owner}/packages/container/${pkg}/versions?per_page=100" \
-    --jq ".[] | select(.name==\"$digest\") | .metadata.container.tags[]" 2>/dev/null \
-    | grep -E '^sha-[a-f0-9]{7,12}$' || true)
+  local versions tags
+  # A failed registry query is reported as such — not as "no tags"; a partial
+  # page could otherwise pick an older commit silently.
+  if ! versions=$(gh api --paginate "users/${owner}/packages/container/${pkg}/versions?per_page=100" \
+      --jq ".[] | select(.name==\"$digest\") | .metadata.container.tags[]" 2>/dev/null); then
+    echo "  [GEN-SKIP] $svc: GHCR package query failed for ${owner}/${pkg}" >&2
+    return 1
+  fi
+  tags=$(printf '%s\n' "$versions" | grep -E '^sha-[a-f0-9]{7,12}$' || true)
   if [[ -z "$tags" ]]; then
     echo "  [GEN-SKIP] $svc: digest $digest carries no sha-* tag on GHCR" >&2
     return 1
@@ -242,15 +265,20 @@ while IFS=' ' read -r svc image_path digest; do
       fi
     fi
   else
-    # overlay-render mode (backend / generic cluster smoke).
+    # overlay-render mode (backend / generic cluster smoke). Lookup is by
+    # service + digest: several services can run one image (the ethics
+    # workers share ethics-service's), so a digest-only grep would hand
+    # another service's entry back (Codex 01a09219 P2).
     [[ -z "$digest" ]] && continue
-    match=$(grep -l "\"$digest\"" "$LEDGER_DIR"/*/*.json 2>/dev/null | head -1 || true)
-    # gitops#3677: no CI feeds the ledger (backend/web image workflows are
-    # build-only), so with LEDGER_AUTOGENERATE=1 the entry is derived here from
-    # what is observable — the digest's GHCR tags → the newest source commit.
-    if [[ -z "$match" && "${LEDGER_AUTOGENERATE:-0}" == "1" ]]; then
-      match=$(autogenerate_entry "$svc" "$image_path" "$digest" || true)
-    fi
+    match=$(find_entry "$svc" "$digest")
+  fi
+
+  # gitops#3677: no CI feeds the ledger (backend/web image workflows are
+  # build-only), so with LEDGER_AUTOGENERATE=1 a missing entry is derived here
+  # from what is observable — the digest's GHCR tags → the newest source
+  # commit. Both target modes, only with a real digest to attribute.
+  if [[ -z "$match" && "${LEDGER_AUTOGENERATE:-0}" == "1" && "$digest" == sha256:* ]]; then
+    match=$(autogenerate_entry "$svc" "$image_path" "$digest" || true)
   fi
 
   if [[ -z "$match" ]]; then
@@ -258,12 +286,17 @@ while IFS=' ' read -r svc image_path digest; do
     continue
   fi
 
-  # Verify ledger entry has matching service name (overlay-render mode safety;
-  # report-driven mode already constrained service= above, so this is a no-op
-  # for that branch).
+  # Verify the entry is THIS artifact: service AND digest (when the target has
+  # one) must match — evidence must never land on another build's entry
+  # (Codex 01a09219 P1).
   ledger_svc=$(jq -r '.service' "$match")
   if [[ "$ledger_svc" != "$svc" ]]; then
     echo "  [WARN] ledger $match has service='$ledger_svc' but render service='$svc' — skipping"
+    continue
+  fi
+  ledger_digest=$(jq -r '.image.digest // empty' "$match")
+  if [[ "$digest" == sha256:* && "$ledger_digest" != "$digest" ]]; then
+    echo "  [WARN] ledger $match has digest='$ledger_digest' but target digest='$digest' — skipping (different artifact)"
     continue
   fi
 

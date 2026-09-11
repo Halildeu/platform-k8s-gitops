@@ -6,7 +6,7 @@
 # Scope: end-to-end exercise of report → target resolution → policy →
 # ledger patch with LEDGER_DRY_RUN=1 (skips git push + PR creation).
 #
-# 6 scenarios:
+# 8 scenarios:
 #   1. Frontend variant report with d29_zanzibar=AMBER → MARK
 #      (variant=frontend-prod-variant, jwt_validates=false from fixture catalog)
 #   2. Frontend variant report with d29_zanzibar=RED   → SKIP
@@ -405,6 +405,79 @@ scenario_6_no_entry_without_autogenerate_skips() {
   trap - RETURN
 }
 
+# --- Scenario 7: overlay renders path:tag@digest → package name without the tag (Codex 01a09219 P2)
+
+scenario_7_tagged_render_uses_package_name_without_tag() {
+  echo "Scenario 7: render path:tag@digest → GHCR package queried WITHOUT the tag"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:abababababababababababababababababababababababababababababababab"
+  write_backend_overlay "$tmpdir" "$digest"
+  sed -i.bak "s|@${digest}|:sha-2222222@${digest}|" "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-backend-user-service:sha-2222222@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "target pair carries the untagged path" "$out" "[GEN] user-service"
+  assert_contains "package query has no :tag" "$(cat "$FAKE_GH_CALLS")" "packages/container/platform-backend-user-service/versions"
+  assert_not_contains "package query never carries the tag" "$(cat "$FAKE_GH_CALLS")" "user-service:sha-"
+  assert_contains "entry path is the package path" "$(jq -r .image.path "$tmpdir"/release-candidates/platform-backend/*-user-service.json 2>/dev/null)" "halildeu/platform-backend-user-service"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
+# --- Scenario 8: two services share one image → lookup is by service+digest, not digest alone (Codex 01a09219 P2)
+
+scenario_8_shared_image_second_service_gets_its_own_entry() {
+  echo "Scenario 8: shared image digest → the second service is not matched to the first service's entry"
+  local tmpdir; tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' RETURN
+  if ! command -v kubectl >/dev/null 2>&1; then echo "  (skipped — kubectl not available)"; return 0; fi
+
+  setup_fixture_repo "$tmpdir"
+  cat >> "$tmpdir/docs/operations/services.yaml" <<'YAML'
+  - name: user-worker
+    repo: platform-backend
+    jwt_validates: true
+    environments: {test: enabled, prod: enabled}
+YAML
+  mkdir -p "$tmpdir/schema"; cp "$REPO_ROOT/schema/promotion-ledger-v1.schema.json" "$tmpdir/schema/"
+  local digest="sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+  write_backend_ledger "$tmpdir" "$digest"      # user-service already has an entry for this digest
+  write_backend_overlay "$tmpdir" "$digest"
+  cat >> "$tmpdir/kustomize/overlays/test/kustomization.yaml" <<'YAML'
+  - deploy-user-worker.yaml
+YAML
+  sed -e 's/user-service/user-worker/g' -e "s|platform-backend-user-worker|platform-backend-user-service|" \
+    "$tmpdir/kustomize/overlays/test/deploy-user-service.yaml" > "$tmpdir/kustomize/overlays/test/deploy-user-worker.yaml"
+  local report="$tmpdir/report.json"
+  write_report "$report" "test" "" "GREEN" "GREEN" "GREEN" \
+    "ghcr.io/halildeu/platform-backend-user-service@${digest}" "$digest" "${digest#sha256:}"
+  export FAKE_GH_CALLS="$tmpdir/gh-calls.log"
+  write_fake_gh "$tmpdir/bin" "$FAKE_GH_CALLS"
+
+  local out
+  out=$(PATH="$tmpdir/bin:$PATH" LEDGER_AUTOGENERATE=1 PLATFORM_GITOPS_REPO="$tmpdir" LEDGER_DRY_RUN=1 \
+    bash "$SCRIPT" "$report" 2>&1 || true)
+
+  assert_contains "user-service marked on its own entry" "$out" "[MARK] user-service"
+  assert_contains "user-worker generated, not matched to user-service's file" "$out" "[GEN] user-worker"
+  assert_contains "user-worker marked" "$out" "[MARK] user-worker"
+  assert_not_contains "no cross-service WARN skip" "$out" "but render service='user-worker' — skipping"
+
+  rm -rf "$tmpdir"; trap - RETURN
+}
+
 # --- Driver ------------------------------------------------------------------
 
 scenario_1_frontend_variant_amber_marks
@@ -413,6 +486,8 @@ scenario_3_backend_overlay_all_green_marks
 scenario_4_backend_overlay_amber_skips
 scenario_5_autogenerate_from_ghcr_tags_then_mark
 scenario_6_no_entry_without_autogenerate_skips
+scenario_7_tagged_render_uses_package_name_without_tag
+scenario_8_shared_image_second_service_gets_its_own_entry
 
 echo
 echo "==== Test summary: $PASS passed, $FAIL failed ===="
