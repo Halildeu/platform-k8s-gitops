@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - DEV internal HTTPS activation (2026-09-12)
+
+- DEV `.53` now uses ACIKDC01 `10.9.10.10` in both live resolved state and
+  persistent netplan-generated configuration. Normal `getent` resolves
+  `devai.acik.com` to `.53`; public `github.com` resolution also succeeds.
+  NIC address/default route, AD DNS, TEST and PROD were not changed.
+- Owner explicitly approved existing wildcard/private-key reuse (issue #3582
+  comment 5645710067). Read-only source material was copied over SSH to DEV
+  root:caddy 0640; trusted chain/key/hostname checks pass. Certificate expires
+  2026-10-01 23:59:59 UTC; this static copy requires renewal.
+- `platform-dev-proxy` now binds `.53` TCP 80/443. Both UFW and actual-socket-peer
+  proxy checks restrict access to company/VPN networks. Direct backend/frontend
+  listeners remain loopback; legacy caddy/docker/containerd remain masked.
+- Real HTTPS Chromium synthetic login, users grid/reload and API 200 responses
+  pass without TLS bypass or observed page/request errors. HTTPS profile write,
+  new-session readback and restoration pass. OIDC advertises the public DEV
+  issuer and eleven federation JavaScript entries are served on the same origin.
+  A real temporary source edit propagates to the browser over wss/HMR; its file
+  is removed and the application worktree remains clean.
+- After proxy/frontend restart, the existing runtime verifier passes 18 container
+  checks / 25 HTTP checks. Re-render reproduces all 19 generated config files.
+  Encrypted DEV database/client snapshots are readable; databases were not
+  recreated. A full host reboot was not tested.
+- Negative checks: anonymous users API 401, private operations 404, foreign Vite
+  Origin 403, unbound Keycloak login form 400, forged XFF cannot authorize an
+  outside socket peer. External-subnet TCP probes increment UFW deny counters.
+  Second-host HTTPS is 200 with trusted TLS; direct frontend port is denied.
+- Mac/VPN client DNS configuration and personal SSH onboarding remain separate;
+  this does not claim every client or every product workflow is accepted.
+- Integration, verification and exact rollback:
+  [DEV HTTPS runbook](../../bootstrap/host/devai/README.md). Tracked by #3582.
+
 ## Live Delta - ACIKDC01 internal DNS `devai` record (2026-09-12 11:21 UTC)
 
 - ACIKDC01 DNS Manager live pre-check refreshed the existing `acik.com` zone;
