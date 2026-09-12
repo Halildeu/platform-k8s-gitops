@@ -14,13 +14,15 @@ https://devai.acik.com {
 		header Origin *
 		not header Origin https://devai.acik.com
 	}
-	@private path /admin /admin/* /realms/master /realms/master/* /health /health/* /metrics /actuator /actuator/* /api/services /api/services/*
+	@private path /admin/realms /admin/realms/* /admin/master /admin/master/* /realms/master /realms/master/* /health /health/* /metrics /actuator /actuator/* /api/services /api/services/*
 	@oidc path /realms/platform-dev/* /resources/*
 	route {
 		respond @outside 403
-		respond @untrusted_origin 403
 		respond @private 404
+		# Keycloak's no-referrer form posts use Origin: null. Its session/code
+		# validation owns login CSRF; the Vite Origin guard must not intercept it.
 		reverse_proxy @oidc 127.0.0.1:33081
+		respond @untrusted_origin 403
 		reverse_proxy /mfe/suggestions/* 127.0.0.1:33001
 		reverse_proxy /mfe/ethic/* 127.0.0.1:33002
 		reverse_proxy /mfe/users/* 127.0.0.1:33004

@@ -59,8 +59,18 @@ def main():
         desired['webOrigins'] = list(dict.fromkeys(client['webOrigins'] + [ORIGIN]))
     call(path, desired)
     actual = call(path)
-    if actual != desired:
-        raise SystemExit('Client readback differs from requested representation')
+    baseline = json.loads(cipher().decrypt(BACKUP.read_bytes()))
+    unchanged = set(baseline) | set(actual)
+    unchanged -= {'redirectUris', 'webOrigins'}
+    if any(actual.get(key) != baseline.get(key) for key in unchanged):
+        raise SystemExit('Unrelated client settings differ from original snapshot')
+    # Keycloak can canonicalize the ordering of these set-valued fields.
+    for key in ('redirectUris', 'webOrigins'):
+        actual[key] = sorted(actual[key])
+        desired[key] = sorted(desired[key])
+    differences = [key for key in set(actual) | set(desired) if actual.get(key) != desired.get(key)]
+    if differences:
+        raise SystemExit('Client readback differs at fields: ' + ','.join(sorted(differences)))
     print(json.dumps({'realm': 'platform-dev', 'client': 'frontend',
                       'rollback': args.rollback, 'origin_readback': True,
                       'other_client_settings_preserved': True, 'encrypted_backup_verified': True}))

@@ -63,7 +63,7 @@ def main():
     write('/etc/platform-dev/frontend-common.env', ''.join(f'{key}={value}\n' for key, value in common.items()))
     for unit, port in (('platform-dev-preview.service', '33000'), ('platform-dev-mfe@.service', '${DEV_PORT}')):
         write('/etc/systemd/system/' + unit + '.d/devai.conf',
-              '[Service]\nExecStart=\nExecStart=/home/halil/.local/bin/pnpm exec vite --config /srv/platform-dev/ops/devai/devai-vite.config.mts --host 127.0.0.1 --port ' + port + ' --strictPort\n')
+              '[Service]\nExecStart=\nExecStart=/home/halil/.local/bin/pnpm exec vite --configLoader runner --config /srv/platform-dev/ops/devai/devai-vite.config.mts --host 127.0.0.1 --port ' + port + ' --strictPort\n')
     run('systemd-analyze', 'verify', '/etc/systemd/system/platform-dev-proxy.service')
     run('systemctl', 'daemon-reload')
     # The proxy also enforces the actual socket peer, never client-supplied XFF.

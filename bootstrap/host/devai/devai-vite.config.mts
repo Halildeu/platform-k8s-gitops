@@ -13,6 +13,19 @@ export default defineConfig(async (env) => {
   const base = app === 'mfe-shell' ? '/' : `/mfe/${app.slice(4)}/`;
   const config = mergeConfig(loaded.config, {
     base,
+    plugins: [{
+      name: 'devai-legacy-federation-health-path',
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (base !== '/' && request.url === '/remoteEntry.js') {
+            response.writeHead(302, { Location: base + 'remoteEntry.js' });
+            response.end();
+            return;
+          }
+          next();
+        });
+      },
+    }],
     server: {
       host: '127.0.0.1',
       strictPort: true,
