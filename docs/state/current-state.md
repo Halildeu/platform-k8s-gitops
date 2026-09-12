@@ -1,5 +1,23 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — DEV migration access parity (2026-09-12)
+
+Under #3582, only the development machine moves from Mac to DEV; existing
+GitHub -> TEST -> owner-gated PROD architecture is unchanged. DEV-local
+`/etc/hosts` now resolves testai.acik.com and ai.acik.com to the existing
+internal edge 10.9.10.15: normal HTTPS 200, TLS verification 0, OIDC issuers
+match. No public DNS/NAT or cluster workload changes.
+
+DEV's invalid Docker GHCR credential was replaced using the existing TEST
+pull identity (owner/scope checked, secret-safe transfer, local mode 0600).
+Its existing broader PAT scopes were not changed; it is not a new read-only
+identity. Exact live TEST meeting image manifest, actual pull and RepoDigests
+matched. Post-change DEV: 18 containers, 25 HTTP checks and synthetic browser
+login/reload/user-grid passed. No new TEST/PROD deployment acceptance claim.
+The 12 excluded files are mapped, not all restored; legacy provider secrets
+and Mac-native runner paths remain explicitly separate/unverified. Details,
+rollback and evidence: [remote DEV migration parity runbook](../operations/RUNBOOKS/RB-remote-dev-migration-parity.md).
+
 ## Live Delta — PROD notification-orchestrator mail path SMTP → Graph app-only (2026-09-11 20:10 UTC)
 
 Owner decision (#3547): the `ai@acik.com` O365 SMTP password expired on 2026-09-04
