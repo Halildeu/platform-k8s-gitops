@@ -82,6 +82,15 @@ yalnız aktif çalışmaya alınan satır issue olur.
 - PR merge bir runtime/GitOps issue'sunu **otomatik `Done` yapmaz** (§5).
 - `needs-verification` benzeri açık doğrulama varken closure YASAK.
 - `source-ready ≠ live-deployed ≠ accepted` (D29: Up ≠ Functional ≠ Zanzibar-ready).
+
+`verify` kendi claim'ini sonlandirirken ayni `BOARD_SESSION_ID` ile calistirilir.
+Issue govdesi temizlenmeden once `HANDOFF released=verify` yorumu yazilir ve
+yeniden okunur; boylece sonraki kabul oturumu eski yorum lease'ine takilmaz.
+Baska bir claim sahibi varsa (CI'nin session kimligi yoksa da) yalniz PR
+kaniti kaydedilir, claim ve body/Project durumu korunur. Claim sahibi release
+veya verify yapar; yeni oturum bu siniri atlamaz. Bu akis atomik bir GitHub
+transaction degildir: ara hata veya degisen body durumunda yeniden okuma ve
+reconciliation gerekir, test/acceptance sonucu varsayilmaz.
 - `Blocked` hem board `Status` hem issue'da bir `BLOCKED` comment'i ile
   işaretlenir — sadece biri yetmez.
 

@@ -36,6 +36,8 @@ on:
       - "scripts/test/board-sync-ledger-require-claim.sh"
       - "scripts/test/board-hygiene-audit.sh"
       - "scripts/test/board-sync-project-item-limit.sh"
+      - "scripts/test/board-sync-verify-claim-release.sh"
+      - "scripts/test/board-sync-verify-pat-missing.sh"
       - "scripts/board-hygiene-audit.py"
       - "scripts/board-sync.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
@@ -76,6 +78,8 @@ on:
       - "scripts/test/board-sync-ledger-require-claim.sh"
       - "scripts/test/board-hygiene-audit.sh"
       - "scripts/test/board-sync-project-item-limit.sh"
+      - "scripts/test/board-sync-verify-claim-release.sh"
+      - "scripts/test/board-sync-verify-pat-missing.sh"
       - "scripts/board-hygiene-audit.py"
       - "scripts/board-sync.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
@@ -178,6 +182,12 @@ jobs:
 
       - name: Run Project item-list limit harness
         run: bash scripts/test/board-sync-project-item-limit.sh
+
+      - name: Run verify claim release and ownership regression
+        run: bash scripts/test/board-sync-verify-claim-release.sh
+
+      - name: Run verify PAT-missing regression
+        run: bash scripts/test/board-sync-verify-pat-missing.sh
 
       - name: Replay repository ledger files
         shell: bash
