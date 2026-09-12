@@ -195,6 +195,24 @@ images:
   # git geçmişinden: ats@05666f5 → sha-05666f5.
 
 patches:
+  # 2026-09-12 (#3707): platform-quota limits.cpu sits at ~98% (16700m/17). A surge
+  # rollout (maxSurge 25% = one extra 500m pod) can never create the new pod —
+  # ReplicaSet FailedCreate "exceeded quota" — so every ATS promotion silently
+  # stalls on the old digest while the old pod keeps serving. Terminate-first
+  # rollout needs zero headroom: single replica, a few seconds of test-cell
+  # downtime per promotion is accepted (the acceptance workflow waits for
+  # convergence before any journey). See memory/runbook: quota rolling trap.
+  - target:
+      kind: Deployment
+      name: ats-interview-evidence
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
   # Provider seçimi AŞAĞIDAKİ ConfigMap patch'inde stub → live-stt'ye çevrilir (Faz2).
   - path: patch-mtls-mount.yaml
