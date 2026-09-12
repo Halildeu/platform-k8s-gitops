@@ -1,5 +1,21 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - ACIKDC01 internal DNS `devai` record (2026-09-12 11:21 UTC)
+
+- ACIKDC01 DNS Manager live pre-check refreshed the existing `acik.com` zone;
+  the alphabetic host list contained no `devai` record. Only a static Host (A)
+  record `devai.acik.com -> 10.9.10.53` was then created. Associated PTR was
+  left disabled; `ai` and `testai` were not selected, edited, or deleted.
+- Post-write DNS Manager read-back showed the static Host (A) row for `devai`
+  with address `10.9.10.53`. The record properties independently showed FQDN
+  `devai.acik.com` and IP address `10.9.10.53`.
+- An authoritative query from the Windows session to ACIKDC01 at
+  `10.9.10.10` returned `devai.acik.com`, type `A`, TTL `3600`, answer
+  `10.9.10.53`. The Mac local resolver did not resolve the internal names;
+  public/external DNS propagation is therefore not claimed.
+- This is a scoped Windows AD DNS operation, not a Kubernetes workload or
+  GitOps overlay mutation. Evidence: issue #3719.
+
 ## Live Delta — ATS TEST pin sha-0ace75f (ats#267, #213 CV reader v12) + terminate-first rollout (2026-09-12 10:10 UTC)
 
 Trigger: Zeynep (2026-09-12 07:47 UTC) — the TEST activation overlay still carried `ats@aabdbdb`
