@@ -1,5 +1,47 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - TEST meeting exact-session result image (2026-09-12 11:49 UTC)
+
+- GitOps PR #3717 merged at `668ee6144bb6f82dac275d966729ef0ee0ccc750`.
+  Its tree equals reviewed head `0abf213c58aa3ead9f799435c16b2e7ebe6394a7`;
+  24 PR checks passed. Exact-artifact assertions in both finalization and
+  source-activation guards follow the new digest; no guard was relaxed.
+- TEST meeting-service pod `meeting-service-5fd59c4b94-zfd6w` is Ready with
+  zero restarts and imageID
+  `sha256:f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f`,
+  binding backend #1163 source `965cb1c039892d4da81f6251db9dc94bc5ce8c8e`.
+  Argo platform-test is Synced/Healthy at the merge revision, operation
+  Succeeded. Only the existing GitOps auto-sync applied the managed workload.
+- After-commit static checks passed: 91 finalization/capability/permit tests,
+  seven source-activation/digest tests, TEST/prod render and negative guards.
+  Public TEST exact-session result GET without authentication returns 401.
+- Canonical runtime verifier run `34690183572` succeeded. Artifact
+  `10297214008` was downloaded and both JSON reports read back: Argo PASS at
+  `668ee6144bb6f82dac275d966729ef0ee0ccc750`, runtime PASS with exact meeting
+  digest, both map fences true, last gate complete and
+  `pass-p5-readiness-viewer-exact-view`. Verification was read-only. This is
+  the generic runtime gate, not a meeting-owner session-result acceptance.
+- Follow-up at 12:30 UTC used the existing privileged TEST smoke identity,
+  without application writes. Eight existing synthetic lifecycle fixtures
+  returned 200 for their exact session, with matching session provenance.
+  Three fixtures additionally returned 404 for a missing session (no latest
+  fallback), and repeated exact reads preserved their result fingerprints.
+  The meeting pod remained Ready/restart0 on the same exact digest.
+  All eight fixtures have only one session: this is authenticated API evidence,
+  not multi-session or normal-persona acceptance. The TEST browser redirects
+  to login; no normal-user session was available in that browser.
+- Normal-persona two-session/source/reopen and packaged Desktop/Mobile
+  acceptance remain unverified. Web #1171 is eligible for source review after
+  this bounded API dependency check; its deployment/acceptance is separate.
+  Parent #3399 and multi-session #3533 are not customer-accepted by this pin.
+- The running Mac package is `/Applications/Meeting Intelligence.app`.
+  Two UI automation access attempts timed out; persona and package journey
+  could not be inspected. This is an automation-access limit, not evidence
+  that the application failed. No password, token or user state was changed.
+- Rollback is a reviewed GitOps restore to
+  `sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1`.
+  No production, identity, consent, retention or mail mutation in this run.
+
 ## Live Delta - DEV internal HTTPS activation (2026-09-12)
 
 - DEV `.53` now uses ACIKDC01 `10.9.10.10` in both live resolved state and
