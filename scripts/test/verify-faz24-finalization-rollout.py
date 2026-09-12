@@ -514,7 +514,9 @@ def main() -> None:
         "ghcr.io/halildeu/platform-backend-meeting-service@"
         # 2026-09-10 (backend#1135, gitops#3533): sha-58048b9 scopes stale
         # result rejection to the capability-bound transcript session.
-        "sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1",
+        # 2026-09-12 (backend#1163, gitops#3421): sha-965cb1c adds exact-session
+        # result selection while preserving ingestion and authorization guards.
+        "sha256:f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
