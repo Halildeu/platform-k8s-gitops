@@ -1,0 +1,45 @@
+{
+	admin 127.0.0.1:32019
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://devai.acik.com {
+	bind 10.9.10.53
+	tls /etc/platform-dev/proxy/tls/fullchain.pem /etc/platform-dev/proxy/tls/privkey.pem
+	@outside not remote_ip 10.9.0.0/16 10.250.250.0/24
+	@untrusted_origin {
+		header Origin *
+		not header Origin https://devai.acik.com
+	}
+	@private path /admin /admin/* /realms/master /realms/master/* /health /health/* /metrics /actuator /actuator/* /api/services /api/services/*
+	@oidc path /realms/platform-dev/* /resources/*
+	route {
+		respond @outside 403
+		respond @untrusted_origin 403
+		respond @private 404
+		reverse_proxy @oidc 127.0.0.1:33081
+		reverse_proxy /mfe/suggestions/* 127.0.0.1:33001
+		reverse_proxy /mfe/ethic/* 127.0.0.1:33002
+		reverse_proxy /mfe/users/* 127.0.0.1:33004
+		reverse_proxy /mfe/access/* 127.0.0.1:33005
+		reverse_proxy /mfe/audit/* 127.0.0.1:33006
+		reverse_proxy /mfe/reporting/* 127.0.0.1:33007
+		reverse_proxy /mfe/schema-explorer/* 127.0.0.1:33008
+		reverse_proxy /mfe/endpoint-admin/* 127.0.0.1:33009
+		reverse_proxy /mfe/meeting/* 127.0.0.1:33010
+		reverse_proxy /mfe/interview-evidence/* 127.0.0.1:33011
+		reverse_proxy 127.0.0.1:33000
+	}
+}
+
+http://devai.acik.com {
+	bind 10.9.10.53
+	@outside not remote_ip 10.9.0.0/16 10.250.250.0/24
+	route {
+		respond @outside 403
+		redir https://devai.acik.com{uri} 308
+	}
+}

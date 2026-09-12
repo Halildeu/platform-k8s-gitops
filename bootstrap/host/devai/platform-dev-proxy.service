@@ -1,0 +1,25 @@
+[Unit]
+Description=Internal DEV HTTPS proxy (devai.acik.com)
+After=network-online.target platform-dev-preview.service
+Wants=network-online.target
+
+[Service]
+User=caddy
+Group=caddy
+ExecStart=/usr/bin/caddy run --config /etc/platform-dev/proxy/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/platform-dev/proxy/Caddyfile --adapter caddyfile
+StateDirectory=platform-dev-proxy
+Environment=XDG_DATA_HOME=/var/lib/platform-dev-proxy
+Environment=XDG_CONFIG_HOME=/var/lib/platform-dev-proxy
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

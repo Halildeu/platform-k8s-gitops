@@ -1,5 +1,22 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - DEV resolver and pending HTTPS activation (2026-09-12)
+
+- DEV `.53` now uses ACIKDC01 `10.9.10.10` in both live resolved state and
+  persistent netplan-generated configuration. Normal `getent` resolves
+  `devai.acik.com` to `.53`; public `github.com` resolution also succeeds.
+  NIC address/default route, AD DNS, TEST and PROD were not changed.
+- Existing loopback DEV runtime still verifies 18 containers / 25 HTTP checks.
+  Synthetic browser login reads the users API twice with 200 and renders
+  16 rows / 128 cells without page errors. Profile update/new-session readback
+  and restoration also pass. These checks are not new HTTPS-domain acceptance.
+- A dedicated DEV certificate key and self-verified CSR were generated. No
+  production private key was copied. Trusted certificate selection/material is
+  pending owner input; no HTTPS proxy, firewall, issuer or frontend-origin
+  activation has been performed. HTTPS-domain access remains unverified.
+- Candidate integration and exact rollback:
+  [DEV HTTPS runbook](../../bootstrap/host/devai/README.md). Tracked by #3582.
+
 ## Live Delta - ACIKDC01 internal DNS `devai` record (2026-09-12 11:21 UTC)
 
 - ACIKDC01 DNS Manager live pre-check refreshed the existing `acik.com` zone;
