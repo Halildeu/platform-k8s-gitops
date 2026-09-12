@@ -7,7 +7,9 @@ Wants=network-online.target
 User=caddy
 Group=caddy
 ExecStart=/usr/bin/caddy run --config /etc/platform-dev/proxy/Caddyfile --adapter caddyfile
-ExecReload=/usr/bin/caddy reload --config /etc/platform-dev/proxy/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --address unix//run/platform-dev-proxy/admin.sock --config /etc/platform-dev/proxy/Caddyfile --adapter caddyfile
+RuntimeDirectory=platform-dev-proxy
+RuntimeDirectoryMode=0700
 StateDirectory=platform-dev-proxy
 Environment=XDG_DATA_HOME=/var/lib/platform-dev-proxy
 Environment=XDG_CONFIG_HOME=/var/lib/platform-dev-proxy

@@ -19,6 +19,9 @@ before destination-specific TCP 80/443 deny rules. The proxy independently check
 the socket peer, not forwarded headers. Legacy docker/containerd/caddy units
 remain masked; databases and backend/frontend listeners remain loopback-only.
 No TEST/PROD deployment or source mutation was performed.
+The Caddy management socket is under caddy-owned mode-0700
+`/run/platform-dev-proxy`, not an unauthenticated localhost TCP port accessible
+to every developer account. The certificate key is readable only by root/caddy.
 
 The existing Sectigo wildcard expires **2026-10-01 23:59:59 UTC**. This is a
 static certificate copy, not automatic renewal. Renew the authoritative

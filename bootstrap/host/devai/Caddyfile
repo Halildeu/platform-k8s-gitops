@@ -1,5 +1,5 @@
 {
-	admin 127.0.0.1:32019
+	admin unix//run/platform-dev-proxy/admin.sock
 	auto_https disable_redirects
 	servers {
 		protocols h1 h2
