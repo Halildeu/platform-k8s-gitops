@@ -1601,16 +1601,44 @@ cmd_verify() {
     log "verify note — #$NUM already has EVIDENCE for $OPT_PR_REPO#$OPT_PR (repairing body/board only)"
   fi
 
-  local now ev body
+  local now ev body bsess sid release_marker comments
   now="$(iso_now)"
+  body="$(issue_body "$REPO" "$NUM")"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  sid="${OPT_SESSION:-${BOARD_SESSION_ID:-}}"
   ev="EVIDENCE type=pr-merged pr_repo=$OPT_PR_REPO pr=$OPT_PR issue_repo=$REPO at=$now
 Source-ready: $OPT_PR_REPO PR #$OPT_PR merged.
 Runtime/acceptance evidence pending — board Status -> Needs Verify."
+  if [ -n "$bsess" ] && [ "$bsess" != "none" ] && [ "$bsess" != "$sid" ]; then
+    ev="EVIDENCE type=pr-merged pr_repo=$OPT_PR_REPO pr=$OPT_PR issue_repo=$REPO at=$now
+Source-ready: $OPT_PR_REPO PR #$OPT_PR merged.
+Runtime/acceptance evidence pending — existing claim preserved; owner must release or verify."
+    [ "$comment_needed" -eq 0 ] || post_comment "$REPO" "$NUM" "$ev"
+    log "verify deferred — #$NUM claimed by '$bsess'; body/board/lease unchanged"
+    return 0
+  fi
   log "verify #$NUM ($REPO) — $OPT_PR_REPO PR #$OPT_PR merged -> Needs Verify"
   if [ "$comment_needed" -eq 1 ]; then
     post_comment "$REPO" "$NUM" "$ev"
   fi
-  body="$(issue_body "$REPO" "$NUM")"
+  [ "$(issue_body "$REPO" "$NUM")" = "$body" ] \
+    || die "verify refused — #$NUM body changed during evidence write; re-read before retry"
+  if [ -n "$bsess" ] && [ "$bsess" != "none" ]; then
+    # winner_of reads the comment lease, not the cleared issue-body mirror.
+    # Only the explicit owner may retire it; CI must not release another agent.
+    release_marker="HANDOFF released=verify session=$bsess at=$now"
+    post_comment "$REPO" "$NUM" "$release_marker" \
+      || die "verify refused — #$NUM claim release comment failed"
+    if [ "$DRY_RUN" -ne 1 ]; then
+      comments="$(gh issue view "$NUM" --repo "$REPO" --json comments 2>/dev/null)" \
+        || die "verify refused — #$NUM claim release readback failed"
+      printf '%s' "$comments" | jq -e --arg marker "$release_marker" \
+        'any(.comments[]; .body == $marker)' >/dev/null \
+        || die "verify refused — #$NUM claim release not visible"
+    fi
+    [ "$(issue_body "$REPO" "$NUM")" = "$body" ] \
+      || die "verify refused — #$NUM body changed during release; no mirror overwrite"
+  fi
   if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
     printf '%s\n' "$body" \
       | rewrite_state "needs-verify" "none" "none" "none" "none" "none" \
