@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — ATS TEST pin sha-0ace75f (ats#267, #213 CV reader v12) + terminate-first rollout (2026-09-12 10:10 UTC)
+
+Trigger: Zeynep (2026-09-12 07:47 UTC) — the TEST activation overlay still carried `ats@aabdbdb`
+(2026-09-06), so her 10–11 September live test ran the previous CV reader; she needs a pin that
+contains the #213 reader changes (ats#261/#264/#267) to run the #213 + web#966 live acceptance.
+
+- GitOps [#3708](https://github.com/Halildeu/platform-k8s-gitops/pull/3708) (`a8b0497b`) moved the
+  ATS backend pin to `sha-0ace75f` → `sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec`
+  (ats#267 `fix(#213)` merged `0ace75fc` 2026-09-11 22:00 UTC, image-push
+  [34652002478](https://github.com/Halildeu/ats/actions/runs/34652002478); digest read from the GHCR
+  package API by tag) across all seven binding sites; rollback pointer `sha256:5e449664…`.
+- The rollout did not progress for ten minutes: the new ReplicaSet failed with
+  `exceeded quota: platform-quota, requested: limits.cpu=500m, used: 16700m, limited: 17` — the
+  surge pod of a 25% RollingUpdate cannot exist at ~98% CPU-limit quota (third recurrence of the
+  2026-07-30/31 trap). [#3711](https://github.com/Halildeu/platform-k8s-gitops/pull/3711) (`38634916`)
+  gives `ats-interview-evidence` a terminate-first strategy (`maxSurge 0 / maxUnavailable 1`) in the
+  activation overlay; after Argo applied it the stale ReplicaSet stayed in create backoff, one
+  `rollout restart` produced pod `ats-interview-evidence-5798f84857-5257w` Running 1/1 with
+  imageID `sha256:c2baf0e6…` (single pod).
+- Strict browser acceptance [run 34685838687](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34685838687):
+  **PASS** with the new reader (A/B/C question journeys included). Board #3707 closed.
+- Not claimed: Zeynep's #213/web#966 live test with her synthetic PDF (her acceptance, pending);
+  any quota headroom change (the quota itself is unchanged at 17 CPU limits).
+
 ## Live Delta — PROD notification-orchestrator mail path SMTP → Graph app-only (2026-09-11 20:10 UTC)
 
 Owner decision (#3547): the `ai@acik.com` O365 SMTP password expired on 2026-09-04
