@@ -533,3 +533,24 @@ Rollback sonrası:
 ## 10. Last Update
 
 **2026-05-20 (Session 42 — Codex `019e44b1` defer contract alignment)** — Runbook yaratıldı. Activation deferred; reactivation trigger conditions + 5-step atomic chain documented. Owner-action required: client secret + ApplicationAccessPolicy + Vault seed + ConfigMap flag + pod rollout + smoke acceptance + rollback procedure all in-scope.
+
+
+---
+
+## 7. Prod e-posta canary (graph-smoke) — kalıcı smoke yolu (2026-09-11)
+
+BL-011/BL-028 SMS canary'sinin e-posta karşılığı; prod cutover'da (gitops#3692, #3547) kuruldu ve
+kullanıldı. Yeniden koşmak için yeni bir intent id yeter; kurulum idempotenttir.
+
+| Bileşen | Değer |
+|---|---|
+| Şablon | `notify.notification_template` `graph-smoke-prod-mail-v1` v1 `tr-TR`, subject `[GRAPH SMOKE] …`, `external_allowed=false`, `active=true`, `created_by=graph-smoke-agent` |
+| Abone | `notify.subscriber_contact` `org_id=default`, `subscriber_id=graph-smoke-prod-canary-001`, `email=ai@acik.com`, `email_verified=true`, `source=graph-smoke` |
+| OpenFGA | store `01KPXCVBHCY2TQ6YHVK009NS1C`, model `01KSFFK9K3V43DD211Z79K3FYA`: `notification_topic:marketing.campaign#can_receive@subscriber:graph-smoke-prod-canary-001`, `template:graph-smoke-prod-mail-v1#topic@notification_topic:marketing.campaign` |
+| Token | persona `notify-canary-org-prod-default` (prod Vault `kv/platform/keycloak/persona/…` `password`, in-band) + `frontend` client ROPC, scope `openid notify-canary` → JWT `org_id=default` |
+| Intent | `POST https://ai.acik.com/api/v1/notify/intents` — `orgId=default`, `topicKey=marketing.campaign`, `severity=info`, `dataClassification=commercial`, `recipients=[{type:subscriber, subscriberId:graph-smoke-prod-canary-001}]`, `template={templateId:graph-smoke-prod-mail-v1, version:1, locale:tr-TR}`, `channels=["email"]`, `payload={}` |
+| Beklenen | 202 ACCEPTED → intent COMPLETED, delivery DELIVERED, `provider_msg_id …@notification-orchestrator-graph`, pod log `graph mail accepted … status=202`, `ai@acik.com` kutusunda Sent+Inbox kaydı |
+
+Sınırlar: yalnız `ai@acik.com`'a self-send; SMS kanalı kullanılmaz; secret/token sunucuda geçici dosyada,
+basılmaz. Tuple/şablon/abone silinmez (kalıcı canary); ilk canlı koşu 2026-09-11 20:27Z
+`graph-smoke-prod-20260911-202702`.

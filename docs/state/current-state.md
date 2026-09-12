@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — PROD notification-orchestrator mail path SMTP → Graph app-only (2026-09-11 20:10 UTC)
+
+Owner decision (#3547): the `ai@acik.com` O365 SMTP password expired on 2026-09-04
+(`535 5.7.139`, re-measured 2026-09-11: LOGIN DENIED) and is **not** rotated; prod product
+e-mail moves to the Graph Mail.Send app-only path already live in test since 2026-06-12.
+
+- GitOps [#3692](https://github.com/Halildeu/platform-k8s-gitops/pull/3692) (`87451a6e`,
+  owner approval recorded on the PR): prod ExternalSecret `notification-orchestrator-secrets`
+  re-enables the three deferred Graph remoteRefs; prod ConfigMap gains
+  `NOTIFY_ADAPTERS_GRAPH_ENABLED=true`, `NOTIFY_ADAPTERS_GRAPH_SENDER_MAILBOX=ai@acik.com`,
+  `NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS=true`; SMTP config retained for flag-flip rollback.
+- Production Vault `kv/platform/notification-orchestrator` v10 carries
+  `graph_tenant_id/graph_client_id/graph_client_secret` (in-band copy of `kv/platform/graph`,
+  equality verified, no value exposed).
+- Applied selectively to `k3d-prod/platform-prod` from the merge revision (the prod ArgoCD app is
+  not auto-synced): ESO `SecretSynced` with the three `NOTIFY_ADAPTERS_GRAPH_*` keys, rollout
+  restarted, pods `notification-orchestrator-55c7994785-45zd2` and `-dwz66` Running 1/1 with 0
+  restarts, old ReplicaSet at 0. Pod log: `GraphTokenService initialized` (tenant/client id prefixes match the
+  seeded identity), `GraphMailAdapter initialized: senderMailbox=ai@acik.com
+  fromName="Ai - Açık Holding" saveToSentItems=true`. The same client secret produced a Graph
+  token with roles `["Mail.Read","Mail.Send"]` at 19:25Z (RB-graph-mail-agent-read §10.5).
+- Real production send measured at 20:27 UTC (owner-approved seed): template
+  `graph-smoke-prod-mail-v1` (tr-TR, `external_allowed=false`), subscriber
+  `graph-smoke-prod-canary-001` (org `default`, `ai@acik.com`, verified) and the two topic-inheritance
+  OpenFGA tuples on the prod store (model `01KSFFK9K3V43DD211Z79K3FYA`, check allowed); persona
+  `notify-canary-org-prod-default` via the `frontend` client (`openid notify-canary`) submitted
+  `POST /api/v1/notify/intents` with `channels:["email"]` → **202** `graph-smoke-prod-20260911-202702`
+  → intent COMPLETED, delivery DELIVERED with `provider_msg_id
+  <74df92b5-3541-4302-acea-354d2fbf9f5d@notification-orchestrator-graph>`, pod log `graph mail accepted
+  … status=202`, and the `ai@acik.com` mailbox shows the Sent Items copy and the Inbox receipt
+  (20:27:08Z / 20:27:10Z). #3547 is closed; the canary triple stays as the standing e-mail smoke path.
+- Open observation: the read-only Graph identity (`graph-read`, app `acik-mail-graph-read`) reads
+  `halil.kocoglu@acik.com` but returned `ErrorAccessDenied` for `ai@acik.com` from ~20:27 UTC although
+  it read it at 19:25 UTC and `Test-ApplicationAccessPolicy` still says Granted; being watched as
+  Exchange policy propagation — the legacy identity (`--identity graph`) still reads `ai@acik.com`.
+
 ## Live Delta — Graph mail read-only identity `graph-read` LIVE (2026-09-11 19:25 UTC)
 
 Owner decision (2026-09-11): `halil.kocoglu@acik.com` is read-only for the agent; the send
