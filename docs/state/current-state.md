@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta - TEST meeting exact-session result image (2026-09-12 11:10 UTC)
+## Live Delta - TEST meeting exact-session result image (2026-09-12 11:49 UTC)
 
 - GitOps PR #3717 merged at `668ee6144bb6f82dac275d966729ef0ee0ccc750`.
   Its tree equals reviewed head `0abf213c58aa3ead9f799435c16b2e7ebe6394a7`;
@@ -15,13 +15,20 @@
 - After-commit static checks passed: 91 finalization/capability/permit tests,
   seven source-activation/digest tests, TEST/prod render and negative guards.
   Public TEST exact-session result GET without authentication returns 401.
-- Canonical runtime verifier run `34690183572` passed Argo convergence and
-  is still running the runtime/stability stage at this snapshot; its final
-  result must be read before claiming the complete runtime gate passed.
+- Canonical runtime verifier run `34690183572` succeeded. Artifact
+  `10297214008` was downloaded and both JSON reports read back: Argo PASS at
+  `668ee6144bb6f82dac275d966729ef0ee0ccc750`, runtime PASS with exact meeting
+  digest, both map fences true, last gate complete and
+  `pass-p5-readiness-viewer-exact-view`. Verification was read-only. This is
+  the generic runtime gate, not a meeting-owner session-result acceptance.
 - Authenticated exact-session/no-fallback API readback, normal-persona
   two-session/source/reopen and packaged Desktop/Mobile acceptance remain
   unverified. Web #1171 remains draft pending that API dependency (#1170).
   Parent #3399 and multi-session #3533 are not customer-accepted by this pin.
+- The running Mac package is `/Applications/Meeting Intelligence.app`.
+  Two UI automation access attempts timed out; persona and package journey
+  could not be inspected. This is an automation-access limit, not evidence
+  that the application failed. No password, token or user state was changed.
 - Rollback is a reviewed GitOps restore to
   `sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1`.
   No production, identity, consent, retention or mail mutation in this run.
