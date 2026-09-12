@@ -63,6 +63,9 @@ const evidence = '/srv/platform-dev/evidence/devai-20260912';
     probe = probePath;
     await page.evaluate(url => import(url), origin + '/src/' + probeName);
     await page.waitForFunction(() => window.__devaiHmrProof === 'before');
+    // A new fixture has an add-event debounce; do not coalesce its first edit
+    // with creation before the file watcher has registered it.
+    await page.waitForTimeout(1000);
     fs.writeFileSync(probe, moduleBody('after'), { mode: 0o600 });
     await page.waitForFunction(() => window.__devaiHmrProof === 'after', undefined, { timeout: 30000 });
     result.hmrEditApplied = true;
