@@ -1,5 +1,31 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - TEST meeting exact-session result image (2026-09-12 11:10 UTC)
+
+- GitOps PR #3717 merged at `668ee6144bb6f82dac275d966729ef0ee0ccc750`.
+  Its tree equals reviewed head `0abf213c58aa3ead9f799435c16b2e7ebe6394a7`;
+  24 PR checks passed. Exact-artifact assertions in both finalization and
+  source-activation guards follow the new digest; no guard was relaxed.
+- TEST meeting-service pod `meeting-service-5fd59c4b94-zfd6w` is Ready with
+  zero restarts and imageID
+  `sha256:f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f`,
+  binding backend #1163 source `965cb1c039892d4da81f6251db9dc94bc5ce8c8e`.
+  Argo platform-test is Synced/Healthy at the merge revision, operation
+  Succeeded. Only the existing GitOps auto-sync applied the managed workload.
+- After-commit static checks passed: 91 finalization/capability/permit tests,
+  seven source-activation/digest tests, TEST/prod render and negative guards.
+  Public TEST exact-session result GET without authentication returns 401.
+- Canonical runtime verifier run `34690183572` passed Argo convergence and
+  is still running the runtime/stability stage at this snapshot; its final
+  result must be read before claiming the complete runtime gate passed.
+- Authenticated exact-session/no-fallback API readback, normal-persona
+  two-session/source/reopen and packaged Desktop/Mobile acceptance remain
+  unverified. Web #1171 remains draft pending that API dependency (#1170).
+  Parent #3399 and multi-session #3533 are not customer-accepted by this pin.
+- Rollback is a reviewed GitOps restore to
+  `sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1`.
+  No production, identity, consent, retention or mail mutation in this run.
+
 ## Live Delta — ATS TEST pin sha-0ace75f (ats#267, #213 CV reader v12) + terminate-first rollout (2026-09-12 10:10 UTC)
 
 Trigger: Zeynep (2026-09-12 07:47 UTC) — the TEST activation overlay still carried `ats@aabdbdb`
