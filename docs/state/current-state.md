@@ -21,9 +21,18 @@
   digest, both map fences true, last gate complete and
   `pass-p5-readiness-viewer-exact-view`. Verification was read-only. This is
   the generic runtime gate, not a meeting-owner session-result acceptance.
-- Authenticated exact-session/no-fallback API readback, normal-persona
-  two-session/source/reopen and packaged Desktop/Mobile acceptance remain
-  unverified. Web #1171 remains draft pending that API dependency (#1170).
+- Follow-up at 12:30 UTC used the existing privileged TEST smoke identity,
+  without application writes. Eight existing synthetic lifecycle fixtures
+  returned 200 for their exact session, with matching session provenance.
+  Three fixtures additionally returned 404 for a missing session (no latest
+  fallback), and repeated exact reads preserved their result fingerprints.
+  The meeting pod remained Ready/restart0 on the same exact digest.
+  All eight fixtures have only one session: this is authenticated API evidence,
+  not multi-session or normal-persona acceptance. The TEST browser redirects
+  to login; no normal-user session was available in that browser.
+- Normal-persona two-session/source/reopen and packaged Desktop/Mobile
+  acceptance remain unverified. Web #1171 is eligible for source review after
+  this bounded API dependency check; its deployment/acceptance is separate.
   Parent #3399 and multi-session #3533 are not customer-accepted by this pin.
 - The running Mac package is `/Applications/Meeting Intelligence.app`.
   Two UI automation access attempts timed out; persona and package journey
