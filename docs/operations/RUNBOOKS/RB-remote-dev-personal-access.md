@@ -20,8 +20,11 @@ arrived in the DEV access email thread. No private key was requested or copied.
 - No sudo/docker membership or operator secrets. Direct reads of the operator
   SSH config, wildcard private key, runtime compose config and secret-store
   key, plus write access to the Docker socket, were denied as this user.
-- `.profile` uses personal `.local/bin` and `.cache`, Java 21, Maven heap 2 GiB
-  and umask 077. `.npmrc` uses personal prefix/store with child concurrency 2.
+- `.profile` and `.bashrc` use personal `.local/bin` and `.cache`, Java 21,
+  Maven heap 2 GiB and umask 077. The `.bashrc` setup precedes its noninteractive
+  return so editor/SSH-command shells also resolve the personal executables.
+  Shell syntax and a clean-environment interactive-shell lookup were verified.
+  `.npmrc` uses personal prefix/store with child concurrency 2.
 - Installed personal binaries: pnpm 10.12.4, Maven 3.9.10, GitHub CLI 2.100.0,
   Codex 0.153.4, Claude Code 2.1.263. System Node 22.22.2/Java 21.0.12 are reused.
   Maven's downloaded archive matched the publisher's SHA-512 sidecar.
