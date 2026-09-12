@@ -595,7 +595,9 @@ images:
     # backend#1135 / merge 58048b92fdd85228841cf0014a4e16bc8edb9cde:
     # preserve independent session results; same-session stale guards remain.
     # Provenance-verified image run 34467658000; tracked by gitops#3533/#3399.
-    digest: sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1
+    # backend#1163 / source 965cb1c: exact session intelligence result selector.
+    # TEST ghcr-pull probe imageID verified 2026-09-12; tracked by gitops#3421.
+    digest: sha256:f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
