@@ -24,6 +24,27 @@ contains the #213 reader changes (ats#261/#264/#267) to run the #213 + web#966 l
 - Not claimed: Zeynep's #213/web#966 live test with her synthetic PDF (her acceptance, pending);
   any quota headroom change (the quota itself is unchanged at 17 CPU limits).
 
+## TEST meeting session selector candidate (2026-09-12 09:33 UTC)
+
+- Backend PR #1163 source `965cb1c039892d4da81f6251db9dc94bc5ce8c8e`
+  provides an optional exact-session intelligence result selector. Image build
+  `34678627166` succeeded; registry/provenance checks bind it to that source.
+- A unique transient pod in `k3d-test/platform-test` used the existing
+  `ghcr-pull` identity and pulled imageID
+  `sha256:f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f`.
+  Its `java -version` command exited 0; the pod was deleted. This proves image
+  pullability, not application readiness or customer acceptance.
+- This change proposes only the meeting-service TEST image pin. At preflight,
+  the managed deployment remained Ready 1 with previous digest
+  `sha256:45245558cec7e7c2801fdd6515932af7df5787cd5099e52433522758913d2fc1`.
+  Keep that digest for reviewed GitOps rollback; no imperative workload edits.
+- Web PR #1171 head `e5dadb70b3d4e9e2f1d380808c90580cccf14bef` has
+  26 successful CI checks and two skipped manual/benchmark checks. It remains
+  draft pending backend rollout and exact API readback. Normal-persona
+  two-session/source/reopen and packaged-client acceptance remain unverified.
+- Tracked by gitops #3421 / #3399 and web #1170. ATS #3707 is independently
+  handled; its pin and rollout changes are outside this candidate.
+
 ## Live Delta — PROD notification-orchestrator mail path SMTP → Graph app-only (2026-09-11 20:10 UTC)
 
 Owner decision (#3547): the `ai@acik.com` O365 SMTP password expired on 2026-09-04
