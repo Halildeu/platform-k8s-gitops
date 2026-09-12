@@ -1,10 +1,10 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
-# Current pin (2026-09-06): ats@aabdbdb, #240 C recruiter answer readback
-#   (RecruiterApplicationResponse.answers/questionsSnapshot/jobVersion; on top of
-#   #240 B candidate answers (V24) + #258 option cap 10 + #240 A questions).
-#   digest  sha256:5e4496643069a44693a1f886c3c9323405634f6ecbee55f76a484183504186df
-#   (GHCR packages API manifest digest; cross-checked against the previous
-#   cluster-validated pin sha-2e5158f → 1cd9e5b2…; pod imageID re-verified after rollout)
+# Current pin (2026-09-12): ats@0ace75f, ats#267 fix(#213) CV reader v12 — short
+#   left-aligned headings in a single column are no longer counted as a sidebar
+#   (on top of #240 A/B/C questions → answers → recruiter readback, #258 option cap).
+#   digest  sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec
+#   (GHCR packages API manifest digest, tag sha-0ace75f; cross-checked against the
+#   previous cluster-validated pin sha-aabdbdb → 5e449664…; pod imageID re-verified after rollout)
 # The older source/build notes below describe previous rollout history.
 #
 # Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
@@ -185,10 +185,10 @@ resources:
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
-  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34042994691
-  # Rollback image: sha256:1cd9e5b259a22fc7e501e1c71fc8592833dd41dd6a5b9c3640cddb456349b32a
+  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34652002478
+  # Rollback image: sha256:5e4496643069a44693a1f886c3c9323405634f6ecbee55f76a484183504186df
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:5e4496643069a44693a1f886c3c9323405634f6ecbee55f76a484183504186df
+    digest: sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
