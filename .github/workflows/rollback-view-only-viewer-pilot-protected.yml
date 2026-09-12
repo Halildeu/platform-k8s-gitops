@@ -34,6 +34,6 @@ jobs:
           expected-trust-root-sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
       - name: Execute reviewed stage
-        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-rollback@ead8b151457929c7a7525ebdab2fd2b374b4f976
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-rollback@ac49dfe154d7131e4fef461ddf76d5cec5761e11
         env:
           CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
