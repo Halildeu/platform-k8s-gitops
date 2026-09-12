@@ -1,5 +1,34 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - TEST prior-session workbench artifact (2026-09-12 14:27 UTC)
+
+- Web PR #1171 merged source `311c240e0fdf581fa9f0c4f7310bb8cd70667091`;
+  all seven main workflows passed, including image build `34697399501`.
+  Reviewed source supports the live array-shaped session list, exact selected
+  result provenance, historical source boundaries and URL-backed reopen.
+- GitOps PR #3724 merged `ec05f90fbb6c9a8cdf7519a46c993efa3a486ee1`.
+  All 26 checks passed on candidate `030ee01450f3b418121a2504256f6f869ddec53b`.
+  Initial CI `34697633143` timed out in an unchanged VIEW_ONLY fixture after
+  30 seconds; one bounded retry passed without code or assertion changes.
+  Exact-head local isolated test and all 83 related static tests also passed.
+  This is not a claim that the intermittent timeout's root cause was repaired.
+- Preflight proved registry access with the existing TEST pull identity and
+  sufficient surge quota. ArgoCD, not imperative workload mutation, applied
+  the pin. Runtime workflow `34699218821` passed on the merged revision;
+  independent Argo readback is Synced/Healthy, operation Succeeded.
+- TEST pod `frontend-596f649f7-8wrxc` is Ready with zero restarts and imageID
+  `sha256:2c043244c8c742c7e0fe41ed287d4c667cf21e5666b35c2b630ee77d06c4ef0c`.
+  Public module `/assets/index-DdSvUcRt.js` is reachable; `build-info.json`
+  full SHA and short SHA match the exact web source via the canonical verifier.
+- Rollback is a reviewed TEST overlay restoration to frontend digest
+  `sha256:0563584ef80454b802445f64ec1bcf51812bf5db19d21f3851475a4a92f4de31`.
+  Production, credentials and other desired-state pins were not changed.
+- This supersedes earlier pending web-source/promotion notes only. Normal
+  authorized TEST two-session result/source/reopen, late/concurrent isolation,
+  packaged Desktop/Mobile and attended latency acceptance remain unverified.
+  Tracked by #3421 / #3399 / #3533 and platform-web #1170; source/runtime
+  availability is not customer acceptance.
+
 ## Live Delta - Personal DEV developer access (2026-09-12 13:13 UTC)
 
 - Owner-authorized personal Linux account `zeynep` exists on DEV `.53` with
