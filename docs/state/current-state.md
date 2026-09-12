@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - Personal DEV developer access (2026-09-12 13:13 UTC)
+
+- Owner-authorized personal Linux account `zeynep` exists on DEV `.53` with
+  the employee-supplied Ed25519 public key. SSH public-key offer is accepted;
+  authentication signature and first company/VPN device login remain unverified.
+  Password/keyboard-interactive auth, agent forwarding, sudo and Docker access
+  are disabled for this account. Existing operator access is unchanged.
+- Four independent, clean GitHub clones are under `/home/zeynep/repos`:
+  ATS, platform-web, platform-backend and platform-k8s-gitops. Git object checks,
+  expected source heads and credential-free local Git configs were verified.
+  No operator GitHub/AI session, private key or runtime secret was copied.
+- Personal Node/pnpm/Java/Maven/GitHub CLI/Codex/Claude executables respond.
+  ATS `0ace75fc8570e0a26e39d3b5131aa45431674636` passes 78 application-intake
+  Java tests, 54 frontend unit tests and frontend typecheck/build as this user.
+  These are local toolchain checks, not customer or authenticated product
+  acceptance. Shared DEV HTTPS still returns 200 with trusted TLS.
+- The approved connection email was sent from the designated mailbox with
+  owner CC; the sent message's recipients, subject and body were read back.
+  Personal GitHub/AI login and a real employee SSH -> edit -> push/PR journey
+  remain pending. Shared `devai` does not auto-publish personal clone changes.
+- Exact boundaries and rollback: [personal DEV onboarding](../operations/RUNBOOKS/RB-remote-dev-personal-access.md).
+  Tracked by #3582; supports the developer step for ATS #213/#966, not a new
+  product phase. TEST/PROD and shared DEV application sources were not changed.
+
 ## Live Delta - TEST meeting exact-session result image (2026-09-12 11:49 UTC)
 
 - GitOps PR #3717 merged at `668ee6144bb6f82dac275d966729ef0ee0ccc750`.
