@@ -45,10 +45,21 @@
   meeting-ai listener changed 27340 -> 30108, with task ancestry/interpreter
   checks, healthy enabled consumer and delivery workers, no pending/in-flight
   deliveries, and the live-STT task unchanged. Old producer bindings and consumed
-  permits fail closed. A fresh post-restart result trial remains in progress.
+  permits fail closed. The [post-restart API trial](../faz-24-evidence/2026-09-13-speaker-quality-post-restart-api.json)
+  has 112/112 attribution, WER 0, DER 0.0595 (zero collar 0.1206), and a new
+  persisted result after 387 seconds. The [separate browser trial](../faz-24-evidence/2026-09-13-speaker-quality-post-restart-browser.json)
+  verifies both viewports, citation anchors and role-revoked403. The canonical
+  recording persona was deleted, direct grants restored and token file removed;
+  D35 temporary transcript grants were also removed and read back. Host outboxed
+  count increased 32 -> 33, with zero pending/in-flight/dead-letter deliveries.
   No production change or real audio
-  was used. Internal STT diarization (#3746), elapsed-time display (#3751), and a
-  representative human-annotated corpus remain separate work. Method and limits:
+  was used. Internal STT diarization (#3746), elapsed-time display (#3751),
+  decision/action semantic evaluation (#3753), and a representative human-annotated
+  corpus remain separate work. The unchanged on-prem analyzer is Ollama
+  `llama3.1:8b`, with PII redaction enabled. Its citation fidelity is not a
+  semantic quality score: the fixture's past report about reviewing a design
+  was classified as a decision. No general summary/decision accuracy claim.
+  Method and limits:
   [quality runbook](../runbooks/RB-faz24-meeting-speaker-quality.md).
 
 ## Candidate Data Policy - TEST Applicant Journey Verified (2026-09-13)

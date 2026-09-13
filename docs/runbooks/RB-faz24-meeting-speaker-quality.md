@@ -56,6 +56,32 @@ output directory and a mode-0600 token file. Credentials stay outside evidence.
 Finalization currently waits at least six minutes; the result poll budget is
 600 seconds. EOF/drain alone must not be treated as persisted analysis.
 
+On the approved TEST runner, from the root of this checkout (the existing
+evidence chain resolves its contract validator from the current directory):
+
+```bash
+umask 077
+VENV="$(mktemp -d /tmp/meeting-quality-venv.XXXXXX)"
+EVIDENCE="$(mktemp -d /tmp/meeting-quality-evidence.XXXXXX)"
+python3 -m venv "$VENV"
+"$VENV/bin/python" -m pip install -r scripts/faz24/requirements-speaker-quality.txt
+QUALITY_REPO="$PWD" \
+QUALITY_FIXTURES="$PWD/scripts/faz24/fixtures/meeting-speaker-tr-v1" \
+QUALITY_PHASE=after \
+RUN_EXTERNAL_SMOKE=0 RUN_SPEECHMATICS_REALTIME=1 \
+REALTIME_PYTHON="$VENV/bin/python" \
+REALTIME_HELPER="$PWD/scripts/faz24/meeting-speaker-quality-wrapper.py" \
+REALTIME_AUDIO_FILE="$PWD/scripts/faz24/fixtures/meeting-speaker-tr-v1/two-speaker-tr.wav" \
+OUT_DIR="$EVIDENCE" \
+bash scripts/faz24/run-platform-desktop-token-evidence-chain.sh
+jq '{status, cleanup}' "$EVIDENCE/faz24-platform-desktop-token-diagnostic.json"
+jq '{status, gates, wer, syntheticDER}' "$EVIDENCE/faz24-speechmatics-realtime-lifecycle-acceptance.json"
+```
+
+This command temporarily provisions only the canonical allowlisted TEST smoke
+identity and restores direct-grant state. Verify cleanup even when acceptance
+fails. Follow the claim and TEST mutation rules before executing it.
+
 Without an independent browser receipt, a successful wrapper result is only
 synthetic API acceptance. Optional `QUALITY_BROWSER_WAIT` waits up to 300 seconds
 for a separate browser result and fails closed on timeout. Do not overwrite a
@@ -78,6 +104,11 @@ Real-world quality needs a consented, representative, human-annotated corpus wit
 speaker-count/noise/overlap slices and held-out evaluation. No production/legal
 approval or real-audio external-provider permission is inferred from this test.
 The internal diarization adapter gap is tracked separately in #3746.
+`durable.usableProductResult` is the existing workflow/source gate, not a gold
+decision/action score. The unchanged Ollama `llama3.1:8b` result classified a
+past design-review report as a decision in this fixture; semantic precision,
+recall and confidence calibration are tracked in #3753. A valid source quote
+does not prove its classification is correct. Elapsed-time display is #3751.
 
 ## TEST reactivation after a producer change
 
