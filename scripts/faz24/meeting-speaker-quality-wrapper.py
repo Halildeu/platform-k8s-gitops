@@ -53,8 +53,8 @@ finally:
         }
         if phase == 'after':
             gates.update({
-                'speakerFinals': data['speakerAttributedFinals'] > 0,
-                'speakerStored': data['storedAttributedSegments'] > 0,
+                'speakerFinals': data['speakerAttributedFinals'] == data['metrics']['finalEvents'] > 0,
+                'speakerStored': data['storedAttributedSegments'] == data['metrics']['finalEvents'] > 0,
                 'speakerReopen': data['speakerMetadataExactReopen'],
                 'speakerStreamToStore': data['speakerMetadataExactStreamToStore'],
                 'syntheticWordErrorGate': data['wer'] <= 0.10,

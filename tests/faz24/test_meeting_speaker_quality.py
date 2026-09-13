@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 import wave
@@ -17,6 +18,44 @@ with patch.dict(os.environ, {'QUALITY_FIXTURES': str(FIXTURE), 'QUALITY_REPO': s
 
 
 class SpeakerQualityTest(unittest.TestCase):
+    def run_wrapper(self, attributed, stored, finals=112):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            token = root / 'token'
+            token.write_text('synthetic-unit-test-not-a-credential')
+            token.chmod(0o600)
+            output = root / 'acceptance.json'
+            data = {'sessionFinished': True, 'metrics': {'drained': True, 'eofAck': True,
+                'errors': 0, 'finalEvents': finals}, 'durable': {'usableProductResult': True,
+                'canonicalSourceReadBackProven': True, 'sameResultReopened': True},
+                'speakerAttributedFinals': attributed, 'storedAttributedSegments': stored,
+                'speakerMetadataExactReopen': True, 'speakerMetadataExactStreamToStore': True,
+                'wer': 0, 'syntheticDER': {'diarization error rate': 0.05}}
+            def fake_runner(*args, **kwargs):
+                Path(os.environ['QUALITY_REPORT']).write_text(json.dumps(data))
+            argv = ['wrapper', '--token-file', str(token), '--audio-file', str(FIXTURE / 'two-speaker-tr.wav'),
+                '--output-file', str(output), '--base-url', 'https://testai.acik.com']
+            wrapper = ROOT / 'scripts/faz24/meeting-speaker-quality-wrapper.py'
+            with patch.dict(os.environ, {'QUALITY_PHASE': 'after', 'QUALITY_FIXTURES': str(FIXTURE), 'QUALITY_BROWSER_WAIT': ''}), \
+                 patch('sys.argv', argv), patch('sys.stdin'), patch('runpy.run_path', side_effect=fake_runner):
+                try:
+                    exec(compile(wrapper.read_text(), str(wrapper), 'exec'), {'__name__': '__main__', '__file__': str(wrapper)})
+                except SystemExit as error:
+                    self.assertEqual(error.code, 1)
+            return json.loads(output.read_text())
+
+    def test_complete_attribution_passes_synthetic_api_gate(self):
+        self.assertEqual(self.run_wrapper(112, 112)['status'], 'pass')
+
+    def test_partial_attribution_fails_even_with_low_der(self):
+        report = self.run_wrapper(111, 111)
+        self.assertEqual(report['status'], 'fail')
+        self.assertFalse(report['gates']['speakerFinals'])
+        self.assertFalse(report['gates']['speakerStored'])
+
+    def test_zero_final_events_cannot_pass_coverage_gate(self):
+        self.assertEqual(self.run_wrapper(0, 0, 0)['status'], 'fail')
+
     def test_pinned_fixture_and_reference(self):
         audio = FIXTURE / 'two-speaker-tr.wav'
         reference = json.loads((FIXTURE / 'reference.json').read_text())

@@ -1,0 +1,38 @@
+{
+  "schema": "meeting-speaker-host-activation-v1",
+  "collectedAt": "2026-09-13T16:10:56.7927505+00:00",
+  "appEnv": "test",
+  "permitAndActivationReceiptVerified": true,
+  "taskContractVerified": true,
+  "gitopsCommit": "29a96486ee6b8ec1411dc133e1ff8edf525471c3",
+  "policySha256": "a074a86aec0df0495128513cd42128573fa9a080c19a20c3c835896e9eb76f5e",
+  "producerDigest": "sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496",
+  "permitFileSha256": "f59c6530b1606aedabdd76ee6246008c29e09f0d3a0501f9cd0b6219c1b10ed9",
+  "activationReceiptSha256": "2710eccae6dec50161d8a6e67e0428e2094526cb0d98ec7e95b5f4ced7bbda63",
+  "consumer": {
+    "enabled": true,
+    "ready": true,
+    "status": "ok",
+    "worker_running": true,
+    "redis_group_ready": true,
+    "received": 0,
+    "processing": 0,
+    "outboxed": 32,
+    "dead_letter": 0,
+    "oldest_unfinished_age_sec": null,
+    "error_code": null
+  },
+  "delivery": {
+    "enabled": true,
+    "ready": true,
+    "status": "ok",
+    "worker_running": true,
+    "pending": 0,
+    "in_flight": 0,
+    "dead_letter": 0,
+    "oldest_pending_age_sec": null,
+    "error_code": null
+  },
+  "containsCredentials": false,
+  "productionMutation": false
+}

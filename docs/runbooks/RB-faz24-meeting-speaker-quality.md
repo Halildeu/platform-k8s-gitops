@@ -28,6 +28,8 @@ file fails before a network call. Do not substitute customer audio.
   failed candidate receipt; never tune a threshold to pass that candidate.
 - Verify stream-to-storage attribution equality, reopened rows, same persisted
   analysis result, target browser access and denied access separately.
+  Every final in this pinned two-speaker fixture must retain attribution in
+  storage. A low aggregate DER cannot excuse missing metadata or zero finals.
 
 Provider contract: [Speechmatics realtime API](https://docs.speechmatics.com/api-ref/realtime-transcription-websocket).
 Metric definitions: [pyannote.metrics reference](https://pyannote.github.io/pyannote-metrics/reference.html)
