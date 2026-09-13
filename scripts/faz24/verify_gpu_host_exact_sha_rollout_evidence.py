@@ -82,6 +82,7 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     require(data.get("whatIfExitCode") == 0, "WhatIf preflight failed")
     require(data.get("deployExitCode") == 0, "deploy updater failed")
     require(data.get("failureClass") == "none", "failureClass is not none")
+    require("acceptanceDiagnostic" not in data, "candidate acceptance was rejected")
 
     controller = object_field(data, "controller")
     require(
@@ -203,6 +204,7 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     require(meeting_health.get("backend") == "ollama", "meeting AI is not on Ollama")
 
     web_socket = object_field(data, "webSocket")
+    require(web_socket.get("protocol") == "source-ranges-v1", "WebSocket protocol mismatch")
     require(web_socket.get("ready") is True, "WebSocket did not become ready")
     require(web_socket.get("eventType") == "ready", "WebSocket ready event missing")
     require(

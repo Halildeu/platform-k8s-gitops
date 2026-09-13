@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -96,7 +97,12 @@ def accepted_evidence() -> dict:
                 "backend": "ollama",
             },
         },
-        "webSocket": {"ready": True, "eventType": "ready", "failureClass": "none"},
+        "webSocket": {
+            "ready": True,
+            "eventType": "ready",
+            "protocol": "source-ranges-v1",
+            "failureClass": "none",
+        },
         "privacy": {
             "rawAudioIncluded": False,
             "transcriptTextIncluded": False,
@@ -106,6 +112,37 @@ def accepted_evidence() -> dict:
 
 
 class RunnerContractTests(unittest.TestCase):
+    def test_child_exit_and_protocol_contract(self) -> None:
+        script = runner.build_remote_script(COMMIT)
+        self.assertIn("'exit $LASTEXITCODE'", script)
+        self.assertIn("$null -eq $child.ExitCode", script)
+        self.assertIn("/ws/stream?protocol=source-ranges-v1", script)
+        self.assertIn("$event.protocol -cne 'source-ranges-v1'", script)
+        self.assertIn("($candidate | ConvertTo-Json -Compress) -cne $raw", script)
+        for protocol in (None, "legacy"):
+            evidence = accepted_evidence()
+            evidence["webSocket"]["protocol"] = protocol
+            with self.assertRaises(verifier.EvidenceError):
+                verifier.verify(evidence, COMMIT)
+        evidence = accepted_evidence()
+        evidence["acceptanceDiagnostic"] = {"reason": "readiness-failed"}
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(evidence, COMMIT)
+
+    @unittest.skipUnless(sys.platform == "win32", "requires real Windows PowerShell 5.1")
+    def test_windows_child_and_diagnostic_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "remote-source.ps1"
+            source.write_text(runner.build_remote_script(COMMIT), encoding="utf-8")
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                 "-File", str(ROOT / "tests/faz24/windows_gpu_rollout_diagnostics.ps1"),
+                 "-SourcePath", str(source)],
+                capture_output=True, text=True, timeout=180,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS Windows PowerShell 5.1 rollout diagnostics", result.stdout)
+
     def test_commit_must_be_full_lowercase_sha(self) -> None:
         self.assertEqual(runner.validate_commit(COMMIT), COMMIT)
         for invalid in ("main", COMMIT[:-1], COMMIT.upper(), COMMIT + "\nwhoami"):
