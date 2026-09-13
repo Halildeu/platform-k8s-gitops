@@ -30,6 +30,25 @@ BACKEND_COMMIT = "b" * 40
 AI_COMMIT = "c" * 40
 IMAGE_DIGEST = "sha256:" + "1" * 64
 STARTUP_SHA = "2" * 64
+
+
+class ProducerOverlayAlignmentTest(unittest.TestCase):
+    def test_overlay_requires_matching_immutable_producer(self):
+        guard = runpy.run_path(str(ROOT / "scripts/test/verify-faz24-transcript-ready-pre-enable-static.py"))["require_producer_alignment"]
+        policy = {"producerCapabilities": [{"transcriptImageDigest": IMAGE_DIGEST}]}
+        deployment = {"kind": "Deployment", "metadata": {"name": "transcript-service"},
+                      "spec": {"template": {"spec": {"containers": [
+                          {"name": "transcript-service", "image": "registry/transcript@" + IMAGE_DIGEST}
+                      ]}}}}
+        guard([deployment], policy)
+        for image in ["registry/transcript:latest", "registry/transcript@sha256:" + "9" * 64]:
+            changed = copy.deepcopy(deployment)
+            changed["spec"]["template"]["spec"]["containers"][0]["image"] = image
+            with self.subTest(image=image), self.assertRaises(SystemExit):
+                guard([changed], policy)
+        for documents in [[], [deployment, deployment]]:
+            with self.subTest(count=len(documents)), self.assertRaises(SystemExit):
+                guard(documents, policy)
 EVENT_CONTRACT_SHA = "3" * 64
 BINDING_SET_SHA = binding_set_sha256_from_sha1s(("4" * 40, "5" * 40))
 EMPTY_SET_SHA = verifier.EMPTY_SET_SHA256

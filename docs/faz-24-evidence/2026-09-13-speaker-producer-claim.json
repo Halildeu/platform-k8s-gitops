@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "faz24.transcriptReadyEvidenceIssueClaim.v1",
+  "gateIssue": "platform-k8s-gitops#2610",
+  "issue": "Halildeu/platform-k8s-gitops#3742",
+  "source": "github-project-v2",
+  "environment": {
+    "appEnv": "test",
+    "cluster": "k3d-test",
+    "gpuHost": "denetim-pc",
+    "gpuHostComputerName": "SRB-AIDENETIMPC",
+    "kubectlContext": "k3d-test",
+    "namespace": "platform-test",
+    "postgresDatabase": "transcript",
+    "postgresHost": "172.19.0.6",
+    "postgresPort": 5432,
+    "postgresSchema": "transcript_service",
+    "postgresSslMode": "disable",
+    "redisGroup": "meeting-ai-transcript-ready-v1",
+    "redisHost": "172.19.0.250",
+    "redisPort": 6379,
+    "redisStream": "meeting:events",
+    "redisTls": false,
+    "transcriptDeployment": "transcript-service"
+  },
+  "boardStatusAtClaim": "In Progress",
+  "claimedAt": "2026-09-13T14:11:40Z",
+  "claimSessionSha256": "f7581747b4153445726272905f54dd14e839d00c7857b12ab362e017600b4ee9"
+}
