@@ -1,10 +1,9 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
-# Current pin (2026-09-12): ats@0ace75f, ats#267 fix(#213) CV reader v12 — short
-#   left-aligned headings in a single column are no longer counted as a sidebar
-#   (on top of #240 A/B/C questions → answers → recruiter readback, #258 option cap).
-#   digest  sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec
-#   (GHCR packages API manifest digest, tag sha-0ace75f; cross-checked against the
-#   previous cluster-validated pin sha-aabdbdb → 5e449664…; pod imageID re-verified after rollout)
+# Current desired pin (2026-09-13): ats@9b51a4f, ats#269 / gitops#3736.
+#   Public candidate policy metadata + persisted v2 consent; v1 remains valid.
+#   digest  sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299
+#   Build/scan/SBOM/push run 34755456164; registry manifest independently matched.
+#   Runtime imageID verification is required after GitOps reconciliation.
 # The older source/build notes below describe previous rollout history.
 #
 # Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
