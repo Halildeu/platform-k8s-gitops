@@ -1,0 +1,67 @@
+{
+  "status": "pass",
+  "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+  "webCommit": "7d67da055527d202f031a5369539ca7ae934f06b",
+  "positive": {
+    "schema": "meeting-speaker-browser-synthetic-v1",
+    "status": "pass",
+    "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+    "persona": "d35-existing-test",
+    "reads": [
+      {
+        "status": 200,
+        "count": 112,
+        "transcriptRoleInToken": true,
+        "attributed": 112
+      },
+      {
+        "status": 200,
+        "count": 112,
+        "transcriptRoleInToken": true,
+        "attributed": 112
+      }
+    ],
+    "results": [
+      {
+        "status": 200,
+        "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+        "analysisRunId": "f2f866fd-ba82-4124-b4ab-deb7343b7c43",
+        "persisted": true
+      },
+      {
+        "status": 200,
+        "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+        "analysisRunId": "f2f866fd-ba82-4124-b4ab-deb7343b7c43",
+        "persisted": true
+      }
+    ],
+    "viewports": [
+      {
+        "name": "desktop",
+        "speakers": [
+          "Konuşmacı 1",
+          "Konuşmacı 2"
+        ],
+        "overflow": false,
+        "citationTargetVerified": true
+      },
+      {
+        "name": "mobile",
+        "speakers": [
+          "Konuşmacı 1",
+          "Konuşmacı 2"
+        ],
+        "overflow": false,
+        "citationTargetVerified": true
+      }
+    ]
+  },
+  "denied": {
+    "status": "pass",
+    "kind": "synthetic-transcript-role-revoked",
+    "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+    "deniedStatus": 403,
+    "contentHidden": true
+  },
+  "originalRolesRestored": true
+}

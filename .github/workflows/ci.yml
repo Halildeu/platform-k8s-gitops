@@ -10,6 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  meeting-speaker-quality:
+    name: Meeting Speaker Quality Offline Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/faz24/requirements-speaker-quality.txt
+      - name: Install isolated metric dependencies
+        run: python -m pip install -r scripts/faz24/requirements-speaker-quality.txt
+      - name: Verify pinned synthetic fixture and metric behavior without credentials
+        run: python -m unittest discover -s tests/faz24 -p test_meeting_speaker_quality.py -v
+
   kustomize-build:
     name: Kustomize Build Sanity
     runs-on: ubuntu-latest

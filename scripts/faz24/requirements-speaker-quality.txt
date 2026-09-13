@@ -1,0 +1,4 @@
+jiwer==4.0.0
+pyannote.metrics==4.1
+pyannote.core==6.0.1
+websockets==17.1
