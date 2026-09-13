@@ -310,26 +310,29 @@ function Read-AcceptanceDiagnostic {
     'smoke-failed', 'smoke-failed-identity-changed',
     'injected-acceptance-failure', 'acceptance-exception', 'acceptance-reason-unavailable'
   )
-  foreach ($line in [IO.File]::ReadLines($Path)) {
-    if (-not $line.StartsWith($prefix, [StringComparison]::Ordinal)) { continue }
-    if ($null -ne $found -or $line.Length -gt 512) { throw 'acceptance-diagnostic-invalid' }
-    try {
-      $raw = $line.Substring($prefix.Length)
-      $value = $raw | ConvertFrom-Json -ErrorAction Stop
-      if ($value.schemaVersion -cne 'faz24.gpu-acceptance-diagnostic.v1' -or
-          $value.candidateCommit -cne $ExpectedCommit -or
-          $ExpectedCommit -cnotmatch '\A[0-9a-f]{40}\z' -or
-          $allowed -cnotcontains $value.reason) { throw 'invalid' }
-      $candidate = [ordered]@{
-        schemaVersion = 'faz24.gpu-acceptance-diagnostic.v1'
-        candidateCommit = $ExpectedCommit
-        reason = [string]$value.reason
-      }
-      # Canonical round-trip rejects duplicate properties, extra keys and types.
-      if (($candidate | ConvertTo-Json -Compress) -cne $raw) { throw 'invalid' }
-      $found = $candidate
-    } catch { throw 'acceptance-diagnostic-invalid' }
-  }
+  $reader = [IO.File]::OpenText($Path)
+  try {
+    while ($null -ne ($line = $reader.ReadLine())) {
+      if (-not $line.StartsWith($prefix, [StringComparison]::Ordinal)) { continue }
+      if ($null -ne $found -or $line.Length -gt 512) { throw 'acceptance-diagnostic-invalid' }
+      try {
+        $raw = $line.Substring($prefix.Length)
+        $value = $raw | ConvertFrom-Json -ErrorAction Stop
+        if ($value.schemaVersion -cne 'faz24.gpu-acceptance-diagnostic.v1' -or
+            $value.candidateCommit -cne $ExpectedCommit -or
+            $ExpectedCommit -cnotmatch '\A[0-9a-f]{40}\z' -or
+            $allowed -cnotcontains $value.reason) { throw 'invalid' }
+        $candidate = [ordered]@{
+          schemaVersion = 'faz24.gpu-acceptance-diagnostic.v1'
+          candidateCommit = $ExpectedCommit
+          reason = [string]$value.reason
+        }
+        # Canonical round-trip rejects duplicate properties, extra keys and types.
+        if (($candidate | ConvertTo-Json -Compress) -cne $raw) { throw 'invalid' }
+        $found = $candidate
+      } catch { throw 'acceptance-diagnostic-invalid' }
+    }
+  } finally { $reader.Dispose() }
   return $found
 }
 

@@ -216,8 +216,8 @@ class RunnerContractTests(unittest.TestCase):
 
     def test_ssh_command_is_strict_and_fixed_target(self) -> None:
         command = runner.ssh_command(Path("/ssh/config"), Path("/ssh/known_hosts"))
-        self.assertIn("/ssh/config", command)
-        self.assertIn("UserKnownHostsFile=/ssh/known_hosts", command)
+        self.assertIn(str(Path("/ssh/config")), command)
+        self.assertIn(f"UserKnownHostsFile={Path('/ssh/known_hosts')}", command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("IdentitiesOnly=yes", command)
         self.assertIn(runner.CANONICAL_TARGET, command)
