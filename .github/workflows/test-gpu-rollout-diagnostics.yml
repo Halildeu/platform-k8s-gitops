@@ -1,0 +1,29 @@
+---
+name: GPU Rollout Diagnostics Contract
+'on':
+  pull_request:
+    paths:
+      - 'scripts/faz24/*gpu_host_exact_sha_rollout*.py'
+      - 'tests/faz24/test_gpu_host_exact_sha_rollout.py'
+      - 'tests/faz24/windows_gpu_rollout_diagnostics.ps1'
+      - '.github/workflows/test-gpu-rollout-diagnostics.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/faz24/*gpu_host_exact_sha_rollout*.py'
+      - 'tests/faz24/test_gpu_host_exact_sha_rollout.py'
+      - 'tests/faz24/windows_gpu_rollout_diagnostics.ps1'
+      - '.github/workflows/test-gpu-rollout-diagnostics.yml'
+permissions:
+  contents: read
+jobs:
+  windows-powershell-contract:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Isolated Windows 5.1 exit and metadata fixtures
+        run: python -m unittest discover -s tests/faz24 -p test_gpu_host_exact_sha_rollout.py
