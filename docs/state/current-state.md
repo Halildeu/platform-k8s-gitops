@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI Semantic Repair - Source Qualified, TEST Rollout Pending (2026-09-13 20:48 UTC)
+
+- Tracked by #3753, Product Slice #3399, source enabler platform-ai #340.
+  [Source PR #341](https://github.com/Halildeu/platform-ai/pull/341) merged as
+  `6ebedeebc4cad99c2ff62345f24165e18619a100`. Its tree equals tested head
+  `ba3eb2f3ae48c95da8c1f1b88c64215278efaaac`; all four jobs in
+  [CI run 34781590596](https://github.com/Halildeu/platform-ai/actions/runs/34781590596)
+  passed, including Windows DPAPI/ACL/configuration/rollback contracts. Local
+  verification also passed 447 unit tests, mypy and Ruff.
+- The unchanged frozen heading/prerequisite prompt `57f62a47...fc7ff6`, official
+  cached `qwen3.8:27b` digest
+  `22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643`, and explicit
+  `think:false` passed all 22 synthetic cases and three raw-112-row repeats.
+  Every decision/action/owner/date match was exact, with zero execution errors;
+  maximum elapsed time was 47.809 seconds inside the existing 60-second budget.
+  Four final reports were independently matched to all 31 runtime source-file
+  hashes. [Reproduction, reports and retained rejected controls](https://github.com/Halildeu/platform-ai/blob/6ebedeebc4cad99c2ff62345f24165e18619a100/docs/meeting-semantic-runtime-repair-340.md)
+  are source-regression evidence, not cold-runtime or customer acceptance.
+- The TEST pre-enable policy now pins this exact source; startup hash and
+  producer digest remain unchanged. Runtime has NOT yet changed: the latest
+  host readback is AI `05a73a32`, pinned qwen2.5:14b, consumer enabled, quiet
+  processing/delivery queues and config `ae2c1dd0...51d8e6`. Its verified backup
+  has the same hash. The new profile must use the canonical rollout, a fresh
+  permit, protected `MAI_OLLAMA_THINK=false` and health/readiness readback.
+- Rollback must disable the consumer and restore the original pinned model
+  profile through the canonical configuration tool; `-OllamaThink unset`
+  removes the new key BEFORE downgrading source because the old parser rejects
+  unknown keys. An older source requires the corresponding GitOps policy and
+  a fresh activation permit, not reuse of revoked permit/receipt paths.
+- [Desired and live finalization timing](../faz-24-evidence/2026-09-13-meeting-quality-finalization-timing.json)
+  both retain PT6M minimum wait. This is not model inference duration. Next is
+  a NEW persisted TEST meeting, exact semantic/source/citation/model readback,
+  desktop/mobile browser checks and fresh-login denial after grant cleanup.
+  The previous meeting's semantic rejection below remains valid. No production,
+  real-meeting accuracy or internal-provider diarization acceptance is claimed.
+
 ## Meeting AI TEST - Pinned Model Active, Semantic Acceptance Rejected (2026-09-13 19:33 UTC)
 
 - This snapshot supersedes the disabled-consumer state below. Tracked by #3753,
