@@ -1,5 +1,58 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Repeated Rollout Rejection, Diagnostic Repair Required (2026-09-13 21:26 UTC)
+
+- Exact-source retry `34783335838` also rejected `6ebedeeb` with `smoke-failed`.
+  [Retained retry receipt](../faz-24-evidence/2026-09-13-meeting-semantic-asr-retry-rejected.json)
+  verifies automatic rollback accepted, source/ledger `05a73a32`, controller
+  cleanup 0 and ready CUDA live/final STT. Consumer remains disabled with
+  config `ea7e0964`; no permit or qualified model was activated.
+- This time the first fixture receipt (`20260913T211832278`) reports
+  `smoke-process-failed` with no summary. All three rollback fixtures passed.
+  A separate bounded diagnostic on restored `05a73a32` also passed both
+  canonical content fixtures: WER 0 and 0.375 at unchanged per-fixture bounds,
+  no stream errors and exact eof_ack/drained. This is diagnostic evidence,
+  not new-source acceptance. Runtime smoke source SHA is
+  `d1c1c0e4c6c1dd4548161ab6561780b795f2799544aef6b91fee2843fef9a2bb`.
+- Repeated deployment is stopped pending privacy-safe child-process failure
+  diagnostics. Existing code discards stdout/stderr on nonzero exit, leaving
+  the cause unverified. Source repair is delegated under platform-ai #342;
+  parent retains sole ownership of host mutation. No gate is relaxed and no
+  production or real-customer quality claim is made.
+
+## Meeting AI TEST - Qualified Rollout Rejected, Automatic Restore Verified (2026-09-13 21:14 UTC)
+
+- Run `34782564438` rejected source `6ebedeeb` with `smoke-failed`; it did not
+  activate the qualified model. [Retained metadata receipt](../faz-24-evidence/2026-09-13-meeting-semantic-asr-rollout-rejected.json)
+  records automatic rollback accepted, source/ledger `05a73a32`, controller
+  cleanup 0 and ready CUDA live/final STT. Disabled config remains `ea7e0964`.
+- Host receipt `20260913T211154912-sample-tr-cv17-002-r1.json` records
+  `smoke-process-failed` / `smoke_exit_code_or_deadline`, without a summary.
+  The first content fixture passed; all three rollback smoke receipts passed.
+  Live-STT source, updater and acceptance-receipt source are unchanged between
+  `05a73a32` and `6ebedeeb`. Root cause is not established from this evidence.
+  One bounded exact-source retry is allowed after fresh idle/claim checks;
+  thresholds, source and deadline remain unchanged. No semantic acceptance.
+
+## Meeting AI TEST - Consumer Disabled, Qualified Rollout Queued (2026-09-13 21:08 UTC)
+
+- Tracked by #3753, Product Slice #3399. Pin PR #3768 merged as
+  `969b1f029fd489db8559e132bcd53ea24b3e7002`; exact updated head `67e6fa0b`
+  passed all CI checks and the local 92-test rollout contract. The qualified
+  source remains `6ebedeebc4cad99c2ff62345f24165e18619a100`.
+- Preflight reverified old source `05a73a32`, original config and protected
+  backup `ae2c1dd0...51d8e6`, empty work queues and zero STT connections.
+  Canonical configuration disabled only the TEST analysis consumer; a new
+  task/listener and unchanged live-STT were verified. Disabled config SHA is
+  `ea7e0964d368df5fdba3ea79e44168c45cbf69dd6861ba2db88521427e098a28`;
+  all three optional analysis budget keys remain absent (existing defaults).
+- [Rollout 34782564438](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34782564438)
+  is agent-initiated using actor Halildeu on the exact merged GitOps commit.
+  It is queued behind another team's running ATS acceptance on the shared
+  online runner; there is no pending human deployment approval. No new source
+  installation, permit activation or runtime semantic acceptance is claimed.
+  The earlier enabled-consumer snapshot below is now historical.
+
 ## Meeting AI Semantic Repair - Source Qualified, TEST Rollout Pending (2026-09-13 20:48 UTC)
 
 - Tracked by #3753, Product Slice #3399, source enabler platform-ai #340.
