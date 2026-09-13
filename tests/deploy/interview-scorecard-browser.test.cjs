@@ -33,6 +33,13 @@ test('scorecard role locators remain stable as controlled fields change', async 
     assert.deepEqual(await ratings.evaluateAll(fields => fields.map(field => field.value)), ['3', '3', '3']);
     assert.deepEqual(await evidence.evaluateAll(fields => fields.map(field => field.value)),
       ['Synthetic evidence 0', 'Synthetic evidence 1', 'Synthetic evidence 2']);
+
+    await page.setContent('<label>Gerekçe<textarea oninput="this.defaultValue=this.value">Görüşme tamamlandı</textarea></label>');
+    assert.equal(await page.getByLabel('Gerekçe', { exact: true }).count(), 0);
+    const reason = page.getByRole('textbox', { name: 'Gerekçe', exact: true });
+    await reason.fill('Synthetic completion reason');
+    assert.equal(await reason.inputValue(), 'Synthetic completion reason');
+    assert.equal(await reason.count(), 1);
   } finally {
     await browser.close();
   }
