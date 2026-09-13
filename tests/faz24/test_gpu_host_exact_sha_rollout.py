@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import copy
+import gzip
 import json
 import subprocess
 from pathlib import Path
@@ -82,10 +84,10 @@ def accepted_evidence() -> dict:
         "health": {
             "liveStt": {
                 "reachable": True,
-                "status": "ok",
+                "status": "loading",
                 "model": "medium",
-                "device": "cuda",
-                "computeType": "float16",
+                "device": "cpu",
+                "computeType": "int8",
                 "backend": "",
             },
             "meetingAi": {
@@ -96,6 +98,19 @@ def accepted_evidence() -> dict:
                 "computeType": "",
                 "backend": "ollama",
             },
+        },
+        "readiness": {
+            "liveStt": {
+                "reachable": True, "httpStatus": 200, "status": "ready",
+                "runtimeCommit": COMMIT, "preloadEnabled": True, "workersHealthy": True,
+                "roles": {"live": "ready", "final": "ready"},
+                "runtime": {
+                    "legacy": {"device": "cpu", "computeType": "int8"},
+                    "live": {"device": "cuda", "computeType": "int8"},
+                    "final": {"device": "cuda", "computeType": "float16"},
+                },
+                "speechGateProfile": "silero-balanced-v1",
+            }
         },
         "webSocket": {
             "ready": True,
@@ -112,6 +127,53 @@ def accepted_evidence() -> dict:
 
 
 class RunnerContractTests(unittest.TestCase):
+    def test_streaming_readiness_contract_not_legacy_cuda(self) -> None:
+        script = runner.build_remote_script(COMMIT)
+        self.assertIn("http://127.0.0.1:8200/ready", script)
+        self.assertIn("$Readiness.streaming_preload_enabled -is [bool]", script)
+        self.assertIn("$Readiness.workers_healthy -is [bool]", script)
+        self.assertIn("Test-StreamingReadinessMetadata -Readiness $streamReadiness", script)
+        self.assertNotIn("$liveHealth.device -eq 'cuda'", script)
+        self.assertIn("action = [string]$state.lastAction", script)
+        self.assertNotIn("action = [string]$state.action", script)
+        # /health loading/cpu is the expected lazy legacy model, not admission.
+        verifier.verify(accepted_evidence(), COMMIT)
+
+    def test_streaming_readiness_rejects_missing_or_invalid_evidence(self) -> None:
+        cases = [
+            (("readiness",), None),
+            (("readiness", "liveStt", "reachable"), False),
+            (("readiness", "liveStt", "httpStatus"), 503),
+            (("readiness", "liveStt", "status"), "loading"),
+            (("readiness", "liveStt", "runtimeCommit"), "a" * 40),
+            (("readiness", "liveStt", "runtimeCommit"), None),
+            (("readiness", "liveStt", "roles", "live"), "loading"),
+            (("readiness", "liveStt", "roles", "final"), None),
+            (("readiness", "liveStt", "runtime", "live", "device"), "cpu"),
+            (("readiness", "liveStt", "runtime", "final", "device"), "cpu"),
+            (("readiness", "liveStt", "runtime", "live", "computeType"), "float16"),
+            (("readiness", "liveStt", "runtime", "final", "computeType"), "int8"),
+            (("readiness", "liveStt", "runtime", "legacy", "device"), "cuda"),
+            (("readiness", "liveStt", "speechGateProfile"), "development-unpinned"),
+            (("health", "liveStt", "status"), "degraded"),
+            (("health", "liveStt", "reachable"), False),
+        ]
+        for field in ("preloadEnabled", "workersHealthy"):
+            for invalid in (False, "true", 1, None):
+                cases.append((("readiness", "liveStt", field), invalid))
+        for path, invalid in cases:
+            with self.subTest(path=path, invalid=invalid):
+                data = copy.deepcopy(accepted_evidence())
+                parent = data
+                for name in path[:-1]:
+                    parent = parent[name]
+                if invalid is None:
+                    del parent[path[-1]]
+                else:
+                    parent[path[-1]] = invalid
+                with self.assertRaises(verifier.EvidenceError):
+                    verifier.verify(data, COMMIT)
+
     def test_child_exit_and_protocol_contract(self) -> None:
         script = runner.build_remote_script(COMMIT)
         self.assertIn("'exit $LASTEXITCODE'", script)
@@ -137,7 +199,10 @@ class RunnerContractTests(unittest.TestCase):
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                  "-File", str(ROOT / "tests/faz24/windows_gpu_rollout_diagnostics.ps1"),
-                 "-SourcePath", str(source)],
+                 "-SourcePath", str(source),
+                 "-EncodedBootstrap", runner.ENCODED_STDIN_BOOTSTRAP,
+                 "-RunnerPath", str(ROOT / "scripts/faz24/run_gpu_host_exact_sha_rollout.py"),
+                 "-PythonExe", sys.executable],
                 capture_output=True, text=True, timeout=180,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -221,8 +286,17 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("IdentitiesOnly=yes", command)
         self.assertIn(runner.CANONICAL_TARGET, command)
-        self.assertEqual(command[-2:], ["-Command", "-"])
-        self.assertNotIn("-EncodedCommand", command)
+        self.assertEqual(command[-2:], ["-EncodedCommand", runner.ENCODED_STDIN_BOOTSTRAP])
+        bootstrap = base64.b64decode(command[-1]).decode("utf-16-le")
+        self.assertEqual(bootstrap, runner.STDIN_BOOTSTRAP)
+        self.assertIn("[Console]::In.ReadLine()", bootstrap)
+        self.assertNotIn("ReadToEnd", bootstrap)
+        self.assertIn("[ScriptBlock]::Create($source)", bootstrap)
+        self.assertLess(
+            bootstrap.index("$ProgressPreference = 'SilentlyContinue'"),
+            bootstrap.index("New-Object"),
+        )
+        self.assertNotIn(COMMIT, bootstrap)
         self.assertNotIn(COMMIT, command)
         self.assertNotIn("svc-denetim-agent", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
@@ -247,9 +321,34 @@ class RunnerContractTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(exit_code, 0)
         self.assertEqual(evidence["targetCommit"], COMMIT)
-        self.assertNotIn("-EncodedCommand", command)
+        self.assertEqual(command[-2:], ["-EncodedCommand", runner.ENCODED_STDIN_BOOTSTRAP])
         self.assertNotIn(COMMIT, command)
-        self.assertEqual(run.call_args.kwargs["input"], runner.build_remote_script(COMMIT))
+        self.assertEqual(run.call_args.kwargs["input"],
+                         runner.encode_remote_input(runner.build_remote_script(COMMIT)))
+
+    def test_compressed_frame_is_bounded_deterministic_and_exact(self) -> None:
+        for source in (runner.build_remote_script(COMMIT), "#" + "x" * 65535,
+                       "#" + "x" * (runner.MAX_SOURCE_BYTES - 1), "# Turkce: \u0131\u015f\u011f\n"):
+            with self.subTest(size=len(source.encode("utf-8"))):
+                frame = runner.encode_remote_input(source)
+                self.assertEqual(frame, runner.encode_remote_input(source))
+                self.assertEqual(frame.count("\n"), 1)
+                self.assertTrue(frame.endswith("\n"))
+                self.assertLessEqual(len(frame) - 1, runner.MAX_WIRE_BYTES)
+                self.assertEqual(gzip.decompress(base64.b64decode(frame[:-1], validate=True)),
+                                 source.encode("utf-8"))
+        self.assertLess(len(runner.encode_remote_input(runner.build_remote_script(COMMIT))),
+                        12000)
+
+    def test_compressed_frame_rejects_source_and_wire_limits(self) -> None:
+        for source in ("", "x" * (runner.MAX_SOURCE_BYTES + 1),
+                       "\u0131" * (runner.MAX_SOURCE_BYTES // 2 + 1)):
+            with self.subTest(size=len(source)):
+                with self.assertRaises(ValueError):
+                    runner.encode_remote_input(source)
+        with patch.object(runner.gzip, "compress", return_value=b"x" * 13000):
+            with self.assertRaises(ValueError):
+                runner.encode_remote_input("valid source")
 
     def test_evidence_marker_is_parsed_without_other_output(self) -> None:
         payload = accepted_evidence()
