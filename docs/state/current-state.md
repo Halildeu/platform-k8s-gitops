@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Meeting Semantic Quality - TEST Candidate, Runtime Pending (2026-09-13)
+## Meeting Semantic Quality - Candidate Rejected, Previous Runtime Restored (2026-09-13)
 
 - Tracked by #3753, Product Slice #3399. Platform-ai #338 merged as
   `27389941dc13639c898d6d8222dd5b91a5629809`; exact source PR CI passed,
@@ -19,13 +19,38 @@
   `7cdf5a0187d5c58cc5d369b255592f7841d1c4696d45a8c8a9489440385b22f6`.
   Optional protected model/digest settings fail closed before/after analysis
   and follow-up generation. Production and the default model are unchanged.
-- This policy revision permits only the new exact host source while retaining
-  the same startup script bytes and strict transcript producer. It does not
-  itself activate the consumer or deploy the host. Last live readback remains
-  `6223fd2` / `llama3.1:8b`, healthy consumer/delivery, zero processing or pending
-  deliveries. Runtime rollout, fresh permit, durable TEST result and browser
-  acceptance remain pending. Preserve the compatible protected original config
-  before disable; rollback requires previous source/policy and a fresh permit.
+- GitOps #3755 (`f8e50eb3`) binds the new exact host source without relaxing
+  startup or producer checks. Rollout `34772838806` rejected that candidate;
+  source and ledger returned to `6223fd2`, with `automatic-rollback-accepted`.
+  The [rejected receipt](../faz-24-evidence/2026-09-13-meeting-semantic-rollout-rejected.json)
+  is retained. A child-process exit propagation defect reports exit 0 despite
+  rollback, but exact-source and WebSocket verification still reject the run.
+  The wrapper also omits the required `source-ranges-v1` WebSocket protocol.
+  These diagnostics are being repaired under #3756; neither explains the first
+  updater rejection by itself. No successful semantic runtime rollout claim.
+- The original config was copied to a dedicated ACL-protected backup with
+  exact original hash `630b0899...71d9eb`. A fresh permit under the previously
+  approved rollback policy `29a96486` restored the enabled old consumer.
+  [Reactivation receipt](../faz-24-evidence/2026-09-13-meeting-semantic-rollback-reactivation.json):
+  config `7cc09956...186b84`, new listener 27408, canonical task identity,
+  enabled consumer/worker/Redis group and delivery ready, zero processing,
+  pending, in-flight or dead-letter. Live-STT task was unchanged by reactivation.
+  Runtime remains `llama3.1:8b`; its observed digest is not enforced by old source.
+  The three optional timeout/lease keys were absent and remain absent; no guessed
+  budget override was installed. New model activation and fresh durable semantic
+  customer-flow verification remain pending; production is untouched.
+- Web #1177 (`03ea783b64bf98f9aabb00cf59dc4e68e2792577`), GitOps #3754
+  (`c911eb57`) and rollout `34772368530` put frontend imageID
+  `sha256:665c98b841819a54072017792d4369c33cecdff3decd4d6472564f5a3ee9ef4a`
+  on TEST. Ready pod, zero restarts and public build-info match. The
+  [authenticated browser receipt](../faz-24-evidence/2026-09-13-meeting-source-time-browser.json)
+  verifies 112 persisted attributed rows, 4 flowing groups, exact canonical
+  session-relative times (1..75 seconds), citation target/time, source-matching
+  label, same persisted result, desktop/mobile fit and no page errors. Temporary
+  grants were removed/read back; a fresh login then received transcript 403 and
+  hidden content. This is an existing synthetic meeting, with old analysis;
+  semantic matching was explicitly not asserted. #3751 time display is runtime
+  verified within this synthetic persona boundary, not human quality acceptance.
 
 ## Meeting Speaker Quality - Synthetic TEST API And Browser Evidence (2026-09-13)
 
