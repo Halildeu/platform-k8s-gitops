@@ -322,6 +322,17 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("status `PUT` 404", self.runbook)
         self.assertIn("`10/10 PASS`", self.runbook)
 
+    def test_interview_completion_assertions_execute(self):
+        result = subprocess.run(
+            ["node", "--test", str(ROOT / "tests/deploy/interview-acceptance-assertions.test.cjs")],
+            cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("assertCompletedInterview(await recruiterCompletionResponse.json()", self.fullats_browser)
+        self.assertIn("assertCandidateCalendar(await candidateCompletionResponse.json()", self.fullats_browser)
+        self.assertIn("await candidatePage.reload(", self.fullats_browser)
+        self.assertIn("interview-completion.json", self.fullats_browser)
+
     def test_fullats_browser_failure_evidence_is_actionable_and_redacted(self):
         node_script = r"""
 const { compactAxeViolations } = require(process.argv[1]);
