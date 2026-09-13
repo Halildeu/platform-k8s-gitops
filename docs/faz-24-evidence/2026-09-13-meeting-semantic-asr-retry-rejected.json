@@ -1,0 +1,149 @@
+{
+  "acceptanceDiagnostic": {
+    "candidateCommit": "6ebedeebc4cad99c2ff62345f24165e18619a100",
+    "reason": "smoke-failed",
+    "schemaVersion": "faz24.gpu-acceptance-diagnostic.v1"
+  },
+  "afterCommit": "05a73a32cf510ce7b5afbe591544fa4740770990",
+  "beforeCommit": "05a73a32cf510ce7b5afbe591544fa4740770990",
+  "controller": {
+    "cleanupExitCode": 0,
+    "exactTarget": true
+  },
+  "deployExitCode": 3,
+  "failureClass": "updater-deploy-rejected",
+  "generatedAt": "2026-09-13T21:20:44.3375158Z",
+  "health": {
+    "liveStt": {
+      "backend": "",
+      "computeType": "int8",
+      "device": "cpu",
+      "model": "Systran/faster-whisper-medium",
+      "reachable": true,
+      "status": "loading"
+    },
+    "meetingAi": {
+      "backend": "ollama",
+      "computeType": "",
+      "device": "",
+      "model": "qwen2.5:14b",
+      "reachable": true,
+      "status": "ok"
+    }
+  },
+  "ledger": {
+    "action": "rollback",
+    "currentCommit": "05a73a32cf510ce7b5afbe591544fa4740770990",
+    "lastResult": "automatic-rollback-accepted",
+    "previousCommit": "6223fd22916e5607015ee445a6620d4f1a95ea18",
+    "timestampUtc": "2026-09-13T21:20:39.7173007Z"
+  },
+  "principal": {
+    "administrator": true,
+    "expectedIdentity": true
+  },
+  "privacy": {
+    "rawAudioIncluded": false,
+    "secretMaterialIncluded": false,
+    "transcriptTextIncluded": false
+  },
+  "readiness": {
+    "liveStt": {
+      "httpStatus": 200,
+      "preloadEnabled": true,
+      "reachable": true,
+      "roles": {
+        "final": "ready",
+        "live": "ready"
+      },
+      "runtime": {
+        "final": {
+          "computeType": "float16",
+          "device": "cuda"
+        },
+        "legacy": {
+          "computeType": "int8",
+          "device": "cpu"
+        },
+        "live": {
+          "computeType": "int8",
+          "device": "cuda"
+        }
+      },
+      "runtimeCommit": "05a73a32cf510ce7b5afbe591544fa4740770990",
+      "speechGateProfile": "silero-balanced-v1",
+      "status": "ready",
+      "workersHealthy": true
+    }
+  },
+  "schemaVersion": "faz24.gpu-host-exact-sha-rollout.v1",
+  "sourceCommitVerified": false,
+  "status": "no-go",
+  "targetCommit": "6ebedeebc4cad99c2ff62345f24165e18619a100",
+  "taskMigration": {
+    "migrationExitCode": -1,
+    "pinWithoutRestartExitCode": -1,
+    "required": false,
+    "sourceRollbackExitCode": -1,
+    "whatIfExitCode": -1
+  },
+  "tasks": {
+    "liveStt": {
+      "actionArgumentsSha256": "4627986531a9383955e67c781e2f87e529de5f3c8462899327e984844b68d3cf",
+      "actionCanonical": true,
+      "actionCount": 1,
+      "actionMigratable": true,
+      "executeClass": "windows-powershell",
+      "executeTrusted": true,
+      "present": true,
+      "scriptPathClass": "canonical-repo",
+      "state": 4,
+      "workingDirectoryClass": "empty"
+    },
+    "meetingAi": {
+      "actionArgumentsSha256": "8f801b881529a860b00fd0970edde53014a978d0bd9f8f6943993bc65d123937",
+      "actionCanonical": true,
+      "actionCount": 1,
+      "actionMigratable": true,
+      "executeClass": "windows-powershell",
+      "executeTrusted": true,
+      "present": true,
+      "scriptPathClass": "canonical-repo",
+      "state": 4,
+      "workingDirectoryClass": "empty"
+    }
+  },
+  "tasksBefore": {
+    "liveStt": {
+      "actionArgumentsSha256": "4627986531a9383955e67c781e2f87e529de5f3c8462899327e984844b68d3cf",
+      "actionCanonical": true,
+      "actionCount": 1,
+      "actionMigratable": true,
+      "executeClass": "windows-powershell",
+      "executeTrusted": true,
+      "present": true,
+      "scriptPathClass": "canonical-repo",
+      "state": 4,
+      "workingDirectoryClass": "empty"
+    },
+    "meetingAi": {
+      "actionArgumentsSha256": "8f801b881529a860b00fd0970edde53014a978d0bd9f8f6943993bc65d123937",
+      "actionCanonical": true,
+      "actionCount": 1,
+      "actionMigratable": true,
+      "executeClass": "windows-powershell",
+      "executeTrusted": true,
+      "present": true,
+      "scriptPathClass": "canonical-repo",
+      "state": 4,
+      "workingDirectoryClass": "empty"
+    }
+  },
+  "webSocket": {
+    "eventType": "ready",
+    "failureClass": "none",
+    "protocol": "source-ranges-v1",
+    "ready": true
+  },
+  "whatIfExitCode": 0
+}
