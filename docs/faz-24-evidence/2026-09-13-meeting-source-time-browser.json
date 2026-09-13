@@ -1,0 +1,89 @@
+{
+  "status": "pass",
+  "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+  "webCommit": "03ea783b64bf98f9aabb00cf59dc4e68e2792577",
+  "positive": {
+    "schema": "meeting-speaker-browser-synthetic-v1",
+    "status": "pass",
+    "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+    "webCommit": "03ea783b64bf98f9aabb00cf59dc4e68e2792577",
+    "semanticExpected": false,
+    "pageErrors": 0,
+    "persona": "d35-existing-test",
+    "reads": [
+      {
+        "status": 200,
+        "count": 112,
+        "transcriptRoleInToken": true,
+        "attributed": 112
+      },
+      {
+        "status": 200,
+        "count": 112,
+        "transcriptRoleInToken": true,
+        "attributed": 112
+      }
+    ],
+    "results": [
+      {
+        "status": 200,
+        "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+        "analysisRunId": "f2f866fd-ba82-4124-b4ab-deb7343b7c43",
+        "persisted": true,
+        "sessionId": "c0ff70e3-bdfe-48b0-94dd-1dd6e0ca6728"
+      },
+      {
+        "status": 200,
+        "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+        "analysisRunId": "f2f866fd-ba82-4124-b4ab-deb7343b7c43",
+        "persisted": true,
+        "sessionId": "c0ff70e3-bdfe-48b0-94dd-1dd6e0ca6728"
+      }
+    ],
+    "viewports": [
+      {
+        "name": "desktop",
+        "speakers": [
+          "Konuşmacı 1",
+          "Konuşmacı 2"
+        ],
+        "overflow": false,
+        "citationTargetVerified": true,
+        "sourceMatchingLabel": true,
+        "oldConfidenceLabelAbsent": true,
+        "badgeFit": true,
+        "canonicalSessionTimeVerified": true,
+        "flowingTimeCount": 4,
+        "rowTimeCount": 112,
+        "elapsedSecondsMin": 1,
+        "elapsedSecondsMax": 75
+      },
+      {
+        "name": "mobile",
+        "speakers": [
+          "Konuşmacı 1",
+          "Konuşmacı 2"
+        ],
+        "overflow": false,
+        "citationTargetVerified": true,
+        "sourceMatchingLabel": true,
+        "oldConfidenceLabelAbsent": true,
+        "badgeFit": true,
+        "canonicalSessionTimeVerified": true,
+        "flowingTimeCount": 4,
+        "rowTimeCount": 112,
+        "elapsedSecondsMin": 1,
+        "elapsedSecondsMax": 75
+      }
+    ]
+  },
+  "denied": {
+    "status": "pass",
+    "kind": "synthetic-transcript-role-revoked",
+    "meetingId": "605aaced-27c0-43e3-b0c2-0631d6871117",
+    "webCommit": "03ea783b64bf98f9aabb00cf59dc4e68e2792577",
+    "deniedStatus": 403,
+    "contentHidden": true
+  },
+  "originalRolesRestored": true
+}
