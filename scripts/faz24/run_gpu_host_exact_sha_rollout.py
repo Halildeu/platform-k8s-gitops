@@ -25,6 +25,7 @@ EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
 # block at EOF when there is no blank terminator.
 STDIN_BOOTSTRAP = (
     "$ErrorActionPreference = 'Stop'; "
+    "$ProgressPreference = 'SilentlyContinue'; "
     "[Console]::InputEncoding = New-Object Text.UTF8Encoding($false); "
     "$source = [Console]::In.ReadToEnd(); "
     "& ([ScriptBlock]::Create($source))"

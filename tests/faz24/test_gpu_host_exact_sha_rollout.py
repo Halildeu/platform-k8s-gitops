@@ -227,6 +227,10 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(bootstrap, runner.STDIN_BOOTSTRAP)
         self.assertIn("[Console]::In.ReadToEnd()", bootstrap)
         self.assertIn("[ScriptBlock]::Create($source)", bootstrap)
+        self.assertLess(
+            bootstrap.index("$ProgressPreference = 'SilentlyContinue'"),
+            bootstrap.index("New-Object"),
+        )
         self.assertNotIn(COMMIT, bootstrap)
         self.assertNotIn(COMMIT, command)
         self.assertNotIn("svc-denetim-agent", command)
