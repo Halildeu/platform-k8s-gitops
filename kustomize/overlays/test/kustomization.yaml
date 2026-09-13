@@ -647,7 +647,10 @@ images:
     # Kaynak: 01e0fde9460757eef519344e4f292da615df9e4e (etiket KISA sha).
     # Digest gercek cekisle okundu (smoke-dig-t1/t2/t3 podlari, k3d-test).
     # Onceki: sha256:6f930cec0ba1de575c9...
-    digest: sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f
+    # backend#1167 / 121e8a1: v1/v2 anonymous speaker consumer, additive V14.
+    # Consumer-first rollout for #3742; producer remains v1 until verified.
+    # Image build 34762214932; aiserver docker pull digest verified.
+    digest: sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
