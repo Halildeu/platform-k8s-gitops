@@ -852,7 +852,7 @@ try {
   const interviewScorecardForm = interviewPanel.getByRole('form', { name: "Görüşme insan scorecard'ı", exact: true });
   await waitVisible(interviewScorecardForm, 'assigned interview scorecard form');
   const interviewRatings = interviewScorecardForm.getByRole('combobox', { name: 'Kanıt düzeyi (1–4)', exact: true });
-  const interviewEvidence = interviewScorecardForm.getByLabel('Somut iş kanıtı', { exact: true });
+  const interviewEvidence = interviewScorecardForm.getByRole('textbox', { name: 'Somut iş kanıtı', exact: true });
   const completionEvidence = `Sentetik gorusme teslimat kaniti ${runSuffix}`;
   const completionSummary = `Sentetik gorusmeci ozel degerlendirmesi ${runSuffix}`;
   const completionReason = `Sentetik gorusme tamamlama gerekcesi ${runSuffix}`;
@@ -862,7 +862,7 @@ try {
     await interviewRatings.nth(index).selectOption('3');
     await interviewEvidence.nth(index).fill(completionEvidence);
   }
-  await interviewScorecardForm.getByLabel('Genel gerekçe', { exact: true }).fill(completionSummary);
+  await interviewScorecardForm.getByRole('textbox', { name: 'Genel gerekçe', exact: true }).fill(completionSummary);
   await interviewScorecardForm.getByRole('checkbox').check();
   const interviewScorecardPromise = interviewResponse(recruiterPage, 'POST',
     `/api/ats/v1/interviews/${completionPlan.interviewId}/scorecards`);
