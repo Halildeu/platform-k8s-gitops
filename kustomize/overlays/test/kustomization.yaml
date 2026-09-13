@@ -478,7 +478,9 @@ images:
     # Rollback digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
     # backend#1167 / 121e8a1: anonymous diarization v2, source-event identity.
     # transcript v2 reader and V14 were verified before this producer promotion.
-    digest: sha256:97cb8d68082af7be2577664b2af7f55f7040eb423a395d3678dc610a33b3fadb
+    # backend#1168 / d96d384: preserve word attribution across overlapping
+    # provider final boundaries; sample-first time quantization. Rollback: 97cb8d68082a.
+    digest: sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service

@@ -557,7 +557,7 @@ def main() -> None:
         # no durable-finalization behavior change. Attested source 23d860a4.
         # backend#1167 / 121e8a1: speaker v2; unchanged finalization boundary.
         # TEST consumer-first V14 and exact producer pull verified (#3742).
-        "sha256:97cb8d68082af7be2577664b2af7f55f7040eb423a395d3678dc610a33b3fadb",
+        "sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929",
     )
     pod_annotation(
         meeting_deploy,
