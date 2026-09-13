@@ -1,4 +1,8 @@
-param([Parameter(Mandatory = $true)][string]$SourcePath)
+param(
+  [Parameter(Mandatory = $true)][string]$SourcePath,
+  [Parameter(Mandatory = $true)][string]$EncodedBootstrap,
+  [Parameter(Mandatory = $true)][string]$PythonExe
+)
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) {
   throw 'This fixture requires Windows PowerShell 5.1.'
@@ -9,12 +13,38 @@ $ast = [Management.Automation.Language.Parser]::ParseFile($SourcePath, [ref]$tok
 if ($errors.Count) { throw 'Remote source parse failed.' }
 $names = @('ConvertTo-PowerShellLiteral', 'Invoke-PowerShellChild', 'Read-AcceptanceDiagnostic',
   'Invoke-UpdaterChild', 'Invoke-TaskActionMigration')
+$helperDefinitions = @()
 foreach ($name in $names) {
   $functions = @($ast.FindAll({ param($node)
     $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
   }, $true))
   if ($functions.Count -ne 1) { throw 'Expected exactly one fixture function.' }
+  $helperDefinitions += $functions[0].Extent.Text
   Invoke-Expression $functions[0].Extent.Text
+}
+function Invoke-InputFixture {
+  param([string]$Source, [string]$Invocation)
+  $inputPath = Join-Path $env:TEMP ('rollout-input-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+  $driver = @'
+import json, pathlib, subprocess, sys
+payload = pathlib.Path(sys.argv[1]).read_bytes()
+assert not payload.startswith(b'\xef\xbb\xbf'), 'fixture input must match BOM-free Python transport'
+command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+           '-InputFormat', 'Text', '-OutputFormat', 'Text'] + sys.argv[2].split()
+result = subprocess.run(command, input=payload, capture_output=True, timeout=40)
+print(json.dumps({'ExitCode': result.returncode, 'Stdout': result.stdout.decode('utf-8'),
+                  'Stderr': result.stderr.decode('utf-8')}))
+'@
+  try {
+    # The real runner uses Python's pipe transport; .NET adds a BOM itself.
+    $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($Source)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and
+        $bytes[1] -eq 187 -and $bytes[2] -eq 191) { throw 'Fixture payload contains a BOM.' }
+    [IO.File]::WriteAllBytes($inputPath, $bytes)
+    $result = & $PythonExe -c $driver $inputPath $Invocation
+    if ($LASTEXITCODE -ne 0) { throw 'Isolated Python transport fixture failed.' }
+    return ($result | ConvertFrom-Json)
+  } finally { Remove-Item -LiteralPath $inputPath -Force -ErrorAction Stop }
 }
 # Only extracted functions run: never the rollout's host/task/Git orchestration.
 $directory = Join-Path $env:TEMP ('rollout-fixture-' + [Guid]::NewGuid().ToString('N'))
@@ -80,6 +110,58 @@ try {
   catch { $rejected = $_.Exception.Message -ceq 'acceptance-diagnostic-invalid' }
   if (-not $rejected -or -not $script:AcceptanceDiagnosticInvalid) {
     throw 'Malformed marker did not stop the caller.'
+  }
+  # Exercise the real stdin transport and exact receipt tail, not only -File.
+  # Only helper functions and fake children run; host orchestration is excluded.
+  $tailStart = $ast.Extent.Text.LastIndexOf(
+    'if ($null -ne $script:AcceptanceDiagnostic -and -not $script:AcceptanceDiagnosticInvalid) {'
+  )
+  if ($tailStart -lt 0) { throw 'Exact receipt tail missing.' }
+  $tail = $ast.Extent.Text.Substring($tailStart)
+  $childOut = Join-Path $directory 'transport-child.out'
+  $childErr = Join-Path $directory 'transport-child.err'
+  $preamble = ($helperDefinitions -join "`n`n") + "`n`n" +
+    '$script:AcceptanceDiagnostic = $null' + "`n" +
+    '$script:AcceptanceDiagnosticInvalid = $false' + "`n" +
+    '$childCode = Invoke-PowerShellChild -Command ''exit 3'' -StdoutPath ' +
+    (ConvertTo-PowerShellLiteral $childOut) + ' -StderrPath ' +
+    (ConvertTo-PowerShellLiteral $childErr) + "`n" +
+    '$evidence = [ordered]@{ fixture = $true; childExitCode = $childCode }' + "`n"
+  $legacy = Invoke-InputFixture -Source ($preamble + '$go = $false' + "`n`n" + $tail) `
+    -Invocation '-Command -'
+  if ($legacy.ExitCode -ne 0 -or $legacy.Stdout.Length -ne 0 -or $legacy.Stderr.Length -ne 0) {
+    throw 'Legacy stdin EOF regression was not reproduced.'
+  }
+  if (-not (Test-Path -LiteralPath $childOut)) { throw 'Legacy fixture child did not run.' }
+  foreach ($exit in @(0, 1)) {
+    $goLiteral = if ($exit -eq 0) { '$true' } else { '$false' }
+    $fixed = Invoke-InputFixture -Source (
+      $preamble + '$go = ' + $goLiteral + "`n`n" + $tail
+    ) -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
+    if ($fixed.ExitCode -ne $exit -or $fixed.Stderr.Length -ne 0) {
+      # This is an isolated fake-script process, never runtime output.
+      throw ('Whole-input fixture failed: expectedExit={0}; actualExit={1}; stderr={2}' -f
+        $exit, $fixed.ExitCode, $fixed.Stderr)
+    }
+    $marker = 'FAZ24_GPU_ROLLOUT_JSON:'
+    $lines = @($fixed.Stdout.Trim() -split "`r?`n")
+    if ($lines.Count -ne 1 -or -not $lines[0].StartsWith($marker)) {
+      throw 'Whole-input bootstrap lost or duplicated evidence.'
+    }
+    $json = [Text.Encoding]::UTF8.GetString(
+      [Convert]::FromBase64String($lines[0].Substring($marker.Length))
+    ) | ConvertFrom-Json
+    if ($json.fixture -ne $true -or $json.childExitCode -ne 3) {
+      throw 'Receipt did not survive real child invocation.'
+    }
+  }
+  $parseFlag = Join-Path $directory 'must-not-execute.txt'
+  $invalidSource = '[IO.File]::WriteAllText(' + (ConvertTo-PowerShellLiteral $parseFlag) +
+    ', ''fixture'')' + "`n" + '$broken = @('
+  $invalidParse = Invoke-InputFixture -Source $invalidSource `
+    -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
+  if ($invalidParse.ExitCode -eq 0 -or (Test-Path -LiteralPath $parseFlag)) {
+    throw 'Malformed source executed before complete parsing.'
   }
   function Start-Process { [pscustomobject]@{ ExitCode = $null } }
   $rejected = $false

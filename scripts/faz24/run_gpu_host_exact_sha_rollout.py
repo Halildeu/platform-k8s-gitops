@@ -20,6 +20,19 @@ CANONICAL_TARGET = "denetim-pc"
 CANONICAL_REPO_ROOT = r"C:\platform-ai"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
+# Parse the entire stdin payload before any operation. PowerShell 5.1's
+# interactive `-Command -` parser can discard statements after a compound
+# block at EOF when there is no blank terminator.
+STDIN_BOOTSTRAP = (
+    "$ErrorActionPreference = 'Stop'; "
+    "$ProgressPreference = 'SilentlyContinue'; "
+    "[Console]::InputEncoding = New-Object Text.UTF8Encoding($false); "
+    "$source = [Console]::In.ReadToEnd(); "
+    "& ([ScriptBlock]::Create($source))"
+)
+ENCODED_STDIN_BOOTSTRAP = base64.b64encode(
+    STDIN_BOOTSTRAP.encode("utf-16-le")
+).decode("ascii")
 
 
 class RemoteEvidenceUnavailable(ValueError):
@@ -735,8 +748,8 @@ def ssh_command(ssh_config: Path, known_hosts: Path) -> list[str]:
         "Text",
         "-OutputFormat",
         "Text",
-        "-Command",
-        "-",
+        "-EncodedCommand",
+        ENCODED_STDIN_BOOTSTRAP,
     ]
 
 

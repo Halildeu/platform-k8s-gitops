@@ -137,7 +137,9 @@ class RunnerContractTests(unittest.TestCase):
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                  "-File", str(ROOT / "tests/faz24/windows_gpu_rollout_diagnostics.ps1"),
-                 "-SourcePath", str(source)],
+                 "-SourcePath", str(source),
+                 "-EncodedBootstrap", runner.ENCODED_STDIN_BOOTSTRAP,
+                 "-PythonExe", sys.executable],
                 capture_output=True, text=True, timeout=180,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -221,8 +223,16 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("IdentitiesOnly=yes", command)
         self.assertIn(runner.CANONICAL_TARGET, command)
-        self.assertEqual(command[-2:], ["-Command", "-"])
-        self.assertNotIn("-EncodedCommand", command)
+        self.assertEqual(command[-2:], ["-EncodedCommand", runner.ENCODED_STDIN_BOOTSTRAP])
+        bootstrap = base64.b64decode(command[-1]).decode("utf-16-le")
+        self.assertEqual(bootstrap, runner.STDIN_BOOTSTRAP)
+        self.assertIn("[Console]::In.ReadToEnd()", bootstrap)
+        self.assertIn("[ScriptBlock]::Create($source)", bootstrap)
+        self.assertLess(
+            bootstrap.index("$ProgressPreference = 'SilentlyContinue'"),
+            bootstrap.index("New-Object"),
+        )
+        self.assertNotIn(COMMIT, bootstrap)
         self.assertNotIn(COMMIT, command)
         self.assertNotIn("svc-denetim-agent", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
@@ -247,7 +257,7 @@ class RunnerContractTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(exit_code, 0)
         self.assertEqual(evidence["targetCommit"], COMMIT)
-        self.assertNotIn("-EncodedCommand", command)
+        self.assertEqual(command[-2:], ["-EncodedCommand", runner.ENCODED_STDIN_BOOTSTRAP])
         self.assertNotIn(COMMIT, command)
         self.assertEqual(run.call_args.kwargs["input"], runner.build_remote_script(COMMIT))
 

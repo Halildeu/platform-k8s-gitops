@@ -46,9 +46,29 @@ grep -Fq 'StrictHostKeyChecking=yes' "${RUNNER}" || fail 'strict host-key verifi
 grep -Fq 'UserKnownHostsFile=' "${RUNNER}" || fail 'explicit pinned known-hosts missing'
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'
 grep -Fq 'input=script' "${RUNNER}" || fail 'PowerShell stdin transport missing'
-if grep -Fq '"-EncodedCommand"' "${RUNNER}"; then
-  fail 'PowerShell script must not be transported in process arguments'
-fi
+# Only this fixed, bounded stdin reader may enter argv, never the payload.
+python3 - "${RUNNER}" <<'PY'
+import base64
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+import run_gpu_host_exact_sha_rollout as runner
+
+expected = (
+    "$ErrorActionPreference = 'Stop'; "
+    "$ProgressPreference = 'SilentlyContinue'; "
+    "[Console]::InputEncoding = New-Object Text.UTF8Encoding($false); "
+    "$source = [Console]::In.ReadToEnd(); "
+    "& ([ScriptBlock]::Create($source))"
+)
+command = runner.ssh_command(Path('/ssh/config'), Path('/ssh/known_hosts'))
+if command[-2] != '-EncodedCommand' or len(command[-1]) > 1024:
+    raise SystemExit('FAIL: fixed bounded stdin bootstrap missing')
+decoded = base64.b64decode(command[-1], validate=True).decode('utf-16-le')
+if decoded != expected:
+    raise SystemExit('FAIL: process arguments contain an unapproved bootstrap or payload')
+PY
 if grep -Fq "'-File', \$UpdateScript" "${RUNNER}" || \
   grep -Fq "'-File', \$MigrationScript" "${RUNNER}"; then
   fail 'Windows PowerShell child scripts must not use -File switch binding'
