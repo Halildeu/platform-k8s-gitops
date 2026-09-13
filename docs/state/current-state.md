@@ -1,5 +1,24 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Diagnostic-Equipped Source Candidate (2026-09-13 22:06 UTC)
+
+- [Source PR #343](https://github.com/Halildeu/platform-ai/pull/343) merged as
+  `d67ec2d591f70293ed23cdfe48726baf6a20ef12`; its tree equals tested head
+  `565bbca81399b21920058bc1651cc9bdb0d843c7`. All four jobs in CI
+  `34785153214`, including Windows process/receipt/rollback tests, passed.
+- The existing TEST pre-enable policy and strict static allowlist now pin that
+  source. The change retains bounded, privacy-safe smoke failure metadata;
+  it neither establishes the prior failure cause nor relaxes acceptance.
+- All 31 meeting runtime files match the four frozen semantic reports. The
+  25 exact synthetic cases remain source regression evidence only; inference
+  was not repeated for this diagnostic-only change.
+- Last verified TEST source is still `05a73a32`, consumer disabled, config hash
+  `ea7e0964d368df5fdba3ea79e44168c45cbf69dd6861ba2db88521427e098a28`.
+  Both rejected rollout receipts below remain authoritative. Next: canonical
+  rollout, actual diagnostic or acceptance readback, fresh permit, then NEW
+  persisted meeting and browser acceptance. No production or real-meeting
+  quality claim. Tracked by #3753 / Product Slice #3399; source enabler AI #342.
+
 ## Meeting AI TEST - Repeated Rollout Rejection, Diagnostic Repair Required (2026-09-13 21:26 UTC)
 
 - Exact-source retry `34783335838` also rejected `6ebedeeb` with `smoke-failed`.
