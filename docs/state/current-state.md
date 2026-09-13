@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Meeting Speaker Quality - Consumer-First TEST Evidence (2026-09-13)
+
+- Tracked by #3740 / #3741 / #3742, customer slice #3399. Backend #1167
+  merged as `121e8a1d1ec58147e1f11325683ca5ea273dd744`; full source CI passed.
+  GitOps #3743 (`888e14a8f8c96b4f4a54d6b14a67f81bc65b1c97`) promoted only
+  transcript-service. Ready pod imageID matches
+  `sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496`;
+  V14 success and the nullable JSONB speaker_attribution column were read live.
+- Before-change evidence is one synthetic Turkish TTS fixture (76.696 seconds,
+  113 words), not a real-meeting quality benchmark: 767 audio receipts,
+  EOF/drained, 112 finals and durable rows, normalized WER 0.0, zero speaker
+  attribution. No real audio, voiceprint or credential is recorded as evidence.
+  The initial 180-second result poll was shorter than the configured PT6M
+  finalization minimum. Later user API and authenticated browser readback prove
+  the persisted result, verified summary, one decision and four actions.
+- This overlay next promotes the producer artifact
+  `sha256:97cb8d68082af7be2577664b2af7f55f7040eb423a395d3678dc610a33b3fadb`.
+  An isolated non-root TEST pull probe proved that imageID and was removed.
+  Producer rollout, after-change quality comparison and new speaker UI remain
+  unverified here. Existing internal STT has no integrated diarization; these
+  changes enable anonymous provider attribution, not person identification or
+  an overall production accuracy claim. Evidence and rollback: #3742.
+
 ## Candidate Data Policy - TEST Applicant Journey Verified (2026-09-13)
 
 - Tracked by #3736 and platform-web#1003. ATS PR #269 merged as

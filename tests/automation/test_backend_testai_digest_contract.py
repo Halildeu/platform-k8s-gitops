@@ -96,11 +96,11 @@ class BackendTestaiDigestContractTests(unittest.TestCase):
         overlay = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            "platform-test-registry:5000/platform-backend-audio-gateway-service",
-            overlay,
-            "bu test yerel-registry kullanimi varken anlamli",
-        )
+        # Exercise the forbidden fallback even after TEST returns to GHCR.
+        canonical = "newName: ghcr.io/halildeu/platform-backend-audio-gateway-service"
+        local = "newName: platform-test-registry:5000/platform-backend-audio-gateway-service"
+        self.assertIn(canonical, overlay)
+        overlay = overlay.replace(canonical, local, 1)
 
         stripped = "\n".join(
             line for line in overlay.splitlines()
@@ -120,6 +120,7 @@ class BackendTestaiDigestContractTests(unittest.TestCase):
                 check=False,
             )
             combined = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode)
             self.assertIn(
                 "without a '# LOCAL-REGISTRY-EXCEPTION",
                 combined,

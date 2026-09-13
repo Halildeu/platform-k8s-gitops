@@ -152,22 +152,10 @@ images:
   # Live test smoke 2026-04-25 00:04 TR saati: D29 3-layer PASS (Up+Functional+Zanzibar-ready).
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
-    # 2026-07-26 GECICI KAYNAK DEGISIMI — yerel registry (gitops#2876 acikken).
-    # Normalde GHCR canonical'dir. Ama #2876 (ghcr-pull kimligi `read:packages`
-    # yetkisiz) yuzunden YENI hicbir GHCR imaji cekilemiyor; cumle birlestirici
-    # (platform-backend#918, 2026-07-22) mevcut pin'den SONRA merge edildigi
-    # icin calisan imajda kodu YOK ve flag'i acmak hicbir sey yapmazdi.
-    #
-    # Cozum: imaj hostta main'den (ffaa235) derlendi ve k3d-test'in containerd
-    # mirror'ina bagli yerel registry'e push edildi — GHCR kimligi devrede degil.
-    # Assembler siniflarinin imajda oldugu KANITLANDI (BOOT-INF/classes altinda
-    # SentenceAssembler/SentenceBoundary/ChunkReorderBuffer/SequenceEpochs, 7
-    # eslesme) ve cluster'in cekebildigi git'e yazilmadan ONCE dogrulandi.
-    #
-    # GERI DONUS: #2876 kapaninca canonical GHCR digest'ine donulmeli (o zaman
-    # pull-edilebilirlik KANITLANARAK pin'lenir — bkz. #2883 dersi).
-    # LOCAL-REGISTRY-EXCEPTION: gitops#2876
-    newName: platform-test-registry:5000/platform-backend-audio-gateway-service
+    # 2026-09-13 #3742: return to canonical GHCR after an exact TEST pod
+    # pull proved imageID 97cb8d68082a... using the existing ghcr-pull identity.
+    # This supersedes the historical #2876 local-registry exception here only.
+    newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
     # 2026-06-24 update: sha-23a7607 (platform-backend#745) adds
     # POST /api/v1/audio-gateway/consents as the server-time recorder consent
     # audit proof. The gateway derives tenant/user/subject/server time from JWT
@@ -488,7 +476,9 @@ images:
     # single-flight and cumulative coalescing. Source 23d860a4, attested
     # build 34483205193. Finalization/PT6M unchanged; normal-user gate pending.
     # Rollback digest: sha256:94f3cc848ba64c7294649cef4245bbcd72ae29609dd8ddbaf75ad6eacaa89773
-    digest: sha256:7d4b9d85b57ad4e89df69daad1b0f3dccb537103e71c9ac4da68bd7b64f11c5d
+    # backend#1167 / 121e8a1: anonymous diarization v2, source-event identity.
+    # transcript v2 reader and V14 were verified before this producer promotion.
+    digest: sha256:97cb8d68082af7be2577664b2af7f55f7040eb423a395d3678dc610a33b3fadb
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
