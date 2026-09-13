@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const { chromium } = require('playwright');
 const AxeBuilder = require('@axe-core/playwright').default;
 const { compactAxeViolations } = require('./fullats-axe-evidence.cjs');
+const { exactInterview, assertCandidateCalendar, assertCompletedInterview } = require('./interview-acceptance-assertions.cjs');
 
 const baseURL = process.env.BASE_URL;
 const recruiterUsername = process.env.RECRUITER_USERNAME;
@@ -47,6 +48,7 @@ const allowedEvidencePaths = [
   '/api/ats/v1/candidate/applications',
   '/api/ats/v1/recruiter/applications',
   '/api/ats/v1/recruiter/jobs',
+  '/api/ats/v1/interviews/',
   '/api/v1/authz/me',
 ];
 
@@ -831,6 +833,84 @@ try {
     boundary: 'Two-persona functional check only; aggregate accessibility gate remains independent',
   }, null, 2));
 
+  // A different interview preserves cancellation coverage and proves the positive terminal path.
+  const recruiterInterviewsPath = `/api/ats/v1/recruiter/applications/${publicRef}/interviews`;
+  const candidateInterviewsPath = `/api/ats/v1/candidate/applications/${publicRef}/interviews`;
+  const interviewResponse = (page, method, pathname) => page.waitForResponse(
+    response => response.request().method() === method && new URL(response.url()).pathname === pathname,
+    { timeout: 30_000 },
+  );
+  await interviewPanel.getByRole('button', { name: 'Yeni görüşme planla', exact: true }).click();
+  const secondSchedulePromise = interviewResponse(recruiterPage, 'POST', recruiterInterviewsPath);
+  await scheduleForm.getByRole('button', { name: 'Görüşmeyi kalıcı olarak planla', exact: true }).click();
+  const secondScheduleResponse = await secondSchedulePromise;
+  if (secondScheduleResponse.status() !== 201) throw new Error('completion interview schedule failed');
+  const completionPlan = await secondScheduleResponse.json();
+  exactInterview([completionPlan], completionPlan.interviewId, 'SCHEDULED');
+  if (completionPlan.interviewId === scheduled.interviewId) throw new Error('completion reused cancelled interview');
+  await interviewPanel.getByRole('button', { name: 'İnsan scorecard’ı doldur', exact: true }).click();
+  const interviewScorecardForm = interviewPanel.getByRole('form', { name: "Görüşme insan scorecard'ı", exact: true });
+  const interviewRatings = interviewScorecardForm.getByLabel('Kanıt düzeyi (1–4)', { exact: true });
+  const interviewEvidence = interviewScorecardForm.getByLabel('Somut iş kanıtı', { exact: true });
+  const completionEvidence = `Sentetik gorusme teslimat kaniti ${runSuffix}`;
+  const completionSummary = `Sentetik gorusmeci ozel degerlendirmesi ${runSuffix}`;
+  const completionReason = `Sentetik gorusme tamamlama gerekcesi ${runSuffix}`;
+  if (!completionPlan.criteria?.length || await interviewRatings.count() !== completionPlan.criteria.length ||
+      await interviewEvidence.count() !== completionPlan.criteria.length) throw new Error('interview rubric fields mismatch');
+  for (let index = 0; index < completionPlan.criteria.length; index += 1) {
+    await interviewRatings.nth(index).selectOption('3');
+    await interviewEvidence.nth(index).fill(completionEvidence);
+  }
+  await interviewScorecardForm.getByLabel('Genel gerekçe', { exact: true }).fill(completionSummary);
+  await interviewScorecardForm.getByRole('checkbox').check();
+  const interviewScorecardPromise = interviewResponse(recruiterPage, 'POST',
+    `/api/ats/v1/interviews/${completionPlan.interviewId}/scorecards`);
+  await interviewScorecardForm.getByRole('button', { name: 'Immutable scorecard’ı kaydet', exact: true }).click();
+  const interviewScorecardResponse = await interviewScorecardPromise;
+  if (interviewScorecardResponse.status() !== 201) throw new Error('assigned interviewer scorecard failed');
+  const savedInterviewScorecard = await interviewScorecardResponse.json();
+  await interviewScorecardForm.waitFor({ state: 'hidden', timeout: 30_000 });
+  await interviewPanel.getByRole('button', { name: 'Görüşmeyi tamamla', exact: true }).click();
+  await interviewPanel.getByLabel('Gerekçe', { exact: true }).fill(completionReason);
+  const completePromise = interviewResponse(recruiterPage, 'POST',
+    `${recruiterInterviewsPath}/${completionPlan.interviewId}/transitions`);
+  await interviewPanel.getByRole('button', { name: 'İnsan eylemini kaydet', exact: true }).click();
+  const completeResponse = await completePromise;
+  if (completeResponse.status() !== 200) throw new Error('interview completion failed');
+  exactInterview([await completeResponse.json()], completionPlan.interviewId, 'COMPLETED');
+  await waitVisible(interviewPanel.getByText('Tamamlandı', { exact: true }), 'completed interview rendered');
+
+  // Explicit refresh requests prove stored state independently of mutation responses/UI optimism.
+  const recruiterCompletionRead = interviewResponse(recruiterPage, 'GET', recruiterInterviewsPath);
+  await interviewPanel.getByRole('button', { name: 'Görüşmeleri yenile', exact: true }).click();
+  const recruiterCompletionResponse = await recruiterCompletionRead;
+  if (recruiterCompletionResponse.status() !== 200) throw new Error('recruiter completion readback failed');
+  const completedInterview = assertCompletedInterview(await recruiterCompletionResponse.json(), completionPlan,
+    savedInterviewScorecard, completionSummary, completionEvidence, completionReason);
+  const privateInterviewValues = [completionSummary, completionEvidence, completionReason, savedInterviewScorecard.actorRef];
+  const candidateCompletionRead = interviewResponse(candidatePage, 'GET', candidateInterviewsPath);
+  await candidatePage.reload({ waitUntil: 'domcontentloaded' });
+  const candidateCompletionResponse = await candidateCompletionRead;
+  if (candidateCompletionResponse.status() !== 200) throw new Error('candidate completion reload failed');
+  assertCandidateCalendar(await candidateCompletionResponse.json(), completionPlan.interviewId, 'COMPLETED', privateInterviewValues);
+  await waitVisible(candidateCalendar.getByText('Tamamlandı', { exact: true }), 'candidate completed interview rendered');
+  const candidateCalendarText = await candidateCalendar.innerText();
+  if (privateInterviewValues.some(value => value && candidateCalendarText.includes(value))) {
+    throw new Error('candidate rendered calendar private value leak');
+  }
+  await assertNoHorizontalOverflow(candidatePage, 'candidate-completed-interview-mobile');
+  await candidateCalendar.screenshot({ path: path.join(evidenceDir, 'candidate-completed-synthetic.png') });
+  fs.writeFileSync(path.join(evidenceDir, 'interview-completion.json'), JSON.stringify({
+    frontendSourceCommit: expectedFrontendSha, expectedAtsDigest, expectedFrontendDigest,
+    syntheticOnly: true, interviewIdSha256: sha256(completionPlan.interviewId),
+    scorecardIdSha256: sha256(savedInterviewScorecard.scorecardId),
+    assignedScorecardPersisted: true, completionVersion: completedInterview.version,
+    recruiterStatus: 'COMPLETED', candidateStatus: 'COMPLETED', candidateReloaded: true,
+    candidatePublicContractOnly: true,
+    boundary: 'Assigned synthetic recruiter/interviewer positive path; separate unassigned-interviewer denial remains pending',
+  }, null, 2));
+  console.log('PASS assigned interview scorecard and completed recruiter/candidate persisted readback');
+
   await recruiterPage.getByRole('button', { name: 'Aday detayını kapat' }).click();
   await recruiterPage.getByRole('tab', { name: 'İlanlar' }).click();
   await waitVisible(jobsPanel, 'recruiter jobs panel after candidate review');
@@ -940,6 +1020,10 @@ try {
     ['recruiter', 'GET', '/api/ats/v1/recruiter/applications', 200],
     ['recruiter', 'POST', `/api/ats/v1/recruiter/applications/${publicRef}/evaluations`, 201],
     ['recruiter', 'PUT', `/api/ats/v1/recruiter/applications/${publicRef}/status`, 200],
+    ['recruiter', 'POST', `/api/ats/v1/interviews/${completionPlan.interviewId}/scorecards`, 201],
+    ['recruiter', 'POST', `${recruiterInterviewsPath}/${completionPlan.interviewId}/transitions`, 200],
+    ['recruiter', 'GET', recruiterInterviewsPath, 200],
+    ['candidate', 'GET', candidateInterviewsPath, 200],
     ['negative-probe', 'GET', '/api/ats/v1/recruiter/applications', 401],
   ];
   for (const [persona, method, pathname, status] of requiredChecks) {
@@ -974,6 +1058,8 @@ try {
       [jobId, '[JOB_ID]'],
       [publicHandle, '[PUBLIC_HANDLE]'],
       [jobSlug, '[JOB_SLUG]'],
+      [scheduled.interviewId, '[CANCELLED_INTERVIEW_ID]'],
+      [completionPlan.interviewId, '[COMPLETED_INTERVIEW_ID]'],
     ]) {
       if (value) redacted = redacted.replaceAll(value, marker);
     }
@@ -1030,6 +1116,7 @@ try {
       'human-controlled-interview-pending-transition',
       'candidate-sees-interview-pending',
       'synthetic-interview-schedule-cancel-two-persona-readback-no-internal-fields',
+      'assigned-interview-scorecard-complete-candidate-reload-public-contract-only',
       'recruiter-pauses-job',
       'paused-job-rejects-new-application',
       'existing-candidate-result-survives-pause',
