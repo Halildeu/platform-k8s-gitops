@@ -807,7 +807,7 @@ try {
   console.log('PASS synthetic interview scheduled and candidate calendar readback');
   await interviewPanel.getByRole('button', { name: 'Görüşmeyi iptal et', exact: true }).click();
   const internalReason = `Sentetik ic gerekce ${runSuffix}`;
-  await interviewPanel.getByLabel('Gerekçe', {exact:true}).fill(internalReason);
+  await interviewPanel.getByRole('textbox', { name: 'Gerekçe', exact: true }).fill(internalReason);
   const cancelPromise = recruiterPage.waitForResponse(r => r.url().includes(`/interviews/${scheduled.interviewId}/transitions`) && r.request().method() === 'POST');
   await interviewPanel.getByRole('button', {name:'İnsan eylemini kaydet',exact:true}).click();
   const cancelResponse = await cancelPromise;
@@ -872,7 +872,7 @@ try {
   const savedInterviewScorecard = await interviewScorecardResponse.json();
   await interviewScorecardForm.waitFor({ state: 'hidden', timeout: 30_000 });
   await interviewPanel.getByRole('button', { name: 'Görüşmeyi tamamla', exact: true }).click();
-  await interviewPanel.getByLabel('Gerekçe', { exact: true }).fill(completionReason);
+  await interviewPanel.getByRole('textbox', { name: 'Gerekçe', exact: true }).fill(completionReason);
   const completePromise = interviewResponse(recruiterPage, 'POST',
     `${recruiterInterviewsPath}/${completionPlan.interviewId}/transitions`);
   await interviewPanel.getByRole('button', { name: 'İnsan eylemini kaydet', exact: true }).click();
