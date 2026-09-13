@@ -185,10 +185,10 @@ resources:
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
-  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34652002478
-  # Rollback image: sha256:5e4496643069a44693a1f886c3c9323405634f6ecbee55f76a484183504186df
+  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34755456164
+  # Rollback image: sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec
+    digest: sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
