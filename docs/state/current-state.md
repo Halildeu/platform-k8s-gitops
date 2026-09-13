@@ -1,5 +1,67 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Canonical Repeat Confirms Date Contract Loss (2026-09-13 22:36 UTC)
+
+- A second NEW recording `b014ded4-9dbe-46a5-9068-eb3d204577c9` used the
+  committed canonical runner/wrapper at GitOps `a7eb9337`, pinned fixture and
+  reference, and exact required metric-library versions. API lifecycle and
+  cleanup receipts are retained as `2026-09-13-meeting-qualified-source-canonical-*`.
+- WER `0/113`, attribution `112/112`, same persisted source/result on reopen;
+  DER `0.0611958763` at 0.25-second collar and `0.1214188533` at zero collar.
+  Browser again measured D `4/0/0`, A `3/0/0`, due metadata `2/1/1`; semantic
+  acceptance remains rejected. Original browser roles restored. This is a
+  reproduced persistence-contract defect, not a reason to change model/gold.
+
+## Meeting AI TEST - Decision Selection Improved, Persisted Due Phrase Lost (2026-09-13 22:29 UTC)
+
+- NEW synthetic meeting `ae0e48ed-2dd9-45ac-86c2-cfcee426e889` produced a
+  persisted/reopened result on AI `d67ec2d5`, qwen3.8:27b / think:false. WER
+  `0/113`; 112/112 finals retained speaker attribution; DER `0.0611958763`
+  at 0.25-second collar and `0.1206413994` at zero collar. Recording persona,
+  temporary grants and token cleanup were verified. These are TTS-only metrics.
+- Browser frozen-source scoring: decisions TP/FP/FN `4/0/0`, actions `3/0/0`,
+  owners `3/0/0`, but due-date metadata `2/1/1`; semantic acceptance REJECTED.
+  Temporary browser roles were restored; fresh negative login returned 403
+  and hid transcript content. Positive browser coverage is not a semantic pass.
+- Exact new 112-row text equals the frozen raw source. Deterministic contract
+  loss is established: AI `analysis_delivery._action_payload` converts relative
+  phrases to `due:null`; backend stores only `Instant dueAt`. The model's raw
+  output for this live run is not observed, so no claim about that intermediate
+  value is made. Additive nullable source `due_text` across AI/backend is the
+  bounded next repair; preserve ISO Instant semantics and do not guess dates.
+  Tracked by #3753 / Product Slice #3399. Model/prompt/gold are not being tuned
+  to this persistence failure. Source enablers: AI #344 and backend #1169;
+  frontend also truncates every due string to ten characters and must preserve
+  non-ISO source phrases. Production and internal diarization are untouched.
+
+## Meeting AI TEST - Qualified Profile Active, New Meeting Acceptance Pending (2026-09-13 22:15 UTC)
+
+- Exact AI `d67ec2d5` now runs pinned `qwen3.8:27b` digest
+  `22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643`
+  with explicit `think:false`. Protected config hash is
+  `03b3675fd1e8edc83b9b2297be7d92e40a44640f909a0d701ae10c680b4bf2bd`.
+- Fresh permit matched GitOps `a7eb9337`, policy `2a9c39eb` and current producer;
+  activation receipt hash is
+  `2399f5939cd7f8a714ef79374e76c6984c024e60137003fa11e6b62a71fc2eea`.
+  New task/listener, consumer enabled, worker running, Redis group and delivery
+  ready were verified; unrelated STT task unchanged. Original request/lease/claim
+  defaults remain unchanged. NEW persisted meeting and browser checks are still
+  pending; synthetic regression is not a real-meeting quality percentage.
+
+## Meeting AI TEST - Diagnostic Source Rollout Accepted, Activation Pending (2026-09-13 22:13 UTC)
+
+- Agent-initiated [run 34785953009](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/34785953009),
+  actor Halildeu, GitOps `a7eb9337d4f2703b2cbfe609d93887c63ce350a7`, accepted
+  AI `d67ec2d591f70293ed23cdfe48726baf6a20ef12`. All three STT fixtures passed;
+  exact source/ledger, ready services and controller cleanup were verified.
+- Downloaded receipt SHA256
+  `5b6183dc90a268d9121e5601986374ab293e088fdbea00b9b8912cafc1c24a11`
+  passed the canonical verifier and metadata scanner. Current config is still
+  `ea7e0964d368df5fdba3ea79e44168c45cbf69dd6861ba2db88521427e098a28`,
+  consumer disabled. Fresh permit/profile activation and NEW persisted-meeting
+  semantic/browser acceptance are next; this rollout alone is not customer
+  quality acceptance or proof of the prior intermittent failure's root cause.
+
 ## Meeting AI TEST - Diagnostic-Equipped Source Candidate (2026-09-13 22:06 UTC)
 
 - [Source PR #343](https://github.com/Halildeu/platform-ai/pull/343) merged as
