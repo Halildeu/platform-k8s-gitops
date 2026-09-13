@@ -333,6 +333,26 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("await candidatePage.reload(", self.fullats_browser)
         self.assertIn("interview-completion.json", self.fullats_browser)
 
+    def test_interview_scorecard_uses_accessible_select_name_after_form_render(self):
+        # A wrapping label includes option text in getByLabel's exact match.
+        self.assertIn(
+            "interviewScorecardForm.getByRole('combobox', { name: 'Kanıt düzeyi (1–4)', exact: true })",
+            self.fullats_browser,
+        )
+        self.assertNotIn(
+            "interviewScorecardForm.getByLabel('Kanıt düzeyi (1–4)', { exact: true })",
+            self.fullats_browser,
+        )
+        self.assertLess(
+            self.fullats_browser.index("await waitVisible(interviewScorecardForm,"),
+            self.fullats_browser.index("await interviewRatings.count()"),
+        )
+        self.assertIn(
+            "interviewScorecardForm.getByRole('textbox', { name: 'Somut iş kanıtı', exact: true })",
+            self.fullats_browser,
+        )
+        self.assertNotIn("interviewScorecardForm.getByLabel(", self.fullats_browser)
+
     def test_fullats_browser_failure_evidence_is_actionable_and_redacted(self):
         node_script = r"""
 const { compactAxeViolations } = require(process.argv[1]);
