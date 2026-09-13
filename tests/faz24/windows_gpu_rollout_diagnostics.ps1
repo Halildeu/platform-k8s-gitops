@@ -35,8 +35,13 @@ function Invoke-InputFixture {
   $process.StartInfo = $start
   try {
     [void]$process.Start()
-    $process.StandardInput.Write($Source)
-    $process.StandardInput.Close()
+    # Match Python subprocess UTF-8 bytes, not .NET StreamWriter's BOM.
+    $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($Source)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and
+        $bytes[1] -eq 187 -and $bytes[2] -eq 191) { throw 'Fixture payload contains a BOM.' }
+    $inputStream = $process.StandardInput.BaseStream
+    $inputStream.Write($bytes, 0, $bytes.Length)
+    $inputStream.Close()
     $stdout = $process.StandardOutput.ReadToEnd()
     $stderr = $process.StandardError.ReadToEnd()
     $process.WaitForExit()
