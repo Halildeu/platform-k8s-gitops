@@ -532,7 +532,9 @@ def main() -> None:
         # 2026-08-01 (backend#1058, gitops#2610): Flyway V13 and the entity
         # mapping require occurrence-bound analysis_run_id UUID NOT NULL.
         "ghcr.io/halildeu/platform-backend-transcript-service@"
-        "sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f",
+        # backend#1167 / 121e8a1: additive speaker attribution V14; the
+        # finalization contract is unchanged. Build 34762214932, pull verified.
+        "sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496",
     )
     container_image(
         audio_deploy,
