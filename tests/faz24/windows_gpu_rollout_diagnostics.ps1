@@ -136,8 +136,9 @@ try {
       $preamble + '$go = ' + $goLiteral + "`n`n" + $tail
     ) -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
     if ($fixed.ExitCode -ne $exit -or $fixed.Stderr.Length -ne 0) {
-      throw ('Whole-input bootstrap failed: expectedExit={0}; actualExit={1}; stderrLength={2}' -f
-        $exit, $fixed.ExitCode, $fixed.Stderr.Length)
+      # This is an isolated fake-script process, never runtime output.
+      throw ('Whole-input fixture failed: expectedExit={0}; actualExit={1}; stderr={2}' -f
+        $exit, $fixed.ExitCode, $fixed.Stderr)
     }
     $marker = 'FAZ24_GPU_ROLLOUT_JSON:'
     $lines = @($fixed.Stdout.Trim() -split "`r?`n")
