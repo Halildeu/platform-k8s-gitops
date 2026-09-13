@@ -352,6 +352,10 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             self.fullats_browser,
         )
         self.assertNotIn("interviewScorecardForm.getByLabel(", self.fullats_browser)
+        self.assertNotIn("interviewPanel.getByLabel(", self.fullats_browser)
+        self.assertEqual(self.fullats_browser.count(
+            "interviewPanel.getByRole('textbox', { name: 'Gerekçe', exact: true })"
+        ), 2)
 
     def test_fullats_browser_failure_evidence_is_actionable_and_redacted(self):
         node_script = r"""
