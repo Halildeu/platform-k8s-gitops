@@ -196,6 +196,14 @@ try {
     if ($sized.ExitCode -ne 0 -or $sized.Stdout.Trim() -cne "SIZE_OK:$size" -or
         $sized.Stderr.Length -ne 0) { throw 'Bounded frame did not execute before stdin EOF.' }
   }
+  # Preserve real source compression complexity, but comment every line so none
+  # of the host orchestration can execute in this transport-only fixture.
+  $commentedSource = '# ' + ($ast.Extent.Text -replace "`n", "`n# ") +
+    "`n[Console]::Out.WriteLine('SOURCE_COMPLEXITY_OK'); exit 0`n"
+  $complexFrame = Invoke-InputFixture -Source $commentedSource -Mode 'held-open' `
+    -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
+  if ($complexFrame.ExitCode -ne 0 -or $complexFrame.Stdout.Trim() -cne 'SOURCE_COMPLEXITY_OK' -or
+      $complexFrame.Stderr.Length -ne 0) { throw 'Real-complexity framed transport failed.' }
   foreach ($mode in @('invalid-base64', 'invalid-gzip', 'invalid-utf8',
       'oversize-wire', 'oversize-source')) {
     $invalidFrame = Invoke-InputFixture -Source "[Console]::Out.WriteLine('MUST_NOT_RUN')" `
