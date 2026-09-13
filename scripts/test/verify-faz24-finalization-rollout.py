@@ -549,13 +549,15 @@ def main() -> None:
         # with the vendor-default "flexible" replacing the old hardcoded
         # "fixed", pairing with the overlay's max_delay 1.0 (gitops#3424) so
         # live finals commit fast without mid-word cuts.
-        "platform-test-registry:5000/platform-backend-audio-gateway-service@"
+        "ghcr.io/halildeu/platform-backend-audio-gateway-service@"
         # 2026-09-03 (gitops#3486): sha-2f63a74 — platform-backend#1127 makes the
         # live-analyze window cumulative; the durable-finalization surface this
         # verifier pins is untouched.
         # 2026-09-10 backend#1159: per-meeting live-analysis backpressure;
         # no durable-finalization behavior change. Attested source 23d860a4.
-        "sha256:7d4b9d85b57ad4e89df69daad1b0f3dccb537103e71c9ac4da68bd7b64f11c5d",
+        # backend#1167 / 121e8a1: speaker v2; unchanged finalization boundary.
+        # TEST consumer-first V14 and exact producer pull verified (#3742).
+        "sha256:97cb8d68082af7be2577664b2af7f55f7040eb423a395d3678dc610a33b3fadb",
     )
     pod_annotation(
         meeting_deploy,
