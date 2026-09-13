@@ -100,13 +100,35 @@ the employee read it. No second email was sent automatically.
 
 ## Remaining Acceptance
 
-- Employee device on company/VPN resolves DEV and completes SSH with its key.
-- Employee performs personal GitHub/AI login and verifies its identity.
-- Employee edits, tests and pushes a personal branch/PR using that identity.
+- Employee mail on 2026-09-12 confirms SSH with its own key and personal GitHub
+  identity/fetch in four clones; web #1172 was developed in that personal clone.
+  VPN DNS resolution remains pending: access succeeded using the private IP.
+- Personal AI authentication remains unverified.
 - Any authenticated personal application preview is verified with DEV-only
   dependencies. Shared TEST and production promotion remain separate gates.
 
 Keep #3582 open; server-side preparation and email do not close these items.
+
+## DEV Banner and TEST Handoff
+
+Canonical banner source: `bootstrap/host/devai/00-platform-dev-motd`. On DEV
+only, install it as root:root 0755 at the existing
+`/etc/update-motd.d/00-aiserver-archive-standby` path. This replaces the obsolete
+retired-host text without removing `/etc/aiserver-archive/ARCHIVE_STANDBY` or
+unmasking any legacy service. Validate shell syntax, installed/source equality,
+recipient-UID execution and the next SSH login display. The 2026-09-13 backup
+is `/srv/platform-dev/evidence/3582-motd-before-20260913` (root 0600).
+
+For #3730/#992 only, the existing isolated non-recruiter TEST credential was
+delivered to `/home/zeynep/.platform-test/ats-nonrecruiter.json`. Directory 0700
+and file 0600 are owned by the recipient. It is outside every Git clone. The
+canonical TEST Vault value is unchanged. Never print the credential in logs,
+mail, issues or shared terminals; communicate only the path and purpose.
+Recipient-readable and other-unprivileged-user-denied checks passed. A root
+operator can still access the file; these permissions do not isolate it from
+root. Recipient consumption is a separate confirmation. Remove this handoff
+copy once no longer needed; do not delete or rotate the canonical account as
+part of that cleanup.
 
 ## Rollback
 

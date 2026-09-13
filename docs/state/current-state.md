@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - Personal DEV acceptance follow-ups (2026-09-13)
+
+- Employee mail confirms personal SSH key/fingerprint and GitHub authentication,
+  with successful fetches in four clones. Web #1172 was authored from that DEV
+  clone. This supersedes the earlier pending first-login/fetch statements only;
+  personal AI authentication and every application journey are not inferred.
+- DEV login-banner source now identifies the development host and personal
+  clone workflow. Installed/source byte equality and execution as the employee
+  UID pass. Archive sentinel remains; legacy Docker/containerd stay masked.
+  DEV trusted HTTPS returns 200. Employee SSH-login display is not yet observed.
+- ACIKDC01 still answers `devai.acik.com` with `10.9.10.53`; DEV uses that DNS.
+  Employee VPN DNS remains unverified and needs client/VPN configuration evidence.
+  No public DNS, VPN-wide settings or TEST/PROD access controls changed.
+- Existing #3730 non-recruiter TEST credential was delivered over SSH to a
+  recipient-owned 0600 file under a 0700 personal-home directory. Exact content
+  readback and recipient-read/other-unprivileged-user-deny checks pass. No new
+  identity, permission grant or password rotation occurred. Recipient consumption,
+  #992 accessibility acceptance and the new outcome email remain pending.
+- TEST web build-info currently reports `b013af1eb030864799dc50c8c1907a19b056551c`.
+  This is source metadata readback, not a fresh pod-digest or browser acceptance.
+- Tracked by #3582 and #3730. TEST activation notices still use the retired
+  recipient domain at runtime; proposed TEST-only correction is tracked by #3733.
+
 ## Live Delta - TEST prior-session workbench artifact (2026-09-12 14:27 UTC)
 
 - Web PR #1171 merged source `311c240e0fdf581fa9f0c4f7310bb8cd70667091`;
