@@ -1,0 +1,172 @@
+{
+  "boundary": {
+    "consumerEnableAttempted": false,
+    "customerContentIncluded": false,
+    "enableAuthorized": false,
+    "readOnly": true,
+    "secretValuesIncluded": false,
+    "workloadMutationAttempted": false
+  },
+  "collectionFailures": [],
+  "environment": {
+    "appEnv": "test",
+    "cluster": "k3d-test",
+    "gpuHost": "denetim-pc",
+    "gpuHostComputerName": "SRB-AIDENETIMPC",
+    "kubectlContext": "k3d-test",
+    "namespace": "platform-test",
+    "postgresDatabase": "transcript",
+    "postgresHost": "172.19.0.6",
+    "postgresPort": 5432,
+    "postgresSchema": "transcript_service",
+    "postgresSslMode": "disable",
+    "redisGroup": "meeting-ai-transcript-ready-v1",
+    "redisHost": "172.19.0.250",
+    "redisPort": 6379,
+    "redisStream": "meeting:events",
+    "redisTls": false,
+    "transcriptDeployment": "transcript-service"
+  },
+  "generatedAt": "2026-09-13T15:20:18Z",
+  "issue": "platform-k8s-gitops#2610",
+  "live": {
+    "gpuHost": {
+      "collected": true,
+      "computerName": "SRB-AIDENETIMPC",
+      "deploymentStateMatch": true,
+      "healthConsumerPresent": true,
+      "healthEnabled": true,
+      "healthReachable": true,
+      "healthRedisGroupReady": true,
+      "healthStatus": "ok",
+      "healthWorkerRunning": true,
+      "machineEnvironmentState": "unset",
+      "observedAt": "2026-09-13T15:20:18Z",
+      "platformAiCommit": "6223fd22916e5607015ee445a6620d4f1a95ea18",
+      "probeSha256": "e43b6928bd2a98414c3d8232c63e7f2d0eb0396780ee2159b7d59acbcb0f0fa0",
+      "repoHeadCommit": "6223fd22916e5607015ee445a6620d4f1a95ea18",
+      "runtimeConfigMatchCount": 1,
+      "runtimeConfigState": "true",
+      "startupGateMarkerPresent": true,
+      "startupScriptSha256": "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e"
+    },
+    "postgresAfter": {
+      "collected": true,
+      "counts": {
+        "capturedAt": "2026-09-13T15:20:14Z",
+        "compatibleBindingSetSha256": "63f12ef82eda2b20a87efa6e130639ba826bbf7dc2de90372032cc51655e2f77",
+        "compatibleBindingUniqueCount": 143,
+        "compatibleBindingUniqueSetSha256": "63f12ef82eda2b20a87efa6e130639ba826bbf7dc2de90372032cc51655e2f77",
+        "compatibleReadyOutbox": 143,
+        "finalizationNullAnalysisRunId": 0,
+        "legacyOutbox": {
+          "claimedActive": 0,
+          "claimedStale": 0,
+          "dead": 0,
+          "pending": 0,
+          "published": 0,
+          "total": 0
+        },
+        "malformedReadyOutbox": 0,
+        "readyOutboxTotal": 143
+      },
+      "observedAt": "2026-09-13T15:20:14Z",
+      "schema": {
+        "analysisRunIdColumnPresent": true,
+        "analysisRunIdNotNull": true,
+        "analysisRunIdUuid": true,
+        "databaseName": "transcript",
+        "finalizationOccurrenceColumnsPresent": true,
+        "finalizationTablePresent": true,
+        "outboxRequiredColumnsPresent": true,
+        "outboxTablePresent": true,
+        "serverAddress": "172.19.0.6",
+        "serverPort": 5432
+      }
+    },
+    "postgresBefore": {
+      "collected": true,
+      "counts": {
+        "capturedAt": "2026-09-13T15:20:13Z",
+        "compatibleBindingSetSha256": "63f12ef82eda2b20a87efa6e130639ba826bbf7dc2de90372032cc51655e2f77",
+        "compatibleBindingUniqueCount": 143,
+        "compatibleBindingUniqueSetSha256": "63f12ef82eda2b20a87efa6e130639ba826bbf7dc2de90372032cc51655e2f77",
+        "compatibleReadyOutbox": 143,
+        "finalizationNullAnalysisRunId": 0,
+        "legacyOutbox": {
+          "claimedActive": 0,
+          "claimedStale": 0,
+          "dead": 0,
+          "pending": 0,
+          "published": 0,
+          "total": 0
+        },
+        "malformedReadyOutbox": 0,
+        "readyOutboxTotal": 143
+      },
+      "observedAt": "2026-09-13T15:20:14Z",
+      "schema": {
+        "analysisRunIdColumnPresent": true,
+        "analysisRunIdNotNull": true,
+        "analysisRunIdUuid": true,
+        "databaseName": "transcript",
+        "finalizationOccurrenceColumnsPresent": true,
+        "finalizationTablePresent": true,
+        "outboxRequiredColumnsPresent": true,
+        "outboxTablePresent": true,
+        "serverAddress": "172.19.0.6",
+        "serverPort": 5432
+      }
+    },
+    "redis": {
+      "atomicMetadataStable": true,
+      "classificationDigestSha1": "ba2401d6f5cf231a6990294a8b0d51681bac37cf",
+      "collected": true,
+      "compatibleBindingSetSha256": "b3c020989df23b23527c5f810b64fa307663b2626ef564ecac2d7f7859e1108a",
+      "compatibleBindingUniqueCount": 143,
+      "compatibleBindingUniqueSetSha256": "63f12ef82eda2b20a87efa6e130639ba826bbf7dc2de90372032cc51655e2f77",
+      "compatibleReady": 249,
+      "complete": true,
+      "firstId": "1785279725811-0",
+      "group": {
+        "consumers": 41,
+        "entriesRead": 692,
+        "exists": true,
+        "lag": 0,
+        "lastDeliveredId": "1789311055966-0",
+        "pending": 0
+      },
+      "host": "172.19.0.250",
+      "lastId": "1789311055966-0",
+      "legacyReadyV1": 0,
+      "length": 692,
+      "malformedReady": 0,
+      "maxDeletedEntryId": "0-0",
+      "observedAt": "2026-09-13T15:20:14Z",
+      "otherEvents": 443,
+      "port": 6379,
+      "scanned": 692,
+      "scriptSha256": "1b078db920d8308f45bdb1821e236d56c966199b9958505d69a6583bf91b2115",
+      "tls": false,
+      "truncated": false
+    },
+    "transcriptPod": {
+      "collected": true,
+      "imageDigest": "sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496",
+      "name": "transcript-service-746494fd87-tpj5q",
+      "observedAt": "2026-09-13T15:20:13Z",
+      "ready": true,
+      "restartCount": 0,
+      "uid": "615bab7f-fe85-460f-99d6-f1b6ce5db833"
+    }
+  },
+  "schemaVersion": "faz24.transcriptReadyPreEnableEvidence.v1",
+  "source": {
+    "collectionFinishedAt": "2026-09-13T15:20:18Z",
+    "collectionStartedAt": "2026-09-13T15:20:13Z",
+    "gitopsCommit": "2ccf29d946d28d40408d32bd076b99084e452fb7",
+    "policySha256": "b10d05228a8b964175b4b7f924e1414e454987d1f38106ff88e842a38a98f74d",
+    "queryContractSha256": "e4c080a6f080deecebe7d713a8993372e8e6fbf94d0b1fe5d1fe90822fa047f3"
+  },
+  "status": "candidate"
+}

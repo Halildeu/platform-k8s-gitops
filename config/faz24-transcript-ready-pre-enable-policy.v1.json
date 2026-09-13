@@ -27,17 +27,17 @@
   "requiredStartupGateMarker": "Assert-TranscriptReadyPreEnablePermit",
   "producerCapabilities": [
     {
-      "transcriptImageDigest": "sha256:3c4dd2b59217e2d0d400c378464ec84bc477be3d2be87e171907eecaae443e7f",
-      "backendCommit": "01e0fde9460757eef519344e4f292da615df9e4e",
-      "eventContractEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-event-contract.json",
-      "eventContractSha256": "efaae65b743b977a9b29f339c56e0ad551267700c60b4ed9090088ed1df921c7",
+      "transcriptImageDigest": "sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496",
+      "backendCommit": "121e8a1d1ec58147e1f11325683ca5ea273dd744",
+      "eventContractEvidencePath": "docs/faz-24-evidence/2026-09-13-speaker-producer-event-contract.json",
+      "eventContractSha256": "4d60d05e68f92e634db14491247a9495da301c7b5229e4b14817880cbf5e70d5",
       "gateContractSha256": "e4c080a6f080deecebe7d713a8993372e8e6fbf94d0b1fe5d1fe90822fa047f3",
-      "backfillEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-backfill.json",
-      "backfillEvidenceSha256": "ee77bb8a29b9f572c4dd2ab16b1cb76bc46ff0e02a3ae19a6bf33b0eeaa9a15f",
-      "outboxRemediationEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-outbox-remediation.json",
-      "outboxRemediationEvidenceSha256": "e7306225d9384472fe049d9366864d87aebec18ab5ab2fab6600b270515963e1",
-      "redisRemediationEvidencePath": "docs/faz-24-evidence/2026-08-02-transcript-ready-redis-remediation.json",
-      "redisRemediationEvidenceSha256": "d66e850c16cd2f3a981230fb85abf154ccf7272de4d82094ba83f29283df34f1",
+      "backfillEvidencePath": "docs/faz-24-evidence/2026-09-13-speaker-producer-backfill.json",
+      "backfillEvidenceSha256": "22bb2a3fd24ecd610eca5cb16241dc7cbc63f5041e1c7ad08e89814c997db371",
+      "outboxRemediationEvidencePath": "docs/faz-24-evidence/2026-09-13-speaker-producer-outbox-remediation.json",
+      "outboxRemediationEvidenceSha256": "7da5c3a9ce6dae818c077816ba102b3322038509e3e0397f6a484288b664f4aa",
+      "redisRemediationEvidencePath": "docs/faz-24-evidence/2026-09-13-speaker-producer-redis-remediation.json",
+      "redisRemediationEvidenceSha256": "04077515a6936d6b773e8c4e82c6eb3651eddbe920fd979505c1bbf82876a3bf",
       "analysisRunIdEmission": "non-null-v1",
       "finalizationAnalysisRunId": "uuid-not-null-event-bound"
     }
