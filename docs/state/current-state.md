@@ -1,5 +1,32 @@
 # Current State — Platform K8s Migration
 
+## Meeting Semantic Quality - TEST Candidate, Runtime Pending (2026-09-13)
+
+- Tracked by #3753, Product Slice #3399. Platform-ai #338 merged as
+  `27389941dc13639c898d6d8222dd5b91a5629809`; exact source PR CI passed,
+  including Windows configuration, DPAPI, restart and rollback contracts.
+  The local service suite passed 432 tests (88% coverage), Ruff and mypy.
+- The frozen 12-case synthetic regression improved decision TP/FP/FN from
+  4/1/5 to 9/1/0 and action TP/FP/FN from 8/5/3 to 11/0/0. Joint action plus
+  owner/date also scored 11/0/0. A separate 6-case challenge scored decisions
+  4/0/0 and actions plus metadata 9/1/0. Both final pinned runs passed the
+  predeclared project P>=0.90/R>=0.85 gate with stable identities and zero
+  execution errors. One false decision and one challenge false action remain.
+  These visible, agent-annotated synthetic sets do not establish real-meeting
+  accuracy or independent human acceptance. Full reports, including failed
+  trials, are in platform-ai `docs/evidence/meeting-semantic-2026-09-13/`.
+- Selected TEST candidate is on-prem `qwen2.5:14b`, digest
+  `7cdf5a0187d5c58cc5d369b255592f7841d1c4696d45a8c8a9489440385b22f6`.
+  Optional protected model/digest settings fail closed before/after analysis
+  and follow-up generation. Production and the default model are unchanged.
+- This policy revision permits only the new exact host source while retaining
+  the same startup script bytes and strict transcript producer. It does not
+  itself activate the consumer or deploy the host. Last live readback remains
+  `6223fd2` / `llama3.1:8b`, healthy consumer/delivery, zero processing or pending
+  deliveries. Runtime rollout, fresh permit, durable TEST result and browser
+  acceptance remain pending. Preserve the compatible protected original config
+  before disable; rollback requires previous source/policy and a fresh permit.
+
 ## Meeting Speaker Quality - Synthetic TEST API And Browser Evidence (2026-09-13)
 
 - Tracked by #3740 / #3741 / #3742, customer slice #3399. Backend #1167
