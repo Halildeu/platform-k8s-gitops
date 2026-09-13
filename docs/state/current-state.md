@@ -1,14 +1,30 @@
 # Current State — Platform K8s Migration
 
-## Candidate Data Policy - TEST Promotion Pending (2026-09-13)
+## Candidate Data Policy - TEST Applicant Journey Verified (2026-09-13)
 
 - Tracked by #3736 and platform-web#1003. ATS PR #269 merged as
   `9b51a4fb5bcc432e1b4c48f0e57f3104e04c388d`; scanned image workflow
   `34755456164` published `sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299`.
-- Desired TEST ATS digest and acceptance/recovery workflow pins are updated
-  together. Runtime preflight still observed previous `sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec`
-  Ready 1/1, and no public `candidateDataPolicy`. This is not runtime acceptance.
-- Frontend PR #1174 remains draft until backend TEST metadata is verified.
+- PR #3737 merged as `c67f0b94a8e6714cbf9734616ffba75a12c57cfc`; run
+  `34756278485` reconciles TEST through ArgoCD (agent-initiated, actor Halildeu).
+  At 12:11 UTC the new ATS pod is Ready, zero restarts, exact imageID matches
+  the e2b32296 digest above. Public TEST job policy returns `real-allowed` and
+  both v2 notice versions; unknown v999 submission is denied HTTP 400.
+  Argo is Synced/Healthy at that exact revision and the workflow succeeded.
+- Frontend PR #1174 passed all PR CI checks and merged as
+  `5f10941e3e7b59e780d9d05aaa403a6aa9bf81dc`; build/SBOM/provenance
+  `34756389782` succeeded. GitOps PR #3738 merged as
+  `1cf8a5adb7158de0c33ced36e106e98c00584e1b`; rollout `34756720058` succeeded.
+  Argo is Synced/Healthy at that revision; Ready frontend pod imageID is
+  `sha256:b6acdfa146a0d68d52115666b0ce99d830a2a5fc0afb575244adcbc33f8857e2`.
+  Trusted public build-info matches the exact frontend source.
+- Real TEST browser journey passed with synthetic candidate data: discover job,
+  upload PDF, accept field proposals, manually complete missing summary/skills,
+  acknowledge v2, submit, open candidate status and reload. Exact new application
+  was independently read from PostgreSQL as `SUBMITTED` with v2 notice and both
+  acknowledgement timestamps. Unauthorized read is 404; unknown application/CV
+  notice versions are 400. No page errors or horizontal overflow at 390/1440px.
+  Evidence: [candidate policy TEST #3736](../evidence/2026-09-13-candidate-policy-test-3736.md).
   v2 acknowledgements preserve existing legal terms and v1 records. No data-mode,
   retention, role, secret or production change. Rollback frontend before backend.
 - Approved access email was sent once and its exact sent copy verified at
