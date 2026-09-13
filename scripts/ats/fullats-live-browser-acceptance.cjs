@@ -850,7 +850,8 @@ try {
   if (completionPlan.interviewId === scheduled.interviewId) throw new Error('completion reused cancelled interview');
   await interviewPanel.getByRole('button', { name: 'İnsan scorecard’ı doldur', exact: true }).click();
   const interviewScorecardForm = interviewPanel.getByRole('form', { name: "Görüşme insan scorecard'ı", exact: true });
-  const interviewRatings = interviewScorecardForm.getByLabel('Kanıt düzeyi (1–4)', { exact: true });
+  await waitVisible(interviewScorecardForm, 'assigned interview scorecard form');
+  const interviewRatings = interviewScorecardForm.getByRole('combobox', { name: 'Kanıt düzeyi (1–4)', exact: true });
   const interviewEvidence = interviewScorecardForm.getByLabel('Somut iş kanıtı', { exact: true });
   const completionEvidence = `Sentetik gorusme teslimat kaniti ${runSuffix}`;
   const completionSummary = `Sentetik gorusmeci ozel degerlendirmesi ${runSuffix}`;
