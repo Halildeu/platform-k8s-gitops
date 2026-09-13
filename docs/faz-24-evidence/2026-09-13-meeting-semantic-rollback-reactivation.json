@@ -1,0 +1,23 @@
+{
+  "operation": "enable",
+  "status": "verified",
+  "commit": "6223fd22916e5607015ee445a6620d4f1a95ea18",
+  "configSha256": "7cc09956b2e97848f978ce020168f3c37c53421dcce428da810386891c186b84",
+  "permitSha256": "12cba29a0d68a47f6bb362c51c9fe0a8a06b43d5e28a7de0075e09e17342401d",
+  "activationReceiptSha256": "527ef019d6eae020d3daf70073145154a7d70a395f043483c82b470e34c7c8bc",
+  "model": "llama3.1:8b",
+  "modelDigest": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+  "modelDigestEnforced": false,
+  "budget": {
+    "MAI_REQUEST_TIMEOUT": "absent",
+    "MAI_READY_CONSUMER_LEASE_SEC": "absent",
+    "MAI_READY_REDIS_CLAIM_IDLE_MS": "absent"
+  },
+  "newOwner": 27408,
+  "newInstance": "{2d2f97a5-ec64-45ca-aac4-39933f02f1c0}",
+  "liveSttUnchanged": true,
+  "consumerEnabled": true,
+  "workerRunning": true,
+  "redisGroupReady": true,
+  "deliveryReady": true
+}
