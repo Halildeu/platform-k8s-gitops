@@ -1,0 +1,27 @@
+{
+  "operation": "enable",
+  "status": "verified",
+  "environment": "test",
+  "commit": "05a73a32cf510ce7b5afbe591544fa4740770990",
+  "gitopsCommit": "2c97d3c09ff8751bfc734c2137ca1b27d9193aa3",
+  "rolloutRun": "34776970818",
+  "configSha256": "ae2c1dd0bf5b563e9047b7c97ebb59747f7ebb7047cd8b1131410ddaa251d8e6",
+  "permitSha256": "634a9ff3c106bc4f9c7457ae6bfdec1dd716a802c7632b02f85dfb8230de71dd",
+  "activationReceiptSha256": "d7f0e32a410a9c49b9edcd33ccb48eca7b04a07d7ed1dab2df3bf0a695a44349",
+  "model": "qwen2.5:14b",
+  "modelDigest": "7cdf5a0187d5c58cc5d369b255592f7841d1c4696d45a8c8a9489440385b22f6",
+  "modelDigestEnforced": true,
+  "budget": {
+    "MAI_REQUEST_TIMEOUT": "absent",
+    "MAI_READY_CONSUMER_LEASE_SEC": "absent",
+    "MAI_READY_REDIS_CLAIM_IDLE_MS": "absent"
+  },
+  "newOwner": 33696,
+  "newInstance": "{49d5a80e-c80c-4f6d-b28e-399d1e4f99bf}",
+  "liveSttUnchanged": true,
+  "consumerEnabled": true,
+  "workerRunning": true,
+  "redisGroupReady": true,
+  "deliveryReady": true,
+  "qualityAcceptance": "pending-new-synthetic-meeting"
+}

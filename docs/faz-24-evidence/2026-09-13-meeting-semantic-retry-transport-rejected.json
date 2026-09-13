@@ -1,0 +1,44 @@
+{
+  "afterCommit": "",
+  "beforeCommit": "",
+  "deployExitCode": -1,
+  "failureClass": "remote-evidence-unavailable",
+  "health": {},
+  "ledger": {},
+  "principal": {
+    "administrator": false,
+    "expectedIdentity": false
+  },
+  "privacy": {
+    "rawAudioIncluded": false,
+    "secretMaterialIncluded": false,
+    "transcriptTextIncluded": false
+  },
+  "schemaVersion": "faz24.gpu-host-exact-sha-rollout.v1",
+  "sourceCommitVerified": false,
+  "status": "no-go",
+  "targetCommit": "05a73a32cf510ce7b5afbe591544fa4740770990",
+  "taskMigration": {
+    "migrationExitCode": -1,
+    "pinWithoutRestartExitCode": -1,
+    "required": false,
+    "sourceRollbackExitCode": -1,
+    "whatIfExitCode": -1
+  },
+  "tasks": {},
+  "tasksBefore": {},
+  "transport": {
+    "evidenceMarkerCount": 0,
+    "returnCode": 0,
+    "stderrBytes": 0,
+    "stderrClass": "none",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdoutBytes": 0
+  },
+  "webSocket": {
+    "eventType": "",
+    "failureClass": "not-observed",
+    "ready": false
+  },
+  "whatIfExitCode": -1
+}
