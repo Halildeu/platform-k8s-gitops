@@ -1,5 +1,27 @@
 # Current State — Platform K8s Migration
 
+## Live Delta - TEST activation notification recipient (2026-09-13 11:01 UTC)
+
+- PR #3734 merged as `7b8b05380d9475ee450deafdc3d9ccf558beaa38` after 24
+  successful checks. Only the TEST user-service recipient and pod-template
+  rollout marker differ in rendered resources; production renders are unchanged.
+- Argo `platform-test` is Synced/Healthy, operation Succeeded, at that exact
+  revision. New pod `user-service-55b5dc4fc7-2dzsf` is Ready with zero restarts;
+  unchanged imageID is
+  `sha256:d1b562c7a98236bbb848af0912c14d33788cf9394126c3748d262f5bdce5a3de`.
+- Marker `3733-1` and the current operator mailbox in the running process were
+  independently asserted. Anonymous public users API remains 401. Startup took
+  about 50 seconds; transient startup failures remain in events, no probe changed.
+- The automatic workflow skipped reconciliation because no image pin changed.
+  Canonical workflow `34753230908` was explicitly agent-dispatched with actor
+  `Halildeu`; this is not an independent human deployment approval. The run
+  succeeded, including preflight, reconciliation and exact frontend verification.
+  Live Argo and process readback above were also checked independently.
+- Production notification feature remains disabled and its recipient was not
+  changed. No account activation or test email was emitted. This proves TEST
+  configuration routing, not recipient delivery or complete customer acceptance.
+  Tracked by #3733; supersedes the pre-merge old-TEST-recipient note below.
+
 ## Live Delta - Personal DEV acceptance follow-ups (2026-09-13)
 
 - Employee mail confirms personal SSH key/fingerprint and GitHub authentication,
