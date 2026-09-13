@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import gzip
 import json
 import subprocess
 from pathlib import Path
@@ -200,6 +201,7 @@ class RunnerContractTests(unittest.TestCase):
                  "-File", str(ROOT / "tests/faz24/windows_gpu_rollout_diagnostics.ps1"),
                  "-SourcePath", str(source),
                  "-EncodedBootstrap", runner.ENCODED_STDIN_BOOTSTRAP,
+                 "-RunnerPath", str(ROOT / "scripts/faz24/run_gpu_host_exact_sha_rollout.py"),
                  "-PythonExe", sys.executable],
                 capture_output=True, text=True, timeout=180,
             )
@@ -287,7 +289,8 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["-EncodedCommand", runner.ENCODED_STDIN_BOOTSTRAP])
         bootstrap = base64.b64decode(command[-1]).decode("utf-16-le")
         self.assertEqual(bootstrap, runner.STDIN_BOOTSTRAP)
-        self.assertIn("[Console]::In.ReadToEnd()", bootstrap)
+        self.assertIn("[Console]::In.ReadLine()", bootstrap)
+        self.assertNotIn("ReadToEnd", bootstrap)
         self.assertIn("[ScriptBlock]::Create($source)", bootstrap)
         self.assertLess(
             bootstrap.index("$ProgressPreference = 'SilentlyContinue'"),
@@ -320,7 +323,32 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(evidence["targetCommit"], COMMIT)
         self.assertEqual(command[-2:], ["-EncodedCommand", runner.ENCODED_STDIN_BOOTSTRAP])
         self.assertNotIn(COMMIT, command)
-        self.assertEqual(run.call_args.kwargs["input"], runner.build_remote_script(COMMIT))
+        self.assertEqual(run.call_args.kwargs["input"],
+                         runner.encode_remote_input(runner.build_remote_script(COMMIT)))
+
+    def test_compressed_frame_is_bounded_deterministic_and_exact(self) -> None:
+        for source in (runner.build_remote_script(COMMIT), "#" + "x" * 65535,
+                       "#" + "x" * (runner.MAX_SOURCE_BYTES - 1), "# Turkce: \u0131\u015f\u011f\n"):
+            with self.subTest(size=len(source.encode("utf-8"))):
+                frame = runner.encode_remote_input(source)
+                self.assertEqual(frame, runner.encode_remote_input(source))
+                self.assertEqual(frame.count("\n"), 1)
+                self.assertTrue(frame.endswith("\n"))
+                self.assertLessEqual(len(frame) - 1, runner.MAX_WIRE_BYTES)
+                self.assertEqual(gzip.decompress(base64.b64decode(frame[:-1], validate=True)),
+                                 source.encode("utf-8"))
+        self.assertLess(len(runner.encode_remote_input(runner.build_remote_script(COMMIT))),
+                        12000)
+
+    def test_compressed_frame_rejects_source_and_wire_limits(self) -> None:
+        for source in ("", "x" * (runner.MAX_SOURCE_BYTES + 1),
+                       "\u0131" * (runner.MAX_SOURCE_BYTES // 2 + 1)):
+            with self.subTest(size=len(source)):
+                with self.assertRaises(ValueError):
+                    runner.encode_remote_input(source)
+        with patch.object(runner.gzip, "compress", return_value=b"x" * 13000):
+            with self.assertRaises(ValueError):
+                runner.encode_remote_input("valid source")
 
     def test_evidence_marker_is_parsed_without_other_output(self) -> None:
         payload = accepted_evidence()
