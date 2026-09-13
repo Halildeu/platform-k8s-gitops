@@ -95,6 +95,63 @@ function Get-HealthMetadata {
   }
 }
 
+function ConvertTo-StreamingReadinessMetadata {
+  param($Readiness, [int]$HttpStatus)
+  return [ordered]@{
+    reachable = ($HttpStatus -eq 200)
+    httpStatus = $HttpStatus
+    status = [string]$Readiness.status
+    runtimeCommit = [string]$Readiness.runtime_commit
+    preloadEnabled = ($Readiness.streaming_preload_enabled -is [bool] -and
+      $Readiness.streaming_preload_enabled -eq $true)
+    workersHealthy = ($Readiness.workers_healthy -is [bool] -and
+      $Readiness.workers_healthy -eq $true)
+    roles = [ordered]@{ live = [string]$Readiness.roles.live; final = [string]$Readiness.roles.final }
+    runtime = [ordered]@{
+      legacy = [ordered]@{ device = [string]$Readiness.runtime.legacy.device;
+        computeType = [string]$Readiness.runtime.legacy.compute_type }
+      live = [ordered]@{ device = [string]$Readiness.runtime.live.device;
+        computeType = [string]$Readiness.runtime.live.compute_type }
+      final = [ordered]@{ device = [string]$Readiness.runtime.final.device;
+        computeType = [string]$Readiness.runtime.final.compute_type }
+    }
+    speechGateProfile = [string]$Readiness.speech_gate.profile
+  }
+}
+
+function Get-StreamingReadinessMetadata {
+  try {
+    $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8200/ready' `
+      -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+    $readiness = $response.Content | ConvertFrom-Json -ErrorAction Stop
+    return ConvertTo-StreamingReadinessMetadata -Readiness $readiness `
+      -HttpStatus ([int]$response.StatusCode)
+  } catch {
+    return ConvertTo-StreamingReadinessMetadata -Readiness $null -HttpStatus 0
+  }
+}
+
+function Test-StreamingReadinessMetadata {
+  param($Readiness, [string]$ExpectedCommit)
+  foreach ($field in @('reachable', 'preloadEnabled', 'workersHealthy')) {
+    if ($Readiness.$field -isnot [bool] -or $Readiness.$field -ne $true) { return $false }
+  }
+  return (
+    $Readiness.httpStatus -eq 200 -and
+    $Readiness.status -ceq 'ready' -and
+    $ExpectedCommit -cmatch '\A[0-9a-f]{40}\z' -and
+    $Readiness.runtimeCommit -ceq $ExpectedCommit -and
+    $Readiness.roles.live -ceq 'ready' -and $Readiness.roles.final -ceq 'ready' -and
+    $Readiness.runtime.legacy.device -ceq 'cpu' -and
+    $Readiness.runtime.legacy.computeType -ceq 'int8' -and
+    $Readiness.runtime.live.device -ceq 'cuda' -and
+    $Readiness.runtime.live.computeType -ceq 'int8' -and
+    $Readiness.runtime.final.device -ceq 'cuda' -and
+    $Readiness.runtime.final.computeType -ceq 'float16' -and
+    $Readiness.speechGateProfile -ceq 'silero-balanced-v1'
+  )
+}
+
 function Get-TaskMetadata {
   param(
     [Parameter(Mandatory = $true)][object]$RootFolder,
@@ -552,7 +609,7 @@ try {
     $ledger = [ordered]@{
       currentCommit = [string]$state.currentCommit
       previousCommit = [string]$state.previousCommit
-      action = [string]$state.action
+      action = [string]$state.lastAction
       lastResult = [string]$state.lastResult
       timestampUtc = [string]$state.timestampUtc
     }
@@ -577,6 +634,7 @@ if ($script:AcceptanceDiagnosticInvalid) {
 }
 $liveHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8200/health'
 $meetingHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8300/health'
+$streamReadiness = Get-StreamingReadinessMetadata
 $stream = Test-WebSocketReady
 $migrationAccepted = (
   (-not $migrationRequired) -or (
@@ -604,7 +662,8 @@ $go = (
   $ledger.lastResult -eq 'tasks-restarted' -and
   $liveTask.present -and $liveTask.state -eq 4 -and $liveTask.actionCanonical -and
   $meetingTask.present -and $meetingTask.state -eq 4 -and $meetingTask.actionCanonical -and
-  $liveHealth.reachable -and $liveHealth.status -eq 'ok' -and $liveHealth.device -eq 'cuda' -and
+  $liveHealth.reachable -and $liveHealth.status -cin @('ok', 'loading') -and
+  (Test-StreamingReadinessMetadata -Readiness $streamReadiness -ExpectedCommit $TargetCommit) -and
   $meetingHealth.reachable -and $meetingHealth.status -eq 'ok' -and
   $meetingHealth.backend -eq 'ollama' -and
   $stream.ready -and $stream.eventType -eq 'ready'
@@ -637,6 +696,7 @@ $evidence = [ordered]@{
   tasksBefore = $tasksBefore
   tasks = [ordered]@{ liveStt = $liveTask; meetingAi = $meetingTask }
   health = [ordered]@{ liveStt = $liveHealth; meetingAi = $meetingHealth }
+  readiness = [ordered]@{ liveStt = $streamReadiness }
   webSocket = $stream
   privacy = [ordered]@{
     rawAudioIncluded = $false
@@ -818,6 +878,7 @@ def failure_evidence(
         "tasksBefore": {},
         "tasks": {},
         "health": {},
+        "readiness": {},
         "webSocket": {
             "ready": False,
             "eventType": "",

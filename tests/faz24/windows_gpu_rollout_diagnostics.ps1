@@ -12,7 +12,8 @@ $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($SourcePath, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw 'Remote source parse failed.' }
 $names = @('ConvertTo-PowerShellLiteral', 'Invoke-PowerShellChild', 'Read-AcceptanceDiagnostic',
-  'Invoke-UpdaterChild', 'Invoke-TaskActionMigration')
+  'Invoke-UpdaterChild', 'Invoke-TaskActionMigration', 'ConvertTo-StreamingReadinessMetadata',
+  'Get-StreamingReadinessMetadata', 'Test-StreamingReadinessMetadata')
 $helperDefinitions = @()
 foreach ($name in $names) {
   $functions = @($ast.FindAll({ param($node)
@@ -162,6 +163,71 @@ try {
     -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
   if ($invalidParse.ExitCode -eq 0 -or (Test-Path -LiteralPath $parseFlag)) {
     throw 'Malformed source executed before complete parsing.'
+  }
+  function New-ReadyFixture {
+    return ('{"status":"ready","runtime_commit":"' + $TargetCommit + '",' +
+      '"streaming_preload_enabled":true,"workers_healthy":true,' +
+      '"roles":{"live":"ready","final":"ready"},"runtime":{' +
+      '"legacy":{"device":"cpu","compute_type":"int8"},' +
+      '"live":{"device":"cuda","compute_type":"int8"},' +
+      '"final":{"device":"cuda","compute_type":"float16"}},' +
+      '"speech_gate":{"profile":"silero-balanced-v1"}}') | ConvertFrom-Json
+  }
+  function Invoke-WebRequest {
+    param([string]$Uri)
+    if ($Uri -cne 'http://127.0.0.1:8200/ready') { throw 'Unexpected fixture endpoint.' }
+    if ($script:ReadyThrow) { throw 'Fixture request failure.' }
+    if ($script:ReadyMalformed) { return [pscustomobject]@{StatusCode=200;Content='{malformed'} }
+    return [pscustomobject]@{ StatusCode = $script:ReadyHttpStatus;
+      Content = ($script:ReadyResponse | ConvertTo-Json -Depth 6 -Compress) }
+  }
+  $script:ReadyThrow = $false
+  $script:ReadyMalformed = $false
+  $script:ReadyHttpStatus = 200
+  $script:ReadyResponse = New-ReadyFixture
+  $ready = Get-StreamingReadinessMetadata
+  if (-not (Test-StreamingReadinessMetadata $ready $TargetCommit)) { throw 'Valid streaming readiness rejected.' }
+  foreach ($field in @('streaming_preload_enabled', 'workers_healthy')) {
+    foreach ($invalid in @($false, 'true', 1, $null)) {
+      $script:ReadyResponse = New-ReadyFixture
+      $script:ReadyResponse.$field = $invalid
+      $ready = Get-StreamingReadinessMetadata
+      if (Test-StreamingReadinessMetadata $ready $TargetCommit) { throw 'Invalid readiness boolean accepted.' }
+    }
+  }
+  foreach ($mutation in @(
+    { param($raw) $raw.runtime_commit = 'a' * 40 },
+    { param($raw) $raw.status = 'loading' },
+    { param($raw) $raw.roles.PSObject.Properties.Remove('final') },
+    { param($raw) $raw.runtime.live.device = 'cpu' },
+    { param($raw) $raw.runtime.final.device = 'cpu' },
+    { param($raw) $raw.runtime.final.compute_type = 'int8' },
+    { param($raw) $raw.speech_gate.profile = 'development-unpinned' }
+  )) {
+    $script:ReadyResponse = New-ReadyFixture
+    & $mutation $script:ReadyResponse
+    if (Test-StreamingReadinessMetadata (Get-StreamingReadinessMetadata) $TargetCommit) {
+      throw 'Invalid streaming runtime metadata accepted.'
+    }
+  }
+  $script:ReadyResponse = New-ReadyFixture
+  $script:ReadyHttpStatus = 503
+  if (Test-StreamingReadinessMetadata (Get-StreamingReadinessMetadata) $TargetCommit) {
+    throw 'Non-200 streaming readiness accepted.'
+  }
+  $script:ReadyHttpStatus = 200
+  $script:ReadyResponse = $null
+  if (Test-StreamingReadinessMetadata (Get-StreamingReadinessMetadata) $TargetCommit) {
+    throw 'Null streaming readiness accepted.'
+  }
+  $script:ReadyMalformed = $true
+  if (Test-StreamingReadinessMetadata (Get-StreamingReadinessMetadata) $TargetCommit) {
+    throw 'Malformed streaming readiness accepted.'
+  }
+  $script:ReadyMalformed = $false
+  $script:ReadyThrow = $true
+  if (Test-StreamingReadinessMetadata (Get-StreamingReadinessMetadata) $TargetCommit) {
+    throw 'Unavailable streaming readiness accepted.'
   }
   function Start-Process { [pscustomobject]@{ ExitCode = $null } }
   $rejected = $false

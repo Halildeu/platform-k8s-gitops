@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import subprocess
 from pathlib import Path
@@ -82,10 +83,10 @@ def accepted_evidence() -> dict:
         "health": {
             "liveStt": {
                 "reachable": True,
-                "status": "ok",
+                "status": "loading",
                 "model": "medium",
-                "device": "cuda",
-                "computeType": "float16",
+                "device": "cpu",
+                "computeType": "int8",
                 "backend": "",
             },
             "meetingAi": {
@@ -96,6 +97,19 @@ def accepted_evidence() -> dict:
                 "computeType": "",
                 "backend": "ollama",
             },
+        },
+        "readiness": {
+            "liveStt": {
+                "reachable": True, "httpStatus": 200, "status": "ready",
+                "runtimeCommit": COMMIT, "preloadEnabled": True, "workersHealthy": True,
+                "roles": {"live": "ready", "final": "ready"},
+                "runtime": {
+                    "legacy": {"device": "cpu", "computeType": "int8"},
+                    "live": {"device": "cuda", "computeType": "int8"},
+                    "final": {"device": "cuda", "computeType": "float16"},
+                },
+                "speechGateProfile": "silero-balanced-v1",
+            }
         },
         "webSocket": {
             "ready": True,
@@ -112,6 +126,53 @@ def accepted_evidence() -> dict:
 
 
 class RunnerContractTests(unittest.TestCase):
+    def test_streaming_readiness_contract_not_legacy_cuda(self) -> None:
+        script = runner.build_remote_script(COMMIT)
+        self.assertIn("http://127.0.0.1:8200/ready", script)
+        self.assertIn("$Readiness.streaming_preload_enabled -is [bool]", script)
+        self.assertIn("$Readiness.workers_healthy -is [bool]", script)
+        self.assertIn("Test-StreamingReadinessMetadata -Readiness $streamReadiness", script)
+        self.assertNotIn("$liveHealth.device -eq 'cuda'", script)
+        self.assertIn("action = [string]$state.lastAction", script)
+        self.assertNotIn("action = [string]$state.action", script)
+        # /health loading/cpu is the expected lazy legacy model, not admission.
+        verifier.verify(accepted_evidence(), COMMIT)
+
+    def test_streaming_readiness_rejects_missing_or_invalid_evidence(self) -> None:
+        cases = [
+            (("readiness",), None),
+            (("readiness", "liveStt", "reachable"), False),
+            (("readiness", "liveStt", "httpStatus"), 503),
+            (("readiness", "liveStt", "status"), "loading"),
+            (("readiness", "liveStt", "runtimeCommit"), "a" * 40),
+            (("readiness", "liveStt", "runtimeCommit"), None),
+            (("readiness", "liveStt", "roles", "live"), "loading"),
+            (("readiness", "liveStt", "roles", "final"), None),
+            (("readiness", "liveStt", "runtime", "live", "device"), "cpu"),
+            (("readiness", "liveStt", "runtime", "final", "device"), "cpu"),
+            (("readiness", "liveStt", "runtime", "live", "computeType"), "float16"),
+            (("readiness", "liveStt", "runtime", "final", "computeType"), "int8"),
+            (("readiness", "liveStt", "runtime", "legacy", "device"), "cuda"),
+            (("readiness", "liveStt", "speechGateProfile"), "development-unpinned"),
+            (("health", "liveStt", "status"), "degraded"),
+            (("health", "liveStt", "reachable"), False),
+        ]
+        for field in ("preloadEnabled", "workersHealthy"):
+            for invalid in (False, "true", 1, None):
+                cases.append((("readiness", "liveStt", field), invalid))
+        for path, invalid in cases:
+            with self.subTest(path=path, invalid=invalid):
+                data = copy.deepcopy(accepted_evidence())
+                parent = data
+                for name in path[:-1]:
+                    parent = parent[name]
+                if invalid is None:
+                    del parent[path[-1]]
+                else:
+                    parent[path[-1]] = invalid
+                with self.assertRaises(verifier.EvidenceError):
+                    verifier.verify(data, COMMIT)
+
     def test_child_exit_and_protocol_contract(self) -> None:
         script = runner.build_remote_script(COMMIT)
         self.assertIn("'exit $LASTEXITCODE'", script)
