@@ -1,5 +1,19 @@
 # Current State — Platform K8s Migration
 
+## Candidate Data Policy - TEST Promotion Pending (2026-09-13)
+
+- Tracked by #3736 and platform-web#1003. ATS PR #269 merged as
+  `9b51a4fb5bcc432e1b4c48f0e57f3104e04c388d`; scanned image workflow
+  `34755456164` published `sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299`.
+- Desired TEST ATS digest and acceptance/recovery workflow pins are updated
+  together. Runtime preflight still observed previous `sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec`
+  Ready 1/1, and no public `candidateDataPolicy`. This is not runtime acceptance.
+- Frontend PR #1174 remains draft until backend TEST metadata is verified.
+  v2 acknowledgements preserve existing legal terms and v1 records. No data-mode,
+  retention, role, secret or production change. Rollback frontend before backend.
+- Approved access email was sent once and its exact sent copy verified at
+  11:24:50 UTC (evidence #3730); recipient acceptance and VPN/client reply remain pending.
+
 ## Live Delta - TEST activation notification recipient (2026-09-13 11:01 UTC)
 
 - PR #3734 merged as `7b8b05380d9475ee450deafdc3d9ccf558beaa38` after 24
