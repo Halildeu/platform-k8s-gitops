@@ -1,0 +1,115 @@
+{
+  "schema": "meeting-persisted-date-loss-metadata-v1",
+  "status": "rejected-persisted-date-metadata",
+  "environment": "test",
+  "synthetic": true,
+  "issue": 3753,
+  "productSlice": 3399,
+  "meetingId": "ae0e48ed-2dd9-45ac-86c2-cfcee426e889",
+  "sessionId": "f5b77e69-0792-42c0-9ad9-1ba8d0738feb",
+  "analysisRunId": "3d7a51d2-4b27-43b7-9cfc-e89c7043bf9f",
+  "sourceCommit": "d67ec2d591f70293ed23cdfe48726baf6a20ef12",
+  "gitopsCommit": "a7eb9337d4f2703b2cbfe609d93887c63ce350a7",
+  "model": "qwen3.8:27b",
+  "modelDigest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643",
+  "think": false,
+  "frozenSourceMatched": true,
+  "score": {
+    "goldSha256": "7ddd9d4346e7943df8c8c7e30b6d7af1fa4039403d27466a3f08409950af0097",
+    "caseId": "two-speaker-tr-v1-observed-asr",
+    "identityNormalization": "whitespace-and-tr-case-v2",
+    "decisions": {
+      "truePositive": 4,
+      "falsePositive": 0,
+      "falseNegative": 0
+    },
+    "actions": {
+      "truePositive": 3,
+      "falsePositive": 0,
+      "falseNegative": 0
+    },
+    "actionWithMetadata": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "owners": {
+      "truePositive": 3,
+      "falsePositive": 0,
+      "falseNegative": 0
+    },
+    "dueDates": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "exactMatch": false,
+    "strictQuoteIdentity": {
+      "goldSha256": "7ddd9d4346e7943df8c8c7e30b6d7af1fa4039403d27466a3f08409950af0097",
+      "caseId": "two-speaker-tr-v1-observed-asr",
+      "identityNormalization": "whitespace-only-v1",
+      "decisions": {
+        "truePositive": 4,
+        "falsePositive": 0,
+        "falseNegative": 0
+      },
+      "actions": {
+        "truePositive": 3,
+        "falsePositive": 0,
+        "falseNegative": 0
+      },
+      "actionWithMetadata": {
+        "truePositive": 2,
+        "falsePositive": 1,
+        "falseNegative": 1
+      },
+      "owners": {
+        "truePositive": 3,
+        "falsePositive": 0,
+        "falseNegative": 0
+      },
+      "dueDates": {
+        "truePositive": 2,
+        "falsePositive": 1,
+        "falseNegative": 1
+      },
+      "exactMatch": false
+    }
+  },
+  "lifecycleReceiptSha256": "807ea271bba3df62f7582c4fa254a6f46cf56311756691d3e20bc076fa2a4f50",
+  "cleanupReceiptSha256": "a168e41b774a8af311c6873900e17c10e6fb44917680ad380345ab34391f9073",
+  "negativeBrowserReceiptSha256": "b0805a44533013e78542da79d7d1e1756215ea5ac2b7b162fbe2939285d30cf7",
+  "strictAttributionCoverageReverified": true,
+  "wer": 0,
+  "referenceWords": 113,
+  "storedAttributedSegments": 112,
+  "syntheticDER": {
+    "correct": 23.957000000000043,
+    "missed detection": 0.29299999999999304,
+    "confusion": 0,
+    "total": 24.250000000000036,
+    "false alarm": 1.190999999999982,
+    "diarization error rate": 0.06119587628865868
+  },
+  "syntheticDERZeroCollar": {
+    "correct": 50.241499999999895,
+    "missed detection": 1.2084999999999946,
+    "confusion": 0,
+    "total": 51.44999999999988,
+    "false alarm": 4.998499999999898,
+    "diarization error rate": 0.12064139941690781
+  },
+  "collarSeconds": 0.25,
+  "postFinishResultWaitMs": 427544,
+  "diagnosis": "Relative source date phrases are lost by the AI-to-backend Instant-only persistence contract.",
+  "liveModelIntermediateOutputObserved": false,
+  "temporaryRecorderStateRestored": true,
+  "negativeAuthorizationVerified": true,
+  "helperScope": "First run used retained operational helper; current canonical helper repeat is separate evidence.",
+  "privacy": {
+    "secretMaterialIncluded": false,
+    "transcriptTextIncluded": false,
+    "rawAudioIncluded": false
+  },
+  "realMeetingAccuracyClaim": false
+}

@@ -1,6 +1,7 @@
 # Meeting speaker quality - bounded TEST acceptance
 
 Product Slice: #3399. Execution: #3740 (backend), #3741 (web), #3742 (TEST).
+Semantic acceptance and exact model profile: #3753.
 
 The customer path is recording with consent -> streamed transcript -> finish ->
 durable analysis -> authorized browser reopen with anonymous speaker turns and
@@ -105,10 +106,45 @@ speaker-count/noise/overlap slices and held-out evaluation. No production/legal
 approval or real-audio external-provider permission is inferred from this test.
 The internal diarization adapter gap is tracked separately in #3746.
 `durable.usableProductResult` is the existing workflow/source gate, not a gold
-decision/action score. The unchanged Ollama `llama3.1:8b` result classified a
-past design-review report as a decision in this fixture; semantic precision,
-recall and confidence calibration are tracked in #3753. A valid source quote
-does not prove its classification is correct. Elapsed-time display is #3751.
+decision/action score. The historical Ollama `llama3.1:8b` baseline classified a
+past design-review report as a decision in this fixture. Subsequent rejected
+model/source results remain evidence, not the current runtime authority. Read
+`docs/state/current-state.md` and the host model digest for the current profile.
+A valid source quote does not prove its classification is correct. Source
+matching must not be presented as calibrated semantic confidence. Elapsed-time
+display is tracked in #3751; semantic precision and recall in #3753.
+
+## Semantic quality contract
+
+Evaluate decision and action classification independently from WER, DER and
+source grounding. Report TP/FP/FN for both classes, plus exact action owner/date
+metadata. Duplicate predictions cannot increase true positives. Anonymous
+speaker labels do not authorize inventing named owners. Negated proposals,
+past reports, headings without content, prerequisites, adopted policies and
+explicit tasks must be represented in the regression set.
+
+The frozen source regression reports and reproducible runtime runner are in
+[platform-ai semantic repair #340](https://github.com/Halildeu/platform-ai/blob/d67ec2d591f70293ed23cdfe48726baf6a20ef12/docs/meeting-semantic-runtime-repair-340.md).
+They contain 22 labeled synthetic cases and three repeated evaluations of the
+known synthetic 112-row source. They are visible regression data, not held-out
+human labels, real-meeting accuracy or a cold-start performance guarantee.
+Diagnostic-only source changes can reuse them only after comparing the complete
+runtime file set and every source hash; a changed prompt/model/runtime needs
+fresh inference evidence. Keep every rejected control.
+
+After exact-source rollout and fresh permit activation, create a NEW persisted
+TEST meeting. Bind semantic scoring to its actual source and the correct frozen
+reference, never choose a reference because the prediction passes it. Normalize
+only documented case/spacing differences; do not remove semantic distinctions
+or alter labels after seeing the output. Verify model identity, same analysis
+run on reopen, source timestamps/citation targets, desktop/mobile layout, fresh
+negative authorization and cleanup separately. Persisted synthetic acceptance
+is stronger than an offline model run but still not real-customer accuracy.
+
+Keep the original protected config and exact pins for rollback. Explicit
+`MAI_OLLAMA_THINK` is supported only by the qualified new source: restore the
+original model and use canonical `-OllamaThink unset` before an older-source
+downgrade. Do not inflate request/lease budgets or lower gates to pass a run.
 
 ## TEST reactivation after a producer change
 
