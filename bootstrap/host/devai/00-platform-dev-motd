@@ -1,0 +1,9 @@
+#!/bin/sh
+printf '%s\n' '*** PLATFORM DEVELOPMENT HOST ***'
+printf '%s\n' 'DEV: stagingsw / devai.acik.com / 10.9.10.53 (company network or VPN).'
+printf '%s\n' 'Use your personal account and /home/<user>/repos for development.'
+printf '%s\n' 'TEST/PROD runtime host: aiserver / 10.9.10.15; promote through GitHub.'
+if [ -e /etc/aiserver-archive/ARCHIVE_STANDBY ]; then
+    printf '%s\n' 'Legacy runtime remains fenced; isolated platform-dev services are separate.'
+    printf '%s\n' 'Do not remove the archive sentinel or start legacy services manually.'
+fi

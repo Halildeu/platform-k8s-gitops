@@ -7307,6 +7307,10 @@ patches:
       - op: replace
         path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED
         value: "true"
+      # #3733: TEST activation notices must reach the current operator mailbox.
+      - op: replace
+        path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ADMIN_EMAIL
+        value: "halil.kocoglu@acik.com"
       # board #2533 (umbrella #2530) — TEST-ONLY. Do NOT promote to the prod overlay.
       #
       # JwtAutoProvisionGate is fail-closed: without the M365 marker claim `entra_tid` it denies
@@ -7351,6 +7355,7 @@ patches:
           metadata:
             annotations:
               user-service.acik.com/local-kc-provision-rev: "2533-1"
+              user-service.acik.com/activation-recipient-rev: "3733-1"
   - target:
       kind: Deployment
       name: user-service
