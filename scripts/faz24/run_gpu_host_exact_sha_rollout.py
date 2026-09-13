@@ -175,7 +175,7 @@ function Get-TaskMetadata {
 
 function Test-WebSocketReady {
   param(
-    [string]$Url = 'ws://127.0.0.1:8200/ws/stream',
+    [string]$Url = 'ws://127.0.0.1:8200/ws/stream?protocol=source-ranges-v1',
     [int]$TimeoutSec = 180
   )
   $client = $null
@@ -216,7 +216,10 @@ function Test-WebSocketReady {
         $event = $payload | ConvertFrom-Json -ErrorAction Stop
         $eventType = [string]$event.type
         if ($eventType -eq 'ready') {
-          return [ordered]@{ ready = $true; eventType = 'ready'; failureClass = 'none' }
+          if ([string]$event.protocol -cne 'source-ranges-v1') {
+            return [ordered]@{ ready = $false; eventType = 'ready'; failureClass = 'protocol-mismatch' }
+          }
+          return [ordered]@{ ready = $true; eventType = 'ready'; protocol = 'source-ranges-v1'; failureClass = 'none' }
         }
         if ($eventType -eq 'error') {
           return [ordered]@{ ready = $false; eventType = 'error'; failureClass = 'server-error-event' }
@@ -259,14 +262,20 @@ function Invoke-PowerShellChild {
     'faz24-gpu-rollout-child-' + [Guid]::NewGuid().ToString('N') + '.ps1'
   )
   try {
+    # A nested script's exit sets LASTEXITCODE, not this wrapper process's exit.
+    $wrapper = '$ErrorActionPreference = ''Stop''; $global:LASTEXITCODE = 0' +
+      [Environment]::NewLine + $Command + [Environment]::NewLine + 'exit $LASTEXITCODE'
     [IO.File]::WriteAllText(
-      $scriptPath, $Command, (New-Object Text.UTF8Encoding($false))
+      $scriptPath, $wrapper, (New-Object Text.UTF8Encoding($false))
     )
     $child = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       '-File', $scriptPath
     ) -NoNewWindow -Wait -PassThru `
       -RedirectStandardOutput $StdoutPath -RedirectStandardError $StderrPath
+    if ($null -eq $child -or $null -eq $child.ExitCode) {
+      throw 'child-exit-code-unavailable'
+    }
     return [int]$child.ExitCode
   } finally {
     Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
@@ -283,6 +292,48 @@ function Invoke-GitSilent {
   } finally {
     $ErrorActionPreference = $oldEap
   }
+}
+
+function Read-AcceptanceDiagnostic {
+  param([string]$Path, [string]$ExpectedCommit)
+  $prefix = 'FAZ24_GPU_ACCEPTANCE_REASON:'
+  $found = $null
+  $allowed = @(
+    'restart-failed-task-missing', 'restart-failed-task-contract',
+    'restart-failed-task-repo-root', 'restart-failed-task-query',
+    'restart-failed-owner-query', 'restart-failed-task-end',
+    'restart-failed-stale-task-instance', 'restart-failed-stale-listener',
+    'restart-failed-task-run', 'restart-failed-no-new-task-instance',
+    'restart-failed-no-new-listener', 'restart-failed-identity-unstable',
+    'meeting-ai-readiness-failed', 'meeting-ai-readiness-identity-changed',
+    'readiness-failed', 'readiness-failed-identity-changed',
+    'smoke-failed', 'smoke-failed-identity-changed',
+    'injected-acceptance-failure', 'acceptance-exception', 'acceptance-reason-unavailable'
+  )
+  $reader = [IO.File]::OpenText($Path)
+  try {
+    while ($null -ne ($line = $reader.ReadLine())) {
+      if (-not $line.StartsWith($prefix, [StringComparison]::Ordinal)) { continue }
+      if ($null -ne $found -or $line.Length -gt 512) { throw 'acceptance-diagnostic-invalid' }
+      try {
+        $raw = $line.Substring($prefix.Length)
+        $value = $raw | ConvertFrom-Json -ErrorAction Stop
+        if ($value.schemaVersion -cne 'faz24.gpu-acceptance-diagnostic.v1' -or
+            $value.candidateCommit -cne $ExpectedCommit -or
+            $ExpectedCommit -cnotmatch '\A[0-9a-f]{40}\z' -or
+            $allowed -cnotcontains $value.reason) { throw 'invalid' }
+        $candidate = [ordered]@{
+          schemaVersion = 'faz24.gpu-acceptance-diagnostic.v1'
+          candidateCommit = $ExpectedCommit
+          reason = [string]$value.reason
+        }
+        # Canonical round-trip rejects duplicate properties, extra keys and types.
+        if (($candidate | ConvertTo-Json -Compress) -cne $raw) { throw 'invalid' }
+        $found = $candidate
+      } catch { throw 'acceptance-diagnostic-invalid' }
+    }
+  } finally { $reader.Dispose() }
+  return $found
 }
 
 function Invoke-UpdaterChild {
@@ -305,8 +356,19 @@ function Invoke-UpdaterChild {
     }
     if ($NoRestartOnly) { $command += ' -NoRestart' }
     if ($WhatIfOnly) { $command += ' -WhatIf' }
-    return Invoke-PowerShellChild -Command $command -StdoutPath $stdoutPath `
+    $exitCode = Invoke-PowerShellChild -Command $command -StdoutPath $stdoutPath `
       -StderrPath $stderrPath
+    try {
+      $diagnostic = Read-AcceptanceDiagnostic -Path $stdoutPath -ExpectedCommit $TargetCommit
+      if ($null -ne $diagnostic) {
+        if ($null -ne $script:AcceptanceDiagnostic) { throw 'acceptance-diagnostic-invalid' }
+        $script:AcceptanceDiagnostic = $diagnostic
+      }
+    } catch {
+      $script:AcceptanceDiagnosticInvalid = $true
+      throw 'acceptance-diagnostic-invalid'
+    }
+    return $exitCode
   } finally {
     Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
   }
@@ -342,7 +404,7 @@ function Get-RolloutFailureClass {
     'updater-whatif-rejected', 'updater-pin-rejected',
     'task-migration-script-missing', 'task-migration-whatif-rejected',
     'task-migration-rejected', 'task-migration-readback-rejected',
-    'updater-deploy-rejected'
+    'updater-deploy-rejected', 'child-exit-code-unavailable', 'acceptance-diagnostic-invalid'
   )
   if ($known -contains $message) { return $message }
   $typeName = [string]$ErrorRecord.Exception.GetType().Name
@@ -358,6 +420,8 @@ $migrationWhatIfExitCode = -1
 $migrationExitCode = -1
 $sourceRollbackExitCode = -1
 $deployExitCode = -1
+$script:AcceptanceDiagnostic = $null
+$script:AcceptanceDiagnosticInvalid = $false
 $failureClass = 'none'
 $controllerCreated = $false
 $controllerCleanupExitCode = -1
@@ -493,6 +557,11 @@ try {
   } catch { }
 }
 
+if ($script:AcceptanceDiagnosticInvalid) {
+  $failureClass = 'acceptance-diagnostic-invalid'
+} elseif ($null -ne $script:AcceptanceDiagnostic -and $failureClass -eq 'none') {
+  $failureClass = 'acceptance-candidate-rejected'
+}
 $liveHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8200/health'
 $meetingHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8300/health'
 $stream = Test-WebSocketReady
@@ -563,6 +632,9 @@ $evidence = [ordered]@{
   }
 }
 
+if ($null -ne $script:AcceptanceDiagnostic -and -not $script:AcceptanceDiagnosticInvalid) {
+  $evidence['acceptanceDiagnostic'] = $script:AcceptanceDiagnostic
+}
 $json = $evidence | ConvertTo-Json -Compress -Depth 8
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
 [Console]::Out.WriteLine('FAZ24_GPU_ROLLOUT_JSON:' + $encoded)
