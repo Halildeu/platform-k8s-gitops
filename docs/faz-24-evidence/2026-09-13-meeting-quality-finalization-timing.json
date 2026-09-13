@@ -1,0 +1,47 @@
+{
+  "schema": "meeting-quality-finalization-timing-v1",
+  "issue": 3753,
+  "productSlice": 3399,
+  "environment": "test",
+  "scope": "read-only-configuration-and-process-aggregate",
+  "observedWindowUtc": {
+    "from": "2026-09-13T20:01:00Z",
+    "to": "2026-09-13T20:04:00Z"
+  },
+  "desiredState": {
+    "path": "kustomize/overlays/test/kustomization.yaml",
+    "gitCommit": "5705f681be4a4b0cc00ebb902be2503697459857",
+    "TRANSCRIPT_FINALIZATION_QUIESCENCE": "PT1M",
+    "TRANSCRIPT_FINALIZATION_MIN_WAIT": "PT6M",
+    "TRANSCRIPT_FINALIZATION_MAX_WAIT": "PT15M"
+  },
+  "liveState": {
+    "context": "k3d-test",
+    "namespace": "platform-test",
+    "configMap": "transcript-service-config",
+    "deployment": "transcript-service",
+    "configMapReadbackMatchesDesired": true,
+    "podEnvironmentReadbackMatchesDesired": true
+  },
+  "meetingEvidence": {
+    "meetingId": "a17a16df-2de4-4dfd-b264-da731b3e42ed",
+    "kind": "synthetic-TTS-privileged-TEST-persona",
+    "postFinishResultWaitMs": 417573,
+    "receipt": "2026-09-13-meeting-semantic-candidate-api.json",
+    "interpretation": "End-to-end wait includes a minimum six-minute upstream finalization gate. It is not model inference duration. Individual stage durations for this meeting were not captured."
+  },
+  "workerMetrics": {
+    "observedAtUtc": "2026-09-13T20:01:39.8923593Z",
+    "scope": "process-aggregate-not-meeting-specific",
+    "httpStatus": 200,
+    "queueAcquiredCount": 4,
+    "workerSuccessCount": 4,
+    "workerSuccessSecondsSum": 151.01500000001397,
+    "readyConsumerOutboxedCount": 1,
+    "deadlineSamplesPresent": false,
+    "interpretation": "Aggregate counters are not attributable to the single recorded meeting. Absence of a deadline sample is not a universal no-timeout guarantee."
+  },
+  "mutationPerformed": false,
+  "semanticAcceptance": "rejected-in-linked-receipt",
+  "productionAcceptance": false
+}
