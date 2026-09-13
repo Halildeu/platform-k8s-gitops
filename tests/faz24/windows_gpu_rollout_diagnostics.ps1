@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$SourcePath,
-  [Parameter(Mandatory = $true)][string]$EncodedBootstrap
+  [Parameter(Mandatory = $true)][string]$EncodedBootstrap,
+  [Parameter(Mandatory = $true)][string]$PythonExe
 )
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) {
@@ -23,30 +24,27 @@ foreach ($name in $names) {
 }
 function Invoke-InputFixture {
   param([string]$Source, [string]$Invocation)
-  $start = New-Object Diagnostics.ProcessStartInfo
-  $start.FileName = 'powershell.exe'
-  $start.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
-    '-InputFormat Text -OutputFormat Text ' + $Invocation
-  $start.UseShellExecute = $false
-  $start.RedirectStandardInput = $true
-  $start.RedirectStandardOutput = $true
-  $start.RedirectStandardError = $true
-  $process = New-Object Diagnostics.Process
-  $process.StartInfo = $start
+  $inputPath = Join-Path $env:TEMP ('rollout-input-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+  $driver = @'
+import json, pathlib, subprocess, sys
+payload = pathlib.Path(sys.argv[1]).read_bytes()
+assert not payload.startswith(b'\xef\xbb\xbf'), 'fixture input must match BOM-free Python transport'
+command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+           '-InputFormat', 'Text', '-OutputFormat', 'Text'] + sys.argv[2].split()
+result = subprocess.run(command, input=payload, capture_output=True, timeout=40)
+print(json.dumps({'ExitCode': result.returncode, 'Stdout': result.stdout.decode('utf-8'),
+                  'Stderr': result.stderr.decode('utf-8')}))
+'@
   try {
-    [void]$process.Start()
-    # Match Python subprocess UTF-8 bytes, not .NET StreamWriter's BOM.
+    # The real runner uses Python's pipe transport; .NET adds a BOM itself.
     $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($Source)
     if ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and
         $bytes[1] -eq 187 -and $bytes[2] -eq 191) { throw 'Fixture payload contains a BOM.' }
-    $inputStream = $process.StandardInput.BaseStream
-    $inputStream.Write($bytes, 0, $bytes.Length)
-    $inputStream.Close()
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
-    $process.WaitForExit()
-    return @{ ExitCode = $process.ExitCode; Stdout = $stdout; Stderr = $stderr }
-  } finally { $process.Dispose() }
+    [IO.File]::WriteAllBytes($inputPath, $bytes)
+    $result = & $PythonExe -c $driver $inputPath $Invocation
+    if ($LASTEXITCODE -ne 0) { throw 'Isolated Python transport fixture failed.' }
+    return ($result | ConvertFrom-Json)
+  } finally { Remove-Item -LiteralPath $inputPath -Force -ErrorAction Stop }
 }
 # Only extracted functions run: never the rollout's host/task/Git orchestration.
 $directory = Join-Path $env:TEMP ('rollout-fixture-' + [Guid]::NewGuid().ToString('N'))

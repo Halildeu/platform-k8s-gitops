@@ -138,7 +138,8 @@ class RunnerContractTests(unittest.TestCase):
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                  "-File", str(ROOT / "tests/faz24/windows_gpu_rollout_diagnostics.ps1"),
                  "-SourcePath", str(source),
-                 "-EncodedBootstrap", runner.ENCODED_STDIN_BOOTSTRAP],
+                 "-EncodedBootstrap", runner.ENCODED_STDIN_BOOTSTRAP,
+                 "-PythonExe", sys.executable],
                 capture_output=True, text=True, timeout=180,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
