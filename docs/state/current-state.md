@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Meeting Speaker Quality - Consumer-First TEST Evidence (2026-09-13)
+## Meeting Speaker Quality - Synthetic TEST API And Browser Evidence (2026-09-13)
 
 - Tracked by #3740 / #3741 / #3742, customer slice #3399. Backend #1167
   merged as `121e8a1d1ec58147e1f11325683ca5ea273dd744`; full source CI passed.
@@ -15,13 +15,41 @@
   The initial 180-second result poll was shorter than the configured PT6M
   finalization minimum. Later user API and authenticated browser readback prove
   the persisted result, verified summary, one decision and four actions.
-- This overlay next promotes the producer artifact
-  `sha256:97cb8d68082af7be2577664b2af7f55f7040eb423a395d3678dc610a33b3fadb`.
-  An isolated non-root TEST pull probe proved that imageID and was removed.
-  Producer rollout, after-change quality comparison and new speaker UI remain
-  unverified here. Existing internal STT has no integrated diarization; these
-  changes enable anonymous provider attribution, not person identification or
-  an overall production accuracy claim. Evidence and rollback: #3742.
+- The first producer candidate preserved attribution in only 65/112 finals
+  (synthetic DER 0.4201), failing the declared 0.30 bound. Its
+  [failed receipt](../faz-24-evidence/2026-09-13-speaker-quality-first-candidate-failed.json)
+  is retained. Backend #1168 (`d96d384353622184e80f7290592ba0e69cb578ff`)
+  repairs sample quantization and overlapping provider word windows. GitOps
+  #3748 / rollout `34765122798` put the exact gateway imageID
+  `sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929`
+  on TEST; transcript consumer stays at the 191eecbc digest above.
+- The corrected same-fixture run has 112/112 attributed streamed AND stored
+  segments, exact metadata reopen, WER 0/113 words, DER 0.0612 at collar 0.25
+  and 0.1206 at zero collar. These are short clean TTS observations, not measured
+  real-meeting accuracy. [API receipt](../faz-24-evidence/2026-09-13-speaker-quality-corrected-api.json)
+  proves the persisted result after 387 seconds, one decision and four actions.
+- Web #1175 + #1176 (`7d67da055527d202f031a5369539ca7ae934f06b`), GitOps #3749
+  and rollout `34765771694` put frontend imageID
+  `sha256:97c7bf1cabf97487b26cb1ee2a700e4a4b914b40614f82523e72810d7bac3dac`
+  on TEST. [Browser receipt](../faz-24-evidence/2026-09-13-speaker-quality-browser.json)
+  proves desktop/mobile anonymous labels, same persisted analysis, citation
+  target navigation and transcript 403 after temporary role revocation.
+  A denied/failed transcript request is now visibly unavailable, not empty-ready.
+- Browser persona is synthetic D35, not a customer or Zeynep account. Its prior
+  direct MEETING read grant was removed by permission-writer reconciliation and
+  restored through dedicated SQL role `D35_MEETING_VIEW` (role 35, VIEW only,
+  synthetic user 12 only). That baseline fixture remains intentionally; temporary
+  TRANSCRIPT VIEW roles and Keycloak TRANSCRIPT_ADMIN were removed/read back.
+- #3750 aligns the strict reactivation policy with the exact transcript producer.
+  A fresh signed permit was activated on unchanged platform-ai `6223fd2`; the
+  meeting-ai listener changed 27340 -> 30108, with task ancestry/interpreter
+  checks, healthy enabled consumer and delivery workers, no pending/in-flight
+  deliveries, and the live-STT task unchanged. Old producer bindings and consumed
+  permits fail closed. A fresh post-restart result trial remains in progress.
+  No production change or real audio
+  was used. Internal STT diarization (#3746), elapsed-time display (#3751), and a
+  representative human-annotated corpus remain separate work. Method and limits:
+  [quality runbook](../runbooks/RB-faz24-meeting-speaker-quality.md).
 
 ## Candidate Data Policy - TEST Applicant Journey Verified (2026-09-13)
 

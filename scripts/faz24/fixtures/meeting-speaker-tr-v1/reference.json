@@ -1,0 +1,607 @@
+{
+  "kind": "synthetic-TTS-not-real-meeting",
+  "sha256": "702c3a94e34ca09915237e3fabf11a037602514bb93cec13555ecd3ab7fe2676",
+  "durationSeconds": 76.696,
+  "sampleRate": 16000,
+  "edgeTtsVersion": "7.2.8",
+  "turns": [
+    {
+      "speaker": "REF_0",
+      "text": "Bugünkü toplantıda yeni projenin bütçesini ve teslim tarihini konuşacağız. Önce geçen haftanın görevlerini kontrol edelim. Tasarım raporu hazırlandı, ancak teknik testler henüz bitmedi. Önceliğimiz eksik testleri güvenli biçimde tamamlamak.",
+      "start": 0.0,
+      "end": 19.416,
+      "words": [
+        {
+          "start": 0.1,
+          "end": 0.875,
+          "text": "Bugünkü"
+        },
+        {
+          "start": 0.875,
+          "end": 1.5625,
+          "text": "toplantıda"
+        },
+        {
+          "start": 1.5625,
+          "end": 1.8375,
+          "text": "yeni"
+        },
+        {
+          "start": 1.8375,
+          "end": 2.375,
+          "text": "projenin"
+        },
+        {
+          "start": 2.375,
+          "end": 3.0,
+          "text": "bütçesini"
+        },
+        {
+          "start": 3.125,
+          "end": 3.25,
+          "text": "ve"
+        },
+        {
+          "start": 3.2625,
+          "end": 3.6625,
+          "text": "teslim"
+        },
+        {
+          "start": 3.675,
+          "end": 4.1375,
+          "text": "tarihini"
+        },
+        {
+          "start": 4.1375,
+          "end": 4.975,
+          "text": "konuşacağız"
+        },
+        {
+          "start": 6.1,
+          "end": 6.425,
+          "text": "Önce"
+        },
+        {
+          "start": 6.5875,
+          "end": 6.95,
+          "text": "geçen"
+        },
+        {
+          "start": 6.95,
+          "end": 7.35,
+          "text": "haftanın"
+        },
+        {
+          "start": 7.35,
+          "end": 7.975,
+          "text": "görevlerini"
+        },
+        {
+          "start": 7.975,
+          "end": 8.4875,
+          "text": "kontrol"
+        },
+        {
+          "start": 8.4875,
+          "end": 8.9,
+          "text": "edelim"
+        },
+        {
+          "start": 10.0125,
+          "end": 10.675,
+          "text": "Tasarım"
+        },
+        {
+          "start": 10.675,
+          "end": 11.0,
+          "text": "raporu"
+        },
+        {
+          "start": 11.0,
+          "end": 11.7125,
+          "text": "hazırlandı"
+        },
+        {
+          "start": 11.9,
+          "end": 12.3125,
+          "text": "ancak"
+        },
+        {
+          "start": 12.3125,
+          "end": 12.6625,
+          "text": "teknik"
+        },
+        {
+          "start": 12.6625,
+          "end": 13.1375,
+          "text": "testler"
+        },
+        {
+          "start": 13.1375,
+          "end": 13.5,
+          "text": "henüz"
+        },
+        {
+          "start": 13.5,
+          "end": 13.9875,
+          "text": "bitmedi"
+        },
+        {
+          "start": 15.125,
+          "end": 15.95,
+          "text": "Önceliğimiz"
+        },
+        {
+          "start": 15.9875,
+          "end": 16.3,
+          "text": "eksik"
+        },
+        {
+          "start": 16.3,
+          "end": 16.7875,
+          "text": "testleri"
+        },
+        {
+          "start": 16.7875,
+          "end": 17.2,
+          "text": "güvenli"
+        },
+        {
+          "start": 17.2,
+          "end": 17.575,
+          "text": "biçimde"
+        },
+        {
+          "start": 17.575,
+          "end": 18.275,
+          "text": "tamamlamak"
+        }
+      ]
+    },
+    {
+      "speaker": "REF_1",
+      "text": "Tasarım raporunu inceledim. Müşteri ekranında iki değişiklik gerekiyor. Başvuru formu daha anlaşılır olmalı ve sonuç kaydedildikten sonra tekrar açılabilmeli. Bu iki görev için yarın öğleden sonra yeni bir değerlendirme yapalım.",
+      "start": 20.416,
+      "end": 37.216,
+      "words": [
+        {
+          "start": 20.516000000000002,
+          "end": 20.941,
+          "text": "Tasarım"
+        },
+        {
+          "start": 20.941,
+          "end": 21.4035,
+          "text": "raporunu"
+        },
+        {
+          "start": 21.4035,
+          "end": 22.0285,
+          "text": "inceledim"
+        },
+        {
+          "start": 23.091,
+          "end": 23.5035,
+          "text": "Müşteri"
+        },
+        {
+          "start": 23.5035,
+          "end": 24.116,
+          "text": "ekranında"
+        },
+        {
+          "start": 24.1285,
+          "end": 24.366,
+          "text": "iki"
+        },
+        {
+          "start": 24.366,
+          "end": 24.891,
+          "text": "değişiklik"
+        },
+        {
+          "start": 24.891,
+          "end": 25.4785,
+          "text": "gerekiyor"
+        },
+        {
+          "start": 26.5285,
+          "end": 26.991,
+          "text": "Başvuru"
+        },
+        {
+          "start": 26.991,
+          "end": 27.3535,
+          "text": "formu"
+        },
+        {
+          "start": 27.3535,
+          "end": 27.6035,
+          "text": "daha"
+        },
+        {
+          "start": 27.6035,
+          "end": 28.128500000000003,
+          "text": "anlaşılır"
+        },
+        {
+          "start": 28.141,
+          "end": 28.516,
+          "text": "olmalı"
+        },
+        {
+          "start": 28.5285,
+          "end": 28.6785,
+          "text": "ve"
+        },
+        {
+          "start": 28.6785,
+          "end": 28.9785,
+          "text": "sonuç"
+        },
+        {
+          "start": 29.0285,
+          "end": 29.841,
+          "text": "kaydedildikten"
+        },
+        {
+          "start": 29.841,
+          "end": 30.166,
+          "text": "sonra"
+        },
+        {
+          "start": 30.166,
+          "end": 30.541,
+          "text": "tekrar"
+        },
+        {
+          "start": 30.541,
+          "end": 31.253500000000003,
+          "text": "açılabilmeli"
+        },
+        {
+          "start": 32.4035,
+          "end": 32.5785,
+          "text": "Bu"
+        },
+        {
+          "start": 32.6035,
+          "end": 32.816,
+          "text": "iki"
+        },
+        {
+          "start": 32.816,
+          "end": 33.116,
+          "text": "görev"
+        },
+        {
+          "start": 33.116,
+          "end": 33.441,
+          "text": "için"
+        },
+        {
+          "start": 33.441,
+          "end": 33.7535,
+          "text": "yarın"
+        },
+        {
+          "start": 33.7785,
+          "end": 34.2285,
+          "text": "öğleden"
+        },
+        {
+          "start": 34.2285,
+          "end": 34.566,
+          "text": "sonra"
+        },
+        {
+          "start": 34.5785,
+          "end": 34.841,
+          "text": "yeni"
+        },
+        {
+          "start": 34.841,
+          "end": 34.941,
+          "text": "bir"
+        },
+        {
+          "start": 34.941,
+          "end": 35.6285,
+          "text": "değerlendirme"
+        },
+        {
+          "start": 35.6285,
+          "end": 36.041,
+          "text": "yapalım"
+        }
+      ]
+    },
+    {
+      "speaker": "REF_0",
+      "text": "Öneriyi kabul ediyorum. Test raporunu hazırlama görevini ben üstleniyorum. Teslim tarihi cuma günü olacak. Bütçeyi şimdilik değiştirmiyoruz. Hata oranı yükselirse yayını durdurup önceki sürüme geri döneceğiz.",
+      "start": 38.216,
+      "end": 56.144,
+      "words": [
+        {
+          "start": 38.316,
+          "end": 38.9035,
+          "text": "Öneriyi"
+        },
+        {
+          "start": 38.9035,
+          "end": 39.241,
+          "text": "kabul"
+        },
+        {
+          "start": 39.241,
+          "end": 39.7785,
+          "text": "ediyorum"
+        },
+        {
+          "start": 40.891,
+          "end": 41.216,
+          "text": "Test"
+        },
+        {
+          "start": 41.241,
+          "end": 41.691,
+          "text": "raporunu"
+        },
+        {
+          "start": 41.691,
+          "end": 42.216,
+          "text": "hazırlama"
+        },
+        {
+          "start": 42.216,
+          "end": 42.6285,
+          "text": "görevini"
+        },
+        {
+          "start": 42.6285,
+          "end": 42.8285,
+          "text": "ben"
+        },
+        {
+          "start": 42.8285,
+          "end": 43.5035,
+          "text": "üstleniyorum"
+        },
+        {
+          "start": 44.641,
+          "end": 45.166000000000004,
+          "text": "Teslim"
+        },
+        {
+          "start": 45.191,
+          "end": 45.603500000000004,
+          "text": "tarihi"
+        },
+        {
+          "start": 45.603500000000004,
+          "end": 45.941,
+          "text": "cuma"
+        },
+        {
+          "start": 45.9535,
+          "end": 46.166000000000004,
+          "text": "günü"
+        },
+        {
+          "start": 46.166000000000004,
+          "end": 46.703500000000005,
+          "text": "olacak"
+        },
+        {
+          "start": 47.8035,
+          "end": 48.5035,
+          "text": "Bütçeyi"
+        },
+        {
+          "start": 48.5035,
+          "end": 48.966,
+          "text": "şimdilik"
+        },
+        {
+          "start": 48.9785,
+          "end": 49.953500000000005,
+          "text": "değiştirmiyoruz"
+        },
+        {
+          "start": 51.0535,
+          "end": 51.5285,
+          "text": "Hata"
+        },
+        {
+          "start": 51.541,
+          "end": 51.891000000000005,
+          "text": "oranı"
+        },
+        {
+          "start": 51.891000000000005,
+          "end": 52.5535,
+          "text": "yükselirse"
+        },
+        {
+          "start": 52.5535,
+          "end": 52.9285,
+          "text": "yayını"
+        },
+        {
+          "start": 52.9285,
+          "end": 53.3785,
+          "text": "durdurup"
+        },
+        {
+          "start": 53.4035,
+          "end": 53.8035,
+          "text": "önceki"
+        },
+        {
+          "start": 53.8035,
+          "end": 54.166,
+          "text": "sürüme"
+        },
+        {
+          "start": 54.166,
+          "end": 54.3785,
+          "text": "geri"
+        },
+        {
+          "start": 54.3785,
+          "end": 55.016000000000005,
+          "text": "döneceğiz"
+        }
+      ]
+    },
+    {
+      "speaker": "REF_1",
+      "text": "Ben de ekran değişikliklerini ve kullanıcı testlerini üstleniyorum. Sonuçları perşembe günü paylaşacağım. Kararımız açık: önce test ortamında doğrulama yapılacak, ardından yayın kararı verilecek. Bugünkü toplantıyı bu görevlerle kapatabiliriz.",
+      "start": 57.144,
+      "end": 75.696,
+      "words": [
+        {
+          "start": 57.244,
+          "end": 57.494,
+          "text": "Ben"
+        },
+        {
+          "start": 57.494,
+          "end": 57.6065,
+          "text": "de"
+        },
+        {
+          "start": 57.6065,
+          "end": 58.006499999999996,
+          "text": "ekran"
+        },
+        {
+          "start": 58.006499999999996,
+          "end": 58.844,
+          "text": "değişikliklerini"
+        },
+        {
+          "start": 58.844,
+          "end": 58.969,
+          "text": "ve"
+        },
+        {
+          "start": 58.994,
+          "end": 59.4815,
+          "text": "kullanıcı"
+        },
+        {
+          "start": 59.4815,
+          "end": 60.0315,
+          "text": "testlerini"
+        },
+        {
+          "start": 60.0315,
+          "end": 60.719,
+          "text": "üstleniyorum"
+        },
+        {
+          "start": 61.844,
+          "end": 62.381499999999996,
+          "text": "Sonuçları"
+        },
+        {
+          "start": 62.381499999999996,
+          "end": 62.969,
+          "text": "perşembe"
+        },
+        {
+          "start": 62.969,
+          "end": 63.193999999999996,
+          "text": "günü"
+        },
+        {
+          "start": 63.193999999999996,
+          "end": 63.994,
+          "text": "paylaşacağım"
+        },
+        {
+          "start": 65.1065,
+          "end": 65.619,
+          "text": "Kararımız"
+        },
+        {
+          "start": 65.619,
+          "end": 65.894,
+          "text": "açık"
+        },
+        {
+          "start": 66.269,
+          "end": 66.544,
+          "text": "önce"
+        },
+        {
+          "start": 66.544,
+          "end": 66.819,
+          "text": "test"
+        },
+        {
+          "start": 66.8315,
+          "end": 67.344,
+          "text": "ortamında"
+        },
+        {
+          "start": 67.344,
+          "end": 67.819,
+          "text": "doğrulama"
+        },
+        {
+          "start": 67.819,
+          "end": 68.3815,
+          "text": "yapılacak"
+        },
+        {
+          "start": 68.6315,
+          "end": 69.1565,
+          "text": "ardından"
+        },
+        {
+          "start": 69.1565,
+          "end": 69.394,
+          "text": "yayın"
+        },
+        {
+          "start": 69.394,
+          "end": 69.8065,
+          "text": "kararı"
+        },
+        {
+          "start": 69.8065,
+          "end": 70.394,
+          "text": "verilecek"
+        },
+        {
+          "start": 71.919,
+          "end": 72.3565,
+          "text": "Bugünkü"
+        },
+        {
+          "start": 72.3565,
+          "end": 73.044,
+          "text": "toplantıyı"
+        },
+        {
+          "start": 73.044,
+          "end": 73.169,
+          "text": "bu"
+        },
+        {
+          "start": 73.169,
+          "end": 73.769,
+          "text": "görevlerle"
+        },
+        {
+          "start": 73.769,
+          "end": 74.6065,
+          "text": "kapatabiliriz"
+        }
+      ]
+    }
+  ],
+  "derReference": "TTS word timing, synthetic reference only, not human-annotated benchmark"
+}
