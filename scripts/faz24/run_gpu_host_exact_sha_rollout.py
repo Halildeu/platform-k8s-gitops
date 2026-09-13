@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import json
 import os
@@ -20,6 +21,37 @@ CANONICAL_TARGET = "denetim-pc"
 CANONICAL_REPO_ROOT = r"C:\platform-ai"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
+MAX_SOURCE_BYTES = 131072
+MAX_WIRE_BYTES = 16384
+# Parse the entire stdin payload before any operation. PowerShell 5.1's
+# interactive `-Command -` parser can discard statements after a compound
+# block at EOF when there is no blank terminator.
+STDIN_BOOTSTRAP = (
+    "$ErrorActionPreference = 'Stop'; "
+    "$ProgressPreference = 'SilentlyContinue'; "
+    "[Console]::InputEncoding = New-Object Text.UTF8Encoding($false); "
+    "$frame = [Console]::In.ReadLine(); "
+    "if (!$frame -or $frame.Length -gt 16384 -or "
+    "$frame -cnotmatch '\\A[A-Za-z0-9+/]+={0,2}\\z') { throw 'wire-invalid' }; "
+    "$bytes = [Convert]::FromBase64String($frame); "
+    "$memory = [IO.MemoryStream]::new($bytes); "
+    "$gzip = [IO.Compression.GzipStream]::new($memory, "
+    "[IO.Compression.CompressionMode]::Decompress); "
+    "$reader = [IO.StreamReader]::new($gzip, "
+    "[Text.UTF8Encoding]::new($false, $true), $false, 1024); "
+    "try { $buffer = New-Object char[] 131073; $count = 0; "
+    "while ($count -lt $buffer.Length) { "
+    "$read = $reader.Read($buffer, $count, $buffer.Length - $count); "
+    "if ($read -eq 0) { break }; $count += $read }; "
+    "$source = [string]::new($buffer, 0, $count); "
+    "if ([Text.Encoding]::UTF8.GetByteCount($source) -gt 131072) "
+    "{ throw 'source-too-large' } "
+    "} finally { $reader.Dispose(); $gzip.Dispose(); $memory.Dispose() }; "
+    "& ([ScriptBlock]::Create($source))"
+)
+ENCODED_STDIN_BOOTSTRAP = base64.b64encode(
+    STDIN_BOOTSTRAP.encode("utf-16-le")
+).decode("ascii")
 
 
 class RemoteEvidenceUnavailable(ValueError):
@@ -80,6 +112,63 @@ function Get-HealthMetadata {
       backend = ''
     }
   }
+}
+
+function ConvertTo-StreamingReadinessMetadata {
+  param($Readiness, [int]$HttpStatus)
+  return [ordered]@{
+    reachable = ($HttpStatus -eq 200)
+    httpStatus = $HttpStatus
+    status = [string]$Readiness.status
+    runtimeCommit = [string]$Readiness.runtime_commit
+    preloadEnabled = ($Readiness.streaming_preload_enabled -is [bool] -and
+      $Readiness.streaming_preload_enabled -eq $true)
+    workersHealthy = ($Readiness.workers_healthy -is [bool] -and
+      $Readiness.workers_healthy -eq $true)
+    roles = [ordered]@{ live = [string]$Readiness.roles.live; final = [string]$Readiness.roles.final }
+    runtime = [ordered]@{
+      legacy = [ordered]@{ device = [string]$Readiness.runtime.legacy.device;
+        computeType = [string]$Readiness.runtime.legacy.compute_type }
+      live = [ordered]@{ device = [string]$Readiness.runtime.live.device;
+        computeType = [string]$Readiness.runtime.live.compute_type }
+      final = [ordered]@{ device = [string]$Readiness.runtime.final.device;
+        computeType = [string]$Readiness.runtime.final.compute_type }
+    }
+    speechGateProfile = [string]$Readiness.speech_gate.profile
+  }
+}
+
+function Get-StreamingReadinessMetadata {
+  try {
+    $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8200/ready' `
+      -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+    $readiness = $response.Content | ConvertFrom-Json -ErrorAction Stop
+    return ConvertTo-StreamingReadinessMetadata -Readiness $readiness `
+      -HttpStatus ([int]$response.StatusCode)
+  } catch {
+    return ConvertTo-StreamingReadinessMetadata -Readiness $null -HttpStatus 0
+  }
+}
+
+function Test-StreamingReadinessMetadata {
+  param($Readiness, [string]$ExpectedCommit)
+  foreach ($field in @('reachable', 'preloadEnabled', 'workersHealthy')) {
+    if ($Readiness.$field -isnot [bool] -or $Readiness.$field -ne $true) { return $false }
+  }
+  return (
+    $Readiness.httpStatus -eq 200 -and
+    $Readiness.status -ceq 'ready' -and
+    $ExpectedCommit -cmatch '\A[0-9a-f]{40}\z' -and
+    $Readiness.runtimeCommit -ceq $ExpectedCommit -and
+    $Readiness.roles.live -ceq 'ready' -and $Readiness.roles.final -ceq 'ready' -and
+    $Readiness.runtime.legacy.device -ceq 'cpu' -and
+    $Readiness.runtime.legacy.computeType -ceq 'int8' -and
+    $Readiness.runtime.live.device -ceq 'cuda' -and
+    $Readiness.runtime.live.computeType -ceq 'int8' -and
+    $Readiness.runtime.final.device -ceq 'cuda' -and
+    $Readiness.runtime.final.computeType -ceq 'float16' -and
+    $Readiness.speechGateProfile -ceq 'silero-balanced-v1'
+  )
 }
 
 function Get-TaskMetadata {
@@ -539,7 +628,7 @@ try {
     $ledger = [ordered]@{
       currentCommit = [string]$state.currentCommit
       previousCommit = [string]$state.previousCommit
-      action = [string]$state.action
+      action = [string]$state.lastAction
       lastResult = [string]$state.lastResult
       timestampUtc = [string]$state.timestampUtc
     }
@@ -564,6 +653,7 @@ if ($script:AcceptanceDiagnosticInvalid) {
 }
 $liveHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8200/health'
 $meetingHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8300/health'
+$streamReadiness = Get-StreamingReadinessMetadata
 $stream = Test-WebSocketReady
 $migrationAccepted = (
   (-not $migrationRequired) -or (
@@ -591,7 +681,8 @@ $go = (
   $ledger.lastResult -eq 'tasks-restarted' -and
   $liveTask.present -and $liveTask.state -eq 4 -and $liveTask.actionCanonical -and
   $meetingTask.present -and $meetingTask.state -eq 4 -and $meetingTask.actionCanonical -and
-  $liveHealth.reachable -and $liveHealth.status -eq 'ok' -and $liveHealth.device -eq 'cuda' -and
+  $liveHealth.reachable -and $liveHealth.status -cin @('ok', 'loading') -and
+  (Test-StreamingReadinessMetadata -Readiness $streamReadiness -ExpectedCommit $TargetCommit) -and
   $meetingHealth.reachable -and $meetingHealth.status -eq 'ok' -and
   $meetingHealth.backend -eq 'ollama' -and
   $stream.ready -and $stream.eventType -eq 'ready'
@@ -624,6 +715,7 @@ $evidence = [ordered]@{
   tasksBefore = $tasksBefore
   tasks = [ordered]@{ liveStt = $liveTask; meetingAi = $meetingTask }
   health = [ordered]@{ liveStt = $liveHealth; meetingAi = $meetingHealth }
+  readiness = [ordered]@{ liveStt = $streamReadiness }
   webSocket = $stream
   privacy = [ordered]@{
     rawAudioIncluded = $false
@@ -655,6 +747,17 @@ def validate_commit(value: str) -> str:
 def build_remote_script(target_commit: str) -> str:
     commit = validate_commit(target_commit)
     return REMOTE_SCRIPT.replace("__TARGET_COMMIT__", commit)
+
+
+def encode_remote_input(source: str) -> str:
+    """One bounded ASCII frame; the bootstrap never waits for transport EOF."""
+    raw = source.encode("utf-8")
+    if not raw or len(raw) > MAX_SOURCE_BYTES:
+        raise ValueError("remote source size is outside the transport limit")
+    frame = base64.b64encode(gzip.compress(raw, mtime=0)).decode("ascii")
+    if len(frame) > MAX_WIRE_BYTES:
+        raise ValueError("compressed remote source exceeds the transport limit")
+    return frame + "\n"
 
 
 def parse_evidence(stdout: str) -> dict[str, Any]:
@@ -735,8 +838,8 @@ def ssh_command(ssh_config: Path, known_hosts: Path) -> list[str]:
         "Text",
         "-OutputFormat",
         "Text",
-        "-Command",
-        "-",
+        "-EncodedCommand",
+        ENCODED_STDIN_BOOTSTRAP,
     ]
 
 
@@ -754,7 +857,7 @@ def run_rollout(
             command,
             check=False,
             capture_output=True,
-            input=script,
+            input=encode_remote_input(script),
             text=True,
             timeout=timeout_seconds,
             env={**os.environ, "LC_ALL": "C"},
@@ -805,6 +908,7 @@ def failure_evidence(
         "tasksBefore": {},
         "tasks": {},
         "health": {},
+        "readiness": {},
         "webSocket": {
             "ready": False,
             "eventType": "",
