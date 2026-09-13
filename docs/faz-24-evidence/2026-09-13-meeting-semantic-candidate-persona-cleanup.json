@@ -1,0 +1,384 @@
+{
+  "schemaVersion": "faz24.platformDesktopTokenEvidenceChain.v1",
+  "status": "pass",
+  "tokenIncluded": false,
+  "failureReason": null,
+  "target": {
+    "realm": "platform-test",
+    "clientId": "platform-desktop",
+    "resourceClientId": "audio-gateway-service",
+    "capabilityRole": "audio_record",
+    "platformUserId": "990001",
+    "realtimeRequiredRole": "TRANSCRIPT_ADMIN",
+    "baseUrl": "https://testai.acik.com",
+    "expectedIssuer": "https://testai.acik.com/realms/platform-test"
+  },
+  "boundaries": {
+    "platformTestOnly": true,
+    "productionMutation": false,
+    "rawTokenLogged": false,
+    "rawPasswordLogged": false,
+    "rawAdminCredentialLogged": false,
+    "directSttClaimed": false,
+    "productionReadyClaimed": false
+  },
+  "keycloakSource": {
+    "selectedSource": "docker-run-secret",
+    "selectedLabel": "run-secret",
+    "realm": "platform-test",
+    "container": "platform-kc-test",
+    "docker": {
+      "available": true,
+      "containerFound": true,
+      "runSecretReadable": true,
+      "envSecretReadable": true,
+      "socketPresent": true,
+      "socketReadable": true,
+      "socketWritable": true
+    },
+    "actionsSecretPresent": false,
+    "hostFileCandidates": [
+      {
+        "label": "canonical-aiserver-repo",
+        "exists": true,
+        "readable": false,
+        "sudoReadable": true
+      },
+      {
+        "label": "canonical-home-compose",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "runner-home-compose",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "checkout-absolute",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "checkout-relative",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "github-work",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "github-work-underscore",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "opt-repo",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      },
+      {
+        "label": "srv-repo",
+        "exists": false,
+        "readable": false,
+        "sudoReadable": false
+      }
+    ]
+  },
+  "clientBefore": {
+    "clientId": "platform-desktop",
+    "enabled": true,
+    "publicClient": true,
+    "directAccessGrantsEnabled": null,
+    "standardFlowEnabled": true,
+    "serviceAccountsEnabled": null,
+    "protocolMappers": [
+      {
+        "name": "userId",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "userId",
+        "claimName": "userId",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "org_id",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "org_id",
+        "claimName": "org_id",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "tenant_id",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "org_id",
+        "claimName": "tenant_id",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-audio-gateway",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "companyId",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "companyId",
+        "claimName": "companyId",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-frontend",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": "frontend",
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-meeting-service",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": "meeting-service",
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-audio-gateway-service",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": "audio-gateway-service",
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "tenantId",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "tenantId",
+        "claimName": "tenantId",
+        "accessTokenClaim": "true"
+      }
+    ],
+    "mapperSummary": {
+      "audienceAudioGatewayService": true,
+      "audienceMeetingService": true,
+      "audienceFrontend": true,
+      "tenantIdClaim": true,
+      "tenantIdSnakeClaim": true,
+      "orgIdClaim": true,
+      "companyIdClaim": true,
+      "userIdClaim": true,
+      "hardcodedControlledClaim": false
+    }
+  },
+  "clientAfter": {
+    "clientId": "platform-desktop",
+    "enabled": true,
+    "publicClient": true,
+    "directAccessGrantsEnabled": null,
+    "standardFlowEnabled": true,
+    "serviceAccountsEnabled": null,
+    "protocolMappers": [
+      {
+        "name": "userId",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "userId",
+        "claimName": "userId",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "org_id",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "org_id",
+        "claimName": "org_id",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "tenant_id",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "org_id",
+        "claimName": "tenant_id",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-audio-gateway",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "companyId",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "companyId",
+        "claimName": "companyId",
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-frontend",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": "frontend",
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-meeting-service",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": "meeting-service",
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "audience-audio-gateway-service",
+        "protocolMapper": "oidc-audience-mapper",
+        "includedCustomAudience": "audio-gateway-service",
+        "userAttribute": null,
+        "claimName": null,
+        "accessTokenClaim": "true"
+      },
+      {
+        "name": "tenantId",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "includedCustomAudience": null,
+        "userAttribute": "tenantId",
+        "claimName": "tenantId",
+        "accessTokenClaim": "true"
+      }
+    ],
+    "mapperSummary": {
+      "audienceAudioGatewayService": true,
+      "audienceMeetingService": true,
+      "audienceFrontend": true,
+      "tenantIdClaim": true,
+      "tenantIdSnakeClaim": true,
+      "orgIdClaim": true,
+      "companyIdClaim": true,
+      "userIdClaim": true,
+      "hardcodedControlledClaim": false
+    }
+  },
+  "user": {
+    "username": "faz24-recorder-smoke-codex-375313175100-1",
+    "enabled": true,
+    "emailVerified": true,
+    "requiredActions": [],
+    "canonicalTenantClaimSource": "org_id",
+    "attributesPresent": {
+      "org_id": true,
+      "tenantId": true,
+      "companyId": true,
+      "userId": true
+    },
+    "credentialTypes": [
+      "password"
+    ],
+    "realmRolePresent": true,
+    "realtimePersona": {
+      "platformUserId": "990001",
+      "transcriptRealmRole": "TRANSCRIPT_ADMIN",
+      "transcriptRealmRolePresent": true
+    },
+    "clientRole": {
+      "resourceClientId": "audio-gateway-service",
+      "capabilityRole": "audio_record",
+      "assignedByScript": true,
+      "present": true
+    }
+  },
+  "grantAttempts": [
+    {
+      "endpointKind": "local",
+      "clientId": "platform-desktop",
+      "loginIdentifierKind": "username",
+      "httpStatus": 200,
+      "tokenPresent": true,
+      "tokenIncluded": false,
+      "error": null,
+      "errorDescription": null
+    }
+  ],
+  "results": {
+    "tokenPresent": true,
+    "tokenContract": {
+      "exitCode": "0",
+      "status": "pass"
+    },
+    "externalRecorderSmoke": {
+      "exitCode": "not-run",
+      "status": "not-run"
+    },
+    "externalRecorderVerifier": {
+      "exitCode": "not-run",
+      "status": "not-run"
+    },
+    "audioGatewaySessionExpirySmoke": {
+      "exitCode": "not-run",
+      "status": "not-run"
+    },
+    "speechmaticsRealtimeLifecycle": {
+      "exitCode": "0",
+      "status": "pass"
+    },
+    "speechmaticsRealtimePersona": {
+      "platformUserId": "990001",
+      "transcriptRealmRole": "TRANSCRIPT_ADMIN",
+      "transcriptRealmRoleAssigned": true,
+      "clientScopeRoleOriginal": false,
+      "clientScopeRoleMutationAttempted": true,
+      "clientScopeRoleAdded": true,
+      "clientScopeRoleRestored": true,
+      "openFgaGrantContract": "preseeded-test-recorder-persona",
+      "openFgaGrantLiveCheckedByRunner": false
+    }
+  },
+  "cleanup": {
+    "directGrantsToggled": true,
+    "directGrantsRestored": true,
+    "tempUserCreated": true,
+    "tempUserDeleted": true,
+    "tokenFileRemoved": true,
+    "recoveryRequested": false,
+    "recoveryRunId": null,
+    "staleDirectGrantsVerified": false,
+    "staleTempUsersMatched": 0,
+    "staleTempUsersDeleted": 0,
+    "staleTempUsersRemaining": -1,
+    "adminSessionRefreshAttempted": true,
+    "adminSessionRefreshed": true
+  },
+  "tenantAliasReconcile": {
+    "canonicalUserAttribute": "org_id",
+    "tokenClaims": [
+      "org_id",
+      "tenant_id"
+    ],
+    "requested": 0,
+    "reconciled": 0,
+    "alreadyCorrect": 0,
+    "usernamesIncluded": false,
+    "credentialsMutated": false
+  }
+}

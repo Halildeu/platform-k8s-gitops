@@ -1,0 +1,102 @@
+{
+  "environment": "test",
+  "synthetic": true,
+  "meetingId": "a17a16df-2de4-4dfd-b264-da731b3e42ed",
+  "sessionId": "a2f13923-be11-456a-8ca0-ee6376ef137c",
+  "analysisRunId": "f95bb434-1285-42c7-8a6b-335070b7d7df",
+  "status": "rejected",
+  "originalStrictScore": {
+    "goldSha256": "6d09b0dc359d99d0598189cf78104021a0852b688c71fb22102e89f33aa7c1f0",
+    "decisions": {
+      "truePositive": 2,
+      "falsePositive": 0,
+      "falseNegative": 1
+    },
+    "actions": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "actionWithMetadata": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "owners": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "dueDates": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "exactMatch": false
+  },
+  "caseFoldedDiagnosticScore": {
+    "goldSha256": "6d09b0dc359d99d0598189cf78104021a0852b688c71fb22102e89f33aa7c1f0",
+    "identityNormalization": "whitespace-and-tr-case-v2",
+    "decisions": {
+      "truePositive": 2,
+      "falsePositive": 0,
+      "falseNegative": 1
+    },
+    "actions": {
+      "truePositive": 3,
+      "falsePositive": 0,
+      "falseNegative": 0
+    },
+    "actionWithMetadata": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "owners": {
+      "truePositive": 3,
+      "falsePositive": 0,
+      "falseNegative": 0
+    },
+    "dueDates": {
+      "truePositive": 2,
+      "falsePositive": 1,
+      "falseNegative": 1
+    },
+    "exactMatch": false,
+    "strictQuoteIdentity": {
+      "goldSha256": "6d09b0dc359d99d0598189cf78104021a0852b688c71fb22102e89f33aa7c1f0",
+      "identityNormalization": "whitespace-only-v1",
+      "decisions": {
+        "truePositive": 2,
+        "falsePositive": 0,
+        "falseNegative": 1
+      },
+      "actions": {
+        "truePositive": 2,
+        "falsePositive": 1,
+        "falseNegative": 1
+      },
+      "actionWithMetadata": {
+        "truePositive": 2,
+        "falsePositive": 1,
+        "falseNegative": 1
+      },
+      "owners": {
+        "truePositive": 2,
+        "falsePositive": 1,
+        "falseNegative": 1
+      },
+      "dueDates": {
+        "truePositive": 2,
+        "falsePositive": 1,
+        "falseNegative": 1
+      },
+      "exactMatch": false
+    }
+  },
+  "sourceAlignment": "compound-policy-split-requires-separate-frozen-ASR-regression",
+  "originalGoldUnchanged": true,
+  "temporaryModuleGrantRemoved": true,
+  "originalRealmRolesRestored": true,
+  "containsTranscriptText": false
+}

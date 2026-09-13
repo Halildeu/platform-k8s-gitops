@@ -1,5 +1,78 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Pinned Model Active, Semantic Acceptance Rejected (2026-09-13 19:33 UTC)
+
+- This snapshot supersedes the disabled-consumer state below. Tracked by #3753,
+  Product Slice #3399. GitOps #3762 corrects the streaming readiness contract;
+  #3763 adds bounded gzip/base64 framed stdin independent of SSH EOF. Exact-head
+  Windows tests and all PR checks passed. A real-host read-only probe passed
+  with 29,008 source bytes and 9,369 wire bytes, exceeding the canonical 9,281
+  wire bytes. The earlier raw 27,612-byte probe timed out; its exact owned
+  processes were removed and both services rechecked. No SSH root-cause claim.
+- Canonical run `34776970818`, GitOps
+  `2c97d3c09ff8751bfc734c2137ca1b27d9193aa3`, finished successfully. The downloaded
+  [rollout receipt](../faz-24-evidence/2026-09-13-meeting-semantic-rollout-accepted.json)
+  independently passes the exact verifier and metadata scanner: source/ledger
+  `05a73a32cf510ce7b5afbe591544fa4740770990`, previous `6223fd2`, canonical tasks,
+  ready live/final CUDA roles, `source-ranges-v1` and controller cleanup 0.
+- A fresh scoped-signer permit under the same strict policy activated TEST
+  `qwen2.5:14b`, pinned to digest
+  `7cdf5a0187d5c58cc5d369b255592f7841d1c4696d45a8c8a9489440385b22f6`.
+  [Activation readback](../faz-24-evidence/2026-09-13-meeting-semantic-qwen-activation.json)
+  verifies config `ae2c1dd0...51d8e6`, new meeting task/listener, model-digest
+  enforcement, ready consumer/worker/group and delivery. Live-STT task did not
+  change. The three optional budget keys remain absent; no timeout inflation.
+- New synthetic meeting `a17a16df-2de4-4dfd-b264-da731b3e42ed` passed the
+  [API/source/speaker journey](../faz-24-evidence/2026-09-13-meeting-semantic-candidate-api.json):
+  WER 0/113, DER 0.061196 (0.25-second collar, overlap included), zero-collar
+  DER 0.120641, 112/112 persisted attributions, exact stream-to-store and reopen.
+  Result wait after finish was 417.573 seconds. This API `pass` does NOT assert
+  semantic correctness. [Temporary recording user/grants/token were removed](../faz-24-evidence/2026-09-13-meeting-semantic-candidate-persona-cleanup.json) and
+  original state read back; browser grants were also removed after its failure.
+- [Persisted semantic browser acceptance was rejected](../faz-24-evidence/2026-09-13-meeting-semantic-candidate-rejected.json): original strict gold
+  decision TP/FP/FN 2/0/1 and actions plus metadata 2/1/1. Investigation separates
+  a case-only `Perşembe/perşembe` comparison difference from a genuinely missing due date.
+  The ASR also split one compound policy into an explicit heading and two
+  sentences; the original compound quote does not exist verbatim in this source.
+  Enabler platform-ai #340 is freezing a separate source-aligned ASR regression
+  while preserving the original gold and rejection. Missing policy facts/date
+  must still fail; no threshold reduction, invented punctuation or production
+  acceptance. Internal-provider diarization #3746 remains unverified; this
+  synthetic speaker evidence uses the explicitly selected Speechmatics path.
+  After cleanup, a [fresh browser login](../faz-24-evidence/2026-09-13-meeting-semantic-candidate-browser-denied.json)
+  independently verified transcript 403 and hidden content on this same meeting.
+
+## Meeting AI Retry - Source Accepted, Streaming Readiness Gate Pending (2026-09-13 18:47 UTC)
+
+- This newer snapshot supersedes the old-runtime statement below. Tracked by
+  #3753 / #3756, Product Slice #3399. AI #339 source is
+  `05a73a32cf510ce7b5afbe591544fa4740770990`; GitOps #3758 is `32a0e228`.
+  Exact source and real Windows CI passed before TEST retry `34774383841`.
+- Independent host readback sees that exact source and ledger `tasks-restarted`,
+  previous `6223fd2`, and both readiness endpoints HTTP 200. Protected config
+  remains `6c4e090168985cbaa1f2974ca2922fa4447c2c36087c6231f22838d778094a89`;
+  the ready-consumer is intentionally disabled. No qwen activation yet.
+- The [retry receipt](../faz-24-evidence/2026-09-13-meeting-semantic-retry-transport-rejected.json)
+  is `no-go`: SSH returned 0 with zero stdout/stderr and no evidence marker.
+  A read-only Windows 5.1 reproduction proved that `-Command -` silently drops
+  the final compound block without a blank terminator. The otherwise identical
+  fixture with a terminator emits its JSON. #3756 is repairing full-input
+  parsing with a real transport regression. GitOps #3759 (`20732234`) now
+  passes that Windows regression and a real SSH 24,870-byte read-only probe.
+  This does not explain the earlier updater rejection `34772838806`.
+- Retry `34775576256` now returns a complete
+  [receipt](../faz-24-evidence/2026-09-13-meeting-semantic-reacceptance-health-rejected.json):
+  updater exit 0, exact source verified, ledger `tasks-restarted`, controller
+  cleanup 0, canonical tasks and `source-ranges-v1` WebSocket ready. It remains
+  `no-go` because the old wrapper expects legacy `/health` to report GPU/ok;
+  that endpoint correctly reports the lazy CPU model as loading. Source code
+  explicitly assigns streaming admission to `/ready`, which independently
+  returns ready live/final CUDA roles, healthy workers and the exact source.
+  #3756 is replacing the obsolete endpoint assumption with strict role/device,
+  worker and source readiness checks, preserving negative/fail-closed behavior.
+- Fresh permit/model activation and new persisted semantic browser acceptance
+  remain pending. The source update is not a quality or production acceptance.
+
 ## Meeting Semantic Quality - Candidate Rejected, Previous Runtime Restored (2026-09-13)
 
 - Tracked by #3753, Product Slice #3399. Platform-ai #338 merged as
