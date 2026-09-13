@@ -45,7 +45,7 @@ fi
 grep -Fq 'StrictHostKeyChecking=yes' "${RUNNER}" || fail 'strict host-key verification missing'
 grep -Fq 'UserKnownHostsFile=' "${RUNNER}" || fail 'explicit pinned known-hosts missing'
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'
-grep -Fq 'input=script' "${RUNNER}" || fail 'PowerShell stdin transport missing'
+grep -Fq 'input=encode_remote_input(script)' "${RUNNER}" || fail 'PowerShell framed stdin transport missing'
 # Only this fixed, bounded stdin reader may enter argv, never the payload.
 python3 - "${RUNNER}" <<'PY'
 import base64
@@ -59,11 +59,27 @@ expected = (
     "$ErrorActionPreference = 'Stop'; "
     "$ProgressPreference = 'SilentlyContinue'; "
     "[Console]::InputEncoding = New-Object Text.UTF8Encoding($false); "
-    "$source = [Console]::In.ReadToEnd(); "
+    "$frame = [Console]::In.ReadLine(); "
+    "if (!$frame -or $frame.Length -gt 16384 -or "
+    "$frame -cnotmatch '\\A[A-Za-z0-9+/]+={0,2}\\z') { throw 'wire-invalid' }; "
+    "$bytes = [Convert]::FromBase64String($frame); "
+    "$memory = [IO.MemoryStream]::new($bytes); "
+    "$gzip = [IO.Compression.GzipStream]::new($memory, "
+    "[IO.Compression.CompressionMode]::Decompress); "
+    "$reader = [IO.StreamReader]::new($gzip, "
+    "[Text.UTF8Encoding]::new($false, $true), $false, 1024); "
+    "try { $buffer = New-Object char[] 131073; $count = 0; "
+    "while ($count -lt $buffer.Length) { "
+    "$read = $reader.Read($buffer, $count, $buffer.Length - $count); "
+    "if ($read -eq 0) { break }; $count += $read }; "
+    "$source = [string]::new($buffer, 0, $count); "
+    "if ([Text.Encoding]::UTF8.GetByteCount($source) -gt 131072) "
+    "{ throw 'source-too-large' } "
+    "} finally { $reader.Dispose(); $gzip.Dispose(); $memory.Dispose() }; "
     "& ([ScriptBlock]::Create($source))"
 )
 command = runner.ssh_command(Path('/ssh/config'), Path('/ssh/known_hosts'))
-if command[-2] != '-EncodedCommand' or len(command[-1]) > 1024:
+if command[-2] != '-EncodedCommand' or len(command[-1]) > 4096:
     raise SystemExit('FAIL: fixed bounded stdin bootstrap missing')
 decoded = base64.b64decode(command[-1], validate=True).decode('utf-16-le')
 if decoded != expected:

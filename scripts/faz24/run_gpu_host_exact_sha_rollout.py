@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import json
 import os
@@ -20,6 +21,8 @@ CANONICAL_TARGET = "denetim-pc"
 CANONICAL_REPO_ROOT = r"C:\platform-ai"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
+MAX_SOURCE_BYTES = 131072
+MAX_WIRE_BYTES = 16384
 # Parse the entire stdin payload before any operation. PowerShell 5.1's
 # interactive `-Command -` parser can discard statements after a compound
 # block at EOF when there is no blank terminator.
@@ -27,7 +30,23 @@ STDIN_BOOTSTRAP = (
     "$ErrorActionPreference = 'Stop'; "
     "$ProgressPreference = 'SilentlyContinue'; "
     "[Console]::InputEncoding = New-Object Text.UTF8Encoding($false); "
-    "$source = [Console]::In.ReadToEnd(); "
+    "$frame = [Console]::In.ReadLine(); "
+    "if (!$frame -or $frame.Length -gt 16384 -or "
+    "$frame -cnotmatch '\\A[A-Za-z0-9+/]+={0,2}\\z') { throw 'wire-invalid' }; "
+    "$bytes = [Convert]::FromBase64String($frame); "
+    "$memory = [IO.MemoryStream]::new($bytes); "
+    "$gzip = [IO.Compression.GzipStream]::new($memory, "
+    "[IO.Compression.CompressionMode]::Decompress); "
+    "$reader = [IO.StreamReader]::new($gzip, "
+    "[Text.UTF8Encoding]::new($false, $true), $false, 1024); "
+    "try { $buffer = New-Object char[] 131073; $count = 0; "
+    "while ($count -lt $buffer.Length) { "
+    "$read = $reader.Read($buffer, $count, $buffer.Length - $count); "
+    "if ($read -eq 0) { break }; $count += $read }; "
+    "$source = [string]::new($buffer, 0, $count); "
+    "if ([Text.Encoding]::UTF8.GetByteCount($source) -gt 131072) "
+    "{ throw 'source-too-large' } "
+    "} finally { $reader.Dispose(); $gzip.Dispose(); $memory.Dispose() }; "
     "& ([ScriptBlock]::Create($source))"
 )
 ENCODED_STDIN_BOOTSTRAP = base64.b64encode(
@@ -730,6 +749,17 @@ def build_remote_script(target_commit: str) -> str:
     return REMOTE_SCRIPT.replace("__TARGET_COMMIT__", commit)
 
 
+def encode_remote_input(source: str) -> str:
+    """One bounded ASCII frame; the bootstrap never waits for transport EOF."""
+    raw = source.encode("utf-8")
+    if not raw or len(raw) > MAX_SOURCE_BYTES:
+        raise ValueError("remote source size is outside the transport limit")
+    frame = base64.b64encode(gzip.compress(raw, mtime=0)).decode("ascii")
+    if len(frame) > MAX_WIRE_BYTES:
+        raise ValueError("compressed remote source exceeds the transport limit")
+    return frame + "\n"
+
+
 def parse_evidence(stdout: str) -> dict[str, Any]:
     markers = [line for line in stdout.splitlines() if line.startswith(EVIDENCE_MARKER)]
     if len(markers) != 1:
@@ -827,7 +857,7 @@ def run_rollout(
             command,
             check=False,
             capture_output=True,
-            input=script,
+            input=encode_remote_input(script),
             text=True,
             timeout=timeout_seconds,
             env={**os.environ, "LC_ALL": "C"},

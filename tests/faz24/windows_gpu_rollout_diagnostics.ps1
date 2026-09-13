@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$SourcePath,
   [Parameter(Mandatory = $true)][string]$EncodedBootstrap,
+  [Parameter(Mandatory = $true)][string]$RunnerPath,
   [Parameter(Mandatory = $true)][string]$PythonExe
 )
 $ErrorActionPreference = 'Stop'
@@ -24,17 +25,39 @@ foreach ($name in $names) {
   Invoke-Expression $functions[0].Extent.Text
 }
 function Invoke-InputFixture {
-  param([string]$Source, [string]$Invocation)
+  param([string]$Source, [string]$Invocation, [string]$Mode = 'normal')
   $inputPath = Join-Path $env:TEMP ('rollout-input-' + [Guid]::NewGuid().ToString('N') + '.ps1')
   $driver = @'
-import json, pathlib, subprocess, sys
+import base64, gzip, json, pathlib, runpy, subprocess, sys
 payload = pathlib.Path(sys.argv[1]).read_bytes()
 assert not payload.startswith(b'\xef\xbb\xbf'), 'fixture input must match BOM-free Python transport'
 command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
            '-InputFormat', 'Text', '-OutputFormat', 'Text'] + sys.argv[2].split()
-result = subprocess.run(command, input=payload, capture_output=True, timeout=40)
-print(json.dumps({'ExitCode': result.returncode, 'Stdout': result.stdout.decode('utf-8'),
-                  'Stderr': result.stderr.decode('utf-8')}))
+mode = sys.argv[4]
+if '-EncodedCommand' in command:
+    payload = runpy.run_path(sys.argv[3])['encode_remote_input'](payload.decode('utf-8')).encode('ascii')
+if mode == 'invalid-base64': payload = b'!invalid!\n'
+if mode == 'invalid-gzip': payload = base64.b64encode(b'not-gzip') + b'\n'
+if mode == 'invalid-utf8': payload = base64.b64encode(gzip.compress(b'\xff')) + b'\n'
+if mode == 'oversize-wire': payload = b'A' * 16385 + b'\n'
+if mode == 'oversize-source': payload = base64.b64encode(gzip.compress(b'x' * 131073)) + b'\n'
+if mode == 'held-open':
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    try:
+        process.stdin.write(payload)
+        process.stdin.flush()
+        process.wait(timeout=20)
+        stdout, stderr = process.stdout.read(), process.stderr.read()
+        returncode = process.returncode
+    finally:
+        if process.poll() is None: process.kill(); process.wait()
+        process.stdin.close(); process.stdout.close(); process.stderr.close()
+else:
+    result = subprocess.run(command, input=payload, capture_output=True, timeout=40)
+    stdout, stderr, returncode = result.stdout, result.stderr, result.returncode
+print(json.dumps({'ExitCode': returncode, 'Stdout': stdout.decode('utf-8'),
+                  'Stderr': stderr.decode('utf-8')}))
 '@
   try {
     # The real runner uses Python's pipe transport; .NET adds a BOM itself.
@@ -42,7 +65,7 @@ print(json.dumps({'ExitCode': result.returncode, 'Stdout': result.stdout.decode(
     if ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and
         $bytes[1] -eq 187 -and $bytes[2] -eq 191) { throw 'Fixture payload contains a BOM.' }
     [IO.File]::WriteAllBytes($inputPath, $bytes)
-    $result = & $PythonExe -c $driver $inputPath $Invocation
+    $result = & $PythonExe -c $driver $inputPath $Invocation $RunnerPath $Mode
     if ($LASTEXITCODE -ne 0) { throw 'Isolated Python transport fixture failed.' }
     return ($result | ConvertFrom-Json)
   } finally { Remove-Item -LiteralPath $inputPath -Force -ErrorAction Stop }
@@ -163,6 +186,31 @@ try {
     -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
   if ($invalidParse.ExitCode -eq 0 -or (Test-Path -LiteralPath $parseFlag)) {
     throw 'Malformed source executed before complete parsing.'
+  }
+  foreach ($size in @(27612, 65536, 131072)) {
+    $body = "`nif (`$source.Length -ne $size) { throw 'size-mismatch' }; " +
+      "[Console]::Out.WriteLine('SIZE_OK:$size'); exit 0`n"
+    $source = '#' + ('x' * ($size - $body.Length - 1)) + $body
+    $sized = Invoke-InputFixture -Source $source -Mode 'held-open' `
+      -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
+    if ($sized.ExitCode -ne 0 -or $sized.Stdout.Trim() -cne "SIZE_OK:$size" -or
+        $sized.Stderr.Length -ne 0) { throw 'Bounded frame did not execute before stdin EOF.' }
+  }
+  # Preserve real source compression complexity, but comment every line so none
+  # of the host orchestration can execute in this transport-only fixture.
+  $commentedSource = '# ' + ($ast.Extent.Text -replace "`n", "`n# ") +
+    "`n[Console]::Out.WriteLine('SOURCE_COMPLEXITY_OK'); exit 0`n"
+  $complexFrame = Invoke-InputFixture -Source $commentedSource -Mode 'held-open' `
+    -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
+  if ($complexFrame.ExitCode -ne 0 -or $complexFrame.Stdout.Trim() -cne 'SOURCE_COMPLEXITY_OK' -or
+      $complexFrame.Stderr.Length -ne 0) { throw 'Real-complexity framed transport failed.' }
+  foreach ($mode in @('invalid-base64', 'invalid-gzip', 'invalid-utf8',
+      'oversize-wire', 'oversize-source')) {
+    $invalidFrame = Invoke-InputFixture -Source "[Console]::Out.WriteLine('MUST_NOT_RUN')" `
+      -Mode $mode -Invocation ('-EncodedCommand ' + $EncodedBootstrap)
+    if ($invalidFrame.ExitCode -eq 0 -or $invalidFrame.Stdout.Length -ne 0) {
+      throw "Invalid frame was accepted: $mode"
+    }
   }
   function New-ReadyFixture {
     return ('{"status":"ready","runtime_commit":"' + $TargetCommit + '",' +
