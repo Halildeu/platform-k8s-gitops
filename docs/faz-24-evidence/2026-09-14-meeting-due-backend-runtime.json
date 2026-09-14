@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "testai-backend-runtime-verification-v1",
+  "verdict": "PASS",
+  "failedOrLastGate": "complete",
+  "authGate": "pass-p5-readiness-viewer-exact-view",
+  "publicEntry": "https://testai.acik.com",
+  "verificationMode": "read-only-runtime-evidence",
+  "verifierMutationPerformed": false,
+  "mapFenceBeforePassed": true,
+  "mapFenceAfterPassed": true,
+  "expectedDigests": {
+    "api-gateway": "sha256:a742db0550b0ba9804e3c994d1b5c2813b441900a5aa07646ec6c081a730362e",
+    "audio-gateway-service": "sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929",
+    "audit-event-consumer-service": "sha256:555f663fd973b3813a6b0c9ffea6a7324ca748ad0fb63f20347db3fa2af111eb",
+    "auth-service": "sha256:ffd2bff1d2fe62872cde8e14f7b9f7e3ef66d6debf2b5982f9f81dce7b30c7d8",
+    "core-data-service": "sha256:d3165037851e27879d66daacd4c33d1ae840afca299ffe8cbdd7f2e02dbb4289",
+    "endpoint-admin-service": "sha256:dc18c0d2b83dcc99d52137898107f0b49dff2b63eb79a5170f102088aab2881f",
+    "meeting-service": "sha256:4fe09e4da3d5ce5d128c8e8de53ef7714e3552fcdd09e54c63029bcf0fdbac11",
+    "permission-service": "sha256:f103c00de707b0bfd227fda6754db3302d1391ca602a45952b058dc7c0480b66",
+    "report-service": "sha256:7f32f50243401187af4a59f2e54a6c6565a1e415afe2ea7a13eabf1992f78290",
+    "schema-service": "sha256:eabc75bb1bf6d99aa765fc2e4782d0f862a239a773f1d172ec0e86d535fdfd21",
+    "transcript-service": "sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496",
+    "user-service": "sha256:d1b562c7a98236bbb848af0912c14d33788cf9394126c3748d262f5bdce5a3de",
+    "variant-service": "sha256:deb8998d61638f5f0b769d7de9a511d710cb4bccd1f984665f1d9ae3caa1df88"
+  }
+}
