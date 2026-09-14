@@ -1,5 +1,54 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Due Producer Rejected By STT Quality Gate (2026-09-14 00:17 UTC)
+
+- GPU run `34791935528`, target AI `5b38ff05`, was rejected and automatically
+  restored `d67ec2d5`. Host ledger says `automatic-rollback-accepted`; both
+  readiness endpoints and all three rollback stream fixtures passed. The
+  consumer remains disabled pending a fresh permit for the restored source.
+- New privacy-safe failure diagnostic establishes a quality rejection, not
+  a timeout: fixture 001, exit 1, deadline still open, WER 0.4, reference token
+  coverage 0.8, 6 final words / 5 reference words, two final events, no server
+  error or hallucination flag, terminal `eof_ack,drained`, 15560 ms elapsed.
+  The retained diagnostic contains no raw audio, transcript or secret.
+  Failure receipt SHA `9eb0a00ffe8a86e4f09b7408a61411f485bd4b6187770a5d456da1f66d8dd365`.
+- Restore the strict policy tuple to the actually accepted source `d67ec2d5`
+  before reactivation. Backend V15 and web due-phrase fixes remain healthy;
+  the AI producer fix is NOT live. No fresh date-preservation acceptance is
+  claimed. Do not retry rollout until the stream quality failure is diagnosed;
+  no threshold relaxation, fixture retuning or production change.
+
+## Meeting AI TEST - Backend Verified, Producer Paused For Rollout (2026-09-14 00:11 UTC)
+
+- Backend acceptance run `34791524868` succeeded: exact 13-service map, readiness,
+  edge, stability and dedicated P5 view-persona gate PASS. Receipt binds the
+  meeting-service digest `4fe09e4d...fdbac11` and unchanged transcript producer.
+- Consumer was disabled through the canonical protected config helper after
+  quiet-queue preflight. Exact source remains `d67ec2d5`; disabled config hash
+  `275f333659a1ab1c5133d80f225669fbff6807e94230f1e3fcf912868e69d16a`.
+  New task/listener, disabled worker and unchanged live STT task were verified.
+  Request/lease/claim defaults and qualified model profile were preserved.
+  Next: canonical AI `5b38ff05` rollout, fresh permit and NEW recording.
+
+## Meeting AI TEST - Reader Runtime Updated, Producer Still Old (2026-09-14 00:08 UTC)
+
+- GitOps PR #3774 merged `3774cb73`; web promotion PR #3773 merged `41e1e72e`.
+  ArgoCD reports Synced / Healthy / Succeeded at `41e1e72e`. Meeting-service
+  pod `meeting-service-c84d49df7-z6clj` is Ready, zero restarts, exact imageID
+  `4fe09e4d...fdbac11`, with a nonempty service endpoint. Database readback
+  confirms V15 successful and nullable `due_text VARCHAR(255)`. Existing
+  nonnull ISO due rows count is zero; ISO compatibility is source-tested,
+  not claimed as a live historical-row test.
+- TEST public web build-info identifies `c39b9df0`. Signed image index
+  `d9a41b82...5dc7600` resolves to the desired amd64 manifest
+  `f9b5ea13...eeda845`; cluster pull and the existing strict CRI alias verifier
+  uniquely bind both to content ID `72326117...15e458d`. Probe pods were removed.
+  Backend stability workflow and frontend terminal verification are pending.
+- GPU remains `d67ec2d5` / qualified qwen3.8 profile. Exact protected config
+  backup `meeting-3753-before-due-03b3675f.env` was ACL/hash verified. No active
+  STT connection was observed. Producer rollout and a fresh persisted meeting
+  remain the next acceptance steps; no production mutation or quality claim.
+
 ## Meeting AI TEST - Due Phrase Source Repairs, Deployment Pending (2026-09-14 00:01 UTC)
 
 - AI PR #345 merged `5b38ff05`; backend PR #1170 merged `6dcf5757`;
