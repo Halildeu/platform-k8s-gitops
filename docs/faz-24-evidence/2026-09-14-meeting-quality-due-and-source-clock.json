@@ -1,0 +1,144 @@
+{
+  "schema": "meeting-quality-due-and-source-clock-v1",
+  "status": "synthetic-test-acceptance-pass",
+  "observedAt": "2026-09-14T01:16:30.118Z",
+  "issue": 3753,
+  "productSlice": 3399,
+  "environment": "test",
+  "origin": "https://testai.acik.com",
+  "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+  "analysisRunId": "cd2a33d9-04a4-4408-8942-a0b75a5f58f3",
+  "recordingPersona": "synthetic-TTS-privileged-TEST-persona",
+  "browserPersona": "d35-existing-test",
+  "backendSource": "6dcf57571f82183ef2ad0c8e10b9d5d513f403ee",
+  "webSource": "c39b9df025c3b3391fd54c243cb1d2660e59bace",
+  "gitopsRolloutSource": "6e99ab8f912aaecab9621fcfb9798677bae26a40",
+  "gpuRunId": 34794294602,
+  "host": {
+    "head": "e386b996cae22f08294a83d840f0e92d4a82cd53",
+    "ledgerCurrent": "e386b996cae22f08294a83d840f0e92d4a82cd53",
+    "ledgerPrevious": "d67ec2d591f70293ed23cdfe48726baf6a20ef12",
+    "lastAction": "deploy",
+    "lastResult": "tasks-restarted",
+    "timestampUtc": "2026-09-14T00:59:30.0193576Z",
+    "configSha256": "461497a2dc7ead5b128587ce88941366c0a1a860a87ffefa267a7fe662355637",
+    "startupSha256": "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
+    "readiness": {
+      "stt": {
+        "status": "ready",
+        "httpStatus": 200
+      },
+      "meeting": {
+        "status": "ok",
+        "httpStatus": 200
+      }
+    }
+  },
+  "deployments": [
+    {
+      "name": "audio-gateway",
+      "image": "ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929",
+      "ready": 1
+    },
+    {
+      "name": "frontend",
+      "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-c39b9df@sha256:f9b5ea13d6eba14414476eb432aec10891f6d7b571a7f72b13746342beeda845",
+      "ready": 1
+    },
+    {
+      "name": "meeting-service",
+      "image": "ghcr.io/halildeu/platform-backend-meeting-service@sha256:4fe09e4da3d5ce5d128c8e8de53ef7714e3552fcdd09e54c63029bcf0fdbac11",
+      "ready": 1
+    },
+    {
+      "name": "transcript-service",
+      "image": "ghcr.io/halildeu/platform-backend-transcript-service@sha256:191eecbc72dbd18eaa6d8e6951921bc093a4899cb8c080b7481abbd3382a6496",
+      "ready": 1
+    }
+  ],
+  "frontendIndexAliasAcceptedByRun": 34791535680,
+  "model": "qwen3.8:27b",
+  "modelDigest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643",
+  "ollamaThink": false,
+  "sourceClockDiagnostic": {
+    "beforeWer": [
+      0,
+      0.2,
+      0.4,
+      0.2
+    ],
+    "afterWer": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "pacing": [
+      1,
+      2,
+      1,
+      2
+    ],
+    "sameFixtureClientThresholds": true,
+    "sourceBudgetSamples": 80000
+  },
+  "decisions": {
+    "truePositive": 4,
+    "falsePositive": 0,
+    "falseNegative": 0
+  },
+  "actions": {
+    "truePositive": 3,
+    "falsePositive": 0,
+    "falseNegative": 0
+  },
+  "metadata": {
+    "truePositive": 3,
+    "falsePositive": 0,
+    "falseNegative": 0
+  },
+  "dueDates": {
+    "truePositive": 3,
+    "falsePositive": 0,
+    "falseNegative": 0
+  },
+  "sourceDueTextPersisted": 1,
+  "sourceDueTextFullDesktopMobile": true,
+  "cleanup": {
+    "directGrantsRestored": true,
+    "tempUserDeleted": true,
+    "tokenFileRemoved": true,
+    "temporaryBrowserRolesRestored": true,
+    "transcriptDeniedAfterRevocation": 403,
+    "persistentBaselineMeetingViewRole": 35
+  },
+  "recorderCleanupEvidenceSha256": "113ad99a0d637038adff6dd097d6c390ff3f32791afe77c714ca4524dd9b88f9",
+  "references": [
+    {
+      "path": "2026-09-14-meeting-quality-new-recording.json",
+      "sha256": "d1a32f8239018ebfae53bd0e967b685112dc793e6d0ab4df824040ac2f03e8f5"
+    },
+    {
+      "path": "2026-09-14-meeting-quality-due-browser.json",
+      "sha256": "f559ab6fedb58b03bbbc43805d4aa69106583c092dba06fee6f771f6367cbb6c"
+    },
+    {
+      "path": "2026-09-14-meeting-quality-due-persistence.json",
+      "sha256": "ca7d0a7183574167c5e093060402186853be5102d7a45e1a3d4ae6c2fe3efc08"
+    }
+  ],
+  "boundaries": {
+    "syntheticOnly": true,
+    "realHumanQualityClaim": false,
+    "internalDiarizationQualified": false,
+    "internalDiarizationIssue": 3746,
+    "productionMutation": false,
+    "productionAcceptance": false,
+    "rawTranscriptIncluded": false,
+    "rawCredentialIncluded": false,
+    "sttAndSpeakerProviderForPersistedRecording": "speechmatics",
+    "sourceClockDiagnosticProvider": "internal-live-stt",
+    "sourceMatchingIsNotSemanticConfidence": true,
+    "priorDateLossRecordingsRemainRejected": true
+  }
+}

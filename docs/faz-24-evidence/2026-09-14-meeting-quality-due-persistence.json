@@ -1,0 +1,13 @@
+{
+  "schema": "meeting-due-text-persistence-metadata-v1",
+  "environment": "test",
+  "observedAt": "2026-09-14T01:14:09.024Z",
+  "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+  "analysisRunId": "cd2a33d9-04a4-4408-8942-a0b75a5f58f3",
+  "actions": 3,
+  "sourceDueTextCount": 1,
+  "isoDueCount": 0,
+  "maximumDueTextLength": 13,
+  "nonemptyDueText": true,
+  "rawTextIncluded": false
+}
