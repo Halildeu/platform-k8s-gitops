@@ -1,5 +1,72 @@
 # Current State — Platform K8s Migration
 
+## Meeting Quality TEST - Fresh Due/Source Acceptance (2026-09-14 01:16 UTC)
+
+- NEW synthetic recording `102ff5e3-a3f5-485a-9cd8-d828dabdecfc`, canonical
+  session `9b11aa0c-c502-4448-8826-18149d67f59c`, persisted analysis
+  `cd2a33d9-04a4-4408-8942-a0b75a5f58f3` generated 01:12:05 UTC. No previous
+  rejected analysis was edited/reused. Canonical API reopen returned the same
+  result fingerprint and exact source. WER0 / 113 reference words; 112/112
+  attributed finals persisted and reopened. DER 6.12% with 0.25s collar,
+  12.06% at zero collar; speaker confusion 0 on this two-voice TTS fixture.
+- Frozen observed-ASR gold: decisions TP/FP/FN 4/0/0, actions 3/0/0,
+  owners 3/0/0, dates 3/0/0, action+metadata 3/0/0. Strict quote identity
+  also passed. One nonempty 13-character source date phrase is stored in
+  V15 due_text; ISO due_at remains null (no invented calendar date).
+- Desktop 1440 and mobile 390 browser journeys reopened the exact source,
+  model and analysis; full source date visible, no horizontal overflow or
+  page errors, citation target and canonical timing verified. After scoped
+  transcript permission revocation a fresh login received 403 and content
+  was hidden. Temporary view role and identity-provider roles restored;
+  recorder user/token/direct-grants cleanup verified. Baseline test role35
+  remains intentionally present. Screenshots inspected locally, not published.
+- Actual AI `e386b996`, enabled config `461497a2`, exact qualified model and
+  original budgets remain healthy after processing. TEST desired digests for
+  audio/meeting/transcript/frontend and Ready replicas were re-read. Summary
+  evidence: `docs/faz-24-evidence/2026-09-14-meeting-quality-due-and-source-clock.json`
+  SHA `8d5b42ad`, with immutable lifecycle/browser/DB/rollout references.
+- Boundary: this is privileged synthetic TEST recording + scoped synthetic
+  browser persona evidence. Persisted speaker attribution uses Speechmatics;
+  the separate four-run source-clock diagnostic uses internal STT. Neither
+  establishes real-human accuracy, integrated internal diarization (#3746),
+  general production readiness or legal acceptance. Product Slice #3399
+  remains broader than this verified regression. Production was not mutated.
+
+## Meeting AI TEST - Source Clock Verified, Fresh Recording Running (2026-09-14 01:03 UTC)
+
+- GPU run `34794294602` succeeded. Canonical verifier accepted exact source
+  `e386b996`, ledger/current source/readiness/task identity and stream protocol.
+  Retained rollout receipt SHA `a2721a83`; previous source is `d67ec2d5`.
+- The same fixed pacing cases 1,2,1,2 now all have WER0, one 5-word final,
+  source range [0,80000], no errors and clean EOF/drain. Before WER was
+  0,0.2,0.4,0.2. Client/fixture hashes and thresholds match exactly; no retry
+  selection. After receipt `2026-09-14-stt-source-clock-after-diagnostic.json`
+  SHA `1c54c90f`. Controlled synthetic diagnostic only; not human quality or
+  internal diarization qualification.
+- Fresh permit file SHA `f662688e`, bound to GitOps `6e99ab8f`, policy
+  `150f5edb` and actual AI source, activated successfully. Receipt SHA
+  `baac4d0cede9d2e4f776c66f65a71c05c2a3eefd5e9775e9067192a377587593`;
+  enabled config SHA `461497a2dc7ead5b128587ce88941366c0a1a860a87ffefa267a7fe662355637`.
+  New listener/task, consumer/worker/Redis group/delivery ready, exact model
+  digest, think:false and original timeout/lease/claim defaults verified.
+- NEW canonical persisted TEST recording started with fixed two-speaker
+  synthetic corpus, output scope `meeting-quality-3753-source-clock` and
+  nonce `375314005700`. Finalization, semantics/full due phrase, browser
+  allow/deny and cleanup acceptance remain pending; prior rejected recordings
+  remain unchanged. No production mutation.
+
+## Meeting AI TEST - Source-Clock Rollout Dispatched (2026-09-14 00:57 UTC)
+
+- PR #3776 merged `6e99ab8f`, exact tested tree `405cecca`; all applicable
+  checks passed. Policy hash `150f5edb` targets AI `e386b996`. Canonical GPU
+  run `34794294602` was agent-initiated with actor Halildeu at this GitOps
+  revision; outcome pending. Automatic rollback retains accepted `d67ec2d5`.
+- Quiet-queue/idle preflight and protected disable succeeded. Disabled config
+  SHA `649d66c551c24c73b476b98acc3298aa10acc51f86183c27b6cffb1311a38049`;
+  new task/listener and disabled worker verified; unrelated STT task and
+  original timeout/lease/claim defaults were preserved. No recording is being
+  started until rollout and fresh permit/profile activation are verified.
+
 ## Meeting AI TEST - Source-Clock Repair Prepared (2026-09-14 00:52 UTC)
 
 - Fixed pacing protocol on accepted `d67ec2d5` reproduced the failure: factors

@@ -1,0 +1,181 @@
+{
+  "schema": "meeting-fixed-stream-pacing-diagnostic-v1",
+  "acceptance": false,
+  "rawTranscriptIncluded": false,
+  "sourceSha256": "cff1e741ed9520dc0911ce12c0b0dc07625543adf295b4644df8ccfb02a50bae",
+  "fixtureSha256": "2039e3c6b5c53c4759bc93723157dadf9c44228ef1d5e7143ad0587c43417053",
+  "results": [
+    {
+      "index": 1,
+      "clientPacingFactor": 1,
+      "ok": true,
+      "coverage": {
+        "final_words": 5,
+        "reference_words": 5,
+        "final_word_coverage": 1,
+        "reference_token_coverage": 1,
+        "word_error_rate": 0
+      },
+      "events": {
+        "loading": [],
+        "partial_count": 0,
+        "final_count": 1,
+        "final_hallucination_count": 0,
+        "error_count": 0,
+        "max_transcript_gap_ms": null,
+        "terminal_sequence": [
+          "eof_ack",
+          "drained"
+        ]
+      },
+      "qualityGate": {
+        "min_final_events": 1,
+        "min_partial_events": 0,
+        "min_final_word_coverage": 0.8,
+        "min_reference_token_coverage": 0.8,
+        "max_word_error_rate": 0.25,
+        "max_transcript_gap_ms": 6000,
+        "failures": []
+      },
+      "frames": [
+        {
+          "reason": "forced",
+          "startSample": 0,
+          "endSample": 80000,
+          "words": 5,
+          "receivedMs": 5921
+        }
+      ],
+      "elapsedMs": 7266
+    },
+    {
+      "index": 2,
+      "clientPacingFactor": 2,
+      "ok": true,
+      "coverage": {
+        "final_words": 5,
+        "reference_words": 5,
+        "final_word_coverage": 1,
+        "reference_token_coverage": 1,
+        "word_error_rate": 0
+      },
+      "events": {
+        "loading": [],
+        "partial_count": 0,
+        "final_count": 1,
+        "final_hallucination_count": 0,
+        "error_count": 0,
+        "max_transcript_gap_ms": null,
+        "terminal_sequence": [
+          "eof_ack",
+          "drained"
+        ]
+      },
+      "qualityGate": {
+        "min_final_events": 1,
+        "min_partial_events": 0,
+        "min_final_word_coverage": 0.8,
+        "min_reference_token_coverage": 0.8,
+        "max_word_error_rate": 0.25,
+        "max_transcript_gap_ms": 6000,
+        "failures": []
+      },
+      "frames": [
+        {
+          "reason": "forced",
+          "startSample": 0,
+          "endSample": 80000,
+          "words": 5,
+          "receivedMs": 11028
+        }
+      ],
+      "elapsedMs": 14297
+    },
+    {
+      "index": 3,
+      "clientPacingFactor": 1,
+      "ok": true,
+      "coverage": {
+        "final_words": 5,
+        "reference_words": 5,
+        "final_word_coverage": 1,
+        "reference_token_coverage": 1,
+        "word_error_rate": 0
+      },
+      "events": {
+        "loading": [],
+        "partial_count": 1,
+        "final_count": 1,
+        "final_hallucination_count": 0,
+        "error_count": 0,
+        "max_transcript_gap_ms": 2795,
+        "terminal_sequence": [
+          "eof_ack",
+          "drained"
+        ]
+      },
+      "qualityGate": {
+        "min_final_events": 1,
+        "min_partial_events": 0,
+        "min_final_word_coverage": 0.8,
+        "min_reference_token_coverage": 0.8,
+        "max_word_error_rate": 0.25,
+        "max_transcript_gap_ms": 6000,
+        "failures": []
+      },
+      "frames": [
+        {
+          "reason": "forced",
+          "startSample": 0,
+          "endSample": 80000,
+          "words": 5,
+          "receivedMs": 6130
+        }
+      ],
+      "elapsedMs": 7515
+    },
+    {
+      "index": 4,
+      "clientPacingFactor": 2,
+      "ok": true,
+      "coverage": {
+        "final_words": 5,
+        "reference_words": 5,
+        "final_word_coverage": 1,
+        "reference_token_coverage": 1,
+        "word_error_rate": 0
+      },
+      "events": {
+        "loading": [],
+        "partial_count": 1,
+        "final_count": 1,
+        "final_hallucination_count": 0,
+        "error_count": 0,
+        "max_transcript_gap_ms": 5534,
+        "terminal_sequence": [
+          "eof_ack",
+          "drained"
+        ]
+      },
+      "qualityGate": {
+        "min_final_events": 1,
+        "min_partial_events": 0,
+        "min_final_word_coverage": 0.8,
+        "min_reference_token_coverage": 0.8,
+        "max_word_error_rate": 0.25,
+        "max_transcript_gap_ms": 6000,
+        "failures": []
+      },
+      "frames": [
+        {
+          "reason": "forced",
+          "startSample": 0,
+          "endSample": 80000,
+          "words": 5,
+          "receivedMs": 10887
+        }
+      ],
+      "elapsedMs": 14219
+    }
+  ]
+}

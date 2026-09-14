@@ -1,0 +1,227 @@
+{
+  "status": "pass",
+  "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+  "webCommit": "c39b9df025c3b3391fd54c243cb1d2660e59bace",
+  "positive": {
+    "schema": "meeting-speaker-browser-synthetic-v1",
+    "status": "pass",
+    "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+    "webCommit": "c39b9df025c3b3391fd54c243cb1d2660e59bace",
+    "semanticExpected": true,
+    "sourceGoldMatched": true,
+    "expectedModel": "qwen3.8:27b",
+    "pageErrors": 0,
+    "persona": "d35-existing-test",
+    "reads": [
+      {
+        "status": 200,
+        "count": 112,
+        "transcriptRoleInToken": true,
+        "attributed": 112
+      },
+      {
+        "status": 200,
+        "count": 112,
+        "transcriptRoleInToken": true,
+        "attributed": 112
+      }
+    ],
+    "results": [
+      {
+        "status": 200,
+        "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+        "analysisRunId": "cd2a33d9-04a4-4408-8942-a0b75a5f58f3",
+        "persisted": true,
+        "sessionId": "9b11aa0c-c502-4448-8826-18149d67f59c",
+        "model": "qwen3.8:27b",
+        "backend": "ollama",
+        "promptVersion": "ollama-v1",
+        "generatedAt": "2026-09-14T01:12:05.525989Z",
+        "expectedModelMatches": true,
+        "semantic": {
+          "goldSha256": "7ddd9d4346e7943df8c8c7e30b6d7af1fa4039403d27466a3f08409950af0097",
+          "caseId": "two-speaker-tr-v1-observed-asr",
+          "identityNormalization": "whitespace-and-tr-case-v2",
+          "decisions": {
+            "truePositive": 4,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "actions": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "actionWithMetadata": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "owners": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "dueDates": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "exactMatch": true,
+          "strictQuoteIdentity": {
+            "goldSha256": "7ddd9d4346e7943df8c8c7e30b6d7af1fa4039403d27466a3f08409950af0097",
+            "caseId": "two-speaker-tr-v1-observed-asr",
+            "identityNormalization": "whitespace-only-v1",
+            "decisions": {
+              "truePositive": 4,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "actions": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "actionWithMetadata": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "owners": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "dueDates": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "exactMatch": true
+          }
+        }
+      },
+      {
+        "status": 200,
+        "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+        "analysisRunId": "cd2a33d9-04a4-4408-8942-a0b75a5f58f3",
+        "persisted": true,
+        "sessionId": "9b11aa0c-c502-4448-8826-18149d67f59c",
+        "model": "qwen3.8:27b",
+        "backend": "ollama",
+        "promptVersion": "ollama-v1",
+        "generatedAt": "2026-09-14T01:12:05.525989Z",
+        "expectedModelMatches": true,
+        "semantic": {
+          "goldSha256": "7ddd9d4346e7943df8c8c7e30b6d7af1fa4039403d27466a3f08409950af0097",
+          "caseId": "two-speaker-tr-v1-observed-asr",
+          "identityNormalization": "whitespace-and-tr-case-v2",
+          "decisions": {
+            "truePositive": 4,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "actions": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "actionWithMetadata": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "owners": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "dueDates": {
+            "truePositive": 3,
+            "falsePositive": 0,
+            "falseNegative": 0
+          },
+          "exactMatch": true,
+          "strictQuoteIdentity": {
+            "goldSha256": "7ddd9d4346e7943df8c8c7e30b6d7af1fa4039403d27466a3f08409950af0097",
+            "caseId": "two-speaker-tr-v1-observed-asr",
+            "identityNormalization": "whitespace-only-v1",
+            "decisions": {
+              "truePositive": 4,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "actions": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "actionWithMetadata": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "owners": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "dueDates": {
+              "truePositive": 3,
+              "falsePositive": 0,
+              "falseNegative": 0
+            },
+            "exactMatch": true
+          }
+        }
+      }
+    ],
+    "viewports": [
+      {
+        "name": "desktop",
+        "speakers": [
+          "Konuşmacı 1",
+          "Konuşmacı 2"
+        ],
+        "overflow": false,
+        "citationTargetVerified": true,
+        "sourceMatchingLabel": true,
+        "oldConfidenceLabelAbsent": true,
+        "badgeFit": true,
+        "sourceDueTextVisible": true,
+        "canonicalSessionTimeVerified": true,
+        "flowingTimeCount": 4,
+        "rowTimeCount": 112,
+        "elapsedSecondsMin": 2,
+        "elapsedSecondsMax": 75
+      },
+      {
+        "name": "mobile",
+        "speakers": [
+          "Konuşmacı 1",
+          "Konuşmacı 2"
+        ],
+        "overflow": false,
+        "citationTargetVerified": true,
+        "sourceMatchingLabel": true,
+        "oldConfidenceLabelAbsent": true,
+        "badgeFit": true,
+        "sourceDueTextVisible": true,
+        "canonicalSessionTimeVerified": true,
+        "flowingTimeCount": 4,
+        "rowTimeCount": 112,
+        "elapsedSecondsMin": 2,
+        "elapsedSecondsMax": 75
+      }
+    ]
+  },
+  "denied": {
+    "status": "pass",
+    "kind": "synthetic-transcript-role-revoked",
+    "meetingId": "102ff5e3-a3f5-485a-9cd8-d828dabdecfc",
+    "webCommit": "c39b9df025c3b3391fd54c243cb1d2660e59bace",
+    "deniedStatus": 403,
+    "contentHidden": true
+  },
+  "originalRolesRestored": true
+}
