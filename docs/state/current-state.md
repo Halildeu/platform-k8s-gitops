@@ -1,5 +1,25 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Due Phrase Source Repairs, Deployment Pending (2026-09-14 00:01 UTC)
+
+- AI PR #345 merged `5b38ff05`; backend PR #1170 merged `6dcf5757`;
+  web PR #1178 merged `c39b9df0`. Exact tested trees equal merges and applicable
+  PR CI checks passed. Backend adds nullable V15 `due_text`, preserves old ISO
+  values and retry hashes; AI transports grounded wording without guessed dates;
+  web preserves non-ISO wording instead of truncating it to ten characters.
+- Backend build `34791084427` succeeded. Signed provenance binds meeting-service
+  digest `4fe09e4da3d5ce5d128c8e8de53ef7714e3552fcdd09e54c63029bcf0fdbac11`
+  to that exact source/run; TEST ghcr-pull probe returned the same imageID.
+  Only meeting-service is proposed for backend promotion; other service pins,
+  including transcript producer, remain unchanged. V14-to-V15 and old-runtime
+  Flyway validation tests passed in the source PR. Image build is not delivery.
+- Current GPU runtime remains `d67ec2d5`, qwen3.8:27b / think:false. Desired
+  strict source policy moves to `5b38ff05`, with no permit or threshold changes.
+  Backend-first runtime verification precedes AI rollout and fresh activation.
+  New persisted recording and desktop/mobile full due-phrase acceptance remain
+  pending under #3753 / Product Slice #3399. Both prior date-loss rejections
+  remain valid historical evidence. Production and internal diarization untouched.
+
 ## Meeting AI TEST - Canonical Repeat Confirms Date Contract Loss (2026-09-13 22:36 UTC)
 
 - A second NEW recording `b014ded4-9dbe-46a5-9068-eb3d204577c9` used the

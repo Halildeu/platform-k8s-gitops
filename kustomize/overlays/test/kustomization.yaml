@@ -589,7 +589,10 @@ images:
     # Provenance-verified image run 34467658000; tracked by gitops#3533/#3399.
     # backend#1163 / source 965cb1c: exact session intelligence result selector.
     # TEST ghcr-pull probe imageID verified 2026-09-12; tracked by gitops#3421.
-    digest: sha256:f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f
+    # backend#1170 / source 6dcf5757: preserve grounded due_text (nullable V15).
+    # Build 34791084427 attested; TEST ghcr-pull imageID verified. Deploy before AI#345.
+    # Rollback: f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f.
+    digest: sha256:4fe09e4da3d5ce5d128c8e8de53ef7714e3552fcdd09e54c63029bcf0fdbac11
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
