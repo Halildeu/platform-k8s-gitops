@@ -52,8 +52,8 @@
       "argocd_revision": null,
       "smoke_evidence": null,
       "verified_at": null,
-      "candidate_pr": null,
-      "candidate_pr_status": null
+      "candidate_pr": 3780,
+      "candidate_pr_status": "open"
     }
   },
   "metadata": {
@@ -64,7 +64,7 @@
   },
   "audit": {
     "created_at": "2026-06-10T20:46:48Z",
-    "last_updated_at": "2026-06-10T20:46:48Z",
+    "last_updated_at": "2026-09-14T14:46:45Z",
     "ci_run_url": "https://github.com/Halildeu/platform-web/actions/runs/27305091272"
   }
 }
