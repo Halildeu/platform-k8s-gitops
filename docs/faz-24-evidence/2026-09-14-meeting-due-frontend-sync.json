@@ -1,0 +1,12 @@
+{
+  "verdict": "PASS",
+  "reason": "",
+  "app": "platform-test",
+  "argocd_context": "k3d-prod",
+  "argocd_namespace": "argocd",
+  "sync_mode": "argocd",
+  "requested_revision": "41e1e72e86a30d1da353f1713df0ae6e9e825e05",
+  "observed_revision": "41e1e72e86a30d1da353f1713df0ae6e9e825e05",
+  "sync_status": "Synced",
+  "health_status": "Healthy"
+}

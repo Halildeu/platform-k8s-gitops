@@ -1,5 +1,48 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI TEST - Source-Clock Repair Prepared (2026-09-14 00:52 UTC)
+
+- Fixed pacing protocol on accepted `d67ec2d5` reproduced the failure: factors
+  1,2,1,2 yielded WER 0,0.2,0.4,0.2. Forced finals could contain only 2.4 or
+  4.6 source seconds despite the configured 5-second budget. Metadata receipt:
+  `docs/faz-24-evidence/2026-09-14-stt-source-clock-before-diagnostic.json`.
+  This is a synthetic diagnostic, not human meeting acceptance.
+- AI PR #347 merged `e386b996`, exactly matching tested tree `a48fdec5`.
+  Four CI checks, including Windows rollback/task contracts, passed at
+  `de26cea0`. Exact-head local rerun: 361 tests, 3 existing opt-in integration
+  tests deselected, 84% app coverage. The repair requires both existing wall
+  age and configured source samples before forced finalization; silence,
+  EOF/drain, models and thresholds are unchanged. Includes due-text PR #345.
+- Desired strict policy and static allowlist now target `e386b996`. Actual
+  runtime is still accepted `d67ec2d5`, consumer enabled / qualified model.
+  Protected profile backup `meeting-3753-before-clock-51fd7bcc.env` matches
+  current config `51fd7bcc`; ACL/hash and idle stream state were verified.
+  Next: protected disable, canonical exact-SHA rollout with automatic rollback,
+  same fixed diagnostic, fresh permit, NEW persisted/browser acceptance.
+- Backend runtime receipt `2026-09-14-meeting-due-backend-runtime.json` and
+  frontend sync receipt `2026-09-14-meeting-due-frontend-sync.json` retain the
+  verified reader deployment. Source issues #1169 / #3771 are Needs Verify,
+  unclaimed; overall #3753 remains active. Production remains untouched.
+
+## Meeting AI TEST - Accepted Producer Reactivated, Due Fix Not Live (2026-09-14 00:25 UTC)
+
+- Policy recovery PR #3775 merged `372145aa`, matching tested tree. Fresh permit
+  `46695de1ac361c5aa5bd039c6b2babd87ca741e97e0ae3d7b4dd884ac8047e11`
+  binds that GitOps revision, policy `2a9c39eb` and actual source `d67ec2d5`.
+  Protected activation receipt `d973cdc3d1387ce1562ccb47aa6fc545b656241d04d276107e2bf2f7e51272ff`.
+- Consumer enabled, worker running, Redis group and delivery ready were verified
+  after new task/listener startup. Config hash is
+  `51fd7bccccc9b413d9166cf051a7db3efd47b0127f4e9333b225b9460f447024`.
+  qwen3.8:27b digest `22130167...c79643`, think:false, original request/lease/claim
+  defaults and live STT task were preserved. No active restore process remains.
+- AI target `5b38ff05` differs from accepted `d67ec2d5` only in meeting delivery
+  and its tests/docs; live STT source is identical. Successful fixture001 runs
+  have one final event / 5 words / WER0; rejected run had two finals / 6 words /
+  WER0.4. A fixed four-case normal/slower-client pacing diagnostic investigates
+  segmentation timing without changing the server, gold or quality thresholds.
+  This is diagnostic evidence, not a fresh deployment acceptance or real-user
+  quality claim. Backend/web date repairs are live; producer date repair is not.
+
 ## Meeting AI TEST - Due Producer Rejected By STT Quality Gate (2026-09-14 00:17 UTC)
 
 - GPU run `34791935528`, target AI `5b38ff05`, was rejected and automatically
