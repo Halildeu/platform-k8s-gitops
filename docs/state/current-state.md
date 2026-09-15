@@ -1,5 +1,35 @@
 # Current State — Platform K8s Migration
 
+## Zeynep Requests - Scoped TEST Acceptance (2026-09-15)
+
+- Web PR1179/1180/1186 combined source
+  `cc6ed8746962e0fd112990863bc6a99a9ca95aee` is deployed through GitOps PR3788
+  (`d20a3296`); desired/runtime digest `sha256:db0a19fadc91a6e8a2c0e19b4d1e8a5629e08ddb7817f28efcb2ad3e5746818c`
+  matches, runtime verifier passes, Argo Synced/Healthy. Fresh focused suite:
+  263 tests passed; whole-shell typecheck still has 543 baseline diagnostics.
+- Scoped web requests #1158, #966, #1003, #965 and #1184 are closed with evidence;
+  #966 customer evidence is attributed to Zeynep's attended TEST scalar/grouped
+  correction and persisted recruiter readback, not a new agent run. The
+  separate month fix web#1184 / PR1186 now has real TEST synthetic PDF import,
+  candidate correction and persisted recruiter readback. Broad ats#213 and
+  remaining web#992 screen-reader acceptance are not closed by these results.
+- Direct TEST recruiter endpoint: recruiter200; roleless/reader/reviewer403;
+  anonymous401; untrusted origin has no CORS grant. Four smoke sessions were
+  logged out and refresh-token introspection returned active=false. No role,
+  account, credential or production changes. Backend#1172 source review is
+  accepted on corrected PR1171; actual Teams tenant acceptance stays #3716.
+- Mobile source review #25 is closed; PR26 merged only into PR24's feature
+  branch at `6651da2`, 228 tests/typecheck/lint passed. Native tested tree
+  matches the merged source and Maestro 2/2 passed; new PR24 native rerun
+  remains in progress. PR24/15 stay draft; real-device #8/#3673 stays open.
+- GitOps#3786 final real TEST synthetic journey passed at 07:30:43Z:
+  two applications, switch/reload, isolated withdrawal, local removal without
+  server deletion, persisted recruiter read, month-range correction and
+  inspected 1440/390px screenshots. Credentials absent from URL/localStorage;
+  recruiter logout204 and inactive refresh token verified. Separate ESO Teams alert-secret
+  degradation is tracked by #3784, not reported as healthy infrastructure.
+  [Evidence and boundaries](../evidence/2026-09-15-zeynep-ats-requests-3786.md).
+
 ## Meeting Quality TEST - Fresh Due/Source Acceptance (2026-09-14 01:16 UTC)
 
 - NEW synthetic recording `102ff5e3-a3f5-485a-9cd8-d828dabdecfc`, canonical
