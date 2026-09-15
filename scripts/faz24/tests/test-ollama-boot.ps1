@@ -197,3 +197,6 @@ exit 7
     Assert-True ($null -eq [Environment]::GetEnvironmentVariable('OLLAMA_UNAPPROVED')) 'Clear inherited Ollama overrides.'
 } finally { [IO.Directory]::Delete($root, $true) }
 Write-Output "PASS: $script:Checks offline checks; no Windows task or daemon was started."
+# Negative child fixtures intentionally leave LASTEXITCODE nonzero. Only a
+# completed assertion suite reports success to the GitHub PowerShell wrapper.
+exit 0

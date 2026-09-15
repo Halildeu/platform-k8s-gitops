@@ -55,7 +55,10 @@ the scheduled task. Existing account credentials were not changed.
   default-normalized XML, collisions, identity denial, isolated home, inherited
   Ollama override removal and cross-account SecureString registration boundary.
 - Launcher SHA256: `2fbf0fe431e6252071700fe9d98ce6061ceeba61cb4018d243294a8471eac890`.
-- Test script SHA256: `9eabc68c9204777daa3e42338886dc1a256f2db24b9ec244d2db0c978d6de889`.
+- Test script SHA256: `19eb053c9bbc5fcaa091a9058e11986d2e63fd1393cd0559de6a256141f3467f`.
+- First CI invocation passed all63 assertions but inherited the intentional
+  negative child fixture exit status. The harness now returns zero only after
+  the entire assertion suite completes; assertion failures remain terminating.
 - New workflow YAML lint and `git diff --check` passed locally. CI is separate.
 - [Operational contract and rollback](../runbooks/RB-test-ollama-boot.md).
 
