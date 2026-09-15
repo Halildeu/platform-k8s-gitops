@@ -196,6 +196,25 @@ exit 7
     Assert-True ($env:USERPROFILE -eq $root -and $env:HOME -eq $root) 'Use only the isolated writable home.'
     Assert-True ($null -eq [Environment]::GetEnvironmentVariable('OLLAMA_UNAPPROVED')) 'Clear inherited Ollama overrides.'
 } finally { [IO.Directory]::Delete($root, $true) }
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    $diagnosticRoot = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($diagnosticRoot) | Out-Null
+    $diagnosticPath = Join-Path $diagnosticRoot 'ollama-test-failure.json'
+    try {
+        function Test-OllamaElevated { return $true }
+        Write-OllamaFailureDiagnostic 'Run' $diagnosticRoot $config.RunAsUserSid
+        Assert-True (-not (Test-Path $diagnosticPath)) 'Elevated context cannot write a user-controlled diagnostic file.'
+        function Test-OllamaElevated { return $false }
+        Write-OllamaFailureDiagnostic 'Install' $diagnosticRoot $config.RunAsUserSid
+        Assert-True (-not (Test-Path $diagnosticPath)) 'Install never writes runtime diagnostics.'
+        Write-OllamaFailureDiagnostic 'Run' $diagnosticRoot 'S-1-5-21-11-22-33-9999'
+        Assert-True (-not (Test-Path $diagnosticPath)) 'Another identity cannot write diagnostics.'
+        $script:OllamaStage = 'serve_process'
+        Write-OllamaFailureDiagnostic 'Run' $diagnosticRoot $config.RunAsUserSid
+        $record = Get-Content -Raw $diagnosticPath | ConvertFrom-Json
+        Assert-True ($record.stage -eq 'serve_process' -and @($record.PSObject.Properties).Count -eq 2) 'Only stage and timestamp may be logged.'
+    } finally { [IO.Directory]::Delete($diagnosticRoot, $true) }
+}
 Write-Output "PASS: $script:Checks offline checks; no Windows task or daemon was started."
 # Negative child fixtures intentionally leave LASTEXITCODE nonzero. Only a
 # completed assertion suite reports success to the GitHub PowerShell wrapper.

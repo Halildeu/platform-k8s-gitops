@@ -327,6 +327,19 @@ function Invoke-OllamaTestServer($Config) {
     }
 }
 
+function Write-OllamaFailureDiagnostic([string]$Mode, [string]$RuntimeHome, [string]$RunAsUserSid) {
+    # Never let an administrative install write into a user-controlled home.
+    try {
+        if ($Mode -ne 'Run' -or (Get-OllamaCurrentSid) -cne $RunAsUserSid -or (Test-OllamaElevated)) { return }
+        Assert-OllamaLocalPath $RuntimeHome
+        $failurePath = Join-Path $RuntimeHome 'ollama-test-failure.json'
+        Assert-OllamaNoReparse (Split-Path -Parent $failurePath)
+        if (Test-Path -LiteralPath $failurePath) { Assert-OllamaNoReparse $failurePath }
+        $diagnostic = [ordered]@{ stage = $script:OllamaStage; at = [DateTime]::UtcNow.ToString('o') }
+        [IO.File]::WriteAllText($failurePath, (ConvertTo-Json -Compress -InputObject $diagnostic))
+    } catch { }
+}
+
 if ($MyInvocation.InvocationName -ne '.') {
     try {
     $values = @{
@@ -343,14 +356,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         # Only a fixed stage code reaches diagnostics, never exception bodies,
         # arguments, identities, credentials, model content or transcripts.
         [Console]::Error.WriteLine('OLLAMA_TEST_BOOT_FAILURE stage=' + $script:OllamaStage)
-        try {
-            Assert-OllamaLocalPath $RuntimeHome
-            $failurePath = Join-Path $RuntimeHome 'ollama-test-failure.json'
-            Assert-OllamaNoReparse (Split-Path -Parent $failurePath)
-            if (Test-Path -LiteralPath $failurePath) { Assert-OllamaNoReparse $failurePath }
-            $diagnostic = [ordered]@{ stage = $script:OllamaStage; at = [DateTime]::UtcNow.ToString('o') }
-            [IO.File]::WriteAllText($failurePath, (ConvertTo-Json -Compress -InputObject $diagnostic))
-        } catch { }
+        Write-OllamaFailureDiagnostic $Mode $RuntimeHome $RunAsUserSid
         exit 1
     }
 }

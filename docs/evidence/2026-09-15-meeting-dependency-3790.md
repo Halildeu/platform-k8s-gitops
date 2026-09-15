@@ -50,12 +50,14 @@ the scheduled task. Existing account credentials were not changed.
 
 ## Source Verification
 
-- Windows PowerShell5.1: **63 offline behavioral checks passed**, including
+- Windows PowerShell5.1: **67 offline behavioral checks passed**, including
   actual native stderr and exit status, paths with spaces, separate argv tokens,
   default-normalized XML, collisions, identity denial, isolated home, inherited
   Ollama override removal and cross-account SecureString registration boundary.
-- Launcher SHA256: `2fbf0fe431e6252071700fe9d98ce6061ceeba61cb4018d243294a8471eac890`.
-- Test script SHA256: `19eb053c9bbc5fcaa091a9058e11986d2e63fd1393cd0559de6a256141f3467f`.
+- Launcher SHA256: `96764080d73a2492e37a20319faa2f81dea1cd4660ddd38746eecb65625c84bc`.
+- Test script SHA256: `d1191e7dff45996361b66def113573582b52337ac19481fe7a76fde23590351f`.
+- Failure diagnostics are written only by the selected non-elevated runtime
+  account, never by an administrative install into a user-controlled directory.
 - First CI invocation passed all63 assertions but inherited the intentional
   negative child fixture exit status. The harness now returns zero only after
   the entire assertion suite completes; assertion failures remain terminating.
@@ -72,6 +74,9 @@ Undefined); a non-mutating launcher probe returned `PSSecurityException` /
 The owned dependency task is disabled while approval is pending for changing
 only this new TEST account's CurrentUser policy to RemoteSigned. No execution
 policy, GPO or UAC change has been applied; no Bypass fallback is permitted.
+The disabled task still pins the earlier `2fbf0fe4` launcher; the staged source
+has the diagnostic hardening above. This is not a reconciled/runnable task:
+after approval, register and reread the final exact pin before starting it.
 
 Recovery remains **unverified** until exact-source/config dependency readiness
 and a NEW persisted/browser analysis pass. Failed starts did not restart the

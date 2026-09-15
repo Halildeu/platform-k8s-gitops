@@ -17,7 +17,7 @@
   GPU admission and session-stable attribution integration. Do not enable
   another resident GPU model, persist raw audio, extend EOF budgets or
   overwrite immutable final windows while recovering the existing journey.
-- #3790 recovery is in progress: 63 Windows PowerShell5.1 checks passed;
+- #3790 recovery is in progress: 67 Windows PowerShell5.1 checks passed;
   initial task attempts failed and are not availability evidence. A dedicated
   standard-user TEST identity, scoped read-only artifact ACLs, isolated writable
   home and batch-logon right are verified. No UAC/admin-group relaxation.
