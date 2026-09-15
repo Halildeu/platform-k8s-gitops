@@ -1,5 +1,34 @@
 # Current State — Platform K8s Migration
 
+## Meeting AI Dependency Unavailable (2026-09-15 07:39 UTC)
+
+- Fresh #3746 preflight supersedes the older blanket readiness statement:
+  GPU source and STT ready runtime remain `e386b996`; Meeting AI port8300
+  is unreachable after host boot at02:47:26Z. Existing meeting scheduled task
+  is Ready with lastResult1 at02:47:52Z. Transcript-free log markers show
+  Ollama readiness failure; no local11434 listener, Ollama process or managed
+  Ollama task was observed. No runtime mutation had been performed at discovery.
+- Approved TEST config hash remains `461497a2dc7ead5b128587ce88941366c0a1a860a87ffefa267a7fe662355637`;
+  configured model `qwen3.8:27b` cached manifest remains
+  `22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643`.
+  Existing Ollama executable is present. #3790 owns dependency recovery and
+  NEW persisted/browser analysis acceptance under Product Slice #3399.
+- #3746 source analysis confirms missing word timing/VAD source map, common
+  GPU admission and session-stable attribution integration. Do not enable
+  another resident GPU model, persist raw audio, extend EOF budgets or
+  overwrite immutable final windows while recovering the existing journey.
+- #3790 recovery is in progress: 63 Windows PowerShell5.1 checks passed;
+  initial task attempts failed and are not availability evidence. A dedicated
+  standard-user TEST identity, scoped read-only artifact ACLs, isolated writable
+  home and batch-logon right are verified. No UAC/admin-group relaxation.
+  NEW persisted/browser analysis acceptance remains required.
+  At08:40 UTC the actual service-account S4U token was non-elevated and all
+  required artifact reads passed, but effective PowerShell policy `Restricted`
+  rejected the launcher with `PSSecurityException`. Owned dependency task is
+  disabled. A CurrentUser-only RemoteSigned change for this new TEST account
+  awaits explicit approval; no policy/GPO/UAC change or Bypass was applied.
+  [Detailed evidence and failures](../evidence/2026-09-15-meeting-dependency-3790.md).
+
 ## Zeynep Requests - Scoped TEST Acceptance (2026-09-15)
 
 - Web PR1179/1180/1186 combined source
@@ -20,8 +49,10 @@
   accepted on corrected PR1171; actual Teams tenant acceptance stays #3716.
 - Mobile source review #25 is closed; PR26 merged only into PR24's feature
   branch at `6651da2`, 228 tests/typecheck/lint passed. Native tested tree
-  matches the merged source and Maestro 2/2 passed; new PR24 native rerun
-  remains in progress. PR24/15 stay draft; real-device #8/#3673 stays open.
+  matches the merged source and Maestro 2/2 passed. Final PR24 native rerun
+  `34941814939` succeeded at07:58:23Z on equivalent tree `46c1d010`;
+  independently downloaded APK SHA256 `776b9c601cb66a00a42845d35e667b599f22eda717cb3f77c432e12382c43cba`.
+  These are emulator/synthetic checks. PR24/15 stay draft; real-device #8/#3673 stays open.
 - GitOps#3786 final real TEST synthetic journey passed at 07:30:43Z:
   two applications, switch/reload, isolated withdrawal, local removal without
   server deletion, persisted recruiter read, month-range correction and
