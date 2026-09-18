@@ -480,7 +480,9 @@ images:
     # transcript v2 reader and V14 were verified before this producer promotion.
     # backend#1168 / d96d384: preserve word attribution across overlapping
     # provider final boundaries; sample-first time quantization. Rollback: 97cb8d68082a.
-    digest: sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929
+    # backend#1175 / sha-b0b7a9c: owner reconnect supersedes a stale live socket
+    # (desktop#138: Wi-Fi drop left the realtime lane rejected). Rollback: 85cc1f4c45dd.
+    digest: sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service

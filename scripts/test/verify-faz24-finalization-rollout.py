@@ -557,7 +557,9 @@ def main() -> None:
         # no durable-finalization behavior change. Attested source 23d860a4.
         # backend#1167 / 121e8a1: speaker v2; unchanged finalization boundary.
         # TEST consumer-first V14 and exact producer pull verified (#3742).
-        "sha256:85cc1f4c45ddec5c63159ecaa2c848994f5f2eab00968b9a74922ae704bec929",
+        # backend#1175 / sha-b0b7a9c: live-socket reconnect takeover only;
+        # unchanged finalization boundary.
+        "sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247",
     )
     pod_annotation(
         meeting_deploy,
