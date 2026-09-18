@@ -17,6 +17,20 @@ The rendered TEST delta is limited to these four Deployment images. Audio-gatewa
 
 ## Runtime boundary
 
+CI exposed an existing finalization contract gate: `verify-faz24-finalization-rollout.py`
+pins the old auth/meeting/transcript digests, and `faz24-transcript-ready-pre-enable-policy.v1.json`
+binds the transcript producer to exact source, event-contract and runtime remediation
+evidence. New image pullability is verified by PR CI, but the old producer evidence
+must not be relabeled as evidence for the new image. Keep this proposal draft until
+the new producer capability and applicable finalization verification are recorded.
+No guard, runtime permit or old evidence was weakened/rewritten to obtain a pass.
+
+Normal merge of a TEST digest change triggers `verify-testai-backend-rollout.yml`
+and Argo auto-sync. The verifier extracts the full current map, so a narrow four-image
+PR does not require inventing thirteen new builds. Its protected environment and
+live post-rollout checks still apply. Do not merge this preparation to bypass its
+open source/provenance/finalization gates.
+
 Native registry/sender and new native producers retain disabled source defaults. Verify no live secret/env override enables them before rollout. No provider credential file mounts, Firebase configuration or APNs signing setup are supplied by this proposal. Existing meeting in-app notifications remain enabled.
 
 Before merging: verify source/integration review, exact OCI provenance, GitOps checks and supported four-service reconciliation path. The generic promotion workflow expects a full 13-service map; do not invent missing digests or misattribute older images to this source SHA. Never use imperative workload patch/set-image.
