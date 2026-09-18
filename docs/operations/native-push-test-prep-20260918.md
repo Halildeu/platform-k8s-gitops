@@ -4,13 +4,13 @@ Tracked by #3793 and Halildeu/platform-mobile#9. This is an image-only proposal,
 
 ## Source and validation
 
-All four images use backend source `f9ea16466933b14be8cf6439d55334527760db35` from draft PR1176, stacked on draft PR1174. Source/integration review remains a merge gate. Auth CI35330827130 and full CI35330824834 passed, including meeting/transcript/notification PostgreSQL tests. Image build runs below passed; GitHub attestation statements match the expected source and subjects. Independent OCI verification remains pending after registry authorization failed.
+Auth and orchestrator images use backend source `f9ea16466933b14be8cf6439d55334527760db35`. Meeting and transcript images use `5e6b0aedec409aef8f59b32d970dcd47c47cfab4` from draft PR1176, stacked on draft PR1174. Only those two modules changed; the source references are intentionally recorded separately. Source/integration review remains a merge gate. Auth CI35330827130 and full CI35330824834 passed, including meeting/transcript/notification PostgreSQL tests. Image build runs below passed; Original image attestation statements matched their expected source and subjects; the two replacement builds emitted their source-bound attestations, with independent verification still pending. Independent OCI verification remains pending after registry authorization failed.
 
 | Service | Build run | New SHA256 |
 |---|---|---|
 | auth-service | 35331525062 | ba06e6152a469c37c3daf88dcc424b01bcaec61eeba17b4f0ad23fa6dd912afa |
-| meeting-service | 35331527896 | f29f3fa56772dbf5011c73c5b1bc1fb4fabc7896f6b2c3e9b7f2ae92ae9c47bd |
-| transcript-service | 35331530753 | bc2c7c7142d30e7bd7d0a62c15f81c745972c19a1882f4b7c402b038109a7c5b |
+| meeting-service | 35337078778 | 2f4c69b80d21c8acabf084563fd8f41128365aa2c0db69cf3d43022c31608c02 |
+| transcript-service | 35337081731 | 9b068141746efc6f89c3efa0e83bcacc3760df05c4800fc443da6898d53b7835 |
 | notification-orchestrator | 35331533582 | 13f349689780eb644296a9c6266d9c9e9b2de976cb7a5f8e1bdf8e8416a72ffd |
 
 The rendered TEST delta is limited to these four Deployment images. Audio-gateway, meeting-ai, production, credentials, network policies and existing web notification settings are unchanged. These images include cumulative source changes since the previously deployed service versions; an image-only manifest diff does not imply a four-line application-code change.
@@ -51,3 +51,9 @@ Revert this image-only GitOps change and reconcile; preserve migration history a
 ## Coordination exception
 
 The current account can read/write this repository but cannot resolve configured Project #2. Zeynep explicitly authorized issue/PR tracking for this work and recording it for later Halil review. This does not change access controls, review gates, repository policies or acceptance criteria. No Project status, human approval, merge or live delivery is claimed.
+
+## Notification isolation follow-up
+
+The original source coupled successful Redis publication to notification HTTP retries. Source5e6b0aed separates delivery into a durable per-service notification queue with an atomic fenced handoff, independent attempts and scheduling, single-job transactional locking and source-erasure cascade. Summary flag deactivation pauses pending summary jobs.33focused tests and separate Codex source review passed; CI35336353037 meeting432/transcript235 tests passed with zero failures or skips, including PostgreSQL rollback/concurrency/erasure regressions. The complete CI run still has an unrelated service check pending at the time of this update. Two replacement image builds succeeded. The older two module images must not be promoted as if they included this correction.
+
+No old finalization evidence was rewritten. New producer capability acceptance and runtime validation remain required. FCM/APNs institution configuration has not arrived, as explicitly confirmed by the user; actual device delivery remains unverified.

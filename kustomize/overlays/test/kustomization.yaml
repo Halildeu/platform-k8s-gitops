@@ -594,7 +594,7 @@ images:
     # backend#1170 / source 6dcf5757: preserve grounded due_text (nullable V15).
     # Build 34791084427 attested; TEST ghcr-pull imageID verified. Deploy before AI#345.
     # Rollback: f290b1e6ea1a70ab14d1b13e08cdc79098db49041a5c78de977f74b24fff640f.
-    digest: sha256:f29f3fa56772dbf5011c73c5b1bc1fb4fabc7896f6b2c3e9b7f2ae92ae9c47bd
+    digest: sha256:2f4c69b80d21c8acabf084563fd8f41128365aa2c0db69cf3d43022c31608c02
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -647,7 +647,7 @@ images:
     # backend#1167 / 121e8a1: v1/v2 anonymous speaker consumer, additive V14.
     # Consumer-first rollout for #3742; producer remains v1 until verified.
     # Image build 34762214932; aiserver docker pull digest verified.
-    digest: sha256:bc2c7c7142d30e7bd7d0a62c15f81c745972c19a1882f4b7c402b038109a7c5b
+    digest: sha256:9b068141746efc6f89c3efa0e83bcacc3760df05c4800fc443da6898d53b7835
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
