@@ -1,0 +1,25 @@
+---
+name: TEST Ollama Boot Contract
+'on':
+  pull_request:
+    paths:
+      - 'scripts/faz24/test-ollama-boot.ps1'
+      - 'scripts/faz24/tests/test-ollama-boot.ps1'
+      - '.github/workflows/test-ollama-boot.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/faz24/test-ollama-boot.ps1'
+      - 'scripts/faz24/tests/test-ollama-boot.ps1'
+      - '.github/workflows/test-ollama-boot.yml'
+permissions:
+  contents: read
+jobs:
+  windows-powershell-contract:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Isolated Windows PowerShell 5.1 contract
+        shell: powershell
+        run: '& ./scripts/faz24/tests/test-ollama-boot.ps1'
