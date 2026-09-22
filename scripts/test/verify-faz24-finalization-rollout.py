@@ -559,7 +559,10 @@ def main() -> None:
         # TEST consumer-first V14 and exact producer pull verified (#3742).
         # backend#1175 / sha-b0b7a9c: live-socket reconnect takeover only;
         # unchanged finalization boundary.
-        "sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247",
+        # backend#1183 / sha-0ae51f5: timed live-analysis flush and SSE viewer
+        # lifetime; finalization, consent, STT and persistence are unchanged.
+        # Attested build 35740822541; the runtime acceptance remains separate.
+        "sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307",
     )
     pod_annotation(
         meeting_deploy,

@@ -482,7 +482,11 @@ images:
     # provider final boundaries; sample-first time quantization. Rollback: 97cb8d68082a.
     # backend#1175 / sha-b0b7a9c: owner reconnect supersedes a stale live socket
     # (desktop#138: Wi-Fi drop left the realtime lane rejected). Rollback: 85cc1f4c45dd.
-    digest: sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247
+    # backend#1183 / sha-0ae51f5: flush paused live-analysis windows and keep
+    # remaining SSE viewers registered. Attested build 35740822541.
+    # Source is b0b7a9c plus the reviewed live-analysis-only change.
+    # Rollback: sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247
+    digest: sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
