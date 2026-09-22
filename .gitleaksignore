@@ -110,3 +110,7 @@ host-compose/remote-write-bridge/README.md:curl-auth-user:46
 # disabling the generic-api-key detector.
 55afd665d2819d1722127d60a63a16e873a16385:scripts/ai/prepare_cross_ai_scope.py:generic-api-key:87
 35a252748ff62a916a0bfc23fbe7fb82f544785b:docs/context-priority-rules.md:generic-api-key:397
+
+# #3793: public auth-service rollback image SHA256 already present in the
+# TEST overlay, not a credential. Exact historical commit/path/rule/line only.
+a84b8458725d69ec41def3530b8fbf921e37263f:docs/operations/native-push-test-prep-20260918.md:generic-api-key:32
