@@ -19,7 +19,13 @@ Build run `35838016116`, successful gateway job `107106048811`, published
 GitHub provenance attestation `49469570`. The TEST overlay pins this exact image.
 AI source is platform-ai#349, merged at
 `08671f44b39de262ef7030a8716ae62967becc22` after all checks passed.
-GPU rollout run `35837305448` is still in progress at this evidence update.
+GPU rollout run `35837305448` failed. Source returned to `e386b996`, but
+runtime rollback failed and both application tasks were fenced. Read-only
+run `35847268522` identifies the meeting-AI startup permit rejection as
+`TRUST_ROOT_VALIDITY_INVALID`; the pinned root expired September 17.
+PR3814 provides same-key TEST renewal and full recovery; PR3815 corrects
+the staging serializer after the first apply stopped before writing config.
+Runtime restoration is still unverified at this update.
 Do not promote this overlay until #349 is on the GPU host with rollout acceptance. The revision
 annotation reloads the ConfigMap. Rollback restores the previous image and source,
 sentence-triggered=false, min-interval-ms=15000, max-wait-ms=15000, and bumps the
