@@ -17,23 +17,18 @@ Gateway source is platform-backend#1184, merged at
 Build run `35838016116`, successful gateway job `107106048811`, published
 `sha256:3c7a653479b4b8bbce27190e339b0636a38ab493291c6f617fd2274a2711d81d`;
 GitHub provenance attestation `49469570`. The TEST overlay pins this exact image.
-AI source is platform-ai#349, merged at
-`08671f44b39de262ef7030a8716ae62967becc22` after all checks passed.
-GPU rollout run `35837305448` failed. Source returned to `e386b996`, but
-runtime rollback failed and both application tasks were fenced. Read-only
-run `35847268522` identifies the meeting-AI startup permit rejection as
-`TRUST_ROOT_VALIDITY_INVALID`; the pinned root expired September 17.
-PR3814 provides same-key TEST renewal and full recovery; PR3815 corrects
-the staging serializer after the first apply stopped before writing config.
-Run `35849573879` renewed the same-key trust root and permit. Both application
-tasks are running again; live-STT readiness recovered. Full runtime acceptance
-has not passed: read-only run `35853085559` isolates one historical retry-exhausted
-schema-invalid analysis, while consumer/worker readiness is true. Merged PR3816
-adds an audited recovery of this exact retained event and source-bound promotion
-with fresh permits on both candidate and original-source compensation. No row
-deletion or health-gate relaxation is used. Candidate deployment and latency
-acceptance are still pending.
-Do not promote this overlay until #349 is on the GPU host with rollout acceptance. The revision
+AI source is platform-ai#350, including #349, merged at
+`38ef0f3648c8e092599c0578764a4f2f075dd0a1`. Full GPU runtime acceptance
+passed in `35858606120` after same-key trust-root renewal and the reviewed
+exact-event recovery. The old retry-exhausted event reached OUTBOXED with zero
+failures; no row was deleted and no runtime health check was relaxed.
+
+The deployed source passed all five decision/task/owner/date, cancellation and
+reassignment cases through gateway-pod mTLS HTTP in `35859197577`. However,
+latencies were 20.124/42.059/24.088/23.373/23.666 seconds, so none met five seconds.
+Installed smaller models were rejected in `35858050978`; the separately pinned
+4B candidate is being measured in `35860239203` and has not been deployed.
+Do not promote this overlay until live inference latency is qualified. The revision
 annotation reloads the ConfigMap. Rollback restores the previous image and source,
 sentence-triggered=false, min-interval-ms=15000, max-wait-ms=15000, and bumps the
 revision annotation. Do not silently switch off model/digest/TLS/grounding checks.

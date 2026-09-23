@@ -73,6 +73,62 @@ class ReviewedRecoveryTest(unittest.TestCase):
             self.execute(case)
         case[4].xadd.assert_not_called()
 
+    def test_diagnosis_after_failed_redrive_never_rearms_or_publishes(self):
+        settings, row, inbox, _, broker, parser = self.setup_case(redrive_count=1)
+        diagnose = Mock(return_value={'outcome':'reproduced-error'})
+        result = recovery.recover(settings, inbox, broker, apply=False, parse_event=parser,
+                                  read_row=lambda:row, diagnose=diagnose)
+        self.assertEqual(result['status'], 'diagnosed-without-rearm')
+        inbox.rearm_retry_exhausted_by_fingerprint.assert_not_called()
+        broker.xadd.assert_not_called()
+        diagnose.assert_called_once_with(settings, parser.return_value)
+
+    def test_diagnosis_cannot_mutate_even_if_apply_requested(self):
+        settings, row, inbox, _, broker, parser = self.setup_case(redrive_count=1)
+        with self.assertRaisesRegex(ValueError, 'diagnosis-cannot-rearm'):
+            recovery.recover(settings, inbox, broker, apply=True, parse_event=parser,
+                             read_row=lambda:row, diagnose=Mock())
+        inbox.rearm_retry_exhausted_by_fingerprint.assert_not_called()
+
+    def test_corrected_replay_requires_evidence_check_before_mutation(self):
+        settings, row, inbox, fields, broker, parser = self.setup_case(redrive_count=1)
+        check = Mock(side_effect=ValueError('reviewed-source-now-has-evidence'))
+        with self.assertRaisesRegex(ValueError, 'now-has-evidence'):
+            recovery.recover(settings,inbox,broker,apply=True,parse_event=parser,
+                             read_row=lambda:row,repair_check=check)
+        inbox.rearm_retry_exhausted_by_fingerprint.assert_not_called()
+        broker.xadd.assert_not_called()
+
+    def test_corrected_replay_keeps_original_event_and_audit(self):
+        settings, row, inbox, fields, broker, parser = self.setup_case(redrive_count=1)
+        check = Mock(return_value={'correctedResponseVerified':True})
+        result = recovery.recover(settings,inbox,broker,apply=True,parse_event=parser,
+                                  read_row=lambda:row,repair_check=check)
+        self.assertTrue(result['repairEvidence']['correctedResponseVerified'])
+        check.assert_called_once_with(settings,parser.return_value)
+        inbox.rearm_retry_exhausted_by_fingerprint.assert_called_once_with(
+            recovery.FINGERPRINT,audit_reference=recovery.AUDIT)
+        broker.xadd.assert_called_once_with(settings.ready_redis_stream,fields)
+
+    def test_old_or_unreviewed_source_cannot_execute_corrected_recovery(self):
+        for source in (recovery.ceremony.SOURCE,'a'*40):
+            with self.assertRaisesRegex(ValueError,'source-rejected'):
+                recovery.corrected_source_recovery(source,apply=True)
+
+    def test_schema_diagnostic_excludes_input_messages_and_unknown_field_names(self):
+        cause = Mock()
+        cause.errors.return_value = [{'type':'int_type', 'loc':('action_item_sentences',0,'private-name'),
+                                     'input':'SECRET', 'msg':'PRIVATE transcript'}]
+        class DiagnosticCause(Exception):
+            def errors(self, **kwargs):
+                return cause.errors(**kwargs)
+        error = ValueError('PRIVATE transcript')
+        error.__cause__ = DiagnosticCause()
+        result = recovery.safe_schema_error(error)
+        self.assertEqual(result, {'errorClass':'ValueError',
+            'validation':[{'type':'int_type','location':['action_item_sentences',0,'other']}]})
+        cause.errors.assert_called_once_with(include_input=False, include_context=False, include_url=False)
+
 
 if __name__ == '__main__':
     unittest.main()

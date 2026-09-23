@@ -455,7 +455,7 @@ class GateTests(unittest.TestCase):
         self.assertEqual(
             {guard["platformAiCommit"] for guard in committed["hostStartupGuards"]},
             {"e386b996cae22f08294a83d840f0e92d4a82cd53",
-             "08671f44b39de262ef7030a8716ae62967becc22"},
+             "38ef0f3648c8e092599c0578764a4f2f075dd0a1"},
         )
         for guard in committed["hostStartupGuards"]:
             self.assertIs(guard["permitRequired"], True)

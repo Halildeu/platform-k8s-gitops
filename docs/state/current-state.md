@@ -2,6 +2,64 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- [Corrected-source promotion 35858606120](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858606120)
+  accepted AI source `38ef0f3648c8e092599c0578764a4f2f075dd0a1` through the
+  unchanged full runtime verifier. The exact retained event reached OUTBOXED
+  with zero failures after the audited replay; enabled consumer/worker/group
+  readiness was verified. No row was deleted. This supersedes the historical
+  source/health failures below. Phone and live-latency acceptance remain open;
+  [HTTP incremental probe 35859197577](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35859197577)
+  verified exact decisions/actions/owners/dates, cancellation and reassignment
+  in all five updates against the deployed source. Latency failed in all five:
+  20.124/42.059/24.088/23.373/23.666 seconds. Content correctness is established
+  for this fixture; live performance and physical-phone acceptance are not.
+- [Installed-model measurement 35858050978](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858050978)
+  found 8,188 MiB physical GPU memory. Qwen2.5 7B took 41.266/26.047/4.781/5.297/5.656
+  seconds over five incremental updates; all five failed the combined exact
+  claim/owner/date contract. Question and historical-decision negative cases
+  also failed. Llama3.1 8B timed out at 61.093 seconds. Neither candidate was
+  selected or deployed. The smaller Qwen3.5 4B alternative is being qualified
+  separately; registry manifest and model identity are pinned before download,
+  and no service setting changes follow automatically from that experiment.
+
+### Historical recovery evidence (superseded by the accepted promotion above)
+
+- [Shape diagnosis 35856254859](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35856254859)
+  confirms zero selectable sentences and the JSON-only fallback for the retained
+  15-character event. [AI PR350](https://github.com/Halildeu/platform-ai/pull/350)
+  merged at `38ef0f3648c8e092599c0578764a4f2f075dd0a1`: final analysis now skips
+  model inference only when the unchanged grounding predicate permits no claim.
+  At diagnosis time source was not yet deployed. The corrected-source recovery checks the exact
+  retained payload and zero-evidence condition before staging, then verifies the
+  fixed service returns an empty grounded result without any model call before
+  one audited replay of redrive count one. The row must reach OUTBOXED and full
+  health must recover before the existing strict updater/verifier can accept.
+  No row deletion, synthetic replacement event or runtime acceptance exemption.
+- Installed smaller-model qualification is a separate synthetic, non-deployed
+  experiment ([35857366626](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35857366626)).
+  Both candidates returned `BackendUnavailableError` before the first usable
+  response; neither is qualified and no model selection/deployment was made.
+  Follow-up diagnostics add safe nested HTTP error category, failed-call duration
+  and numeric GPU memory metadata rather than guessing an accuracy/latency result.
+  The 27B model's observed loaded size was 18.26 GB, of which 4.49 GB was in VRAM.
+  Direct model timing is not microphone-to-phone acceptance.
+
+- [Schema diagnosis 35855204472](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35855204472)
+  reproduced `field 'summary' must be a string` from the actual pinned Ollama
+  backend. The retained source contains 15 characters in one segment. The
+  request took 29.875 seconds, including 11.09 seconds of cold model loading.
+  No result was persisted or event rearmed. Source length alone cannot establish
+  whether evidence is selectable; the diagnostic now also reports sentence
+  counts and the request-contract category, with no text exported.
+
+- [Reviewed recovery 35853779463](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35853779463)
+  verified and replayed the original retained event, but it again reached DEAD
+  after eight schema-invalid responses; redrive count is now one. The audit and
+  failure remain intact. No further blind redrive is planned. The bounded,
+  non-persisting analysis diagnostic above reports only schema rule/type/location
+  and model timing/memory metadata. No transcript/model response is exported,
+  no result is written and no health gate is relaxed. AI PR349 is not deployed.
+
 - [Bounded diagnostic 35853085559](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35853085559)
   confirms healthy live-STT workers and enabled/ready meeting consumer, with one
   historical `RETRY_EXHAUSTED` inbox row (`processing_OllamaSchemaInvalidError`,
@@ -12,7 +70,7 @@
   poison/terminal/conflict state rejects before mutation. Recovery is not yet
   verified; the live source promotion preflight still requires healthy baseline.
 
-- Latest truth: [permit renewal and recovery 35849573879](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35849573879)
+- Earlier [permit renewal and recovery 35849573879](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35849573879)
   installed a fresh same-key TEST trust root and signed activation permit.
   Full runtime acceptance still failed (`smoke-failed`); the updater accepted
   its same-source rollback. [Read-only follow-up 35850259184](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35850259184)
@@ -36,8 +94,8 @@
   meeting-AI blocker. PR3811 is merged. TEST-only recovery now prepares a
   same-pinned-key trust-root renewal and fresh pre-enable permit, followed by
   full runtime acceptance. No successful restoration is claimed yet.
-- AI PR349 and backend PR1184 are source/build candidates, not deployed live
-  acceptance. GitOps PR3803 remains draft; the new Android APK is built but
+- AI PR349 is included in the accepted AI PR350 runtime source above. Backend
+  PR1184 is still a build candidate, with GitOps PR3803 draft; the new Android APK is built but
   no new physical-phone live decision/action acceptance is claimed.
 
 ## Mobile live-analysis TEST rollout (2026-09-23)

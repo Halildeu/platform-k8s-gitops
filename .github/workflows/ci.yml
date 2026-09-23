@@ -29,6 +29,10 @@ jobs:
         run: bash scripts/test/faz24-speechmatics-realtime-lifecycle-static.sh
       - name: Verify incremental live quality and latency verdicts
         run: python3 tests/faz24/test_live_incremental_latency_probe.py
+      - name: Verify live model candidate download and quality guards offline
+        run: |
+          python -m pip install httpx==0.28.1
+          python scripts/test/test_live_model_candidate.py
       - name: Verify recorder workflow and cleanup contracts on Linux
         run: |
           python -m pip install pytest==8.4.1
