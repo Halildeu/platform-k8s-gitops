@@ -112,6 +112,9 @@ def diagnose_model(settings, event):
     report['selectableSentenceCount'] = len(selectable_sentences(sentences))
     if settings.backend != 'ollama':
         raise ValueError('actual-ollama-backend-required')
+    inventory = httpx.get(settings.ollama_host + '/api/tags', timeout=5).json().get('models', [])
+    report['availableModels'] = [{key:item.get(key) for key in ('name','digest','size')}
+                                 for item in inventory]
     loaded = httpx.get(settings.ollama_host + '/api/ps', timeout=5).json().get('models', [])
     report['loadedModelMemory'] = [{key:item.get(key) for key in ('size','size_vram','context_length')}
                                  for item in loaded if item.get('name') == settings.ollama_model]
