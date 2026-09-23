@@ -81,7 +81,14 @@ try {
   $values=Read-MeetingAiConfigFile -Path $configPath
   if ($values['MAI_READY_CONSUMER_ENABLED'] -cne 'true') { throw 'config-state-changed' }
   $values['MAI_READY_CONSUMER_ENABLED']='false'
-  Write-MeetingAiConfigAtomic -Path $configPath -Content (ConvertTo-MeetingAiConfigContent -Values $values)
+  # The serializer in configure-meeting-ai.ps1 is not exported by the runtime
+  # helper; do not dot-source the mutating configurator just to access it.
+  $lines=@('# platform-ai meeting-ai runtime config v1',
+    '# Secret fields are DPAPI LocalMachine ciphertext. Do not copy to another host.')
+  foreach ($name in $values.Keys) { $lines += '{0}={1}' -f $name,$values[$name] }
+  $content=($lines -join "`r`n")+"`r`n"
+  Write-MeetingAiConfigAtomic -Path $configPath -Content $content
+  $content=$null; $lines=$null
 } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
 Enable-ScheduledTask -TaskName 'platform-ai-meeting-ai' | Out-Null
 Start-ScheduledTask -TaskName 'platform-ai-meeting-ai'
