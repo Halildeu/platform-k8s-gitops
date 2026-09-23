@@ -31,19 +31,21 @@ def metadata(body, version, decisions, actions, elapsed):
     actual_decisions = set(body.get("decisions", []))
     owners = {0: ("Ayşe", "cuma günü"), 2: ("Mehmet", None), 5: ("Zeynep", None)}
     expected_actions = {(SOURCE[i], *owners[i]) for i in actions}
-    correct = (
-        body.get("is_partial") is True and body.get("version") == version
-        and required_decisions <= actual_decisions <= required_decisions | {SOURCE[i] for i in optional}
-        and {(item["text"], item.get("owner"), item.get("due_date"))
-             for item in body.get("action_items", [])} == expected_actions
-        and body.get("ungrounded_count") == 0
-        and body.get("grounding_policy") == "verified_only"
-    )
+    checks = {
+        "partialVersion": body.get("is_partial") is True and body.get("version") == version,
+        "decisions": required_decisions <= actual_decisions <= required_decisions | {SOURCE[i] for i in optional},
+        "actionText": {item["text"] for item in body.get("action_items", [])} == {SOURCE[i] for i in actions},
+        "actionOwnerDate": {(item["text"], item.get("owner"), item.get("due_date"))
+             for item in body.get("action_items", [])} == expected_actions,
+        "grounded": body.get("ungrounded_count") == 0 and body.get("grounding_policy") == "verified_only",
+    }
+    correct = all(checks.values())
     return {"version": version, "qualityPass": correct,
             "elapsedSeconds": round(elapsed, 3), "withinFiveSeconds": elapsed <= 5,
             "decisionCount": len(body.get("decisions", [])),
             "actionCount": len(body.get("action_items", [])),
-            "cursorReturned": isinstance(body.get("live_cursor"), dict)}
+            "cursorReturned": isinstance(body.get("live_cursor"), dict),
+            "qualityChecks": checks}
 
 
 def probe():

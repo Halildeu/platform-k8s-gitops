@@ -1,15 +1,49 @@
-"""Synthetic on-host qualification; no service/model setting or meeting write."""
+"""Pinned small-model synthetic qualification; no service setting or meeting write."""
 import base64
 import json
 from pathlib import Path
 
 import recover_test_ready_permit as ceremony
 
-SOURCE_COMMIT = '08671f44b39de262ef7030a8716ae62967becc22'
+SOURCE_COMMIT = '38ef0f3648c8e092599c0578764a4f2f075dd0a1'
 PROFILES = [
-    ('qwen2.5:7b', '845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e'),
-    ('llama3.1:8b', '46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e'),
+    ('qwen3.5:4b', '2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd'),
 ]
+
+
+def prepare_candidate():
+    import hashlib
+    import shutil
+    import httpx
+    model, digest = PROFILES[0]
+    inventory = httpx.get('http://127.0.0.1:11434/api/tags', timeout=5)
+    inventory.raise_for_status()
+    matches = [row for row in inventory.json()['models'] if row['name'] == model]
+    if matches:
+        if len(matches) != 1 or matches[0]['digest'] != digest:
+            raise RuntimeError('candidate-inventory-digest-mismatch')
+        return {'downloaded': False, 'digestVerified': True}
+    # Only this reviewed official-registry manifest may add a model. A moved tag
+    # fails before pull; downloaded bytes are verified again by the runtime guard.
+    response = httpx.get('https://registry.ollama.ai/v2/library/qwen3.5/manifests/4b', timeout=30)
+    response.raise_for_status()
+    if hashlib.sha256(response.content).hexdigest() != digest:
+        raise RuntimeError('candidate-registry-digest-mismatch')
+    manifest = response.json()
+    size = manifest['config']['size'] + sum(layer['size'] for layer in manifest['layers'])
+    if size > 4_000_000_000 or shutil.disk_usage('C:\\').free < 10_000_000_000:
+        raise RuntimeError('candidate-disk-budget-rejected')
+    response = httpx.post('http://127.0.0.1:11434/api/pull',
+                          json={'model': model, 'stream': False}, timeout=600)
+    response.raise_for_status()
+    if response.json().get('status') != 'success':
+        raise RuntimeError('candidate-pull-rejected')
+    inventory = httpx.get('http://127.0.0.1:11434/api/tags', timeout=5)
+    inventory.raise_for_status()
+    matches = [row for row in inventory.json()['models'] if row['name'] == model]
+    if len(matches) != 1 or matches[0]['digest'] != digest:
+        raise RuntimeError('candidate-downloaded-digest-mismatch')
+    return {'downloaded': True, 'digestVerified': True, 'manifestBytes': size}
 
 
 def qualify():
@@ -23,10 +57,11 @@ def qualify():
         '--format=csv,noheader,nounits'],capture_output=True,text=True,timeout=10,check=False)
     gpu_memory = [dict(zip(('totalMiB','usedMiB','utilizationPercent'),map(int,line.split(','))))
                   for line in memory.stdout.splitlines()] if memory.returncode == 0 else []
+    preparation = prepare_candidate()
     for model, digest in PROFILES:
         settings = Settings(_env_file=None, app_env='dev', backend='ollama',
             ollama_host='http://127.0.0.1:11434', ollama_model=model,
-            ollama_expected_digest=digest, ollama_num_ctx=8192, ollama_keep_alive='5m',
+            ollama_expected_digest=digest, ollama_num_ctx=4096, ollama_keep_alive='5m', ollama_think=False,
             request_timeout=60, ingestion_enabled=False, ready_consumer_enabled=False)
         service = MeetingAnalysisService(settings)
         transcript, cursor, samples = '', None, []
@@ -56,7 +91,7 @@ def qualify():
                     'withinFiveSeconds':elapsed<=5,
                     'qualityPass':not result.decisions and not result.action_items,
                     'cursorReturned':result.live_cursor is not None})
-            rows.append({'model':model, 'digest':digest, 'numCtx':8192, 'samples':samples,
+            rows.append({'model':model, 'digest':digest, 'numCtx':4096, 'think':False, 'samples':samples,
                 'status':'qualified' if all(s['qualityPass'] and s['withinFiveSeconds']
                     and s['cursorReturned'] for s in samples) else 'not-qualified'})
         except Exception as error:
@@ -86,12 +121,12 @@ def qualify():
         if rows[-1]['status'] == 'qualified':
             break
     return {'status':'measured', 'profiles':rows, 'synthetic':True, 'sourceCommit':SOURCE_COMMIT,
-            'gpuMemoryBefore':gpu_memory,
+            'gpuMemoryBefore':gpu_memory, 'preparation':preparation,
             'runtimeAccepted':False, 'phoneAccepted':False, 'durableWrites':False,
             'scope':'isolated candidate service method on existing TEST inference host'}
 
 
-REMOTE = ceremony.HEADER + r'''
+REMOTE = ceremony.HEADER.replace(ceremony.SOURCE, SOURCE_COMMIT) + r'''
 $target='__TARGET__'
 $controller=Join-Path $env:TEMP ('platform-ai-live-benchmark-'+[Guid]::NewGuid().ToString('N'))
 $created=$false
@@ -146,7 +181,7 @@ def main():
     common = Path(__file__).with_name('live_incremental_latency_probe.py').read_text(encoding='utf-8')
     body = 'import json\nSOURCE_COMMIT='+repr(SOURCE_COMMIT)+'\nPROFILES='+repr(PROFILES)+'\n'
     body += common[common.index('STAGES ='):common.index('\ndef probe():')]
-    body += source[source.index('def qualify():'):source.index('\nREMOTE =')]
+    body += source[source.index('def prepare_candidate():'):source.index('\nREMOTE =')]
     body += '\nprint(json.dumps(qualify()))\n'
     result = ceremony.remote(REMOTE.replace('__TARGET__',SOURCE_COMMIT).replace(
         '__CODE__',base64.b64encode(body.encode()).decode()), timeout=1500)
