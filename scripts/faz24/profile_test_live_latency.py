@@ -119,7 +119,7 @@ def remote_script():
   foreach ($name in @('MAI_OLLAMA_HOST','MAI_OLLAMA_MODEL','MAI_OLLAMA_EXPECTED_DIGEST',
       'MAI_OLLAMA_NUM_CTX','MAI_OLLAMA_KEEP_ALIVE','MAI_OLLAMA_THINK',
       'MAI_OLLAMA_TEMPERATURE','MAI_OLLAMA_TOP_P','MAI_OLLAMA_SEED','MAI_REQUEST_TIMEOUT')) {
-    if ($values.Contains($name)) { $public[$name]=[string]$values[$name] }
+    if ($values.ContainsKey($name)) { $public[$name]=[string]$values[$name] }
   }
   $psi.EnvironmentVariables['LIVE_PROFILE_SETTINGS']=($public | ConvertTo-Json -Compress)
 '''
@@ -128,10 +128,19 @@ def remote_script():
 
 def main():
     # The first phase exercises deployed HTTP, before the isolated comparison.
-    http_report = probe()
-    stages = ceremony.remote(remote_script(), timeout=1500)
-    print(json.dumps({'http': http_report, 'stages': stages, 'phoneAccepted': False}, sort_keys=True))
+    report = {'phoneAccepted': False, 'status': 'failed', 'phase': 'http'}
+    try:
+        report['http'] = probe()
+        report['phase'] = 'isolated-stages'
+        report['stages'] = ceremony.remote(remote_script(), timeout=1500)
+        report['status'] = 'measured'
+    except Exception as error:
+        # Preserve completed numeric evidence; never export exception messages,
+        # which can include subprocess output or runtime configuration values.
+        report['errorClass'] = type(error).__name__
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report['status'] == 'measured' else 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
