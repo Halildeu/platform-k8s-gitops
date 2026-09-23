@@ -6,6 +6,9 @@ name: GPU Rollout Diagnostics Contract
       - 'scripts/faz24/*gpu_host_exact_sha_rollout*.py'
       - 'tests/faz24/test_gpu_host_exact_sha_rollout.py'
       - 'tests/faz24/windows_gpu_rollout_diagnostics.ps1'
+      - 'scripts/faz24/recover_test_ready_permit.py'
+      - 'tests/faz24/test_expired_ready_permit_recovery.py'
+      - '.github/workflows/faz24-test-ready-permit-recovery.yml'
       - '.github/workflows/test-gpu-rollout-diagnostics.yml'
   push:
     branches: [main]
@@ -13,6 +16,9 @@ name: GPU Rollout Diagnostics Contract
       - 'scripts/faz24/*gpu_host_exact_sha_rollout*.py'
       - 'tests/faz24/test_gpu_host_exact_sha_rollout.py'
       - 'tests/faz24/windows_gpu_rollout_diagnostics.ps1'
+      - 'scripts/faz24/recover_test_ready_permit.py'
+      - 'tests/faz24/test_expired_ready_permit_recovery.py'
+      - '.github/workflows/faz24-test-ready-permit-recovery.yml'
       - '.github/workflows/test-gpu-rollout-diagnostics.yml'
 permissions:
   contents: read
@@ -27,3 +33,5 @@ jobs:
           python-version: '3.11'
       - name: Isolated Windows 5.1 exit and metadata fixtures
         run: python -m unittest discover -s tests/faz24 -p test_gpu_host_exact_sha_rollout.py
+      - name: Same-key TEST renewal and partial-failure containment
+        run: python -m unittest discover -s tests/faz24 -p test_expired_ready_permit_recovery.py

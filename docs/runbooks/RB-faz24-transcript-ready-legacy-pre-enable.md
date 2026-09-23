@@ -395,3 +395,41 @@ dalgasında rollback, Windows host governed config üzerinden consumer flag'ın�
 tekrar `false` yapmak, active permit'i revoke/consume etmek ve exact önceki
 platform-ai commit'e dönmektir. Backend veri migration'ı geri alınmaz; legacy
 remediation ve public trust-root audit kanıtı korunur.
+
+## 13. Expired TEST trust root: same-key fenced recovery
+
+Incident evidence: run `35847268522` reports `TRUST_ROOT_VALIDITY_INVALID`;
+run `35837305448` restored source but fenced both GPU tasks after runtime
+rollback failed. Do not retry the same startup indefinitely.
+
+The `Faz 24 TEST expired ready permit recovery` workflow is agent-initiated
+under the user's TEST repair authorization. It is not an independent human
+approval. First dispatch with `apply=false`. An apply on `main` requires
+`RECOVER_TEST_EXPIRED_READY_PERMIT` and the shared GPU rollout concurrency lock.
+
+The recovery is restricted to source
+`e386b996cae22f08294a83d840f0e92d4a82cd53`, TEST task/config identity and both
+tasks fenced. It reads the existing GPU public root over the pinned SSH
+channel, checks its existing runtime fingerprint, and independently reads the
+public key from the fixed TEST Vault Transit key. Key ID and public bytes must
+match. A different key, production scope, exportable key, or unexpired root is
+rejected. This renews the already pinned key for 90 days; it does not bootstrap
+new trust or rotate/export a private key. Evidence includes old/new root
+fingerprints and validity dates, never credentials.
+
+For the existing pre-enable ceremony, the atomic ACL-protected config writer
+stages only `MAI_READY_CONSUMER_ENABLED=false`, preserving encrypted credentials
+and rollback backup. Only meeting-AI starts in this phase. This disabled-consumer
+phase is not acceptance. The existing collector, cross-store checks, allowlist,
+scoped signer token and DSSE verification must pass unchanged. No stream/DB row
+is purged, acknowledged, reset or fabricated. The canonical configurator installs
+the fresh permit and activation receipt, then fences meeting-AI for the full
+same-source recovery. Partial failures fence both tasks and retain failure
+metadata; inspect state before a new attempt.
+
+Acceptance requires the canonical full GPU rollout verifier, verified upstream
+TLS/HTTP200, and enabled consumer/worker/Redis-group readiness. Source restore,
+a fresh permit or HTTP200 with consumer disabled is insufficient. Phone live
+analysis and latency remain separate acceptance checks. A failed full recovery
+uses the existing updater rollback/fencing contract; the expired root is not a
+functional rollback target.

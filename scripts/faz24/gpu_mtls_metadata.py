@@ -191,9 +191,30 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
         '--expected-producer-image-digest', $params.ExpectedProducerImageDigest, '--skip-freshness')
       $oldEap=$ErrorActionPreference
       try {
-        $ErrorActionPreference='Continue'
-        $verifierLines=@(& $servicePython @verifyArgs 2>&1)
-        $permitMetadata.verifierExitCode=$LASTEXITCODE
+        . 'C:\platform-ai\deploy\gpu-host\task-action-contract.ps1'
+        $psi = New-Object Diagnostics.ProcessStartInfo
+        $psi.FileName=$servicePython
+        $psi.Arguments=($verifyArgs | ForEach-Object { ConvertTo-GpuHostWindowsArgument -Value ([string]$_) }) -join ' '
+        $psi.UseShellExecute=$false
+        $psi.CreateNoWindow=$true
+        $psi.RedirectStandardOutput=$true
+        $psi.RedirectStandardError=$true
+        $proc=New-Object Diagnostics.Process
+        $proc.StartInfo=$psi
+        $null=$proc.Start()
+        $outRead=$proc.StandardOutput.ReadToEndAsync()
+        $errRead=$proc.StandardError.ReadToEndAsync()
+        if (!$proc.WaitForExit(15000)) { $proc.Kill(); throw 'Bounded permit verifier timed out.' }
+        $verifierLines=@(($outRead.Result + "`n" + $errRead.Result) -split "`r?`n" | Where-Object { $_ })
+        $permitMetadata.verifierExitCode=$proc.ExitCode
+        $proc.Dispose()
+        # This verifier receives only PUBLIC permit/trust-root paths and public
+        # binding hashes. It never imports runtime secrets or meeting content.
+        # Include its bounded stderr to distinguish Python/argv failures from
+        # signature rejection; this is not an application log export.
+        $publicDiagnostic=[string]$errRead.Result
+        $permitMetadata.verifierPublicDiagnostic=$publicDiagnostic.Substring(0,[Math]::Min(2048,$publicDiagnostic.Length))
+        $permitMetadata.verifierCapture='redirected-process-streams-v1'
         $permitMetadata.verifierOutputCount=$verifierLines.Count
         foreach ($entry in $verifierLines) {
           if ([string]$entry -match 'permit verification rejected: ([A-Z0-9_]{3,80})(?:\s|$)') {
