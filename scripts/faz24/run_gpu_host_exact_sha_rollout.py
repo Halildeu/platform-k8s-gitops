@@ -66,6 +66,7 @@ REMOTE_SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $TargetCommit = '__TARGET_COMMIT__'
+$RecoverFencedRuntime = __RECOVER_FENCED_RUNTIME__
 $RepoRoot = 'C:\platform-ai'
 $ControllerRoot = Join-Path $env:TEMP (
   'platform-ai-rollout-controller-' + [Guid]::NewGuid().ToString('N')
@@ -425,6 +426,14 @@ function Read-AcceptanceDiagnostic {
   return $found
 }
 
+function Assert-FencedRecoveryContract {
+  param([string]$CurrentCommit, [string]$ExpectedCommit, [bool]$MigrationRequired,
+    [int]$LiveTaskState, [int]$MeetingTaskState)
+  if ($CurrentCommit -cne $ExpectedCommit) { throw 'recovery-source-mismatch' }
+  if ($MigrationRequired) { throw 'recovery-task-migration-forbidden' }
+  if ($LiveTaskState -ne 1 -and $MeetingTaskState -ne 1) { throw 'recovery-fence-missing' }
+}
+
 function Invoke-UpdaterChild {
   param(
     [switch]$WhatIfOnly,
@@ -442,6 +451,10 @@ function Invoke-UpdaterChild {
       $command += ' -Rollback'
     } else {
       $command += ' -TargetCommit ' + (ConvertTo-PowerShellLiteral $TargetCommit)
+    }
+    if ($RecoverFencedRuntime) {
+      if ($NoRestartOnly -or $RollbackOnly) { throw 'recovery-mode-conflict' }
+      $command += ' -RecoverFencedRuntime'
     }
     if ($NoRestartOnly) { $command += ' -NoRestart' }
     if ($WhatIfOnly) { $command += ' -WhatIf' }
@@ -485,6 +498,8 @@ function Get-RolloutFailureClass {
   $message = [string]$ErrorRecord.Exception.Message
   $known = @(
     'invalid-target-commit', 'unexpected-rollout-identity',
+    'recovery-source-mismatch', 'recovery-task-migration-forbidden',
+    'recovery-fence-missing', 'recovery-mode-conflict',
     'rollout-principal-not-admin', 'canonical-repo-missing',
     'controller-fetch-rejected', 'controller-commit-rejected',
     'controller-checkout-rejected', 'controller-updater-missing',
@@ -571,6 +586,13 @@ try {
     throw 'task-action-unrecognized'
   }
   $migrationRequired = (-not $liveTask.actionCanonical -or -not $meetingTask.actionCanonical)
+
+  if ($RecoverFencedRuntime) {
+    # Recovery is exclusively for the already checked-out revision. A subsequent
+    # source promotion must use the normal immutable rollout after recovery.
+    Assert-FencedRecoveryContract -CurrentCommit $beforeCommit -ExpectedCommit $TargetCommit `
+      -MigrationRequired $migrationRequired -LiveTaskState $liveTask.state -MeetingTaskState $meetingTask.state
+  }
 
   $whatIfExitCode = Invoke-UpdaterChild -WhatIfOnly
   if ($whatIfExitCode -ne 0) { throw 'updater-whatif-rejected' }
@@ -693,6 +715,7 @@ $evidence = [ordered]@{
   generatedAt = [DateTime]::UtcNow.ToString('o')
   status = $(if ($go) { 'go' } else { 'no-go' })
   targetCommit = $TargetCommit
+  fencedRuntimeRecovery = [bool]$RecoverFencedRuntime
   beforeCommit = $beforeCommit
   afterCommit = $afterCommit
   sourceCommitVerified = $sourceCommitVerified
@@ -744,9 +767,13 @@ def validate_commit(value: str) -> str:
     return value
 
 
-def build_remote_script(target_commit: str) -> str:
+def build_remote_script(target_commit: str, recover_fenced_runtime: bool = False) -> str:
     commit = validate_commit(target_commit)
-    return REMOTE_SCRIPT.replace("__TARGET_COMMIT__", commit)
+    if type(recover_fenced_runtime) is not bool:
+        raise ValueError("recovery flag must be boolean")
+    return REMOTE_SCRIPT.replace("__TARGET_COMMIT__", commit).replace(
+        "__RECOVER_FENCED_RUNTIME__", "$true" if recover_fenced_runtime else "$false"
+    )
 
 
 def encode_remote_input(source: str) -> str:
@@ -849,8 +876,9 @@ def run_rollout(
     ssh_config: Path,
     known_hosts: Path,
     timeout_seconds: int,
+    recover_fenced_runtime: bool = False,
 ) -> tuple[int, dict[str, Any]]:
-    script = build_remote_script(target_commit)
+    script = build_remote_script(target_commit, recover_fenced_runtime)
     command = ssh_command(ssh_config, known_hosts)
     try:
         process = subprocess.run(
@@ -932,6 +960,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ssh-known-hosts", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=1200)
+    parser.add_argument("--recover-fenced-runtime", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -948,6 +977,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ssh_config=args.ssh_config,
             known_hosts=args.ssh_known_hosts,
             timeout_seconds=args.timeout_seconds,
+            recover_fenced_runtime=args.recover_fenced_runtime,
         )
     except RuntimeError:
         exit_code = 1

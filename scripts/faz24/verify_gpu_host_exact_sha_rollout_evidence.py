@@ -98,6 +98,13 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     migration_required = task_migration.get("required")
     require(isinstance(migration_required, bool), "task migration required is invalid")
     tasks_before = object_field(data, "tasksBefore")
+    recovery = data.get("fencedRuntimeRecovery", False)
+    require(type(recovery) is bool, "fenced runtime recovery flag is invalid")
+    if recovery:
+        require(data.get("beforeCommit") == expected_commit, "recovery changed source")
+        require(migration_required is False, "recovery migrated task actions")
+        require(any(object_field(tasks_before, name).get("state") == 1
+                    for name in ("liveStt", "meetingAi")), "recovery has no task fence")
     before_actions_canonical: list[bool] = []
     for task_name in ("liveStt", "meetingAi"):
         task = object_field(tasks_before, task_name)

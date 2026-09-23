@@ -31,6 +31,8 @@ jobs:
         if: inputs.gpu_mtls
         run: python3 scripts/faz24/gpu_mtls_metadata.py
       - name: Verify changed meeting-service stability
+        # GPU diagnostics are read-only and do not change meeting-service.
+        if: ${{ !inputs.gpu_mtls }}
         run: >-
           bash scripts/deploy/gate-stability-window.sh
           --service meeting-service --context k3d-test

@@ -11,6 +11,11 @@ name: Faz 24 GPU exact-SHA rollout
       target_commit:
         description: 'Full 40-character platform-ai commit from origin/main'
         required: true
+      recover_fenced_runtime:
+        description: 'Recover disabled tasks at the CURRENT source only, retaining full acceptance'
+        type: boolean
+        required: false
+        default: false
       confirm:
         description: 'Required literal confirmation'
         required: true
@@ -50,6 +55,7 @@ jobs:
         env:
           TARGET_COMMIT: ${{ inputs.target_commit }}
           CONFIRM: ${{ inputs.confirm }}
+          RECOVER_FENCED_RUNTIME: ${{ inputs.recover_fenced_runtime && 'true' || 'false' }}
         run: |
           set -euo pipefail
           case "${TARGET_COMMIT}" in
@@ -62,11 +68,16 @@ jobs:
             echo '::error::target_commit must be a 40-character lowercase SHA'
             exit 1
           fi
-          if [ "${CONFIRM}" != 'RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT' ]; then
-            echo '::error::confirm must equal RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT'
+          expected_confirm='RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT'
+          if [ "${RECOVER_FENCED_RUNTIME}" = true ]; then
+            expected_confirm='RECOVER_FAZ24_GPU_FENCED_RUNTIME'
+          fi
+          if [ "${CONFIRM}" != "${expected_confirm}" ]; then
+            echo '::error::confirm does not match the selected rollout/recovery mode'
             exit 1
           fi
           printf 'TARGET_COMMIT=%s\n' "${TARGET_COMMIT}" >> "${GITHUB_ENV}"
+          printf 'RECOVER_FENCED_RUNTIME=%s\n' "${RECOVER_FENCED_RUNTIME}" >> "${GITHUB_ENV}"
 
       - name: Checkout GitOps authority
         uses: actions/checkout@v6
@@ -166,12 +177,16 @@ jobs:
         run: |
           set +e
           mkdir -p "${EVIDENCE_DIR}"
+          recovery_args=()
+          if [ "${RECOVER_FENCED_RUNTIME}" = true ]; then
+            recovery_args+=(--recover-fenced-runtime)
+          fi
           python3 scripts/faz24/run_gpu_host_exact_sha_rollout.py \
             --target-commit "${TARGET_COMMIT}" \
             --ssh-config "${SSH_CONFIG_PATH}" \
             --ssh-known-hosts "${SSH_KNOWN_HOSTS_PATH}" \
             --output "${EVIDENCE_JSON}" \
-            --timeout-seconds 4200
+            --timeout-seconds 4200 "${recovery_args[@]}"
           exit_code="$?"
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
           exit 0
