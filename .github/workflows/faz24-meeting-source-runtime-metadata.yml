@@ -7,6 +7,11 @@ on:
         type: boolean
         required: true
         default: false
+      gpu_mtls:
+        description: 'Read fixed GPU host public certificate dates and Caddy task metadata'
+        type: boolean
+        required: true
+        default: false
 permissions:
   contents: read
 jobs:
@@ -22,6 +27,9 @@ jobs:
           args=()
           if [ "$LIVE_ANALYSIS" = true ]; then args+=(--live-analysis); fi
           python3 scripts/faz24/meeting_source_runtime_metadata.py "${args[@]}"
+      - name: Read fixed GPU certificate metadata
+        if: inputs.gpu_mtls
+        run: python3 scripts/faz24/gpu_mtls_metadata.py
       - name: Verify changed meeting-service stability
         run: >-
           bash scripts/deploy/gate-stability-window.sh

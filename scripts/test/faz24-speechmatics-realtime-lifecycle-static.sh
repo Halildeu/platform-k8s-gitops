@@ -35,4 +35,5 @@ if grep -Eq 'print\(.+(token|transcript_fragments|pcm)' "${HELPER}"; then
   exit 1
 fi
 
+python3 "${ROOT}/scripts/test/test_gpu_mtls_metadata.py"
 echo "Faz 24 Speechmatics realtime lifecycle static checks passed"
