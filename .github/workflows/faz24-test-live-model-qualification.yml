@@ -1,0 +1,29 @@
+name: Faz 24 TEST live model qualification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: faz24-gpu-host-exact-sha-rollout
+  cancel-in-progress: false
+jobs:
+  qualify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Measure installed candidates on fixed synthetic speech
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/qualify_test_live_model.py | tee live-model-qualification.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-model-qualification-${{ github.run_id }}
+          path: live-model-qualification.json
+          if-no-files-found: error
+          retention-days: 14
