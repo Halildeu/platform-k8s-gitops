@@ -1,15 +1,51 @@
 """Stage profiling exports numeric diagnostics without provider content."""
 import base64
+import contextlib
+import io
+import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'faz24'))
 import profile_test_live_latency as profile
 
 
 class ProfileTests(unittest.TestCase):
+    def test_partial_http_evidence_survives_remote_failure_without_raw_error(self):
+        output = io.StringIO()
+        with patch.object(profile, 'probe', return_value={'samples': [12.3]}), patch.object(
+                profile.ceremony, 'remote', side_effect=RuntimeError('PRIVATE')), contextlib.redirect_stdout(output):
+            self.assertEqual(profile.main(), 1)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result['http'], {'samples': [12.3]})
+        self.assertEqual(result['phase'], 'isolated-stages')
+        self.assertEqual(result['errorClass'], 'RuntimeError')
+        self.assertFalse(result['phoneAccepted'])
+        self.assertNotIn('PRIVATE', output.getvalue())
+
+    def test_export_accepts_actual_runtime_dictionary_and_omits_secrets(self):
+        shell = shutil.which('pwsh') or shutil.which('powershell')
+        if not shell:
+            self.skipTest('PowerShell is unavailable')
+        script = profile.remote_script()
+        export = script[script.index('  $public=[ordered]@{}'):script.index('  $proc=New-Object Diagnostics.Process;')]
+        fixture = r'''
+$ErrorActionPreference='Stop'
+$values=New-Object 'Collections.Generic.Dictionary[string,string]'([StringComparer]::OrdinalIgnoreCase)
+$values['MAI_OLLAMA_MODEL']='test-model'
+$values['MAI_INGESTION_AUTH_TOKEN']='PRIVATE'
+$psi=New-Object Diagnostics.ProcessStartInfo
+'''
+        result = subprocess.run([shell, '-NoProfile', '-NonInteractive', '-Command', fixture + export +
+                                 "\nWrite-Output $psi.EnvironmentVariables['LIVE_PROFILE_SETTINGS']"],
+                                capture_output=True, text=True, timeout=20, check=True)
+        self.assertEqual(json.loads(result.stdout), {'MAI_OLLAMA_MODEL': 'test-model'})
+
     def test_provider_content_is_not_exported(self):
         self.assertEqual(profile.envelope_metadata({
             'response': 'PRIVATE', 'thinking': 'PRIVATE', 'load_duration': 2_000_000_000,
