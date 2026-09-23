@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Measure installed candidates on fixed synthetic speech
+      - name: Verify pinned small-model download and measure fixed synthetic speech
         run: |
           set -euo pipefail
           python3 scripts/faz24/qualify_test_live_model.py | tee live-model-qualification.json
