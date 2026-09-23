@@ -127,6 +127,41 @@ class PromotionTest(unittest.TestCase):
                                       capture_output=True,text=True,timeout=20)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    @unittest.skipUnless(os.name=='nt','Windows PowerShell child/controller contract')
+    def test_pin_executes_separate_controller_and_cleans_it(self):
+        with tempfile.TemporaryDirectory(prefix='promotion fixture ') as temp:
+            work=Path(temp)
+            repo=work/'repo'
+            origin=work/'origin.git'
+            repo.mkdir()
+            def git(*args):
+                return subprocess.run(['git',*map(str,args)],check=True,capture_output=True,text=True).stdout.strip()
+            git('init','--bare',origin)
+            git('-C',repo,'init','-b','main')
+            updater=repo/'deploy/gpu-host/update.ps1'
+            updater.parent.mkdir(parents=True)
+            marker=work/'child-mode.txt'
+            updater.write_text("""[CmdletBinding(SupportsShouldProcess=$true)]
+param([string]$RepoRoot,[string]$TargetCommit,[switch]$NoRestart)
+if ($PSScriptRoot.StartsWith($RepoRoot)) { throw 'controller-is-not-isolated' }
+if ($NoRestart) { [IO.File]::WriteAllText('__MARKER__','no-restart') }
+exit 0
+""".replace('__MARKER__',str(marker).replace("'","''")),encoding='utf-8')
+            git('-C',repo,'add','.')
+            git('-C',repo,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-m','fixture')
+            git('-C',repo,'remote','add','origin',origin)
+            git('-C',repo,'push','origin','main')
+            target=git('-C',repo,'rev-parse','HEAD')
+            script=work/'pin.ps1'
+            script.write_text(promotion.PIN.replace('__TARGET__',target).replace('C:\\platform-ai',str(repo)),encoding='utf-8')
+            env=dict(os.environ,TEMP=str(work),TMP=str(work))
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-File',str(script)],
+                                  capture_output=True,text=True,timeout=40,env=env)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual(marker.read_text(),'no-restart')
+            self.assertIn('source-pinned-not-accepted',result.stdout)
+            self.assertEqual(git('-C',repo,'worktree','list','--porcelain').count('worktree '),1)
+
 
 if __name__=='__main__':
     unittest.main()
