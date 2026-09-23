@@ -433,3 +433,37 @@ a fresh permit or HTTP200 with consumer disabled is insufficient. Phone live
 analysis and latency remain separate acceptance checks. A failed full recovery
 uses the existing updater rollback/fencing contract; the expired root is not a
 functional rollback target.
+
+## 14. TEST live incremental source promotion
+
+`Faz 24 TEST live analysis source promotion` is restricted to AI PR349 target
+`08671f44b39de262ef7030a8716ae62967becc22` from the current original source
+`e386b996cae22f08294a83d840f0e92d4a82cd53`. Both exact commits retain the same
+permit-enforcing startup script hash. The policy allowlists both; a fresh
+permit is still mandatory because the source binding changes.
+
+First run `apply=false` on main. Apply requires `PROMOTE_TEST_LIVE_ANALYSIS`
+and the shared GPU rollout concurrency group. The independently pinned renewed
+TEST root hash is fixed in the orchestrator; no new trust or model is selected.
+Preflight requires original source, running tasks and dependency readiness.
+
+The orchestrator stops both tasks, waits for application listeners to release,
+atomically stages the consumer flag false with encrypted settings preserved,
+then uses a separate exact-target controller and canonical updater `-NoRestart`
+to pin source and ledger. This phase is explicitly not runtime acceptance.
+Only meeting-AI starts for the unchanged strict collector and signing ceremony.
+The canonical configurator validates/installs a fresh source-bound permit and
+activation receipt, then fences meeting-AI so full same-source runtime recovery
+can restart and verify both tasks. Disabled-consumer success is never counted.
+
+If candidate activation or acceptance fails, compensation stops the tasks,
+pins the original exact source through the canonical updater, issues another
+fresh original-source permit (never reuses consumed/revoked bytes) and repeats
+full runtime verification. Compensation failure fences both tasks and reports
+unverified restoration. An uncertain timed-out host operation fences without
+racing a second updater. No SQL/Redis event is deleted or fabricated.
+
+Runtime acceptance is followed by separate measured live-analysis latency and
+real audio/SSE checks before the gateway candidate is promoted. Physical-phone
+acceptance, new gateway configuration, production and issue closure are not
+implied by this source promotion.
