@@ -69,8 +69,21 @@
   not establish a known positive decision case. Optional live acceptance now
   selects the existing 76.696s synthetic two-speaker fixture with pinned audio
   and reference hashes and explicit decisions/actions. Before-EOF and persisted
-  product gates are unchanged; the new fixture's live runtime result is pending.
+  product gates are unchanged.
   Future unattended rotation/expiry alerting remains tracked in #3440.
+- PR3798 merged at `a4a131f5d9ba316c9e09ffe071a14ab63cd32a02` after 17 checks;
+  the Linux recorder/cleanup contract passes 53 tests, plus 13 SSE/fixture,
+  10 speaker and 2 SSH metadata tests. [Real recorder/SSE run35827619982](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35827619982)
+  **passes** on the pinned explicit-decision fixture: first accepted live event
+  31.510s, usable verified summary + two decisions + one action at 76.186s
+  **before EOF**, three accepted events and zero rejected/malformed events.
+  All 767 frames acknowledged; 166 partial/112 final transcripts, drained and
+  FINISHED. Persisted verified summary + four decisions + three actions,
+  matching result/source/reopen HTTP200 and fingerprint. Temporary-user deletion,
+  grant/scope restoration, token removal and artifact secret scan pass.
+  This proves the public TEST mobile wire contract for synthetic speech, not
+  physical phone rendering, speaker identity, arbitrary speech quality or SLA.
+  [Evidence and remaining boundaries](../evidence/2026-09-23-mobile-live-analysis-recovery.md).
 - Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
   tests plus type/lint and an ARM64 TEST APK; SHA256
   `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.
