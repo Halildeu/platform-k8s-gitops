@@ -25,7 +25,14 @@ run `35847268522` identifies the meeting-AI startup permit rejection as
 `TRUST_ROOT_VALIDITY_INVALID`; the pinned root expired September 17.
 PR3814 provides same-key TEST renewal and full recovery; PR3815 corrects
 the staging serializer after the first apply stopped before writing config.
-Runtime restoration is still unverified at this update.
+Run `35849573879` renewed the same-key trust root and permit. Both application
+tasks are running again; live-STT readiness recovered. Full runtime acceptance
+has not passed: read-only run `35853085559` isolates one historical retry-exhausted
+schema-invalid analysis, while consumer/worker readiness is true. Merged PR3816
+adds an audited recovery of this exact retained event and source-bound promotion
+with fresh permits on both candidate and original-source compensation. No row
+deletion or health-gate relaxation is used. Candidate deployment and latency
+acceptance are still pending.
 Do not promote this overlay until #349 is on the GPU host with rollout acceptance. The revision
 annotation reloads the ConfigMap. Rollback restores the previous image and source,
 sentence-triggered=false, min-interval-ms=15000, max-wait-ms=15000, and bumps the
