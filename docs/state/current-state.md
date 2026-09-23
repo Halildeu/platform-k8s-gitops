@@ -9,7 +9,10 @@
   readiness was verified. No row was deleted. This supersedes the historical
   source/health failures below. Phone and live-latency acceptance remain open;
   [HTTP incremental probe 35859197577](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35859197577)
-  was dispatched against the deployed source.
+  verified exact decisions/actions/owners/dates, cancellation and reassignment
+  in all five updates against the deployed source. Latency failed in all five:
+  20.124/42.059/24.088/23.373/23.666 seconds. Content correctness is established
+  for this fixture; live performance and physical-phone acceptance are not.
 - [Installed-model measurement 35858050978](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858050978)
   found 8,188 MiB physical GPU memory. Qwen2.5 7B took 41.266/26.047/4.781/5.297/5.656
   seconds over five incremental updates; all five failed the combined exact
