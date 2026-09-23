@@ -1,0 +1,88 @@
+name: Faz 24 TEST expired ready permit recovery
+'on':
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Renew with the same pinned TEST key and run full fenced runtime recovery'
+        type: boolean
+        required: true
+        default: false
+      confirm:
+        description: 'Apply requires RECOVER_TEST_EXPIRED_READY_PERMIT'
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: faz24-gpu-host-exact-sha-rollout
+  cancel-in-progress: false
+jobs:
+  recovery:
+    if: ${{ !inputs.apply || github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 85
+    env:
+      EVIDENCE_DIR: /tmp/faz24-ready-recovery-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Validate or renew existing TEST permit authority
+        env:
+          APPLY: ${{ inputs.apply && 'true' || 'false' }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$APPLY" = true ]; then
+            test "$CONFIRM" = RECOVER_TEST_EXPIRED_READY_PERMIT
+            args+=(--apply)
+          fi
+          python3 scripts/faz24/recover_test_ready_permit.py "${args[@]}" \
+            --output "${EVIDENCE_DIR}/permit-recovery.json"
+      - name: Full same-source task and runtime acceptance
+        if: inputs.apply
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'scripts/faz24')
+          from gpu_mtls_metadata import governed_ssh_paths
+          from recover_test_ready_permit import SOURCE
+          from run_gpu_host_exact_sha_rollout import main
+          config, hosts = governed_ssh_paths()
+          sys.exit(main(['--target-commit', SOURCE, '--ssh-config', str(config),
+                         '--ssh-known-hosts', str(hosts), '--recover-fenced-runtime',
+                         '--timeout-seconds', '4200', '--output',
+                         str(Path(os.environ['EVIDENCE_DIR']) / 'runtime-recovery.json')]))
+          PY
+      - name: Verify full runtime evidence and upstream TLS
+        if: inputs.apply
+        run: |
+          python3 scripts/faz24/verify_gpu_host_exact_sha_rollout_evidence.py \
+            "${EVIDENCE_DIR}/runtime-recovery.json" \
+            --expected-commit e386b996cae22f08294a83d840f0e92d4a82cd53
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'scripts/faz24')
+          from meeting_source_runtime_metadata import live_diagnostics
+          from recover_test_ready_permit import READY, remote
+          consumer = remote(READY)
+          (Path(os.environ['EVIDENCE_DIR']) / 'enabled-consumer.json').write_text(json.dumps(consumer))
+          report = live_diagnostics()
+          print(json.dumps(report, sort_keys=True))
+          assert all(p.get('httpStatus') == 200 and p.get('sslVerifyResult') == 0 and p['exitCode'] == 0
+                     for p in report['mtlsHealthProbes']), 'verified-upstream-health-failed'
+          PY
+      - name: Scan metadata evidence
+        if: always()
+        run: python3 scripts/faz24/scan_metadata_evidence.py "${EVIDENCE_DIR}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-ready-permit-recovery-${{ github.run_id }}
+          path: /tmp/faz24-ready-recovery-${{ github.run_id }}/*.json
+          retention-days: 14
+          if-no-files-found: error

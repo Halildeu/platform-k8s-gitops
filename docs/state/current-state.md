@@ -11,11 +11,13 @@
   confirms the tasks remain disabled, with Caddy listeners on 8243/8244 and
   no application listeners on 8200/8300. TLS remains valid; upstream health
   returned HTTP502 in run 35839236986. TEST phone acceptance is paused.
-- Startup logs show Uvicorn did listen before a model-worker named-pipe
-  `WinError 2`; this may be a consequence of task termination and is not yet
-  established as the initial cause. Meeting AI rejects its signed startup
-  permit. PR3811 prepares explicit same-source fenced recovery with unchanged
-  runtime acceptance, while the exact startup failures are investigated.
+- [Startup metadata 35847268522](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35847268522)
+  identifies the meeting-AI startup rejection as `TRUST_ROOT_VALIDITY_INVALID`.
+  Live-STT Uvicorn listened before each updater timeout; the later model-worker
+  named-pipe `WinError 2` coincides with task fencing and is not the initial
+  meeting-AI blocker. PR3811 is merged. TEST-only recovery now prepares a
+  same-pinned-key trust-root renewal and fresh pre-enable permit, followed by
+  full runtime acceptance. No successful restoration is claimed yet.
 - AI PR349 and backend PR1184 are source/build candidates, not deployed live
   acceptance. GitOps PR3803 remains draft; the new Android APK is built but
   no new physical-phone live decision/action acceptance is claimed.
