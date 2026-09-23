@@ -1,0 +1,37 @@
+name: Faz 24 TEST reviewed ready-event recovery
+'on':
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Rearm the single reviewed retry-exhausted event and replay its exact retained bytes'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: faz24-gpu-host-exact-sha-rollout
+  cancel-in-progress: false
+jobs:
+  recovery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify original event or recover one reviewed retry exhaustion
+        env:
+          APPLY: ${{ inputs.apply && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$APPLY" = true ]; then args+=(--apply); fi
+          python3 scripts/faz24/recover_test_ready_dead_letter.py "${args[@]}" | tee ready-recovery.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reviewed-ready-event-${{ github.run_id }}
+          path: ready-recovery.json
+          if-no-files-found: error
+          retention-days: 14

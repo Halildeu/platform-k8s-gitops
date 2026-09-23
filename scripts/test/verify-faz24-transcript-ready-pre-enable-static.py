@@ -66,6 +66,11 @@ EXPECTED_PRODUCER_CAPABILITIES = [
 ]
 EXPECTED_HOST_STARTUP_GUARDS = [
     {
+        "platformAiCommit": "08671f44b39de262ef7030a8716ae62967becc22",
+        "startupScriptSha256": "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
+        "permitRequired": True,
+    },
+    {
         "platformAiCommit": "e386b996cae22f08294a83d840f0e92d4a82cd53",
         "startupScriptSha256": "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
         "permitRequired": True,

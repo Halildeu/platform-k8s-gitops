@@ -7,6 +7,10 @@ name: GPU Rollout Diagnostics Contract
       - 'tests/faz24/test_gpu_host_exact_sha_rollout.py'
       - 'tests/faz24/windows_gpu_rollout_diagnostics.ps1'
       - 'scripts/faz24/recover_test_ready_permit.py'
+      - 'scripts/faz24/promote_test_live_analysis.py'
+      - 'tests/faz24/test_live_analysis_promotion.py'
+      - 'scripts/faz24/recover_test_ready_dead_letter.py'
+      - 'tests/faz24/test_ready_dead_letter_recovery.py'
       - 'tests/faz24/test_expired_ready_permit_recovery.py'
       - '.github/workflows/faz24-test-ready-permit-recovery.yml'
       - '.github/workflows/test-gpu-rollout-diagnostics.yml'
@@ -17,6 +21,10 @@ name: GPU Rollout Diagnostics Contract
       - 'tests/faz24/test_gpu_host_exact_sha_rollout.py'
       - 'tests/faz24/windows_gpu_rollout_diagnostics.ps1'
       - 'scripts/faz24/recover_test_ready_permit.py'
+      - 'scripts/faz24/promote_test_live_analysis.py'
+      - 'tests/faz24/test_live_analysis_promotion.py'
+      - 'scripts/faz24/recover_test_ready_dead_letter.py'
+      - 'tests/faz24/test_ready_dead_letter_recovery.py'
       - 'tests/faz24/test_expired_ready_permit_recovery.py'
       - '.github/workflows/faz24-test-ready-permit-recovery.yml'
       - '.github/workflows/test-gpu-rollout-diagnostics.yml'
@@ -35,3 +43,7 @@ jobs:
         run: python -m unittest discover -s tests/faz24 -p test_gpu_host_exact_sha_rollout.py
       - name: Same-key TEST renewal and partial-failure containment
         run: python -m unittest discover -s tests/faz24 -p test_expired_ready_permit_recovery.py
+      - name: Exact-source promotion and compensation contracts
+        run: python -m unittest discover -s tests/faz24 -p test_live_analysis_promotion.py
+      - name: Verify reviewed event recovery boundaries
+        run: python -m unittest discover -s tests/faz24 -p test_ready_dead_letter_recovery.py

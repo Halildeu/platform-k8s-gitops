@@ -1,0 +1,55 @@
+name: Faz 24 TEST live analysis source promotion
+'on':
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Promote fixed AI PR349 source with fresh permit and full runtime acceptance'
+        type: boolean
+        required: true
+        default: false
+      confirm:
+        description: 'Apply requires PROMOTE_TEST_LIVE_ANALYSIS'
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: faz24-gpu-host-exact-sha-rollout
+  cancel-in-progress: false
+jobs:
+  promotion:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    # Candidate and explicit original-source compensation can each require
+    # the canonical updater's forward + rollback acceptance cycle.
+    timeout-minutes: 160
+    env:
+      EVIDENCE_DIR: /tmp/faz24-live-promotion-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Stage source, reauthorize consumer, verify or compensate
+        env:
+          APPLY: ${{ inputs.apply && 'true' || 'false' }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$APPLY" = true ]; then
+            test "$CONFIRM" = PROMOTE_TEST_LIVE_ANALYSIS
+            args+=(--apply)
+          fi
+          python3 scripts/faz24/promote_test_live_analysis.py "${args[@]}" \
+            --output "${EVIDENCE_DIR}/promotion.json"
+      - name: Scan metadata evidence
+        if: always()
+        run: python3 scripts/faz24/scan_metadata_evidence.py "${EVIDENCE_DIR}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-live-promotion-${{ github.run_id }}
+          path: /tmp/faz24-live-promotion-${{ github.run_id }}/*.json
+          if-no-files-found: error
+          retention-days: 14

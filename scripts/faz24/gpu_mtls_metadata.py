@@ -112,6 +112,14 @@ $markers = [ordered]@{
   legacyConfigRejected='env.local.ps1'
   modelManifestRejected='model manifest'
   pinnedModelMissing='pinned streaming model directory'
+  workerTimeout='WorkerTimeoutError'
+  workerCrash='WorkerCrashedError'
+  workerReadinessChanged='worker readiness changed'
+  workerInferenceTimeout='worker exceeded timeout'
+  workerQueueTimeout='worker queue exceeded timeout'
+  workerExited='worker exited before response'
+  cudaOutOfMemory='CUDA out of memory'
+  allocationFailed='failed to allocate'
 }
 foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
   $files = @(Get-ChildItem -LiteralPath $logRoot -Filter $pattern -File -ErrorAction SilentlyContinue |
@@ -231,6 +239,99 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
   $publicBindings.Clear()
 }
 $bindings = @()
+$deadMetadata = @{checked=$false}
+$deadStage='load-runtime-schema'
+try {
+  . 'C:\platform-ai\deploy\gpu-host\meeting-ai-runtime-env.ps1'
+  . 'C:\platform-ai\deploy\gpu-host\task-action-contract.ps1'
+  $storePath=[string](Read-MeetingAiConfigFile -Path $envPath)['MAI_INGESTION_STORE_PATH']
+  $deadStage='validate-store-boundary'
+  $null=Assert-MeetingAiRuntimePath -Path $storePath -Purpose 'Existing outbox metadata'
+  # SQLite children inherit the hardened directory ACL, as in the canonical
+  # runtime loader. Config-file ACL inheritance rules do not apply to the DB.
+  Assert-MeetingAiAcl -Path (Split-Path -Parent $storePath) -Directory
+  $deadStage='read-metadata'
+  $code=@'
+import json,sqlite3,sys,re
+from pathlib import Path
+db=sqlite3.connect(Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True,timeout=3)
+try:
+ rows=db.execute("SELECT event_key_digest,failure_count,dead_reason,last_error_code,updated_at,redrive_count FROM meeting_transcript_ready_inbox WHERE state='DEAD' ORDER BY updated_at DESC LIMIT 10").fetchall()
+ safe=[]
+ for fingerprint,failures,reason,code,updated,redrives in rows:
+  safe.append({'lookupFingerprint':fingerprint if re.fullmatch('[0-9a-f]{64}',str(fingerprint)) else 'invalid',
+   'failureCount':int(failures),'reason':reason if reason in ('RETRY_EXHAUSTED','TERMINAL','CONFLICT','POISON') else 'unknown',
+   'errorCode':code if re.fullmatch('[a-zA-Z_]{3,80}',str(code)) else 'redacted',
+   'updatedAtEpoch':float(updated),'redriveCount':int(redrives)})
+ print(json.dumps({'checked':True,'readOnly':True,'rows':safe}))
+finally:
+ db.close()
+'@
+  $servicePython=@($python | Where-Object task -eq 'platform-ai-meeting-ai')[0].path
+  $psi=New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName=$servicePython
+  $psi.Arguments=(@('-c',$code,$storePath) | ForEach-Object {
+    ConvertTo-GpuHostWindowsArgument -Value ([string]$_)
+  }) -join ' '
+  $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true
+  $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true
+  $proc=New-Object Diagnostics.Process; $proc.StartInfo=$psi; $null=$proc.Start()
+  $outRead=$proc.StandardOutput.ReadToEndAsync(); $errRead=$proc.StandardError.ReadToEndAsync()
+  if (!$proc.WaitForExit(12000)) { $proc.Kill(); throw 'bounded-database-read-timeout' }
+  if ($proc.ExitCode -ne 0) {
+    $pythonError='unclassified'
+    if ($errRead.Result -match '(?m)^(?:sqlite3\.)?([A-Za-z]+Error):') { $pythonError=$Matches[1] }
+    $deadMetadata=@{checked=$false; stage=$deadStage; pythonErrorClass=$pythonError; exitCode=$proc.ExitCode}
+  } else {
+  $deadMetadata=$outRead.Result | ConvertFrom-Json
+  }
+  $proc.Dispose()
+} catch { $deadMetadata=@{checked=$false; stage=$deadStage; errorClass=$_.Exception.GetType().Name} }
+$readiness = @()
+foreach ($port in @(8200,8300)) {
+  $entry = [ordered]@{port=$port; reachable=$false}
+  try {
+    $request = [Net.HttpWebRequest]::Create("http://127.0.0.1:$port/ready")
+    $request.Timeout=12000
+    try { $response=$request.GetResponse() }
+    catch [Net.WebException] {
+      if (!$_.Exception.Response) { throw }
+      $response=$_.Exception.Response
+    }
+    $entry.httpStatus=[int]$response.StatusCode
+    $reader=New-Object IO.StreamReader($response.GetResponseStream())
+    try { $body=$reader.ReadToEnd() | ConvertFrom-Json }
+    finally { $reader.Dispose(); $response.Dispose() }
+    $entry.reachable=$true
+    $allowedStatuses=@('ok','loading','ready','failed','unhealthy','disabled','degraded','pending','stopping')
+    if ($body.status -in $allowedStatuses) { $entry.status=$body.status }
+    foreach ($key in @('streaming_preload_enabled','workers_healthy')) {
+      if ($body.$key -is [bool]) { $entry[$key]=$body.$key }
+    }
+    foreach ($group in @('roles','analysis_delivery','ready_consumer')) {
+      if (!$body.$group) { continue }
+      $safe=[ordered]@{}
+      foreach ($key in @('ready','enabled','worker_running','redis_group_ready')) {
+        if ($body.$group.$key -is [bool]) { $safe[$key]=$body.$group.$key }
+      }
+      foreach ($key in @('pending','in_flight','dead_letter','received','processing','outboxed',
+                         'oldest_unfinished_age_sec','oldest_pending_age_sec')) {
+        $value=$body.$group.$key
+        if (($value -is [int] -or $value -is [long] -or $value -is [double]) -and
+            $value -ge 0 -and $value -le 1e12) { $safe[$key]=$value }
+      }
+      foreach ($key in @('live','final','status')) {
+        if ($body.$group.$key -in $allowedStatuses) { $safe[$key]=$body.$group.$key }
+      }
+      # Error codes are enumerated service codes, not exception messages.
+      if ($body.$group.error_code -cmatch '^[A-Z][A-Z0-9_]{2,80}$') {
+        $safe.error_code=$body.$group.error_code
+      }
+      $entry[$group]=$safe
+    }
+  } catch { $entry.errorClass=$_.Exception.GetType().Name }
+  $readiness += $entry
+}
 $config = [IO.File]::ReadAllText('C:\caddy\Caddyfile')
 foreach ($line in ($config -split "`n")) {
   if ($line -match '^\s*tls\s+(\S+)\s+(\S+)\s*\{?\s*$') {
@@ -243,7 +344,7 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
   caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
   runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false
-  startupPermitValidation=$permitMetadata}
+  startupPermitValidation=$permitMetadata; dependencyReadiness=$readiness; deadLetterMetadata=$deadMetadata}
 $result['netstatComparison']=$netstatMetadata
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
