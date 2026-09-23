@@ -32,6 +32,7 @@ jobs:
           python -m pip install httpx==0.28.1
           python scripts/test/test_live_model_candidate.py
           python scripts/test/test_live_latency_profile.py
+          python scripts/test/test_name_punctuation_probe.py
           python scripts/test/test_live_analysis_promotion.py
       - name: Verify recorder workflow and cleanup contracts on Linux
         run: |
