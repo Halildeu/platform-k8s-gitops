@@ -306,25 +306,29 @@ foreach ($port in @(8200,8300)) {
     $allowedStatuses=@('ok','loading','ready','failed','unhealthy','disabled','degraded','pending','stopping')
     if ($body.status -in $allowedStatuses) { $entry.status=$body.status }
     foreach ($key in @('streaming_preload_enabled','workers_healthy')) {
-      if ($body.$key -is [bool]) { $entry[$key]=$body.$key }
+      if ($body.PSObject.Properties.Name -contains $key -and $body.$key -is [bool]) { $entry[$key]=$body.$key }
     }
     foreach ($group in @('roles','analysis_delivery','ready_consumer')) {
+      if ($body.PSObject.Properties.Name -notcontains $group) { continue }
       if (!$body.$group) { continue }
       $safe=[ordered]@{}
       foreach ($key in @('ready','enabled','worker_running','redis_group_ready')) {
-        if ($body.$group.$key -is [bool]) { $safe[$key]=$body.$group.$key }
+        if ($body.$group.PSObject.Properties.Name -contains $key -and $body.$group.$key -is [bool]) { $safe[$key]=$body.$group.$key }
       }
       foreach ($key in @('pending','in_flight','dead_letter','received','processing','outboxed',
                          'oldest_unfinished_age_sec','oldest_pending_age_sec')) {
+        if ($body.$group.PSObject.Properties.Name -notcontains $key) { continue }
         $value=$body.$group.$key
         if (($value -is [int] -or $value -is [long] -or $value -is [double]) -and
             $value -ge 0 -and $value -le 1e12) { $safe[$key]=$value }
       }
       foreach ($key in @('live','final','status')) {
+        if ($body.$group.PSObject.Properties.Name -notcontains $key) { continue }
         if ($body.$group.$key -in $allowedStatuses) { $safe[$key]=$body.$group.$key }
       }
       # Error codes are enumerated service codes, not exception messages.
-      if ($body.$group.error_code -cmatch '^[A-Z][A-Z0-9_]{2,80}$') {
+      if ($body.$group.PSObject.Properties.Name -contains 'error_code' -and
+          $body.$group.error_code -cmatch '^[A-Z][A-Z0-9_]{2,80}$') {
         $safe.error_code=$body.$group.error_code
       }
       $entry[$group]=$safe

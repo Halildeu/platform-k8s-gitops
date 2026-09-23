@@ -2,6 +2,14 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- [Reviewed recovery 35853779463](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35853779463)
+  verified and replayed the original retained event, but it again reached DEAD
+  after eight schema-invalid responses; redrive count is now one. The audit and
+  failure remain intact. No further blind redrive is planned. A bounded, single
+  non-persisting analysis diagnostic will report only schema rule/type/location
+  and model timing/memory metadata. No transcript/model response is exported,
+  no result is written and no health gate is relaxed. AI PR349 is not deployed.
+
 - [Bounded diagnostic 35853085559](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35853085559)
   confirms healthy live-STT workers and enabled/ready meeting consumer, with one
   historical `RETRY_EXHAUSTED` inbox row (`processing_OllamaSchemaInvalidError`,
