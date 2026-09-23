@@ -23,9 +23,9 @@ jobs:
     # compensating rollback PR if runtime/browser acceptance fails.
     timeout-minutes: 90
     env:
-      EXPECTED_ATS_DIGEST: sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299
+      EXPECTED_ATS_DIGEST: sha256:354a04576d20706cb806cc97760d7064409c9f14455ba4e7a0db49eadd7c85ba
       EXPECTED_PERMISSION_DIGEST: sha256:f103c00de707b0bfd227fda6754db3302d1391ca602a45952b058dc7c0480b66
-      ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/34755456164
+      ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/35837020389
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/34437421126
     steps:
       - name: Validate test-only dispatch boundary
