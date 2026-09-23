@@ -240,12 +240,17 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
 }
 $bindings = @()
 $deadMetadata = @{checked=$false}
+$deadStage='load-runtime-schema'
 try {
   . 'C:\platform-ai\deploy\gpu-host\meeting-ai-runtime-env.ps1'
   . 'C:\platform-ai\deploy\gpu-host\task-action-contract.ps1'
   $storePath=[string](Read-MeetingAiConfigFile -Path $envPath)['MAI_INGESTION_STORE_PATH']
+  $deadStage='validate-store-boundary'
   $null=Assert-MeetingAiRuntimePath -Path $storePath -Purpose 'Existing outbox metadata'
-  Assert-MeetingAiAcl -Path $storePath
+  # SQLite children inherit the hardened directory ACL, as in the canonical
+  # runtime loader. Config-file ACL inheritance rules do not apply to the DB.
+  Assert-MeetingAiAcl -Path (Split-Path -Parent $storePath) -Directory
+  $deadStage='read-metadata'
   $code=@'
 import json,sqlite3,sys,re
 from pathlib import Path
@@ -273,10 +278,15 @@ finally:
   $proc=New-Object Diagnostics.Process; $proc.StartInfo=$psi; $null=$proc.Start()
   $outRead=$proc.StandardOutput.ReadToEndAsync(); $errRead=$proc.StandardError.ReadToEndAsync()
   if (!$proc.WaitForExit(12000)) { $proc.Kill(); throw 'bounded-database-read-timeout' }
-  if ($proc.ExitCode -ne 0) { throw 'database-metadata-read-rejected' }
+  if ($proc.ExitCode -ne 0) {
+    $pythonError='unclassified'
+    if ($errRead.Result -match '(?m)^(?:sqlite3\.)?([A-Za-z]+Error):') { $pythonError=$Matches[1] }
+    $deadMetadata=@{checked=$false; stage=$deadStage; pythonErrorClass=$pythonError; exitCode=$proc.ExitCode}
+  } else {
   $deadMetadata=$outRead.Result | ConvertFrom-Json
+  }
   $proc.Dispose()
-} catch { $deadMetadata=@{checked=$false; errorClass=$_.Exception.GetType().Name} }
+} catch { $deadMetadata=@{checked=$false; stage=$deadStage; errorClass=$_.Exception.GetType().Name} }
 $readiness = @()
 foreach ($port in @(8200,8300)) {
   $entry = [ordered]@{port=$port; reachable=$false}
