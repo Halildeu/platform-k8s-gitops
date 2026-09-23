@@ -75,6 +75,9 @@ foreach ($name in @('platform-ai-live-stt', 'platform-ai-meeting-ai')) {
     lastRunUtc=$info.LastRunTime.ToUniversalTime().ToString('o')
     logonType=[string]$task.Principal.LogonType}
   foreach ($action in @($task.Actions)) {
+    if ($action.Arguments -match '(?i)(?:^|\s)-Port\s+([0-9]{1,5})(?:\s|$)') {
+      $runtimeTasks[-1]['configuredPort'] = [int]$Matches[1]
+    }
     if ($action.Arguments -match '(?i)(?:^|\s)-PythonExe\s+(?:"([^"]+)"|([^\s"]+))') {
       $path = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
       $python += @{task=$name; path=$path; present=(Test-Path -LiteralPath $path -PathType Leaf)}
@@ -123,7 +126,11 @@ foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
       }
       $frames = @()
       $winErrors = @()
+      $listeningPorts = @()
       foreach ($line in $lines) {
+        if ($line -match 'Uvicorn running on http://(?:127\.0\.0\.1|0\.0\.0\.0):([0-9]{1,5})') {
+          $listeningPorts += [int]$Matches[1]
+        }
         if ($line -match '^\s*File "[^"]+[\\/]([A-Za-z_][A-Za-z0-9_]{0,80}\.py)", line ([0-9]{1,6}), in ([A-Za-z_][A-Za-z0-9_]{0,80})\s*$') {
           $frames += @{module=$Matches[1]; line=[int]$Matches[2]; function=$Matches[3]}
         }
@@ -131,7 +138,8 @@ foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
       }
       $startupLogs += [ordered]@{service=($pattern.Split('-')[0]); bytes=$file.Length
         modifiedUtc=$file.LastWriteTimeUtc.ToString('o'); readable=$true; markerCounts=$counts
-        tracebackFrames=@($frames | Select-Object -Last 16); winErrorCodes=@($winErrors | Select-Object -Unique)}
+        tracebackFrames=@($frames | Select-Object -Last 16); winErrorCodes=@($winErrors | Select-Object -Unique)
+        listeningPorts=@($listeningPorts | Select-Object -Unique); createdUtc=$file.CreationTimeUtc.ToString('o')}
     } catch {
       $startupLogs += @{service=($pattern.Split('-')[0]); readable=$false}
     }
@@ -188,9 +196,13 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
         $permitMetadata.verifierExitCode=$LASTEXITCODE
         $permitMetadata.verifierOutputCount=$verifierLines.Count
         foreach ($entry in $verifierLines) {
-          if ([string]$entry -match '^permit verification rejected: ([A-Z_]{3,80})$') {
+          if ([string]$entry -match 'permit verification rejected: ([A-Z0-9_]{3,80})(?:\s|$)') {
             $permitMetadata.verifierReason=$Matches[1]
           }
+          if ([string]$entry -match 'error: argument (--[a-z-]{1,60}):') {
+            $permitMetadata.verifierArgumentError=$Matches[1]
+          }
+          if ([string]$entry -match 'can.t open file') { $permitMetadata.verifierScriptMissing=$true }
         }
       } finally { $ErrorActionPreference=$oldEap }
     }
