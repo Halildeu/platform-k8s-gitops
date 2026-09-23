@@ -42,6 +42,12 @@
   TLS verification was retained and mounted credentials were used in place.
   Certificate-chain dates/ownership must be checked before scoped renewal;
   the historical Caddy startup outage is not the cause established by this run.
+- [GPU certificate dates 35824822012](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35824822012)
+  identify the leaf expiry at 2026-09-20T19:27:29Z. [35825128525](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35825128525)
+  confirms mounted client validity to October21 and CA to June2027. Existing
+  Caddy task/listeners run; its admin API is deliberately disabled. A guarded
+  same-key/same-CA leaf renewal is prepared with backup/rollback and native
+  Windows/OpenSSL fixture checks. Runtime renewal/product recovery is pending.
 - Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
   tests plus type/lint and an ARM64 TEST APK; SHA256
   `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.

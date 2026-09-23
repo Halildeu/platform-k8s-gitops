@@ -79,7 +79,7 @@ Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compres
 """
 
 
-def collect():
+def governed_ssh_paths():
     config = Path('/home/aiadmin/.ssh/config')
     resolved = subprocess.run(['ssh', '-F', str(config), '-G', 'denetim-pc'],
                               capture_output=True, text=True, timeout=10, check=False)
@@ -100,6 +100,11 @@ def collect():
                          capture_output=True, text=True, timeout=10, check=False)
     if pin.returncode:
         raise RuntimeError('governed-host-key-pin-missing')
+    return config, known_hosts
+
+
+def collect():
+    config, known_hosts = governed_ssh_paths()
     result = subprocess.run(ssh_command(config, known_hosts), input=encode_remote_input(REMOTE_SCRIPT),
                             capture_output=True, text=True, timeout=60, check=False)
     records = [line.removeprefix('GPU_MTLS_METADATA:') for line in result.stdout.splitlines()
