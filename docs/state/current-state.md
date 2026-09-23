@@ -18,9 +18,17 @@
   seconds over five incremental updates; all five failed the combined exact
   claim/owner/date contract. Question and historical-decision negative cases
   also failed. Llama3.1 8B timed out at 61.093 seconds. Neither candidate was
-  selected or deployed. The smaller Qwen3.5 4B alternative is being qualified
-  separately; registry manifest and model identity are pinned before download,
-  and no service setting changes follow automatically from that experiment.
+  selected or deployed.
+- [Qwen3.5 4B measurement 35860239203](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35860239203)
+  also failed qualification. At 4096 context / think:false the first two updates
+  were correct but took 23.828/19.500 seconds. Cancellation/reassignment and
+  retained-state updates failed content checks (5.250/4.328/4.344 seconds);
+  the historical-decision negative case failed too. The candidate was released
+  and no service model setting changed. Workflow success only means measurement
+  completed. Runtime stays on the correct but slower 27B profile. No gateway
+  cadence promotion, new phone acceptance or issue closure follows from these
+  results. Another available company inference resource is being clarified;
+  no hardware purchase or external transcript transfer is authorized by this note.
 
 ### Historical recovery evidence (superseded by the accepted promotion above)
 
