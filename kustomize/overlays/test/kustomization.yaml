@@ -9891,6 +9891,7 @@ patches:
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
               audio-gateway.acik.com/direct-stt-enable-rev: "2026-08-05-3435-v24-speechmatics-vocab"
+              audio-gateway.acik.com/live-analysis-rev: "2026-09-23-incremental-sentences"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -9975,7 +9976,15 @@ patches:
       # Per-meeting request-start cadence; busy windows coalesce, not queue.
       - op: add
         path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_MIN_INTERVAL_MS
-        value: "15000"
+        value: "1000"
+      # Requires platform-backend#1184 immutable image and platform-ai#349.
+      # Publish at sentence completion; bounded fallback when punctuation is absent.
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_SENTENCE_TRIGGERED
+        value: "true"
+      - op: add
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_LIVE_ANALYZE_MAX_WAIT_MS
+        value: "5000"
       # I2-T web izleyici canli transkript SSE hub'i — ayni pakette acilir;
       # ephemeral pub/sub, kalicilik yok, drop-oldest back-pressure.
       - op: replace
