@@ -41,7 +41,7 @@ $live=Invoke-RestMethod 'http://127.0.0.1:8200/ready' -TimeoutSec 15
 $meeting=Invoke-RestMethod 'http://127.0.0.1:8300/ready' -TimeoutSec 15
 if ($live.status -cne 'ready' -or $live.runtime_commit -cne $head -or !$live.workers_healthy -or
     !$meeting.ready_consumer.enabled -or !$meeting.ready_consumer.ready -or
-    !$meeting.analysis_delivery.ready) { throw 'baseline-dependencies-not-ready' }
+    !$meeting.analysis_delivery.ready -or $meeting.status -cne 'ok') { throw 'baseline-dependencies-not-ready' }
 $path=Assert-MeetingAiRuntimePath -Path $values['MAI_READY_PERMIT_TRUST_ROOT_PATH'] -Purpose 'Pinned public root'
 Assert-MeetingAiAcl -Path $path
 $sha=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()

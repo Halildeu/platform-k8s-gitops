@@ -266,6 +266,12 @@ foreach ($port in @(8200,8300)) {
       foreach ($key in @('ready','enabled','worker_running','redis_group_ready')) {
         if ($body.$group.$key -is [bool]) { $safe[$key]=$body.$group.$key }
       }
+      foreach ($key in @('pending','in_flight','dead_letter','received','processing','outboxed',
+                         'oldest_unfinished_age_sec','oldest_pending_age_sec')) {
+        $value=$body.$group.$key
+        if (($value -is [int] -or $value -is [long] -or $value -is [double]) -and
+            $value -ge 0 -and $value -le 1e12) { $safe[$key]=$value }
+      }
       foreach ($key in @('live','final','status')) {
         if ($body.$group.$key -in $allowedStatuses) { $safe[$key]=$body.$group.$key }
       }
