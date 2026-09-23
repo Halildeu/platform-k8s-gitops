@@ -2,6 +2,14 @@
 
 ## TEST GPU runtime outage (2026-09-23, current)
 
+- Latest truth: [permit renewal and recovery 35849573879](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35849573879)
+  installed a fresh same-key TEST trust root and signed activation permit.
+  Full runtime acceptance still failed (`smoke-failed`); the updater accepted
+  its same-source rollback. [Read-only follow-up 35850259184](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35850259184)
+  now shows both tasks enabled/running, application listeners, valid startup
+  permit, and verified gateway mTLS health HTTP200 on both ports. This supersedes
+  the earlier fenced-task state below. Live-STT inference worker errors remain;
+  health reachability is not inference or mobile live-analysis acceptance.
 - The later [exact-source rollout 35837305448](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35837305448)
   failed with `restart-failed-no-new-listener`. The updater restored source
   `e386b996cae22f08294a83d840f0e92d4a82cd53`, but runtime rollback failed and

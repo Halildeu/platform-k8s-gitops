@@ -112,6 +112,14 @@ $markers = [ordered]@{
   legacyConfigRejected='env.local.ps1'
   modelManifestRejected='model manifest'
   pinnedModelMissing='pinned streaming model directory'
+  workerTimeout='WorkerTimeoutError'
+  workerCrash='WorkerCrashedError'
+  workerReadinessChanged='worker readiness changed'
+  workerInferenceTimeout='worker exceeded timeout'
+  workerQueueTimeout='worker queue exceeded timeout'
+  workerExited='worker exited before response'
+  cudaOutOfMemory='CUDA out of memory'
+  allocationFailed='failed to allocate'
 }
 foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
   $files = @(Get-ChildItem -LiteralPath $logRoot -Filter $pattern -File -ErrorAction SilentlyContinue |
@@ -231,6 +239,45 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
   $publicBindings.Clear()
 }
 $bindings = @()
+$readiness = @()
+foreach ($port in @(8200,8300)) {
+  $entry = [ordered]@{port=$port; reachable=$false}
+  try {
+    $request = [Net.HttpWebRequest]::Create("http://127.0.0.1:$port/ready")
+    $request.Timeout=12000
+    try { $response=$request.GetResponse() }
+    catch [Net.WebException] {
+      if (!$_.Exception.Response) { throw }
+      $response=$_.Exception.Response
+    }
+    $entry.httpStatus=[int]$response.StatusCode
+    $reader=New-Object IO.StreamReader($response.GetResponseStream())
+    try { $body=$reader.ReadToEnd() | ConvertFrom-Json }
+    finally { $reader.Dispose(); $response.Dispose() }
+    $entry.reachable=$true
+    $allowedStatuses=@('ok','loading','ready','failed','unhealthy','disabled','degraded','pending','stopping')
+    if ($body.status -in $allowedStatuses) { $entry.status=$body.status }
+    foreach ($key in @('streaming_preload_enabled','workers_healthy')) {
+      if ($body.$key -is [bool]) { $entry[$key]=$body.$key }
+    }
+    foreach ($group in @('roles','analysis_delivery','ready_consumer')) {
+      if (!$body.$group) { continue }
+      $safe=[ordered]@{}
+      foreach ($key in @('ready','enabled','worker_running','redis_group_ready')) {
+        if ($body.$group.$key -is [bool]) { $safe[$key]=$body.$group.$key }
+      }
+      foreach ($key in @('live','final','status')) {
+        if ($body.$group.$key -in $allowedStatuses) { $safe[$key]=$body.$group.$key }
+      }
+      # Error codes are enumerated service codes, not exception messages.
+      if ($body.$group.error_code -cmatch '^[A-Z][A-Z0-9_]{2,80}$') {
+        $safe.error_code=$body.$group.error_code
+      }
+      $entry[$group]=$safe
+    }
+  } catch { $entry.errorClass=$_.Exception.GetType().Name }
+  $readiness += $entry
+}
 $config = [IO.File]::ReadAllText('C:\caddy\Caddyfile')
 foreach ($line in ($config -split "`n")) {
   if ($line -match '^\s*tls\s+(\S+)\s+(\S+)\s*\{?\s*$') {
@@ -243,7 +290,7 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
   caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
   runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false
-  startupPermitValidation=$permitMetadata}
+  startupPermitValidation=$permitMetadata; dependencyReadiness=$readiness}
 $result['netstatComparison']=$netstatMetadata
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
