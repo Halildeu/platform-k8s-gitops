@@ -121,6 +121,16 @@ def live_diagnostics():
     report = parse_live_diagnostics(metrics, logs)
     report["mtlsHealthProbes"] = [mtls_health_probe(pod, port) for port in (8243, 8244)]
     report["mountedCredentialUsedInPlace"] = True
+    cert_dates = {}
+    for name in ("ca", "client"):
+        result = subprocess.run(prefix + ["exec", pod, "-c", "audio-gateway", "--", "openssl", "x509",
+                                "-in", f"/etc/direct-stt-mtls/direct-stt-{name}.crt",
+                                "-noout", "-dates", "-sha256", "-fingerprint"],
+                                capture_output=True, text=True, timeout=20, check=False)
+        cert_dates[name] = {"exitCode": result.returncode, "metadata": [line for line in result.stdout.splitlines()
+                           if re.fullmatch(r"(?:notBefore|notAfter)=[A-Za-z0-9 :]+", line)
+                           or re.fullmatch(r"sha256 Fingerprint=[A-F0-9:]+", line, re.IGNORECASE)]}
+    report["mountedCertificateDates"] = cert_dates
     return report
 
 

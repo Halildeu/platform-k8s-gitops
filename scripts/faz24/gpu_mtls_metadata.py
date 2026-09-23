@@ -49,6 +49,20 @@ $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue 
   Where-Object { $_.LocalPort -in @(8243,8244,8300) } |
   ForEach-Object { @{port=$_.LocalPort; localAddress=$_.LocalAddress} })
 $openssl = Get-Command openssl -ErrorAction SilentlyContinue
+$tools = @()
+foreach ($candidate in @('C:\Program Files\Git\usr\bin\openssl.exe', 'C:\Program Files\OpenSSL-Win64\bin\openssl.exe')) {
+  $tools += @{path=$candidate; present=(Test-Path -LiteralPath $candidate -PathType Leaf)}
+}
+$python = @()
+foreach ($name in @('platform-ai-live-stt', 'platform-ai-meeting-ai')) {
+  $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+  foreach ($action in @($task.Actions)) {
+    if ($action.Arguments -match '-PythonExe\s+"([^"]+)"') {
+      $path = $Matches[1]
+      $python += @{task=$name; path=$path; present=(Test-Path -LiteralPath $path -PathType Leaf)}
+    }
+  }
+}
 $bindings = @()
 $config = [IO.File]::ReadAllText('C:\caddy\Caddyfile')
 foreach ($line in ($config -split "`n")) {
@@ -59,7 +73,8 @@ foreach ($line in ($config -split "`n")) {
 $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$false
   privateMaterialRead=$false; rawConfigIncluded=$false; utc=[DateTime]::UtcNow.ToString('o')
   certificates=$certs; keyFileNames=$keys; tasks=$tasks; listeners=$listeners
-  tlsBindings=$bindings; opensslAvailable=[bool]$openssl}
+  tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
+  caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')}
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
 

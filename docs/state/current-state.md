@@ -35,7 +35,13 @@
   with WebClientRequestException, HTTP status 0, 39-43ms elapsed. Pod counters
   show 6 attempted/6 failed/0 successful live requests (pod lifetime, not meeting
   counts). Upstream transport failure is established; DNS/TCP/TLS cause remains
-  under investigation. Waiting longer or phone-only changes do not resolve it.
+  under investigation in that run. Waiting longer or phone-only changes do not resolve it.
+- [Pod mTLS comparison 35824331148](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35824331148)
+  establishes TCP connectivity to both 8243 and 8244 (14-21ms), but curl exits
+  60 and OpenSSL verification returns 10 (expired certificate), HTTP0 on both.
+  TLS verification was retained and mounted credentials were used in place.
+  Certificate-chain dates/ownership must be checked before scoped renewal;
+  the historical Caddy startup outage is not the cause established by this run.
 - Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
   tests plus type/lint and an ARM64 TEST APK; SHA256
   `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.
