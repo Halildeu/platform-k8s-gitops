@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import subprocess
+import tempfile
 import time
 import types
 import unittest
@@ -14,7 +15,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "faz24"))
 from live_analysis_observer import AnalysisObserver, snapshot_counts
 from meeting_source_runtime_metadata import parse_live_diagnostics, mtls_health_probe
-from run_speechmatics_realtime_lifecycle_acceptance import stream_audio
+from run_speechmatics_realtime_lifecycle_acceptance import (
+    AcceptanceError, stream_audio, validate_audio_fixture,
+)
 
 SNAPSHOT = {
     "version": 1,
@@ -31,6 +34,30 @@ def frame(value=SNAPSHOT):
     return (
         "event: analysis\r\ndata: " + json.dumps(value, ensure_ascii=False) + "\r\n\r\n"
     ).encode()
+
+
+class FixtureTests(unittest.TestCase):
+    fixtures = Path(__file__).resolve().parents[1] / "faz24/fixtures"
+
+    def test_pinned_legacy_and_explicit_decision_fixture(self):
+        legacy = validate_audio_fixture(self.fixtures / "speechmatics-realtime-tr-v1.wav")
+        decision = validate_audio_fixture(self.fixtures / "meeting-speaker-tr-v1/two-speaker-tr.wav")
+        self.assertEqual(legacy["fixture"], "speechmatics-realtime-tr-v1")
+        self.assertEqual(decision["fixture"], "meeting-speaker-tr-v1")
+        self.assertIn("referenceSha256", decision)
+
+    def test_changed_audio_or_reference_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "two-speaker-tr.wav"
+            audio.write_bytes(b"not-the-pinned-recording")
+            with self.assertRaisesRegex(AcceptanceError, "audio-fixture-sha256-mismatch"):
+                validate_audio_fixture(audio)
+            audio.write_bytes((self.fixtures / "meeting-speaker-tr-v1/two-speaker-tr.wav").read_bytes())
+            with self.assertRaisesRegex(AcceptanceError, "reference-missing"):
+                validate_audio_fixture(audio)
+            audio.with_name("reference.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(AcceptanceError, "reference-sha256-mismatch"):
+                validate_audio_fixture(audio)
 
 
 class ParserTests(unittest.TestCase):

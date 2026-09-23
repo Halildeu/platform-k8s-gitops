@@ -46,8 +46,31 @@
   identify the leaf expiry at 2026-09-20T19:27:29Z. [35825128525](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35825128525)
   confirms mounted client validity to October21 and CA to June2027. Existing
   Caddy task/listeners run; its admin API is deliberately disabled. A guarded
-  same-key/same-CA leaf renewal is prepared with backup/rollback and native
-  Windows/OpenSSL fixture checks. Runtime renewal/product recovery is pending.
+  same-key/same-CA leaf renewal was prepared with backup/rollback and native
+  Windows/OpenSSL fixture checks.
+- PR3796 merged at `c83c888ecbe7547106f0aff07b3a9b3997bd6908` after 17 checks.
+  [Native dry-run 35826053223](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35826053223)
+  validated the proposal without replacing the active leaf.
+  [Apply 35826163190](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35826163190)
+  renewed it at 06:19 UTC September23, preserving CA/key/SANs. New leaf SHA256
+  `81ba80219fba76cef7a2faf41220c869f9c4b9cd1ffc86996c9a31ec0e4c5b4a`,
+  expires 2026-12-22T06:19:02Z. Only the existing Caddy task restarted; its admin
+  API remains disabled. Mounted client/Vault, application images and production
+  were unchanged. Both gateway mTLS health probes now pass curl0/verify0/HTTP200.
+- [Post-renewal public recorder/SSE acceptance 35826264475](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35826264475)
+  now receives two valid analysis events, first at 44.147s while recording.
+  Latest snapshot has verified summary and one action, but no decision;
+  total product acceptance remains fail. Persisted result/source/reopen are
+  HTTP200 with one action/zero decisions; cleanup and secret scan pass.
+  [Post-renewal metadata 35826419855](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35826419855)
+  confirms successful live requests increased from zero to two, with no new
+  recent errors and both verified mTLS health probes still HTTP200.
+  The old 15s keyword fixture has no checked-in reference transcript; it does
+  not establish a known positive decision case. Optional live acceptance now
+  selects the existing 76.696s synthetic two-speaker fixture with pinned audio
+  and reference hashes and explicit decisions/actions. Before-EOF and persisted
+  product gates are unchanged; the new fixture's live runtime result is pending.
+  Future unattended rotation/expiry alerting remains tracked in #3440.
 - Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
   tests plus type/lint and an ARM64 TEST APK; SHA256
   `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.
