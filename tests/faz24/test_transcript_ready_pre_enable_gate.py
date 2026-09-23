@@ -451,11 +451,12 @@ class GateTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(len(committed["producerCapabilities"]), 1)
-        self.assertEqual(len(committed["hostStartupGuards"]), 2)
+        self.assertEqual(len(committed["hostStartupGuards"]), 3)
         self.assertEqual(
             {guard["platformAiCommit"] for guard in committed["hostStartupGuards"]},
             {"e386b996cae22f08294a83d840f0e92d4a82cd53",
-             "38ef0f3648c8e092599c0578764a4f2f075dd0a1"},
+             "38ef0f3648c8e092599c0578764a4f2f075dd0a1",
+             "13aa7b8303d7e0f85bef94a56b1e5d164d1884ed"},
         )
         for guard in committed["hostStartupGuards"]:
             self.assertIs(guard["permitRequired"], True)
