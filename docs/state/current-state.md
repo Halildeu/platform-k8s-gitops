@@ -2,6 +2,31 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- [Transport-source promotion 35870111086](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35870111086)
+  accepted `13aa7b8303d7e0f85bef94a56b1e5d164d1884ed` (AI PR352/353)
+  on TEST with a fresh source-bound permit and the unchanged full runtime
+  verifier. Consumer, worker and Redis group readiness passed. GitOps source
+  was `96c8740590e5ce5fd56efb3999e9257b75ed097a`. No model, prompt, gateway
+  cadence or production change was made. Source promotion is not phone acceptance.
+- [Post-deploy HTTP probe 35870640211](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35870640211)
+  passed all five semantic/cursor/grounding checks, including cancellation,
+  reassignment, owners and dates. Times were 38.239/37.256/13.028/12.538/12.654s;
+  service-reported durations were 38.017/37.031/12.838/12.329/12.467s. The last
+  three calls improved versus baseline, but the first two remained slow and
+  all five failed the unchanged five-second gate. This does not establish the
+  cause of the remaining first-call delay.
+- [Speechmatics/live-SSE acceptance 35870985941](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35870985941)
+  passed on `testai.acik.com`: 767/767 audio frames acknowledged, 112 final
+  transcript events, EOF/drained/HTTP finish and canonical durable read-back
+  with identical reopened result. The same 76.696s synthetic audio fixture
+  produced four accepted live analysis frames, no rejected/invalid frames,
+  first accepted update at 12.010s from audio start (prior same fixture run
+  35827619982: 31.510s). Summary + one decision + one action were available
+  at 64.771s before EOF (prior: 76.186s); durable result had four decisions and
+  three actions. These are audio-start timestamps, not per-sentence latency
+  or physical-phone rendering. Temporary test user/token were removed and
+  direct grants restored. No iOS, push, five-second latency or issue closure
+  acceptance is inferred. User-deferred Halil/IT resource request remains unsent.
 - Same-TEST latency scope correction: the user confirmed web/Electron was on
   `testai.acik.com`. The 20–42 second figure below is synthetic gateway-pod → AI
   HTTP, not microphone-to-screen or a paired web/mobile comparison.
@@ -24,13 +49,14 @@
   load/prompt/eval; no exclusive hardware or queue cause is inferred.
   This is sequential synthetic evidence, not paired physical-client latency.
   [AI PR353](https://github.com/Halildeu/platform-ai/pull/353) implements an
-  app-owned connection pool with both digest checks retained. It is not yet
-  deployed. The five-second target remains unmet; no latency gate is relaxed.
+  app-owned connection pool with both digest checks retained. It is deployed
+  by the promotion above. The five-second target remains unmet; no latency gate is relaxed.
 - [AI PR352](https://github.com/Halildeu/platform-ai/pull/352) merged as
   `ab954fb2079b645bf16bcaacd36cb319e3f92cf9`: synchronous model inventory I/O
   now runs off the API event loop, once per readiness request. All 488 unit
-  tests and four CI checks passed. This source is not yet deployed; its
-  measured latency effect and physical-phone acceptance remain unverified.
+  tests and four CI checks passed. This change is included in the promotion
+  above; the post-deploy latency limits are recorded above. Physical-phone
+  acceptance remains unverified.
 - [Corrected-source promotion 35858606120](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858606120)
   accepted AI source `38ef0f3648c8e092599c0578764a4f2f075dd0a1` through the
   unchanged full runtime verifier. The exact retained event reached OUTBOXED
