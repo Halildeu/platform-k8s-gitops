@@ -3,12 +3,14 @@ import copy
 import datetime as dt
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 from subprocess import CompletedProcess
+import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/faz24'))
 import recover_test_ready_permit as recovery
@@ -93,6 +95,33 @@ class SameKeyRenewalTest(unittest.TestCase):
             self.assertFalse(report['runtimeAccepted'])
             self.assertEqual(remote.call_args.args[0], recovery.FENCE)
             self.assertNotIn('credential-do-not-echo', output.read_text())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell stage contract')
+    def test_stage_executes_and_retains_existing_config_values(self):
+        stubs = r'''
+$ErrorActionPreference='Stop'
+$configPath='synthetic-unused-path'; $head='synthetic-source'
+$values=@{MAI_READY_CONSUMER_ENABLED='true'; KEEP_DPAPI='synthetic-encrypted-value'; KEEP_PIN='synthetic-pin'}
+function Get-ScheduledTask { param($TaskName); return @{State='Disabled'} }
+function Read-MeetingAiConfigFile { param($Path); return $values.Clone() }
+function Write-MeetingAiConfigAtomic {
+  param($Path,$Content)
+  if ($Path -cne $configPath -or $Content -cnotmatch 'MAI_READY_CONSUMER_ENABLED=false' -or
+      $Content -cnotmatch 'KEEP_DPAPI=synthetic-encrypted-value' -or
+      $Content -cnotmatch 'KEEP_PIN=synthetic-pin') { throw 'config-was-not-preserved' }
+  $script:written=$true
+}
+function Enable-ScheduledTask { param($TaskName); if($TaskName -cne 'platform-ai-meeting-ai') {throw 'wrong-task'} }
+function Start-ScheduledTask { param($TaskName); if(!$script:written) {throw 'write-required'} }
+function Invoke-RestMethod { param($Uri,$TimeoutSec); return @{ready_consumer=@{enabled=$false;worker_running=$false}} }
+function Emit { param($Value); if($Value.acceptance -ne $false) {throw 'premature-acceptance'} }
+'''
+        with tempfile.TemporaryDirectory() as temp:
+            script = Path(temp) / 'stage.ps1'
+            script.write_text(stubs + recovery.STAGE[len(recovery.HEADER):], encoding='utf-8')
+            result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                    capture_output=True, text=True, timeout=25)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':
