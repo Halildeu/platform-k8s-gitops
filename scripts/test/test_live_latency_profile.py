@@ -16,6 +16,12 @@ import profile_test_live_latency as profile
 
 
 class ProfileTests(unittest.TestCase):
+    def test_managed_config_without_host_uses_launcher_default(self):
+        self.assertEqual(profile.local_host({'MAI_OLLAMA_MODEL': 'qwen3.8:27b'}), 'http://localhost:11434')
+        self.assertEqual(profile.local_host({'MAI_OLLAMA_HOST': 'http://127.0.0.1:11434'}), 'http://127.0.0.1:11434')
+        with self.assertRaises(ValueError):
+            profile.local_host({'MAI_OLLAMA_HOST': 'https://external.invalid'})
+
     def test_partial_http_evidence_survives_remote_failure_without_raw_error(self):
         output = io.StringIO()
         with patch.object(profile, 'probe', return_value={'samples': [12.3]}), patch.object(
