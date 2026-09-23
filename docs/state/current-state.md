@@ -15,6 +15,10 @@
   No row deletion, synthetic replacement event or runtime acceptance exemption.
 - Installed smaller-model qualification is a separate synthetic, non-deployed
   experiment ([35857366626](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35857366626)).
+  Both candidates returned `BackendUnavailableError` before the first usable
+  response; neither is qualified and no model selection/deployment was made.
+  Follow-up diagnostics add safe nested HTTP error category, failed-call duration
+  and numeric GPU memory metadata rather than guessing an accuracy/latency result.
   The 27B model's observed loaded size was 18.26 GB, of which 4.49 GB was in VRAM.
   Direct model timing is not microphone-to-phone acceptance.
 

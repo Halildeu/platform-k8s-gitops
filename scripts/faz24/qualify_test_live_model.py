@@ -15,9 +15,14 @@ PROFILES = [
 def qualify():
     import time
     import httpx
+    import subprocess
     from app.core.config import Settings
     from app.services.analyze import MeetingAnalysisService
     rows = []
+    memory = subprocess.run(['nvidia-smi','--query-gpu=memory.total,memory.used,utilization.gpu',
+        '--format=csv,noheader,nounits'],capture_output=True,text=True,timeout=10,check=False)
+    gpu_memory = [dict(zip(('totalMiB','usedMiB','utilizationPercent'),map(int,line.split(','))))
+                  for line in memory.stdout.splitlines()] if memory.returncode == 0 else []
     for model, digest in PROFILES:
         settings = Settings(_env_file=None, app_env='dev', backend='ollama',
             ollama_host='http://127.0.0.1:11434', ollama_model=model,
@@ -55,8 +60,20 @@ def qualify():
                 'status':'qualified' if all(s['qualityPass'] and s['withinFiveSeconds']
                     and s['cursorReturned'] for s in samples) else 'not-qualified'})
         except Exception as error:
-            rows.append({'model':model, 'digest':digest, 'samples':samples,
-                         'status':'error', 'errorClass':type(error).__name__})
+            failure = {'model':model, 'digest':digest, 'samples':samples,
+                       'status':'error', 'errorClass':type(error).__name__,
+                       'failedCallSeconds':round(time.monotonic()-started,3)}
+            cause = error.__cause__
+            if cause is not None:
+                failure['causeClass'] = type(cause).__name__
+                response = getattr(cause,'response',None)
+                if response is not None:
+                    failure['httpStatus'] = response.status_code
+                    # Enumerated infrastructure categories only, never raw error.
+                    message = response.text.lower()
+                    failure['memoryError'] = 'memory' in message or 'cuda' in message
+                    failure['unsupportedOption'] = 'not support' in message
+            rows.append(failure)
         finally:
             # Release only the benchmark candidate, never unload the deployed model.
             try:
@@ -69,6 +86,7 @@ def qualify():
         if rows[-1]['status'] == 'qualified':
             break
     return {'status':'measured', 'profiles':rows, 'synthetic':True, 'sourceCommit':SOURCE_COMMIT,
+            'gpuMemoryBefore':gpu_memory,
             'runtimeAccepted':False, 'phoneAccepted':False, 'durableWrites':False,
             'scope':'isolated candidate service method on existing TEST inference host'}
 
