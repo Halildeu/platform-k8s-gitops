@@ -54,12 +54,61 @@ foreach ($candidate in @('C:\Program Files\Git\usr\bin\openssl.exe', 'C:\Program
   $tools += @{path=$candidate; present=(Test-Path -LiteralPath $candidate -PathType Leaf)}
 }
 $python = @()
+$runtimeTasks = @()
 foreach ($name in @('platform-ai-live-stt', 'platform-ai-meeting-ai')) {
   $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+  if (!$task) { $runtimeTasks += @{name=$name; present=$false}; continue }
+  $info = $task | Get-ScheduledTaskInfo
+  $runtimeTasks += [ordered]@{name=$name; present=$true; state=[string]$task.State
+    enabled=[bool]$task.Settings.Enabled; lastResult=$info.LastTaskResult
+    lastRunUtc=$info.LastRunTime.ToUniversalTime().ToString('o')
+    logonType=[string]$task.Principal.LogonType}
   foreach ($action in @($task.Actions)) {
-    if ($action.Arguments -match '-PythonExe\s+"([^"]+)"') {
-      $path = $Matches[1]
+    if ($action.Arguments -match '(?i)(?:^|\s)-PythonExe\s+(?:"([^"]+)"|([^\s"]+))') {
+      $path = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
       $python += @{task=$name; path=$path; present=(Test-Path -LiteralPath $path -PathType Leaf)}
+    }
+  }
+}
+$startupLogs = @()
+$logRoot = 'C:\platform-ai\deploy\gpu-host\logs'
+$markers = [ordered]@{
+  runtimeConfigRejected='[startup] Runtime config rejected'
+  runtimeConfigMissing='[startup] Required runtime config is unavailable'
+  environmentRejected='[startup] Runtime config environment rejected'
+  permitRejected='[startup] Transcript-ready pre-enable permit rejected'
+  ollamaUnavailable='[startup] Ollama readiness check failed'
+  permissionDenied='PermissionError'
+  missingFile='FileNotFoundError'
+  missingModule='ModuleNotFoundError'
+  importFailed='ImportError'
+  syntaxError='SyntaxError'
+  validationError='ValidationError'
+  nativeAbort='forrtl: error'
+  addressInUse='address already in use'
+  started='Application startup complete'
+  pathMissing='Cannot find path'
+  commandMissing='is not recognized as the name'
+  powershellParseError='ParserError'
+  parameterError='ParameterBindingException'
+  legacyConfigRejected='env.local.ps1'
+  modelManifestRejected='model manifest'
+}
+foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
+  $files = @(Get-ChildItem -LiteralPath $logRoot -Filter $pattern -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)
+  foreach ($file in $files) {
+    try {
+      $lines = @(Get-Content -LiteralPath $file.FullName -Tail 160 -ErrorAction Stop |
+        ForEach-Object { if ($_.Length -gt 8192) { $_.Substring(0,8192) } else { $_ } })
+      $counts = [ordered]@{}
+      foreach ($entry in $markers.GetEnumerator()) {
+        $counts[$entry.Key] = @($lines | Where-Object { $_.Contains($entry.Value) }).Count
+      }
+      $startupLogs += [ordered]@{service=($pattern.Split('-')[0]); bytes=$file.Length
+        modifiedUtc=$file.LastWriteTimeUtc.ToString('o'); readable=$true; markerCounts=$counts}
+    } catch {
+      $startupLogs += @{service=($pattern.Split('-')[0]); readable=$false}
     }
   }
 }
@@ -74,7 +123,8 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   privateMaterialRead=$false; rawConfigIncluded=$false; utc=[DateTime]::UtcNow.ToString('o')
   certificates=$certs; keyFileNames=$keys; tasks=$tasks; listeners=$listeners
   tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
-  caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')}
+  caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
+  runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false}
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
 
