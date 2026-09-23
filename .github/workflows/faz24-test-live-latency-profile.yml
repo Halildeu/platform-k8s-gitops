@@ -1,0 +1,29 @@
+name: Faz 24 TEST live latency stage profile
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: faz24-gpu-host-exact-sha-rollout
+  cancel-in-progress: false
+jobs:
+  profile:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Measure deployed HTTP and isolated existing-model stages
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/profile_test_live_latency.py | tee live-latency-profile.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-latency-profile-${{ github.run_id }}
+          path: live-latency-profile.json
+          if-no-files-found: error
+          retention-days: 14
