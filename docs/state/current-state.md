@@ -2,6 +2,22 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- [Shape diagnosis 35856254859](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35856254859)
+  confirms zero selectable sentences and the JSON-only fallback for the retained
+  15-character event. [AI PR350](https://github.com/Halildeu/platform-ai/pull/350)
+  merged at `38ef0f3648c8e092599c0578764a4f2f075dd0a1`: final analysis now skips
+  model inference only when the unchanged grounding predicate permits no claim.
+  Source is not yet deployed. The corrected-source recovery checks the exact
+  retained payload and zero-evidence condition before staging, then verifies the
+  fixed service returns an empty grounded result without any model call before
+  one audited replay of redrive count one. The row must reach OUTBOXED and full
+  health must recover before the existing strict updater/verifier can accept.
+  No row deletion, synthetic replacement event or runtime acceptance exemption.
+- Installed smaller-model qualification is a separate synthetic, non-deployed
+  experiment ([35857366626](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35857366626)).
+  The 27B model's observed loaded size was 18.26 GB, of which 4.49 GB was in VRAM.
+  Direct model timing is not microphone-to-phone acceptance.
+
 - [Schema diagnosis 35855204472](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35855204472)
   reproduced `field 'summary' must be a string` from the actual pinned Ollama
   backend. The retained source contains 15 characters in one segment. The

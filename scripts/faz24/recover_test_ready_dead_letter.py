@@ -12,9 +12,10 @@ import recover_test_ready_permit as ceremony
 
 FINGERPRINT = '50906e03f13cacc61ecd16a97854fe9a2a4099bd448f040499e078e54ea0e693'
 AUDIT = 'https://github.com/Halildeu/platform-k8s-gitops/issues/3440'
+CORRECTED_SOURCE = '38ef0f3648c8e092599c0578764a4f2f075dd0a1'
 
 
-def recover(settings, inbox, broker, *, apply, parse_event, read_row, diagnose=None):
+def recover(settings, inbox, broker, *, apply, parse_event, read_row, diagnose=None, repair_check=None):
     if apply and diagnose is not None:
         raise ValueError('diagnosis-cannot-rearm')
     row = read_row()
@@ -22,7 +23,7 @@ def recover(settings, inbox, broker, *, apply, parse_event, read_row, diagnose=N
         raise ValueError('reviewed-row-missing')
     if (row['state'] != 'DEAD' or row['dead_reason'] != 'RETRY_EXHAUSTED'
             or row['last_error_code'] != 'processing_OllamaSchemaInvalidError'
-            or row['redrive_count'] != (1 if diagnose is not None else 0)
+            or row['redrive_count'] != (1 if diagnose is not None or repair_check is not None else 0)
             or row['dlq_published_at'] is None):
         raise ValueError('reviewed-row-state-changed')
     _, digest, run_id, lookup_key = inbox._decrypt_event_metadata(row)
@@ -56,6 +57,8 @@ def recover(settings, inbox, broker, *, apply, parse_event, read_row, diagnose=N
               'status': 'preflight-only', 'rearmed': False}
     if diagnose is not None:
         report.update(status='diagnosed-without-rearm', diagnosis=diagnose(settings, event))
+    if repair_check is not None:
+        report['repairEvidence'] = repair_check(settings, event)
     if apply:
         if not inbox.rearm_retry_exhausted_by_fingerprint(FINGERPRINT, audit_reference=AUDIT):
             raise ValueError('canonical-rearm-rejected')
@@ -141,7 +144,44 @@ def diagnose_model(settings, event):
     return report
 
 
-def host_main(apply, diagnose=False):
+def verify_empty_source(settings, event, *, corrected):
+    import asyncio
+    from app.services.canonical_transcript_client import HttpCanonicalTranscriptClient
+    from app.services import analyze
+    from app.services.citation import split_sentences
+    from app.services.extractive import selectable_sentences
+    from app.services.redact import redact_pii, assert_no_residual_pii
+    async def fetch():
+        client = HttpCanonicalTranscriptClient(settings)
+        try:
+            return await client.fetch(event)
+        finally:
+            await client.aclose()
+    snapshot = asyncio.run(fetch())
+    source = redact_pii(snapshot.transcript)[0]
+    assert_no_residual_pii(source)
+    if selectable_sentences(split_sentences(source)):
+        raise ValueError('reviewed-source-now-has-evidence')
+    report = {'selectableSentenceCount':0, 'modelInvoked':False,
+              'correctedResponseVerified':False, 'durableResultWritten':False}
+    if corrected:
+        original = analyze.generate
+        def prohibited(*args, **kwargs):
+            raise ValueError('corrected-source-unexpected-model-call')
+        analyze.generate = prohibited
+        try:
+            result = analyze.get_service(settings).analyze(snapshot.transcript,
+                [segment.model_dump() for segment in snapshot.segments])
+            if (result.summary or result.decisions or result.action_items or result.citations
+                    or result.summary_grounding_status != 'empty'):
+                raise ValueError('corrected-source-invented-claim')
+        finally:
+            analyze.generate = original
+        report['correctedResponseVerified'] = True
+    return report
+
+
+def host_main(apply, diagnose=False, repair=False):
     import sqlite3
     import time
     import redis
@@ -158,6 +198,10 @@ def host_main(apply, diagnose=False):
                       lookup_key=settings.ingestion_lookup_key()), max_rows=settings.ingestion_max_rows)
     inbox = SqliteReadyEventInbox(store, max_rows=settings.ready_consumer_inbox_max_rows,
                                  max_failures=settings.ready_consumer_max_failures)
+    if repair:
+        with sqlite3.connect(settings.ingestion_store_path) as connection:
+            if connection.execute("SELECT count(*) FROM meeting_transcript_ready_inbox WHERE state='DEAD'").fetchone()[0] != 1:
+                raise ValueError('repair-requires-only-reviewed-dead-row')
     def read_row():
         with sqlite3.connect(settings.ingestion_store_path) as connection:
             connection.row_factory = sqlite3.Row
@@ -167,7 +211,8 @@ def host_main(apply, diagnose=False):
                                  socket_timeout=10, socket_connect_timeout=10)
     try:
         report = recover(settings, inbox, broker, apply=apply, parse_event=parse_transcript_ready_event,
-                         read_row=read_row, diagnose=diagnose_model if diagnose else None)
+                         read_row=read_row, diagnose=diagnose_model if diagnose else None,
+                         repair_check=(lambda s,e:verify_empty_source(s,e,corrected=apply)) if repair else None)
         if apply:
             deadline = time.monotonic() + 600
             while time.monotonic() < deadline:
@@ -231,6 +276,24 @@ def main():
     result = ceremony.remote(REMOTE.replace('__CODE__', base64.b64encode(body.encode()).decode()), timeout=720)
     print(json.dumps(result, sort_keys=True))
     return 0 if result.get('status') in ('preflight-only', 'processed', 'diagnosed-without-rearm') else 1
+
+
+def corrected_source_recovery(source, *, apply):
+    # Only the merged bug fix may redrive count one. The old source can inspect
+    # eligibility before staging, but cannot replay it again.
+    if source not in (ceremony.SOURCE, CORRECTED_SOURCE) or (apply and source != CORRECTED_SOURCE):
+        raise ValueError('corrected-recovery-source-rejected')
+    script = Path(__file__).read_text(encoding='utf-8')
+    body = 'import json\nFINGERPRINT='+repr(FINGERPRINT)+'\nAUDIT='+repr(AUDIT)+'\n'
+    body += script[script.index('def recover('):script.index('\nREMOTE =')]
+    body += '\ntry:\n print(json.dumps(host_main('+repr(apply)+',False,True)))\n'
+    body += "except Exception as error:\n import re\n result={'status':'failed','errorClass':type(error).__name__}\n"
+    body += " if isinstance(error,ValueError) and re.fullmatch('[a-z-]{1,90}',str(error)): result['reason']=str(error)\n print(json.dumps(result))\n"
+    remote = REMOTE.replace(ceremony.SOURCE,source).replace('__CODE__',base64.b64encode(body.encode()).decode())
+    report = ceremony.remote(remote, timeout=720)
+    if report.get('status') != ('processed' if apply else 'preflight-only'):
+        raise ValueError('corrected-recovery-not-verified')
+    return report
 
 
 if __name__ == '__main__':
