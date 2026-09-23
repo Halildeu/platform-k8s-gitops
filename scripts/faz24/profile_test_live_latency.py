@@ -22,6 +22,15 @@ def envelope_metadata(envelope):
     return result
 
 
+def local_host(public):
+    # The validated Scheduled Task uses start-meeting-ai.ps1's localhost
+    # default. HOST is not a required key in the managed runtime config file.
+    host = public.get('MAI_OLLAMA_HOST', 'http://localhost:11434')
+    if host not in ('http://127.0.0.1:11434', 'http://localhost:11434'):
+        raise ValueError('local-inference-required')
+    return host
+
+
 def profile():
     import os
     import time
@@ -33,8 +42,7 @@ def profile():
     if public['MAI_OLLAMA_MODEL'] != 'qwen3.8:27b' or public['MAI_OLLAMA_EXPECTED_DIGEST'] != (
             '22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643'):
         raise ValueError('deployed-model-changed')
-    if public['MAI_OLLAMA_HOST'] not in ('http://127.0.0.1:11434', 'http://localhost:11434'):
-        raise ValueError('local-inference-required')
+    public['MAI_OLLAMA_HOST'] = local_host(public)
     # Copy only non-secret inference controls from the existing deployed config.
     fields = {key.removeprefix('MAI_').lower(): value for key, value in public.items() if value != ''}
     settings = Settings(_env_file=None, app_env='dev', backend='ollama',
@@ -109,7 +117,13 @@ def remote_script():
     body = 'import json\nSOURCE_COMMIT=' + repr(candidate.SOURCE_COMMIT) + '\n'
     body += common[common.index('STAGES ='):common.index('\ndef probe():')]
     body += source[source.index('def envelope_metadata('):source.index('\ndef remote_script():')]
-    body += '\nprint(json.dumps(profile()))\n'
+    body += '''
+try:
+    result = profile()
+except Exception as error:
+    result = {'status': 'profile-error', 'errorClass': type(error).__name__, 'contentIncluded': False}
+print(json.dumps(result))
+'''
     script = candidate.REMOTE.replace('__TARGET__', candidate.SOURCE_COMMIT).replace(
         '__CODE__', base64.b64encode(body.encode()).decode())
     # The launcher already validates source, TEST task identity and local paths.
@@ -133,7 +147,7 @@ def main():
         report['http'] = probe()
         report['phase'] = 'isolated-stages'
         report['stages'] = ceremony.remote(remote_script(), timeout=1500)
-        report['status'] = 'measured'
+        report['status'] = 'measured' if report['stages'].get('status') == 'measured' else 'failed'
     except Exception as error:
         # Preserve completed numeric evidence; never export exception messages,
         # which can include subprocess output or runtime configuration values.
