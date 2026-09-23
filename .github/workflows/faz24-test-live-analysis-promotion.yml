@@ -3,7 +3,7 @@ name: Faz 24 TEST live analysis source promotion
   workflow_dispatch:
     inputs:
       apply:
-        description: 'Promote fixed AI PR350 source, repair reviewed empty-evidence retry, then full runtime acceptance'
+        description: 'Promote AI PR353 transport source from the healthy PR350 baseline, then full runtime acceptance'
         type: boolean
         required: true
         default: false
