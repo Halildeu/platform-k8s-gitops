@@ -239,6 +239,44 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
   $publicBindings.Clear()
 }
 $bindings = @()
+$deadMetadata = @{checked=$false}
+try {
+  . 'C:\platform-ai\deploy\gpu-host\meeting-ai-runtime-env.ps1'
+  . 'C:\platform-ai\deploy\gpu-host\task-action-contract.ps1'
+  $storePath=[string](Read-MeetingAiConfigFile -Path $envPath)['MAI_INGESTION_STORE_PATH']
+  $null=Assert-MeetingAiRuntimePath -Path $storePath -Purpose 'Existing outbox metadata'
+  Assert-MeetingAiAcl -Path $storePath
+  $code=@'
+import json,sqlite3,sys,re
+from pathlib import Path
+db=sqlite3.connect(Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True,timeout=3)
+try:
+ rows=db.execute("SELECT event_key_digest,failure_count,dead_reason,last_error_code,updated_at,redrive_count FROM meeting_transcript_ready_inbox WHERE state='DEAD' ORDER BY updated_at DESC LIMIT 10").fetchall()
+ safe=[]
+ for fingerprint,failures,reason,code,updated,redrives in rows:
+  safe.append({'lookupFingerprint':fingerprint if re.fullmatch('[0-9a-f]{64}',str(fingerprint)) else 'invalid',
+   'failureCount':int(failures),'reason':reason if reason in ('RETRY_EXHAUSTED','TERMINAL','CONFLICT','POISON') else 'unknown',
+   'errorCode':code if re.fullmatch('[a-zA-Z_]{3,80}',str(code)) else 'redacted',
+   'updatedAtEpoch':float(updated),'redriveCount':int(redrives)})
+ print(json.dumps({'checked':True,'readOnly':True,'rows':safe}))
+finally:
+ db.close()
+'@
+  $servicePython=@($python | Where-Object task -eq 'platform-ai-meeting-ai')[0].path
+  $psi=New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName=$servicePython
+  $psi.Arguments=(@('-c',$code,$storePath) | ForEach-Object {
+    ConvertTo-GpuHostWindowsArgument -Value ([string]$_)
+  }) -join ' '
+  $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true
+  $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true
+  $proc=New-Object Diagnostics.Process; $proc.StartInfo=$psi; $null=$proc.Start()
+  $outRead=$proc.StandardOutput.ReadToEndAsync(); $errRead=$proc.StandardError.ReadToEndAsync()
+  if (!$proc.WaitForExit(12000)) { $proc.Kill(); throw 'bounded-database-read-timeout' }
+  if ($proc.ExitCode -ne 0) { throw 'database-metadata-read-rejected' }
+  $deadMetadata=$outRead.Result | ConvertFrom-Json
+  $proc.Dispose()
+} catch { $deadMetadata=@{checked=$false; errorClass=$_.Exception.GetType().Name} }
 $readiness = @()
 foreach ($port in @(8200,8300)) {
   $entry = [ordered]@{port=$port; reachable=$false}
@@ -296,7 +334,7 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
   caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
   runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false
-  startupPermitValidation=$permitMetadata; dependencyReadiness=$readiness}
+  startupPermitValidation=$permitMetadata; dependencyReadiness=$readiness; deadLetterMetadata=$deadMetadata}
 $result['netstatComparison']=$netstatMetadata
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
