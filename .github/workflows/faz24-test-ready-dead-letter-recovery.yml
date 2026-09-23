@@ -7,6 +7,11 @@ name: Faz 24 TEST reviewed ready-event recovery
         type: boolean
         required: true
         default: false
+      diagnose:
+        description: 'One non-persisting diagnosis of the reviewed failed retry; only schema error types and timings are exported'
+        type: boolean
+        required: true
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -23,10 +28,12 @@ jobs:
       - name: Verify original event or recover one reviewed retry exhaustion
         env:
           APPLY: ${{ inputs.apply && 'true' || 'false' }}
+          DIAGNOSE: ${{ inputs.diagnose && 'true' || 'false' }}
         run: |
           set -euo pipefail
           args=()
           if [ "$APPLY" = true ]; then args+=(--apply); fi
+          if [ "$DIAGNOSE" = true ]; then args+=(--diagnose); fi
           python3 scripts/faz24/recover_test_ready_dead_letter.py "${args[@]}" | tee ready-recovery.json
       - uses: actions/upload-artifact@v4
         if: always()
