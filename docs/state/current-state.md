@@ -1,6 +1,16 @@
 # Current State — Platform K8s Migration
 
-## TEST GPU runtime outage (2026-09-23, current)
+## TEST GPU runtime recovery (2026-09-23, current)
+
+- [Bounded diagnostic 35853085559](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35853085559)
+  confirms healthy live-STT workers and enabled/ready meeting consumer, with one
+  historical `RETRY_EXHAUSTED` inbox row (`processing_OllamaSchemaInvalidError`,
+  eight failures, zero operator redrives). This keeps aggregate meeting health
+  degraded. No dead-letter deletion or gate relaxation is authorized by this
+  observation. PR3816 adds a single-row canonical audited rearm plus exact
+  retained producer-event replay; absent/conflicting bytes or any permanent
+  poison/terminal/conflict state rejects before mutation. Recovery is not yet
+  verified; the live source promotion preflight still requires healthy baseline.
 
 - Latest truth: [permit renewal and recovery 35849573879](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35849573879)
   installed a fresh same-key TEST trust root and signed activation permit.
