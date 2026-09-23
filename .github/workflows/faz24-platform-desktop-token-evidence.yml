@@ -49,6 +49,11 @@ on:
         description: "Exact prior GitHub run id whose platform-test smoke state must be recovered"
         required: false
         default: ""
+      require_live_analysis:
+        description: "Require visible summary, decision and action on gateway SSE before recording EOF"
+        required: true
+        type: boolean
+        default: false
       expected_audio_gateway_image:
         description: "Exact audio-gateway image@sha256 for session-expiry smoke"
         required: false
@@ -214,6 +219,7 @@ jobs:
           REALTIME_HELPER: ${{ github.workspace }}/scripts/faz24/run_speechmatics_realtime_lifecycle_acceptance.py
           REALTIME_AUDIO_FILE: ${{ github.workspace }}/scripts/faz24/fixtures/speechmatics-realtime-tr-v1.wav
           REALTIME_DURABLE_TIMEOUT_SECONDS: "720"
+          REALTIME_LIVE_ANALYSIS_WAIT_SECONDS: ${{ inputs.require_live_analysis && '150' || '0' }}
           # The platform-desktop client owns these five direct claims. This
           # explicit test-only confirmation removes foreign/hardcoded direct
           # emitters only after a 0600 rollback snapshot is written.

@@ -1,5 +1,59 @@
 # Current State — Platform K8s Migration
 
+## Mobile live-analysis TEST rollout (2026-09-23)
+
+- Tracked by platform-mobile#8 and GitOps#3440; decisions/actions are required
+  while recording. Teams bot provisioning is a separate acceptance track.
+- Backend PR1183 source `0ae51f5c106e5c895ca34ec1dbda576590cd0502` is deployed by
+  GitOps PR3795, merge `86f59344ee197fbae92debfc4f8bb79e4f386782`.
+  Audio-gateway desired digest and observed pod imageID both equal
+  `sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307`.
+- [Automatic rollout evidence](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35743627268)
+  passes exact Argo revision/Synced/Healthy, 13 service readiness/image checks,
+  public edge and changed-service stability. [Read-only metadata](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35743691303)
+  confirms gateway generation 53, ready replica 1 and unchanged meeting/transcript images.
+- [Legacy preflight](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35743826109)
+  failed WebSocket upgrade with HTTP401. Its smoke-client token contract lacks
+  the recorder audience/capability; that source mismatch is not proof of the
+  exact failed token claims or of a mobile login regression. The existing
+  recorder-token realtime acceptance ran at
+  [35821916486](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35821916486).
+- That run verifies 150/150 frame acknowledgements, 39 partial/22 final events,
+  all 7 fixture keywords, drained/FINISHED and persisted result/source/reopen
+  HTTP200. Overall acceptance is **fail**: verified summary and one action were
+  returned, but decisionCount=0. Temporary test-user deletion, direct-grant and
+  transcript-scope restoration, token removal and secret scan all passed.
+- These are deployment/readiness facts, not live decision/action delivery
+  acceptance. An opt-in gateway SSE check now observes the mobile wire contract
+  before EOF, retaining counters only. Physical mobile acceptance stays open.
+- [Live-before-EOF run 35823107425](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35823107425)
+  fails: 1636/1636 audio frames acknowledged, drained/FINISHED, persisted HTTP200,
+  but SSE HTTP200 has 12 heartbeats and zero analysis events during the 150s hold.
+  No malformed/rejected event was observed. Cleanup and secret scan passed.
+- [Gateway diagnostic 35823384610](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35823384610)
+  matches meeting `c6d4e469-136a-457b-b2ad-f1d3b77d73d2`: sequences 1/4/5 fail
+  with WebClientRequestException, HTTP status 0, 39-43ms elapsed. Pod counters
+  show 6 attempted/6 failed/0 successful live requests (pod lifetime, not meeting
+  counts). Upstream transport failure is established; DNS/TCP/TLS cause remains
+  under investigation in that run. Waiting longer or phone-only changes do not resolve it.
+- [Pod mTLS comparison 35824331148](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35824331148)
+  establishes TCP connectivity to both 8243 and 8244 (14-21ms), but curl exits
+  60 and OpenSSL verification returns 10 (expired certificate), HTTP0 on both.
+  TLS verification was retained and mounted credentials were used in place.
+  Certificate-chain dates/ownership must be checked before scoped renewal;
+  the historical Caddy startup outage is not the cause established by this run.
+- [GPU certificate dates 35824822012](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35824822012)
+  identify the leaf expiry at 2026-09-20T19:27:29Z. [35825128525](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35825128525)
+  confirms mounted client validity to October21 and CA to June2027. Existing
+  Caddy task/listeners run; its admin API is deliberately disabled. A guarded
+  same-key/same-CA leaf renewal is prepared with backup/rollback and native
+  Windows/OpenSSL fixture checks. Runtime renewal/product recovery is pending.
+- Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
+  tests plus type/lint and an ARM64 TEST APK; SHA256
+  `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.
+  Installation, new phone live-analysis/PDF acceptance, native push and iOS are
+  not inferred from that package or the backend rollout. No production change.
+
 ## Zeynep Requests - Scoped TEST Acceptance (2026-09-15)
 
 - Web PR1179/1180/1186 combined source

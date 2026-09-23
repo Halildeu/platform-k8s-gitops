@@ -1,0 +1,40 @@
+name: Faz 24 TEST live mTLS leaf renewal
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Replace the exact expired TEST leaf and reload its existing Caddy task after validation'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: faz24-test-live-mtls-leaf-renewal
+  cancel-in-progress: false
+jobs:
+  renewal:
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate or renew fixed expired TEST leaf
+        env:
+          APPLY: ${{ inputs.apply && 'true' || 'false' }}
+        run: |
+          args=()
+          if [ "$APPLY" = true ]; then args+=(--apply); fi
+          python3 scripts/faz24/renew_test_live_mtls.py "${args[@]}"
+      - name: Verify upstream after renewal
+        if: inputs.apply
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'scripts/faz24')
+          from meeting_source_runtime_metadata import live_diagnostics
+          report = live_diagnostics()
+          print(json.dumps(report, sort_keys=True))
+          assert all(p.get('httpStatus') == 200 and p.get('sslVerifyResult') == 0 and p['exitCode'] == 0
+                     for p in report['mtlsHealthProbes']), 'verified-upstream-health-failed'
+          PY

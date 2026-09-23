@@ -46,6 +46,7 @@ REALTIME_PYTHON="${REALTIME_PYTHON:-python3}"
 REALTIME_HELPER="${REALTIME_HELPER:-}"
 REALTIME_AUDIO_FILE="${REALTIME_AUDIO_FILE:-}"
 REALTIME_DURABLE_TIMEOUT_SECONDS="${REALTIME_DURABLE_TIMEOUT_SECONDS:-720}"
+REALTIME_LIVE_ANALYSIS_WAIT_SECONDS="${REALTIME_LIVE_ANALYSIS_WAIT_SECONDS:-0}"
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ATTEMPT_SAFE="${GITHUB_RUN_ATTEMPT:-1}"
@@ -77,7 +78,15 @@ if [[ "${RUN_SPEECHMATICS_REALTIME}" != "0" && "${RUN_SPEECHMATICS_REALTIME}" !=
   echo "ERROR: RUN_SPEECHMATICS_REALTIME must be 0 or 1" >&2
   exit 2
 fi
+if [[ "${REALTIME_LIVE_ANALYSIS_WAIT_SECONDS}" != "0" && "${RUN_SPEECHMATICS_REALTIME}" != "1" ]]; then
+  echo "ERROR: live analysis requires realtime mode" >&2
+  exit 2
+fi
 if [[ "${RUN_SPEECHMATICS_REALTIME}" == "1" ]]; then
+  if [[ "${REALTIME_LIVE_ANALYSIS_WAIT_SECONDS}" != "0" && "${REALTIME_LIVE_ANALYSIS_WAIT_SECONDS}" != "150" ]]; then
+    echo "ERROR: live analysis wait must be 0 or 150 seconds" >&2
+    exit 2
+  fi
   if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
     echo "ERROR: Speechmatics realtime and session-expiry smokes cannot share one dispatch" >&2
     exit 2
@@ -1390,6 +1399,7 @@ run_speechmatics_realtime_acceptance() {
     --output-file "${REALTIME_ACCEPTANCE_JSON}" \
     --base-url "${BASE_URL}" \
     --durable-timeout-seconds "${REALTIME_DURABLE_TIMEOUT_SECONDS}" \
+    --live-analysis-wait-seconds "${REALTIME_LIVE_ANALYSIS_WAIT_SECONDS}" \
     > "${TMP_DIR}/speechmatics-realtime.stdout" \
     2> "${TMP_DIR}/speechmatics-realtime.stderr"
   REALTIME_ACCEPTANCE_EXIT="$?"
