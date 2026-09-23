@@ -11,6 +11,9 @@ from run_gpu_host_exact_sha_rollout import encode_remote_input, ssh_command
 REMOTE_SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$env:GIT_CONFIG_COUNT = '1'
+$env:GIT_CONFIG_KEY_0 = 'safe.directory'
+$env:GIT_CONFIG_VALUE_0 = 'C:/platform-ai'
 $root = 'C:\caddy'
 $certs = @()
 $keys = @()
@@ -46,8 +49,16 @@ foreach ($name in @('CaddyI7AppMtls', 'Workcube-Caddy-mTLS')) {
     restartCount=$task.Settings.RestartCount; restartInterval=$task.Settings.RestartInterval}
 }
 $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-  Where-Object { $_.LocalPort -in @(8243,8244,8300) } |
+  Where-Object { $_.LocalPort -in @(8200,8243,8244,8300) } |
   ForEach-Object { @{port=$_.LocalPort; localAddress=$_.LocalAddress} })
+$netstatLines = @(& netstat.exe -ano -p TCP 2> $null)
+$netstatMetadata = @{exitCode=$LASTEXITCODE; lineCount=$netstatLines.Count; states=@()}
+foreach ($line in $netstatLines) {
+  if ($line -match '^\s*TCP\s+\S+:(8200|8243|8244|8300)\s+\S+\s+([^\s]{1,30})\s+\d+\s*$') {
+    $state = if ($Matches[2] -eq 'LISTENING') { 'LISTENING' } else { 'other' }
+    $netstatMetadata.states += @{port=[int]$Matches[1]; state=$state}
+  }
+}
 $openssl = Get-Command openssl -ErrorAction SilentlyContinue
 $tools = @()
 foreach ($candidate in @('C:\Program Files\Git\usr\bin\openssl.exe', 'C:\Program Files\OpenSSL-Win64\bin\openssl.exe')) {
@@ -64,6 +75,9 @@ foreach ($name in @('platform-ai-live-stt', 'platform-ai-meeting-ai')) {
     lastRunUtc=$info.LastRunTime.ToUniversalTime().ToString('o')
     logonType=[string]$task.Principal.LogonType}
   foreach ($action in @($task.Actions)) {
+    if ($action.Arguments -match '(?i)(?:^|\s)-Port\s+([0-9]{1,5})(?:\s|$)') {
+      $runtimeTasks[-1]['configuredPort'] = [int]$Matches[1]
+    }
     if ($action.Arguments -match '(?i)(?:^|\s)-PythonExe\s+(?:"([^"]+)"|([^\s"]+))') {
       $path = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
       $python += @{task=$name; path=$path; present=(Test-Path -LiteralPath $path -PathType Leaf)}
@@ -87,12 +101,17 @@ $markers = [ordered]@{
   nativeAbort='forrtl: error'
   addressInUse='address already in use'
   started='Application startup complete'
+  uvicornListening='Uvicorn running on'
+  startupWaiting='Waiting for application startup'
+  shutdown='Shutting down'
+  startupPreload='streaming model preload started'
   pathMissing='Cannot find path'
   commandMissing='is not recognized as the name'
   powershellParseError='ParserError'
   parameterError='ParameterBindingException'
   legacyConfigRejected='env.local.ps1'
   modelManifestRejected='model manifest'
+  pinnedModelMissing='pinned streaming model directory'
 }
 foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
   $files = @(Get-ChildItem -LiteralPath $logRoot -Filter $pattern -File -ErrorAction SilentlyContinue |
@@ -105,12 +124,90 @@ foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
       foreach ($entry in $markers.GetEnumerator()) {
         $counts[$entry.Key] = @($lines | Where-Object { $_.Contains($entry.Value) }).Count
       }
+      $frames = @()
+      $winErrors = @()
+      $listeningPorts = @()
+      foreach ($line in $lines) {
+        if ($line -match 'Uvicorn running on http://(?:127\.0\.0\.1|0\.0\.0\.0):([0-9]{1,5})') {
+          $listeningPorts += [int]$Matches[1]
+        }
+        if ($line -match '^\s*File "[^"]+[\\/]([A-Za-z_][A-Za-z0-9_]{0,80}\.py)", line ([0-9]{1,6}), in ([A-Za-z_][A-Za-z0-9_]{0,80})\s*$') {
+          $frames += @{module=$Matches[1]; line=[int]$Matches[2]; function=$Matches[3]}
+        }
+        if ($line -match '\[WinError ([0-9]{1,8})\]') { $winErrors += [int]$Matches[1] }
+      }
       $startupLogs += [ordered]@{service=($pattern.Split('-')[0]); bytes=$file.Length
-        modifiedUtc=$file.LastWriteTimeUtc.ToString('o'); readable=$true; markerCounts=$counts}
+        modifiedUtc=$file.LastWriteTimeUtc.ToString('o'); readable=$true; markerCounts=$counts
+        tracebackFrames=@($frames | Select-Object -Last 16); winErrorCodes=@($winErrors | Select-Object -Unique)
+        listeningPorts=@($listeningPorts | Select-Object -Unique); createdUtc=$file.CreationTimeUtc.ToString('o')}
     } catch {
       $startupLogs += @{service=($pattern.Split('-')[0]); readable=$false}
     }
   }
+}
+$permitMetadata = [ordered]@{checked=$false}
+$runtimeRoot = 'C:\ProgramData\Acik\platform-ai'
+$envPath = Join-Path $runtimeRoot 'meeting-ai.env'
+if (Test-Path -LiteralPath $envPath -PathType Leaf) {
+  $publicBindings = @{}
+  foreach ($line in [IO.File]::ReadLines($envPath)) {
+    if ($line -match '^(MAI_READY_(?:ACTIVATION_RECEIPT_PATH|PRE_ENABLE_PERMIT_PATH|PERMIT_TRUST_ROOT_PATH|EXPECTED_(?:GITOPS_COMMIT|POLICY_SHA256|PRODUCER_IMAGE_DIGEST|PERMIT_TRUST_ROOT_SHA256))|MAI_APP_ENV)=(.*)$') {
+      $publicBindings[$Matches[1]] = $Matches[2]
+    }
+  }
+  try {
+    . 'C:\platform-ai\deploy\gpu-host\meeting-ai-runtime-env.ps1'
+    $servicePython = @($python | Where-Object task -eq 'platform-ai-meeting-ai')[0].path
+    $params = @{
+      PermitPath=$publicBindings['MAI_READY_PRE_ENABLE_PERMIT_PATH']
+      TrustRootPath=$publicBindings['MAI_READY_PERMIT_TRUST_ROOT_PATH']
+      ExpectedTrustRootSha256=$publicBindings['MAI_READY_EXPECTED_PERMIT_TRUST_ROOT_SHA256']
+      ExpectedGitopsCommit=$publicBindings['MAI_READY_EXPECTED_GITOPS_COMMIT']
+      ExpectedPolicySha256=$publicBindings['MAI_READY_EXPECTED_POLICY_SHA256']
+      ExpectedProducerImageDigest=$publicBindings['MAI_READY_EXPECTED_PRODUCER_IMAGE_DIGEST']
+      RepoRoot='C:\platform-ai'; StartupScriptPath='C:\platform-ai\deploy\gpu-host\start-meeting-ai.ps1'
+      PythonExe=$servicePython; AppEnv=$publicBindings['MAI_APP_ENV']
+    }
+    $null = Assert-TranscriptReadyPermitFile @params -SkipFreshness
+    Assert-TranscriptReadyActivationReceiptFile @params -ReceiptPath $publicBindings['MAI_READY_ACTIVATION_RECEIPT_PATH']
+    $permitMetadata = @{checked=$true; valid=$true}
+  } catch {
+    $knownReasons = @(
+      'Transcript-ready signed permit verification failed.',
+      'Transcript-ready pre-enable permit host binding does not match.',
+      'Transcript-ready activation receipt binding does not match.',
+      'Platform-ai repository identity could not be read.',
+      'Platform-ai repository worktree is not clean.',
+      'Platform-ai repository worktree contains untracked deployed content.'
+    )
+    $reason = if ($knownReasons -contains $_.Exception.Message) { $_.Exception.Message } else { 'validation-rejected' }
+    $permitMetadata = @{checked=$true; valid=$false; reason=$reason; errorClass=$_.Exception.GetType().Name}
+    if ($reason -eq 'Transcript-ready signed permit verification failed.') {
+      $verifyArgs = @('C:\platform-ai\deploy\gpu-host\verify-transcript-ready-permit.py',
+        '--envelope', $params.PermitPath, '--trust-root', $params.TrustRootPath,
+        '--expected-trust-root-sha256', $params.ExpectedTrustRootSha256,
+        '--app-env', $params.AppEnv, '--expected-gitops-commit', $params.ExpectedGitopsCommit,
+        '--expected-policy-sha256', $params.ExpectedPolicySha256,
+        '--expected-producer-image-digest', $params.ExpectedProducerImageDigest, '--skip-freshness')
+      $oldEap=$ErrorActionPreference
+      try {
+        $ErrorActionPreference='Continue'
+        $verifierLines=@(& $servicePython @verifyArgs 2>&1)
+        $permitMetadata.verifierExitCode=$LASTEXITCODE
+        $permitMetadata.verifierOutputCount=$verifierLines.Count
+        foreach ($entry in $verifierLines) {
+          if ([string]$entry -match 'permit verification rejected: ([A-Z0-9_]{3,80})(?:\s|$)') {
+            $permitMetadata.verifierReason=$Matches[1]
+          }
+          if ([string]$entry -match 'error: argument (--[a-z-]{1,60}):') {
+            $permitMetadata.verifierArgumentError=$Matches[1]
+          }
+          if ([string]$entry -match 'can.t open file') { $permitMetadata.verifierScriptMissing=$true }
+        }
+      } finally { $ErrorActionPreference=$oldEap }
+    }
+  }
+  $publicBindings.Clear()
 }
 $bindings = @()
 $config = [IO.File]::ReadAllText('C:\caddy\Caddyfile')
@@ -124,7 +221,9 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   certificates=$certs; keyFileNames=$keys; tasks=$tasks; listeners=$listeners
   tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
   caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
-  runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false}
+  runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false
+  startupPermitValidation=$permitMetadata}
+$result['netstatComparison']=$netstatMetadata
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
 

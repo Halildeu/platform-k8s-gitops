@@ -127,6 +127,49 @@ def accepted_evidence() -> dict:
 
 
 class RunnerContractTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "requires Windows PowerShell")
+    def test_windows_fenced_recovery_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "remote-source.ps1"
+            source.write_text(runner.build_remote_script(COMMIT, True), encoding="utf-8")
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                 "-File", str(ROOT / "tests/faz24/windows_gpu_fenced_recovery.ps1"),
+                 "-SourcePath", str(source)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS Windows recovery guard and updater switch", result.stdout)
+
+    def test_recovery_is_explicit_and_preserves_source_and_acceptance(self) -> None:
+        self.assertIn('$RecoverFencedRuntime = $false', runner.build_remote_script(COMMIT))
+        self.assertIn('$RecoverFencedRuntime = $true', runner.build_remote_script(COMMIT, True))
+        with self.assertRaises(ValueError):
+            runner.build_remote_script(COMMIT, 'true')
+        data = accepted_evidence()
+        data['fencedRuntimeRecovery'] = True
+        data['beforeCommit'] = COMMIT
+        data['taskMigration'] = {'required': False, 'pinWithoutRestartExitCode': -1,
+                                 'whatIfExitCode': -1, 'migrationExitCode': -1,
+                                 'sourceRollbackExitCode': -1}
+        for task in data['tasksBefore'].values():
+            task.update(state=1, actionCanonical=True, scriptPathClass='canonical-repo')
+        verifier.verify(data, COMMIT)
+        for path, bad in ((('beforeCommit',), 'a' * 40),
+                          (('taskMigration', 'required'), True),
+                          (('fencedRuntimeRecovery',), 'true'),
+                          (('tasks', 'liveStt', 'state'), 1),
+                          (('readiness', 'liveStt', 'status'), 'loading')):
+            broken = copy.deepcopy(data)
+            target = broken
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = bad
+            with self.subTest(path=path), self.assertRaises(verifier.EvidenceError):
+                verifier.verify(broken, COMMIT)
+        for task in data['tasksBefore'].values():
+            task['state'] = 4
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
     def test_streaming_readiness_contract_not_legacy_cuda(self) -> None:
         script = runner.build_remote_script(COMMIT)
         self.assertIn("http://127.0.0.1:8200/ready", script)

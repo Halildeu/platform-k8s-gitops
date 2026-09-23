@@ -1,5 +1,25 @@
 # Current State — Platform K8s Migration
 
+## TEST GPU runtime outage (2026-09-23, current)
+
+- The later [exact-source rollout 35837305448](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35837305448)
+  failed with `restart-failed-no-new-listener`. The updater restored source
+  `e386b996cae22f08294a83d840f0e92d4a82cd53`, but runtime rollback failed and
+  both GPU application tasks were fenced (disabled). Source restoration is
+  not service restoration. Earlier successful audio evidence below is historical.
+- [Read-only metadata 35845719638](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35845719638)
+  confirms the tasks remain disabled, with Caddy listeners on 8243/8244 and
+  no application listeners on 8200/8300. TLS remains valid; upstream health
+  returned HTTP502 in run 35839236986. TEST phone acceptance is paused.
+- Startup logs show Uvicorn did listen before a model-worker named-pipe
+  `WinError 2`; this may be a consequence of task termination and is not yet
+  established as the initial cause. Meeting AI rejects its signed startup
+  permit. PR3811 prepares explicit same-source fenced recovery with unchanged
+  runtime acceptance, while the exact startup failures are investigated.
+- AI PR349 and backend PR1184 are source/build candidates, not deployed live
+  acceptance. GitOps PR3803 remains draft; the new Android APK is built but
+  no new physical-phone live decision/action acceptance is claimed.
+
 ## Mobile live-analysis TEST rollout (2026-09-23)
 
 - Tracked by platform-mobile#8 and GitOps#3440; decisions/actions are required
