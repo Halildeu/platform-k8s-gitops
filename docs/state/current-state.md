@@ -2,12 +2,34 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- [Corrected-source promotion 35858606120](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858606120)
+  accepted AI source `38ef0f3648c8e092599c0578764a4f2f075dd0a1` through the
+  unchanged full runtime verifier. The exact retained event reached OUTBOXED
+  with zero failures after the audited replay; enabled consumer/worker/group
+  readiness was verified. No row was deleted. This supersedes the historical
+  source/health failures below. Phone and live-latency acceptance remain open;
+  [HTTP incremental probe 35859197577](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35859197577)
+  verified exact decisions/actions/owners/dates, cancellation and reassignment
+  in all five updates against the deployed source. Latency failed in all five:
+  20.124/42.059/24.088/23.373/23.666 seconds. Content correctness is established
+  for this fixture; live performance and physical-phone acceptance are not.
+- [Installed-model measurement 35858050978](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858050978)
+  found 8,188 MiB physical GPU memory. Qwen2.5 7B took 41.266/26.047/4.781/5.297/5.656
+  seconds over five incremental updates; all five failed the combined exact
+  claim/owner/date contract. Question and historical-decision negative cases
+  also failed. Llama3.1 8B timed out at 61.093 seconds. Neither candidate was
+  selected or deployed. The smaller Qwen3.5 4B alternative is being qualified
+  separately; registry manifest and model identity are pinned before download,
+  and no service setting changes follow automatically from that experiment.
+
+### Historical recovery evidence (superseded by the accepted promotion above)
+
 - [Shape diagnosis 35856254859](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35856254859)
   confirms zero selectable sentences and the JSON-only fallback for the retained
   15-character event. [AI PR350](https://github.com/Halildeu/platform-ai/pull/350)
   merged at `38ef0f3648c8e092599c0578764a4f2f075dd0a1`: final analysis now skips
   model inference only when the unchanged grounding predicate permits no claim.
-  Source is not yet deployed. The corrected-source recovery checks the exact
+  At diagnosis time source was not yet deployed. The corrected-source recovery checks the exact
   retained payload and zero-evidence condition before staging, then verifies the
   fixed service returns an empty grounded result without any model call before
   one audited replay of redrive count one. The row must reach OUTBOXED and full
@@ -48,7 +70,7 @@
   poison/terminal/conflict state rejects before mutation. Recovery is not yet
   verified; the live source promotion preflight still requires healthy baseline.
 
-- Latest truth: [permit renewal and recovery 35849573879](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35849573879)
+- Earlier [permit renewal and recovery 35849573879](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35849573879)
   installed a fresh same-key TEST trust root and signed activation permit.
   Full runtime acceptance still failed (`smoke-failed`); the updater accepted
   its same-source rollback. [Read-only follow-up 35850259184](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35850259184)
@@ -72,8 +94,8 @@
   meeting-AI blocker. PR3811 is merged. TEST-only recovery now prepares a
   same-pinned-key trust-root renewal and fresh pre-enable permit, followed by
   full runtime acceptance. No successful restoration is claimed yet.
-- AI PR349 and backend PR1184 are source/build candidates, not deployed live
-  acceptance. GitOps PR3803 remains draft; the new Android APK is built but
+- AI PR349 is included in the accepted AI PR350 runtime source above. Backend
+  PR1184 is still a build candidate, with GitOps PR3803 draft; the new Android APK is built but
   no new physical-phone live decision/action acceptance is claimed.
 
 ## Mobile live-analysis TEST rollout (2026-09-23)
