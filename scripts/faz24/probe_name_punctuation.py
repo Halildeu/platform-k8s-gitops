@@ -15,6 +15,8 @@ from pathlib import Path
 
 FIXTURE = Path(__file__).parent / 'fixtures/name-punctuation-tr-v1/audio.wav'
 FIXTURE_SHA = '7d46bed52c4dc8773da74423fbe0aa37586e6ea77fe436f08a5fd707da7435ca'
+LONG_FIXTURE = Path(__file__).parent / 'fixtures/name-punctuation-tr-long-pauses-v1/audio.wav'
+LONG_FIXTURE_SHA = 'edec20595373433ccb5e2df5f7682ee6ade9d9db2198e21b330891a358959d84'
 ENDPOINT = 'wss://eu2.rt.speechmatics.com/v2/tr'
 
 
@@ -35,8 +37,8 @@ def metrics(text):
     }
 
 
-def fixture_pcm(path=FIXTURE):
-    if hashlib.sha256(path.read_bytes()).hexdigest() != FIXTURE_SHA:
+def fixture_pcm(path=FIXTURE, expected_sha=FIXTURE_SHA):
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
         raise ValueError('fixture-identity')
     with wave.open(str(path), 'rb') as wav:
         if (wav.getnchannels(), wav.getframerate(), wav.getsampwidth()) != (1, 16000, 2):
@@ -103,6 +105,7 @@ async def measure(key, pcm, sensitivity, delay):
 
 async def main():
     pcm = fixture_pcm()
+    long_pcm = fixture_pcm(LONG_FIXTURE, LONG_FIXTURE_SHA)
     # Read only this already-authorized TEST secret; never shell-expand or print it.
     result = subprocess.run(['kubectl', '--context', 'k3d-test', '-n', 'platform-test',
         'get', 'secret', 'audio-gateway-speechmatics', '-o', 'jsonpath={.data.api-key}'],
@@ -112,16 +115,18 @@ async def main():
     key = base64.b64decode(result.stdout, validate=True).decode().strip()
     if not key or '\n' in key or '\r' in key:
         raise ValueError('test-key-invalid')
-    rows = []
-    for sensitivity, delay in ((.5, 1.), (.25, 1.), (.1, 1.), (.5, 2.), (.25, 2.)):
-        try:
-            rows.append(await measure(key, pcm, sensitivity, delay))
-        except Exception as error:
-            rows.append({'sensitivity': sensitivity, 'maxDelay': delay, 'errorClass': type(error).__name__})
+    rows, long_rows = [], []
+    for audio, results in ((pcm, rows), (long_pcm, long_rows)):
+        for sensitivity, delay in ((.5, 1.), (.25, 1.), (.1, 1.), (.0, 1.), (.5, 2.), (.25, 2.)):
+            try:
+                results.append(await measure(key, audio, sensitivity, delay))
+            except Exception as error:
+                results.append({'sensitivity': sensitivity, 'maxDelay': delay, 'errorClass': type(error).__name__})
     print(json.dumps({'schema': 'faz24.namePunctuationProbe.v1', 'fixtureSha256': FIXTURE_SHA,
         'durationSeconds': len(pcm) / 32000, 'deploymentChanged': False, 'phoneAccepted': False,
-        'results': rows}, indent=2))
-    if any('errorClass' in row for row in rows):
+        'results': rows, 'longPauseFixtureSha256': LONG_FIXTURE_SHA,
+        'longPauseDurationSeconds': len(long_pcm) / 32000, 'longPauseResults': long_rows}, indent=2))
+    if any('errorClass' in row for row in rows + long_rows):
         raise RuntimeError('probe-incomplete')
 
 
