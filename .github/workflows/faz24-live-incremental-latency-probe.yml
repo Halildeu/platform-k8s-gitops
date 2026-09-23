@@ -1,0 +1,27 @@
+name: Faz 24 TEST live incremental latency probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: faz24-live-incremental-latency-probe
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, aiserver, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v6
+      - name: Probe five synthetic live updates through verified TEST mTLS
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/live_incremental_latency_probe.py | tee live-probe.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-live-incremental-latency-${{ github.run_id }}
+          path: live-probe.json
+          if-no-files-found: error
+          retention-days: 7
