@@ -562,7 +562,10 @@ def main() -> None:
         # backend#1183 / sha-0ae51f5: timed live-analysis flush and SSE viewer
         # lifetime; finalization, consent, STT and persistence are unchanged.
         # Attested build 35740822541; the runtime acceptance remains separate.
-        "sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307",
+        # backend#1184 / sha-80c08d0 preserves those finalization contracts and
+        # adds opt-in sentence cadence plus meeting-local live context hints.
+        # Exact gateway build job 107106048811, attestation 49469570.
+        "sha256:3c7a653479b4b8bbce27190e339b0636a38ab493291c6f617fd2274a2711d81d",
     )
     pod_annotation(
         meeting_deploy,
