@@ -5,7 +5,7 @@ from pathlib import Path
 
 import recover_test_ready_permit as ceremony
 
-SOURCE_COMMIT = '38ef0f3648c8e092599c0578764a4f2f075dd0a1'
+SOURCE_COMMIT = '13aa7b8303d7e0f85bef94a56b1e5d164d1884ed'
 PROFILES = [
     ('qwen3.5:4b', '2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd'),
 ]

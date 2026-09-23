@@ -17,12 +17,11 @@ import subprocess
 import tempfile
 
 import recover_test_ready_permit as ceremony
-import recover_test_ready_dead_letter as recovery
 from run_gpu_host_exact_sha_rollout import main as rollout
 from verify_gpu_host_exact_sha_rollout_evidence import verify
 
-BASE = ceremony.SOURCE
-TARGET = recovery.CORRECTED_SOURCE
+BASE = '38ef0f3648c8e092599c0578764a4f2f075dd0a1'
+TARGET = '13aa7b8303d7e0f85bef94a56b1e5d164d1884ed'
 ROOT_SHA = '44ac2425ded67086cfc20871e7b777b04a9fb98999f46a66220e8cf11f0a7cb7'
 STARTUP_SHA = 'd6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e'
 
@@ -30,7 +29,7 @@ STARTUP_SHA = 'd6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e'
 def header(source):
     if source not in (BASE, TARGET):
         raise ValueError('unapproved-source')
-    return ceremony.HEADER.replace(BASE, source)
+    return ceremony.HEADER.replace(ceremony.SOURCE, source)
 
 
 PREFLIGHT = header(BASE) + r'''
@@ -43,11 +42,7 @@ $meeting=Invoke-RestMethod 'http://127.0.0.1:8300/ready' -TimeoutSec 15
 if ($live.status -cne 'ready' -or $live.runtime_commit -cne $head -or !$live.workers_healthy -or
     !$meeting.ready_consumer.enabled -or !$meeting.ready_consumer.ready -or
     !$meeting.analysis_delivery.ready -or $meeting.analysis_delivery.status -cne 'ok' -or
-    $meeting.status -cnotin @('ok','degraded')) { throw 'baseline-dependencies-not-ready' }
-$repairRequired=$meeting.status -ceq 'degraded'
-if ($repairRequired -and ($meeting.ready_consumer.dead_letter -ne 1 -or
-    $meeting.ready_consumer.received -ne 0 -or $meeting.ready_consumer.processing -ne 0 -or
-    $meeting.ready_consumer.error_code)) { throw 'unreviewed-baseline-degradation' }
+    $meeting.status -cne 'ok') { throw 'baseline-dependencies-not-ready' }
 $path=Assert-MeetingAiRuntimePath -Path $values['MAI_READY_PERMIT_TRUST_ROOT_PATH'] -Purpose 'Pinned public root'
 Assert-MeetingAiAcl -Path $path
 $sha=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -56,7 +51,7 @@ if ($sha -cne '__ROOT_SHA__' -or $sha -cne $values['MAI_READY_EXPECTED_PERMIT_TR
 }
 $bytes=[IO.File]::ReadAllBytes($path)
 if ($bytes.Length -gt 65536) { throw 'public-root-too-large' }
-Emit @{source=$head; trustRootBase64=[Convert]::ToBase64String($bytes); trustRootSha256=$sha; repairRequired=$repairRequired}
+Emit @{source=$head; trustRootBase64=[Convert]::ToBase64String($bytes); trustRootSha256=$sha}
 '''.replace('__ROOT_SHA__', ROOT_SHA)
 
 # Use the tested atomic flag-only staging operation, but stop both running tasks
@@ -146,39 +141,6 @@ try {
 
 START_DISABLED = ceremony.STAGE[ceremony.STAGE.index("Enable-ScheduledTask -TaskName 'platform-ai-meeting-ai'"):]
 
-# A fresh exact-source activation is required before this repair-only startup.
-# The strict updater/verifier still runs after the reviewed event is OUTBOXED.
-START_FOR_REPAIR = r'''
-if ($values['MAI_READY_CONSUMER_ENABLED'] -cne 'true') { throw 'repair-consumer-not-enabled' }
-Enable-ScheduledTask -TaskName 'platform-ai-meeting-ai' | Out-Null
-Start-ScheduledTask -TaskName 'platform-ai-meeting-ai'
-$deadline=[DateTime]::UtcNow.AddSeconds(100)
-$ready=$false
-while ([DateTime]::UtcNow -lt $deadline) {
-  try {
-    $health=Invoke-RestMethod 'http://127.0.0.1:8300/ready' -TimeoutSec 10
-    if ($health.ready_consumer.enabled -and $health.ready_consumer.ready -and $health.analysis_delivery.ready) {
-      $ready=$true; break
-    }
-  } catch {}
-  Start-Sleep -Seconds 2
-}
-if (!$ready) { throw 'repair-consumer-startup-failed' }
-Emit @{phase='repair-only-started'; source=$head; acceptance=$false}
-'''
-
-FINISH_REPAIR = r'''
-$health=Invoke-RestMethod 'http://127.0.0.1:8300/ready' -TimeoutSec 15
-if ($health.status -cne 'ok' -or !$health.ready_consumer.ready -or
-    $health.ready_consumer.dead_letter -ne 0 -or !$health.analysis_delivery.ready) {
-  throw 'repair-did-not-restore-health'
-}
-Stop-ScheduledTask -TaskName 'platform-ai-meeting-ai'
-Disable-ScheduledTask -TaskName 'platform-ai-meeting-ai' | Out-Null
-Emit @{phase='reviewed-repair-verified'; acceptance=$false}
-'''
-
-
 def activate(source, root, work, commit, policy_bytes, producer):
     ceremony.remote(header(source) + START_DISABLED)
     permit = work / f'{source}.permit.json'
@@ -186,7 +148,7 @@ def activate(source, root, work, commit, policy_bytes, producer):
     data = permit.read_bytes()
     if len(data) > 1048576:
         raise ValueError('permit-too-large')
-    script = ceremony.ACTIVATE.replace(BASE, source)
+    script = ceremony.ACTIVATE.replace(ceremony.SOURCE, source)
     substitutions = {'__PERMIT__': base64.b64encode(data).decode(),
                      '__ROOT__': base64.b64encode(root.read_bytes()).decode(),
                      '__GITOPS__': commit, '__POLICY__': hashlib.sha256(policy_bytes).hexdigest(),
@@ -204,7 +166,7 @@ def accept(source, output):
     if result:
         raise RuntimeError('full-runtime-rejected')
     verify(json.loads(output.read_text()), source)
-    ready = ceremony.remote(ceremony.READY.replace(BASE, source))
+    ready = ceremony.remote(ceremony.READY.replace(ceremony.SOURCE, source))
     if not all(ready.get(k) is True for k in ('consumerEnabled','workerRunning','redisGroupReady')):
         raise RuntimeError('enabled-consumer-not-ready')
     return ready
@@ -235,9 +197,6 @@ def perform(*, apply, output):
                        and g['permitRequired'] is True for g in policy['hostStartupGuards']):
                 raise ValueError('source-not-allowlisted')
         public = ceremony.remote(PREFLIGHT)
-        repair_required = public.get('repairRequired') is True
-        if repair_required:
-            report['repairPreflight'] = recovery.corrected_source_recovery(BASE, apply=False)
         root_raw = base64.b64decode(public['trustRootBase64'],validate=True)
         if hashlib.sha256(root_raw).hexdigest() != ROOT_SHA:
             raise ValueError('independent-root-pin-mismatch')
@@ -259,10 +218,6 @@ def perform(*, apply, output):
                 ceremony.remote(PIN.replace('__TARGET__',TARGET),timeout=300)
                 phase_source=TARGET
                 report['activation']=activate(TARGET,root,work,commit,policy_bytes,producer)
-                if repair_required:
-                    ceremony.remote(header(TARGET)+START_FOR_REPAIR)
-                    report['reviewedRecovery'] = recovery.corrected_source_recovery(TARGET, apply=True)
-                    ceremony.remote(header(TARGET)+FINISH_REPAIR)
                 report['consumer']=accept(TARGET,output.parent/'candidate-runtime.json')
                 report['runtimeAccepted']=True
                 report['status']='runtime-accepted-live-latency-required'

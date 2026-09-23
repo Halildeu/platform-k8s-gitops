@@ -16,14 +16,16 @@ import promote_test_live_analysis as promotion
 
 class PromotionTest(unittest.TestCase):
     def run_flow(self, *, apply=True, activation_error=None, rollback_error=None,
-                 pin_timeout=False, bad_root=False, repair=False, repair_error=None):
+                 pin_timeout=False, bad_root=False, preflight_error=None):
         root=b'public-root-fixture'
         calls=[]
 
         def remote(script, **kwargs):
             calls.append(script)
             if script == promotion.PREFLIGHT:
-                return {'trustRootBase64':base64.b64encode(root).decode(),'repairRequired':repair}
+                if preflight_error:
+                    raise preflight_error
+                return {'trustRootBase64':base64.b64encode(root).decode()}
             if script == promotion.PIN.replace('__TARGET__',promotion.TARGET) and pin_timeout:
                 raise subprocess.TimeoutExpired('ssh',300)
             if 'source-read-failed' in script:
@@ -38,14 +40,11 @@ class PromotionTest(unittest.TestCase):
             stack.enter_context(patch.object(promotion.ceremony,'command',return_value='c'*40))
             stack.enter_context(patch.object(promotion.ceremony,'load_strict_json',return_value=(b'policy',policy)))
             stack.enter_context(patch.object(promotion.ceremony,'remote',side_effect=remote))
-            repair_call=stack.enter_context(patch.object(promotion.recovery,'corrected_source_recovery',
-                side_effect=repair_error,return_value={'status':'processed'}))
             activate=stack.enter_context(patch.object(promotion,'activate',side_effect=
                 [activation_error, {'phase':'baseline-permit'}] if activation_error else None,return_value={'phase':'permit'}))
             accept=stack.enter_context(patch.object(promotion,'accept',side_effect=rollback_error,
                                                   return_value={'consumerEnabled':True}))
             report=promotion.perform(apply=apply,output=Path(temp)/'promotion.json')
-            report['_repair_calls_for_test']=[(c.args[0],c.kwargs['apply']) for c in repair_call.call_args_list]
             return report,calls,activate,accept
 
     def test_preflight_is_read_only_and_not_acceptance(self):
@@ -96,17 +95,18 @@ class PromotionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'unapproved-source'):
             promotion.header('a'*40)
 
-    def test_reviewed_repair_precedes_full_acceptance(self):
-        report,calls,activate,accept=self.run_flow(repair=True)
-        self.assertEqual(report['_repair_calls_for_test'],[(promotion.BASE,False),(promotion.TARGET,True)])
-        self.assertIn(promotion.header(promotion.TARGET)+promotion.START_FOR_REPAIR,calls)
-        self.assertEqual(calls[-1],promotion.header(promotion.TARGET)+promotion.FINISH_REPAIR)
-        accept.assert_called_once()
-        self.assertTrue(report['runtimeAccepted'])
+    def test_preflight_requires_healthy_delivery_and_consumer(self):
+        self.assertIn("$meeting.status -cne 'ok'", promotion.PREFLIGHT)
+        self.assertIn("$meeting.analysis_delivery.status -cne 'ok'", promotion.PREFLIGHT)
+        self.assertIn('!$meeting.ready_consumer.ready', promotion.PREFLIGHT)
+        self.assertIn('!$meeting.analysis_delivery.ready', promotion.PREFLIGHT)
+        self.assertNotIn('degraded', promotion.PREFLIGHT)
 
-    def test_changed_reviewed_event_rejects_before_source_mutation(self):
-        report,calls,activate,accept=self.run_flow(repair=True,repair_error=ValueError('source-changed'))
+    def test_unhealthy_baseline_rejects_before_source_mutation(self):
+        report,calls,activate,accept=self.run_flow(
+            preflight_error=RuntimeError('baseline-dependencies-not-ready'))
         self.assertEqual(calls,[promotion.PREFLIGHT])
+        self.assertEqual(report['failure']['reason'],'baseline-dependencies-not-ready')
         self.assertFalse(report['runtimeAccepted'])
         activate.assert_not_called()
         accept.assert_not_called()
@@ -137,9 +137,7 @@ class PromotionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             for i,source in enumerate((promotion.PREFLIGHT,promotion.header(promotion.BASE)+promotion.STOP_AND_STAGE,
                                         promotion.PIN.replace('__TARGET__',promotion.TARGET),
-                                        promotion.header(promotion.TARGET)+promotion.START_DISABLED,
-                                        promotion.header(promotion.TARGET)+promotion.START_FOR_REPAIR,
-                                        promotion.header(promotion.TARGET)+promotion.FINISH_REPAIR)):
+                                        promotion.header(promotion.TARGET)+promotion.START_DISABLED)):
                 path=Path(temp)/f'{i}.ps1'
                 path.write_text(source,encoding='utf-8')
                 command="$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseFile('"+str(path)+"',[ref]$t,[ref]$e);if($e){$e;exit 1}"

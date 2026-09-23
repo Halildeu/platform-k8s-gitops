@@ -2,6 +2,35 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- Same-TEST latency scope correction: the user confirmed web/Electron was on
+  `testai.acik.com`. The 20–42 second figure below is synthetic gateway-pod → AI
+  HTTP, not microphone-to-screen or a paired web/mobile comparison.
+  [35865035102](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35865035102)
+  preserved five correct HTTP updates: totals 38.987/26.004/22.258/21.388/20.054s,
+  with service-reported time 38.790/25.819/22.063/21.208/19.877s. This isolates
+  most of this run's delay inside analysis; it does not establish that hardware
+  is the only cause. Its isolated profiler phase failed. Launcher corrections
+  are in PR3827/3828.
+- [Stage breakdown 35865922983](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35865922983)
+  found avoidable per-request transport costs. Existing clients took
+  34.765/38.938/21.906/21.078/21.391s; one shared client took
+  11.750/16.469/13.047/12.312/12.469s. All eleven content checks passed,
+  including the repeated original-client first case (18.688s). That repeat's
+  provider total was 9.800s versus 9.672s for shared-client case one, showing
+  8.888s non-provider overhead in the original path. Each fresh identity
+  transport took about 2.05s; reused identity transports took about 5ms.
+  Load time was below 31ms in these isolated calls; provider generation alone
+  was still 7.1–13.9s. The first original call also had provider time beyond
+  load/prompt/eval; no exclusive hardware or queue cause is inferred.
+  This is sequential synthetic evidence, not paired physical-client latency.
+  [AI PR353](https://github.com/Halildeu/platform-ai/pull/353) implements an
+  app-owned connection pool with both digest checks retained. It is not yet
+  deployed. The five-second target remains unmet; no latency gate is relaxed.
+- [AI PR352](https://github.com/Halildeu/platform-ai/pull/352) merged as
+  `ab954fb2079b645bf16bcaacd36cb319e3f92cf9`: synchronous model inventory I/O
+  now runs off the API event loop, once per readiness request. All 488 unit
+  tests and four CI checks passed. This source is not yet deployed; its
+  measured latency effect and physical-phone acceptance remain unverified.
 - [Corrected-source promotion 35858606120](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35858606120)
   accepted AI source `38ef0f3648c8e092599c0578764a4f2f075dd0a1` through the
   unchanged full runtime verifier. The exact retained event reached OUTBOXED
@@ -18,9 +47,18 @@
   seconds over five incremental updates; all five failed the combined exact
   claim/owner/date contract. Question and historical-decision negative cases
   also failed. Llama3.1 8B timed out at 61.093 seconds. Neither candidate was
-  selected or deployed. The smaller Qwen3.5 4B alternative is being qualified
-  separately; registry manifest and model identity are pinned before download,
-  and no service setting changes follow automatically from that experiment.
+  selected or deployed.
+- [Qwen3.5 4B measurement 35860239203](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35860239203)
+  also failed qualification. At 4096 context / think:false the first two updates
+  were correct but took 23.828/19.500 seconds. Cancellation/reassignment and
+  retained-state updates failed content checks (5.250/4.328/4.344 seconds);
+  the historical-decision negative case failed too. The candidate was released
+  and no service model setting changed. Workflow success only means measurement
+  completed. Runtime stays on the correct but slower 27B profile. No gateway
+  cadence promotion, new phone acceptance or issue closure follows from these
+  results. At the user's request, the resource question is deferred to a later
+  email; no new request was sent to Halil/IT. No hardware purchase or external
+  transcript transfer is authorized by this note.
 
 ### Historical recovery evidence (superseded by the accepted promotion above)
 
