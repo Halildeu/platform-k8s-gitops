@@ -93,6 +93,7 @@ $markers = [ordered]@{
   parameterError='ParameterBindingException'
   legacyConfigRejected='env.local.ps1'
   modelManifestRejected='model manifest'
+  pinnedModelMissing='pinned streaming model directory'
 }
 foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
   $files = @(Get-ChildItem -LiteralPath $logRoot -Filter $pattern -File -ErrorAction SilentlyContinue |
@@ -105,12 +106,61 @@ foreach ($pattern in @('live-stt-*.log', 'meeting-ai-*.log')) {
       foreach ($entry in $markers.GetEnumerator()) {
         $counts[$entry.Key] = @($lines | Where-Object { $_.Contains($entry.Value) }).Count
       }
+      $frames = @()
+      $winErrors = @()
+      foreach ($line in $lines) {
+        if ($line -match '^\s*File "[^"]+[\\/]([A-Za-z_][A-Za-z0-9_]{0,80}\.py)", line ([0-9]{1,6}), in ([A-Za-z_][A-Za-z0-9_]{0,80})\s*$') {
+          $frames += @{module=$Matches[1]; line=[int]$Matches[2]; function=$Matches[3]}
+        }
+        if ($line -match '\[WinError ([0-9]{1,8})\]') { $winErrors += [int]$Matches[1] }
+      }
       $startupLogs += [ordered]@{service=($pattern.Split('-')[0]); bytes=$file.Length
-        modifiedUtc=$file.LastWriteTimeUtc.ToString('o'); readable=$true; markerCounts=$counts}
+        modifiedUtc=$file.LastWriteTimeUtc.ToString('o'); readable=$true; markerCounts=$counts
+        tracebackFrames=@($frames | Select-Object -Last 16); winErrorCodes=@($winErrors | Select-Object -Unique)}
     } catch {
       $startupLogs += @{service=($pattern.Split('-')[0]); readable=$false}
     }
   }
+}
+$permitMetadata = [ordered]@{checked=$false}
+$runtimeRoot = 'C:\ProgramData\Acik\platform-ai'
+$envPath = Join-Path $runtimeRoot 'meeting-ai.env'
+if (Test-Path -LiteralPath $envPath -PathType Leaf) {
+  $publicBindings = @{}
+  foreach ($line in [IO.File]::ReadLines($envPath)) {
+    if ($line -match '^(MAI_READY_(?:ACTIVATION_RECEIPT_PATH|PRE_ENABLE_PERMIT_PATH|PERMIT_TRUST_ROOT_PATH|EXPECTED_(?:GITOPS_COMMIT|POLICY_SHA256|PRODUCER_IMAGE_DIGEST|PERMIT_TRUST_ROOT_SHA256))|MAI_APP_ENV)=(.*)$') {
+      $publicBindings[$Matches[1]] = $Matches[2]
+    }
+  }
+  try {
+    . 'C:\platform-ai\deploy\gpu-host\meeting-ai-runtime-env.ps1'
+    $servicePython = @($python | Where-Object task -eq 'platform-ai-meeting-ai')[0].path
+    $params = @{
+      PermitPath=$publicBindings['MAI_READY_PRE_ENABLE_PERMIT_PATH']
+      TrustRootPath=$publicBindings['MAI_READY_PERMIT_TRUST_ROOT_PATH']
+      ExpectedTrustRootSha256=$publicBindings['MAI_READY_EXPECTED_PERMIT_TRUST_ROOT_SHA256']
+      ExpectedGitopsCommit=$publicBindings['MAI_READY_EXPECTED_GITOPS_COMMIT']
+      ExpectedPolicySha256=$publicBindings['MAI_READY_EXPECTED_POLICY_SHA256']
+      ExpectedProducerImageDigest=$publicBindings['MAI_READY_EXPECTED_PRODUCER_IMAGE_DIGEST']
+      RepoRoot='C:\platform-ai'; StartupScriptPath='C:\platform-ai\deploy\gpu-host\start-meeting-ai.ps1'
+      PythonExe=$servicePython; AppEnv=$publicBindings['MAI_APP_ENV']
+    }
+    $null = Assert-TranscriptReadyPermitFile @params -SkipFreshness
+    Assert-TranscriptReadyActivationReceiptFile @params -ReceiptPath $publicBindings['MAI_READY_ACTIVATION_RECEIPT_PATH']
+    $permitMetadata = @{checked=$true; valid=$true}
+  } catch {
+    $knownReasons = @(
+      'Transcript-ready signed permit verification failed.',
+      'Transcript-ready pre-enable permit host binding does not match.',
+      'Transcript-ready activation receipt binding does not match.',
+      'Platform-ai repository identity could not be read.',
+      'Platform-ai repository worktree is not clean.',
+      'Platform-ai repository worktree contains untracked deployed content.'
+    )
+    $reason = if ($knownReasons -contains $_.Exception.Message) { $_.Exception.Message } else { 'validation-rejected' }
+    $permitMetadata = @{checked=$true; valid=$false; reason=$reason; errorClass=$_.Exception.GetType().Name}
+  }
+  $publicBindings.Clear()
 }
 $bindings = @()
 $config = [IO.File]::ReadAllText('C:\caddy\Caddyfile')
@@ -124,7 +174,8 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   certificates=$certs; keyFileNames=$keys; tasks=$tasks; listeners=$listeners
   tlsBindings=$bindings; opensslAvailable=[bool]$openssl; toolFiles=$tools; pythonExecutables=$python
   caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
-  runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false}
+  runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false
+  startupPermitValidation=$permitMetadata}
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
 
