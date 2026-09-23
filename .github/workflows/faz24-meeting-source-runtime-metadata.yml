@@ -1,6 +1,12 @@
 name: Faz 24 Meeting source read-only runtime metadata
 on:
   workflow_dispatch:
+    inputs:
+      live_analysis:
+        description: 'Read aggregate live-analysis counters and allowlisted recent error metadata'
+        type: boolean
+        required: true
+        default: false
 permissions:
   contents: read
 jobs:
@@ -10,7 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Read bounded TEST metadata only
-        run: python3 scripts/faz24/meeting_source_runtime_metadata.py
+        env:
+          LIVE_ANALYSIS: ${{ inputs.live_analysis && 'true' || 'false' }}
+        run: |
+          args=()
+          if [ "$LIVE_ANALYSIS" = true ]; then args+=(--live-analysis); fi
+          python3 scripts/faz24/meeting_source_runtime_metadata.py "${args[@]}"
       - name: Verify changed meeting-service stability
         run: >-
           bash scripts/deploy/gate-stability-window.sh

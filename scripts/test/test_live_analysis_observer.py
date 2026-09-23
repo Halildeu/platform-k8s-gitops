@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "faz24"))
 from live_analysis_observer import AnalysisObserver, snapshot_counts
+from meeting_source_runtime_metadata import parse_live_diagnostics
 from run_speechmatics_realtime_lifecycle_acceptance import stream_audio
 
 SNAPSHOT = {
@@ -33,6 +34,19 @@ def frame(value=SNAPSHOT):
 
 
 class ParserTests(unittest.TestCase):
+    def test_server_diagnostics_export_only_allowlisted_fields(self):
+        result = parse_live_diagnostics(
+            'audio_gw_live_analyze_publish_error_total{ignored="private"} 2.0\n'
+            'unrelated_secret_metric 42\n',
+            'private transcript / bearer should not appear\n'
+            'WARN live-analyze trigger failed err_class=TimeoutException http_status=0 '
+            'meeting_id=00000000-0000-0000-0000-000000000000 seq=5 elapsed_ms=120000\n',
+        )
+        self.assertEqual(result["counters"], {"audio_gw_live_analyze_publish_error_total": 2.0})
+        self.assertEqual(result["recentErrors"][0]["errorClass"], "TimeoutException")
+        self.assertNotIn("private", json.dumps(result))
+        self.assertNotIn("bearer", json.dumps(result))
+
     def test_helper_can_be_loaded_by_other_tools_without_sys_path_change(self):
         helper = Path(__file__).resolve().parents[1] / "faz24/run_speechmatics_realtime_lifecycle_acceptance.py"
         result = subprocess.run([sys.executable, "-I", "-c",
