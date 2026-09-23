@@ -217,7 +217,9 @@ jobs:
           EXPECTED_AUDIO_GATEWAY_IMAGE: ${{ inputs.expected_audio_gateway_image }}
           REALTIME_PYTHON: python3
           REALTIME_HELPER: ${{ github.workspace }}/scripts/faz24/run_speechmatics_realtime_lifecycle_acceptance.py
-          REALTIME_AUDIO_FILE: ${{ github.workspace }}/scripts/faz24/fixtures/speechmatics-realtime-tr-v1.wav
+          # The live product gate needs explicit decisions, not only STT keywords.
+          # Both recordings are immutable, hash-pinned synthetic fixtures.
+          REALTIME_AUDIO_FILE: ${{ github.workspace }}/scripts/faz24/fixtures/${{ inputs.require_live_analysis && 'meeting-speaker-tr-v1/two-speaker-tr.wav' || 'speechmatics-realtime-tr-v1.wav' }}
           REALTIME_DURABLE_TIMEOUT_SECONDS: "720"
           REALTIME_LIVE_ANALYSIS_WAIT_SECONDS: ${{ inputs.require_live_analysis && '150' || '0' }}
           # The platform-desktop client owns these five direct claims. This

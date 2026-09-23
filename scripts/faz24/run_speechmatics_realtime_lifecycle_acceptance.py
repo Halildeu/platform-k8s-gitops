@@ -44,10 +44,38 @@ SESSION_ID_RE = re.compile(r"^SES-[A-Za-z0-9_-]{4,120}$")
 EXPECTED_FIXTURE_SHA256 = (
     "a759fd250937a70c4a780c8e6118f0bd5f4ff5f68b40f5d007bbae5bdc08775f"
 )
+DECISION_FIXTURE_SHA256 = (
+    "702c3a94e34ca09915237e3fabf11a037602514bb93cec13555ecd3ab7fe2676"
+)
+DECISION_REFERENCE_SHA256 = (
+    "8b1c2807dbccdef85f9c6f44c16e48c88fca8e5abba054c32af521627bf02204"
+)
 
 
 class AcceptanceError(RuntimeError):
     """Bounded acceptance failure that is safe to persist in metadata evidence."""
+
+
+def validate_audio_fixture(audio_path: Path) -> dict[str, str]:
+    digest = hashlib.sha256(audio_path.read_bytes()).hexdigest()
+    if digest == EXPECTED_FIXTURE_SHA256:
+        return {"fixture": "speechmatics-realtime-tr-v1", "fixtureSha256": digest}
+    if digest != DECISION_FIXTURE_SHA256:
+        raise AcceptanceError("audio-fixture-sha256-mismatch")
+    reference = audio_path.with_name("reference.json")
+    if not reference.is_file():
+        raise AcceptanceError("decision-fixture-reference-missing")
+    # Git's Windows CRLF checkout must not change the pinned reference identity.
+    reference_digest = hashlib.sha256(
+        reference.read_bytes().replace(b"\r\n", b"\n")
+    ).hexdigest()
+    if reference_digest != DECISION_REFERENCE_SHA256:
+        raise AcceptanceError("decision-fixture-reference-sha256-mismatch")
+    return {
+        "fixture": "meeting-speaker-tr-v1",
+        "fixtureSha256": digest,
+        "referenceSha256": reference_digest,
+    }
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -269,8 +297,7 @@ async def stream_audio(
 ) -> dict[str, Any]:
     import websockets
 
-    if hashlib.sha256(audio_path.read_bytes()).hexdigest() != EXPECTED_FIXTURE_SHA256:
-        raise AcceptanceError("audio-fixture-sha256-mismatch")
+    fixture_metadata = validate_audio_fixture(audio_path)
     with wave.open(str(audio_path), "rb") as wav:
         if (wav.getnchannels(), wav.getframerate(), wav.getsampwidth()) != (
             1,
@@ -281,6 +308,7 @@ async def stream_audio(
         pcm = wav.readframes(wav.getnframes())
 
     metrics: dict[str, Any] = {
+        **fixture_metadata,
         "ready": False,
         "providerReady": False,
         "audioFrames": 0,
@@ -470,7 +498,7 @@ def finish_lifecycle(
 
 
 def product_evidence(result: dict[str, Any]) -> dict[str, Any]:
-    """Strict requirements for this fixed decision/action-bearing audio fixture."""
+    """Product gate stays strict; transport or one action alone is insufficient."""
     summary = result.get("summary")
     decisions = result.get("decisions")
     actions = result.get("action_items")
@@ -660,7 +688,7 @@ async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             report["liveAnalysis"] = observer.metrics
             observer_task = asyncio.create_task(observer.observe(
                 bounded_url(args.base_url, f"/api/v1/audio-gateway/meetings/{meeting_id}/live-analysis/stream"),
-                token, args.live_analysis_wait_seconds + 90,
+                token, args.live_analysis_wait_seconds + 150,
             ))
             try:
                 await asyncio.wait_for(observer.ready.wait(), timeout=25)
