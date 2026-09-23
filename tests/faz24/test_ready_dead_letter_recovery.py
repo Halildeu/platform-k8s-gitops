@@ -90,6 +90,31 @@ class ReviewedRecoveryTest(unittest.TestCase):
                              read_row=lambda:row, diagnose=Mock())
         inbox.rearm_retry_exhausted_by_fingerprint.assert_not_called()
 
+    def test_corrected_replay_requires_evidence_check_before_mutation(self):
+        settings, row, inbox, fields, broker, parser = self.setup_case(redrive_count=1)
+        check = Mock(side_effect=ValueError('reviewed-source-now-has-evidence'))
+        with self.assertRaisesRegex(ValueError, 'now-has-evidence'):
+            recovery.recover(settings,inbox,broker,apply=True,parse_event=parser,
+                             read_row=lambda:row,repair_check=check)
+        inbox.rearm_retry_exhausted_by_fingerprint.assert_not_called()
+        broker.xadd.assert_not_called()
+
+    def test_corrected_replay_keeps_original_event_and_audit(self):
+        settings, row, inbox, fields, broker, parser = self.setup_case(redrive_count=1)
+        check = Mock(return_value={'correctedResponseVerified':True})
+        result = recovery.recover(settings,inbox,broker,apply=True,parse_event=parser,
+                                  read_row=lambda:row,repair_check=check)
+        self.assertTrue(result['repairEvidence']['correctedResponseVerified'])
+        check.assert_called_once_with(settings,parser.return_value)
+        inbox.rearm_retry_exhausted_by_fingerprint.assert_called_once_with(
+            recovery.FINGERPRINT,audit_reference=recovery.AUDIT)
+        broker.xadd.assert_called_once_with(settings.ready_redis_stream,fields)
+
+    def test_old_or_unreviewed_source_cannot_execute_corrected_recovery(self):
+        for source in (recovery.ceremony.SOURCE,'a'*40):
+            with self.assertRaisesRegex(ValueError,'source-rejected'):
+                recovery.corrected_source_recovery(source,apply=True)
+
     def test_schema_diagnostic_excludes_input_messages_and_unknown_field_names(self):
         cause = Mock()
         cause.errors.return_value = [{'type':'int_type', 'loc':('action_item_sentences',0,'private-name'),
