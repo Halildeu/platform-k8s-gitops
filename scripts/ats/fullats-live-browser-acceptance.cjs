@@ -224,6 +224,7 @@ const buildInfo = await fetchBuildInfo('pre');
 
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 let publicRef = '';
+let candidateSessionFormat = 'unmeasured';
 let jobId = '';
 let publicHandle = '';
 try {
@@ -549,9 +550,21 @@ try {
   await waitVisible(candidatePage.getByTestId('candidate-application-receipt'), 'persistent receipt');
   publicRef = (await candidatePage.getByTestId('candidate-receipt-id').textContent())?.trim() ?? '';
   if (!/^app_[A-Za-z0-9_-]{24}$/u.test(publicRef)) throw new Error('persistent receipt ref invalid');
-  const sessionShape = await candidatePage.evaluate(async () => {
+  const sessionShape = await candidatePage.evaluate(async (expectedRef) => {
+    // platform-web#1180 (#965 B, 2026-09-15) moved the tab session from the single
+    // 'ats.candidate.latest.v1' record to the multi-application list
+    // 'ats.candidate.sessions.v2' = {activeRef, entries:[{publicRef, candidateAccessToken, ...}]}
+    // and migrates/removes v1. Read the entry bound to THIS receipt's publicRef from v2;
+    // fall back to v1 only for an older frontend. The minimization contract itself is
+    // unchanged: the access token lives in sessionStorage only.
+    const rawV2 = sessionStorage.getItem('ats.candidate.sessions.v2');
+    const listV2 = rawV2 ? JSON.parse(rawV2) : null;
+    const entryV2 = Array.isArray(listV2?.entries)
+      ? listV2.entries.find((entry) => entry?.publicRef === expectedRef) ?? null
+      : null;
     const raw = sessionStorage.getItem('ats.candidate.latest.v1');
-    const parsed = raw ? JSON.parse(raw) : null;
+    const parsed = entryV2 ?? (raw ? JSON.parse(raw) : null);
+    const sessionFormat = entryV2 ? 'v2' : raw ? 'v1' : 'none';
     const token = typeof parsed?.candidateAccessToken === 'string' ? parsed.candidateAccessToken : '';
     const tokenDigest = token
       ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))))
@@ -609,10 +622,12 @@ try {
       }
     }
     return {
-      hasRef: typeof parsed?.publicRef === 'string',
+      hasRef: typeof parsed?.publicRef === 'string' && parsed.publicRef === expectedRef,
       hasToken: token.length > 0,
       tokenSha256: tokenDigest,
+      sessionFormat,
       localStorageToken: localStorage.getItem('ats.candidate.latest.v1'),
+      localStorageSessionsV2: localStorage.getItem('ats.candidate.sessions.v2'),
       localStorageContainsToken,
       documentCookieContainsToken,
       cacheContainsToken,
@@ -620,7 +635,7 @@ try {
       urlContainsToken: token ? location.href.includes(token) : false,
       url: location.href,
     };
-  });
+  }, publicRef);
   const contextCookieContainsToken = (await candidateContext.cookies()).some(
     (cookie) => sha256(cookie.value) === sessionShape.tokenSha256,
   );
@@ -628,6 +643,7 @@ try {
     !sessionShape.hasRef ||
     !sessionShape.hasToken ||
     sessionShape.localStorageToken !== null ||
+    sessionShape.localStorageSessionsV2 !== null ||
     sessionShape.localStorageContainsToken ||
     sessionShape.documentCookieContainsToken ||
     sessionShape.cacheContainsToken ||
@@ -638,6 +654,8 @@ try {
     throw new Error('candidate session minimization contract failed');
   }
   if (sessionShape.url.includes(publicRef)) throw new Error('candidate reference leaked to URL');
+  candidateSessionFormat = sessionShape.sessionFormat;
+  console.log(`PASS candidate session minimized to sessionStorage (${sessionShape.sessionFormat})`);
 
   const candidateLink = candidatePage.locator('a[href="/candidate"]').filter({ hasText: /durumu gör/i });
   await candidateLink.click();
@@ -1135,6 +1153,7 @@ try {
     accessibility: 'axe-wcag2a-wcag2aa-wcag21a-wcag21aa-zero-violations',
     horizontalOverflow: 'none',
     candidateTracking: 'sessionStorage-only; no URL/localStorage token',
+    candidateSessionFormat,
     capturedNetworkFields: ['persona', 'method', 'pathname', 'status'],
     evidenceBoundary:
       'network evidence excludes headers and bodies; raw PDF, extracted text, and filename are not retained or submitted; screenshots contain synthetic product state only',
