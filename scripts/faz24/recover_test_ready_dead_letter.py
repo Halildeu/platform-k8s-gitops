@@ -94,6 +94,9 @@ def diagnose_model(settings, event):
     import time
     from app.services.canonical_transcript_client import HttpCanonicalTranscriptClient
     from app.services import analyze
+    from app.services.citation import split_sentences
+    from app.services.extractive import selectable_sentences
+    from app.services.redact import redact_pii
     async def fetch():
         client = HttpCanonicalTranscriptClient(settings)
         try:
@@ -103,13 +106,22 @@ def diagnose_model(settings, event):
     snapshot = asyncio.run(fetch())
     report = {'sourceCharacterCount': len(snapshot.transcript), 'sourceSegmentCount': len(snapshot.segments),
               'responseContentIncluded': False, 'durableResultWritten': False}
+    redacted = redact_pii(snapshot.transcript)[0] if settings.redact_pii else snapshot.transcript
+    sentences = split_sentences(redacted)
+    report['splitSentenceCount'] = len(sentences)
+    report['selectableSentenceCount'] = len(selectable_sentences(sentences))
     if settings.backend != 'ollama':
         raise ValueError('actual-ollama-backend-required')
+    inventory = httpx.get(settings.ollama_host + '/api/tags', timeout=5).json().get('models', [])
+    report['availableModels'] = [{key:item.get(key) for key in ('name','digest','size')}
+                                 for item in inventory]
     loaded = httpx.get(settings.ollama_host + '/api/ps', timeout=5).json().get('models', [])
     report['loadedModelMemory'] = [{key:item.get(key) for key in ('size','size_vram','context_length')}
                                  for item in loaded if item.get('name') == settings.ollama_model]
     original = analyze.generate
     def instrumented_generate(*args, **kwargs):
+        request_format = args[1].get('format')
+        report['requestContract'] = 'sentence-selection' if isinstance(request_format, dict) else 'json-only'
         response = original(*args, **kwargs)
         envelope = response.json()
         report['durationsSeconds'] = {stage: envelope[stage + '_duration']/1e9

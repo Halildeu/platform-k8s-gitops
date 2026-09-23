@@ -2,11 +2,19 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- [Schema diagnosis 35855204472](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35855204472)
+  reproduced `field 'summary' must be a string` from the actual pinned Ollama
+  backend. The retained source contains 15 characters in one segment. The
+  request took 29.875 seconds, including 11.09 seconds of cold model loading.
+  No result was persisted or event rearmed. Source length alone cannot establish
+  whether evidence is selectable; the diagnostic now also reports sentence
+  counts and the request-contract category, with no text exported.
+
 - [Reviewed recovery 35853779463](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35853779463)
   verified and replayed the original retained event, but it again reached DEAD
   after eight schema-invalid responses; redrive count is now one. The audit and
-  failure remain intact. No further blind redrive is planned. A bounded, single
-  non-persisting analysis diagnostic will report only schema rule/type/location
+  failure remain intact. No further blind redrive is planned. The bounded,
+  non-persisting analysis diagnostic above reports only schema rule/type/location
   and model timing/memory metadata. No transcript/model response is exported,
   no result is written and no health gate is relaxed. AI PR349 is not deployed.
 
