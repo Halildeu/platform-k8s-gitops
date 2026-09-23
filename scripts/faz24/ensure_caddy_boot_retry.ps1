@@ -147,20 +147,29 @@ if ($MyInvocation.InvocationName -ne '.') {
             Register-ScheduledTask -TaskName $script:CaddyTaskName -Xml $desired -Force | Out-Null
             $changed = $true
         }
+        # Re-registration must not leave the listener down until the next 5-minute tick.
+        if ([string](Get-ScheduledTask -TaskName $script:CaddyTaskName).State -ne 'Running') {
+            Start-ScheduledTask -TaskName $script:CaddyTaskName
+        }
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while ([DateTime]::UtcNow -lt $deadline -and @(Get-CaddyListenerPorts).Count -ne 2) {
+            Start-Sleep -Milliseconds 500
+        }
         $current = Export-ScheduledTask -TaskName $script:CaddyTaskName
         $retryPresent = Test-CaddyBootRetryTaskXml $current
         $duplicate = Get-ScheduledTask -TaskName $script:CaddyDuplicateTaskName -ErrorAction SilentlyContinue
         $duplicateState = if ($null -eq $duplicate) { 'absent' } else { [string]$duplicate.State }
     }
 
+    $listeners = @(Get-CaddyListenerPorts)
     $report = [ordered]@{
         mode = $Mode
         changed = $changed
         retryTriggersPresent = $retryPresent
         taskState = [string](Get-ScheduledTask -TaskName $script:CaddyTaskName).State
         duplicateState = $duplicateState
-        listeners = @(Get-CaddyListenerPorts)
+        listeners = $listeners
     }
     Write-Output ('CADDY_BOOT_RETRY: ' + (ConvertTo-Json -Compress -InputObject $report))
-    if (-not $retryPresent -or $duplicateState -notin @('absent', 'Disabled')) { exit 1 }
+    if (-not $retryPresent -or $duplicateState -notin @('absent', 'Disabled') -or $listeners.Count -ne 2) { exit 1 }
 }

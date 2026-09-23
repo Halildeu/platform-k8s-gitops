@@ -49,6 +49,9 @@ class CaddyBootRetryContract(unittest.TestCase):
         self.assertIn("Disable-ScheduledTask -TaskName $script:CaddyDuplicateTaskName", text)
         self.assertIn("if ($duplicateState -eq 'Running') { throw 'duplicate-caddy-task-running' }", text)
         self.assertIn("if ($MyInvocation.InvocationName -ne '.')", text)
+        # Apply must leave both listeners up, not wait for the next 5-minute tick.
+        self.assertIn("Start-ScheduledTask -TaskName $script:CaddyTaskName", text)
+        self.assertIn("$listeners.Count -ne 2) { exit 1 }", text)
 
     def test_renewal_still_restarts_the_same_owned_task(self) -> None:
         renew = RENEW.read_text(encoding="utf-8")
