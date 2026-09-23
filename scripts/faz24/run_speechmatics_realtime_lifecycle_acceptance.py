@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -27,7 +28,14 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from live_analysis_observer import AnalysisObserver
+# Other acceptance tools load this helper by file path, outside sys.path.
+_observer_spec = importlib.util.spec_from_file_location(
+    "faz24_live_analysis_observer", Path(__file__).with_name("live_analysis_observer.py")
+)
+assert _observer_spec is not None and _observer_spec.loader is not None
+_observer_module = importlib.util.module_from_spec(_observer_spec)
+_observer_spec.loader.exec_module(_observer_module)
+AnalysisObserver = _observer_module.AnalysisObserver
 
 SCHEMA_VERSION = "faz24.speechmaticsRealtimeLifecycleAcceptance.v1"
 DEFAULT_BASE_URL = "https://testai.acik.com"

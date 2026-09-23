@@ -5,6 +5,7 @@ import copy
 import json
 from pathlib import Path
 import sys
+import subprocess
 import time
 import types
 import unittest
@@ -32,6 +33,14 @@ def frame(value=SNAPSHOT):
 
 
 class ParserTests(unittest.TestCase):
+    def test_helper_can_be_loaded_by_other_tools_without_sys_path_change(self):
+        helper = Path(__file__).resolve().parents[1] / "faz24/run_speechmatics_realtime_lifecycle_acceptance.py"
+        result = subprocess.run([sys.executable, "-I", "-c",
+                                 "import importlib.util, sys; s=importlib.util.spec_from_file_location('helper',sys.argv[1]); "
+                                 "m=importlib.util.module_from_spec(s); s.loader.exec_module(m)", str(helper)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def observer(self):
         result = AnalysisObserver()
         result.recording = True
