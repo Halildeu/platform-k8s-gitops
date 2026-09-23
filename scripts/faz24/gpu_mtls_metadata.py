@@ -11,6 +11,9 @@ from run_gpu_host_exact_sha_rollout import encode_remote_input, ssh_command
 REMOTE_SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$env:GIT_CONFIG_COUNT = '1'
+$env:GIT_CONFIG_KEY_0 = 'safe.directory'
+$env:GIT_CONFIG_VALUE_0 = 'C:/platform-ai'
 $root = 'C:\caddy'
 $certs = @()
 $keys = @()
@@ -46,8 +49,16 @@ foreach ($name in @('CaddyI7AppMtls', 'Workcube-Caddy-mTLS')) {
     restartCount=$task.Settings.RestartCount; restartInterval=$task.Settings.RestartInterval}
 }
 $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-  Where-Object { $_.LocalPort -in @(8243,8244,8300) } |
+  Where-Object { $_.LocalPort -in @(8200,8243,8244,8300) } |
   ForEach-Object { @{port=$_.LocalPort; localAddress=$_.LocalAddress} })
+$netstatLines = @(& netstat.exe -ano -p TCP 2> $null)
+$netstatMetadata = @{exitCode=$LASTEXITCODE; lineCount=$netstatLines.Count; states=@()}
+foreach ($line in $netstatLines) {
+  if ($line -match '^\s*TCP\s+\S+:(8200|8243|8244|8300)\s+\S+\s+([^\s]{1,30})\s+\d+\s*$') {
+    $state = if ($Matches[2] -eq 'LISTENING') { 'LISTENING' } else { 'other' }
+    $netstatMetadata.states += @{port=[int]$Matches[1]; state=$state}
+  }
+}
 $openssl = Get-Command openssl -ErrorAction SilentlyContinue
 $tools = @()
 foreach ($candidate in @('C:\Program Files\Git\usr\bin\openssl.exe', 'C:\Program Files\OpenSSL-Win64\bin\openssl.exe')) {
@@ -87,6 +98,10 @@ $markers = [ordered]@{
   nativeAbort='forrtl: error'
   addressInUse='address already in use'
   started='Application startup complete'
+  uvicornListening='Uvicorn running on'
+  startupWaiting='Waiting for application startup'
+  shutdown='Shutting down'
+  startupPreload='streaming model preload started'
   pathMissing='Cannot find path'
   commandMissing='is not recognized as the name'
   powershellParseError='ParserError'
@@ -159,6 +174,26 @@ if (Test-Path -LiteralPath $envPath -PathType Leaf) {
     )
     $reason = if ($knownReasons -contains $_.Exception.Message) { $_.Exception.Message } else { 'validation-rejected' }
     $permitMetadata = @{checked=$true; valid=$false; reason=$reason; errorClass=$_.Exception.GetType().Name}
+    if ($reason -eq 'Transcript-ready signed permit verification failed.') {
+      $verifyArgs = @('C:\platform-ai\deploy\gpu-host\verify-transcript-ready-permit.py',
+        '--envelope', $params.PermitPath, '--trust-root', $params.TrustRootPath,
+        '--expected-trust-root-sha256', $params.ExpectedTrustRootSha256,
+        '--app-env', $params.AppEnv, '--expected-gitops-commit', $params.ExpectedGitopsCommit,
+        '--expected-policy-sha256', $params.ExpectedPolicySha256,
+        '--expected-producer-image-digest', $params.ExpectedProducerImageDigest, '--skip-freshness')
+      $oldEap=$ErrorActionPreference
+      try {
+        $ErrorActionPreference='Continue'
+        $verifierLines=@(& $servicePython @verifyArgs 2>&1)
+        $permitMetadata.verifierExitCode=$LASTEXITCODE
+        $permitMetadata.verifierOutputCount=$verifierLines.Count
+        foreach ($entry in $verifierLines) {
+          if ([string]$entry -match '^permit verification rejected: ([A-Z_]{3,80})$') {
+            $permitMetadata.verifierReason=$Matches[1]
+          }
+        }
+      } finally { $ErrorActionPreference=$oldEap }
+    }
   }
   $publicBindings.Clear()
 }
@@ -176,6 +211,7 @@ $result = [ordered]@{schemaVersion='faz24.gpuMtlsMetadata.v1'; runtimeMutation=$
   caddyAdminDisabled=[bool]($config -match '(?m)^\s*admin\s+off\s*$')
   runtimeTasks=$runtimeTasks; startupLogMetadata=$startupLogs; rawLogsIncluded=$false
   startupPermitValidation=$permitMetadata}
+$result['netstatComparison']=$netstatMetadata
 Write-Output ('GPU_MTLS_METADATA:' + ($result | ConvertTo-Json -Depth 8 -Compress))
 """
 
