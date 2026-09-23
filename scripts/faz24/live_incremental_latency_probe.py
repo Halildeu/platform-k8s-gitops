@@ -42,6 +42,7 @@ def metadata(body, version, decisions, actions, elapsed):
     correct = all(checks.values())
     return {"version": version, "qualityPass": correct,
             "elapsedSeconds": round(elapsed, 3), "withinFiveSeconds": elapsed <= 5,
+            "serviceElapsedMs": body.get("elapsed_ms") if type(body.get("elapsed_ms")) is int else None,
             "decisionCount": len(body.get("decisions", [])),
             "actionCount": len(body.get("action_items", [])),
             "cursorReturned": isinstance(body.get("live_cursor"), dict),
