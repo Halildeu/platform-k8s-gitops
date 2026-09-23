@@ -26,6 +26,8 @@ class PunctuationProbeTest(unittest.TestCase):
 
     def test_pinned_audio_format_and_identity(self):
         self.assertGreater(len(probe.fixture_pcm()), 32000)
+        self.assertGreater(len(probe.fixture_pcm(probe.LONG_FIXTURE, probe.LONG_FIXTURE_SHA)),
+                           len(probe.fixture_pcm()))
         with self.assertRaises(ValueError):
             probe.fixture_pcm(Path(__file__))
 
