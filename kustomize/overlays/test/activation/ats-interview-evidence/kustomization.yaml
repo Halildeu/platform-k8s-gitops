@@ -1,9 +1,14 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
-# Current desired pin (2026-09-13): ats@9b51a4f, ats#269 / gitops#3736.
-#   Public candidate policy metadata + persisted v2 consent; v1 remains valid.
-#   digest  sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299
-#   Build/scan/SBOM/push run 34755456164; registry manifest independently matched.
+# Current desired pin (2026-09-23): ats@e7ede91, ats#273 / gitops#3805.
+#   CV reader pdfbox-3.0.5-rules-v13: "Yetenekler" opens the skills section
+#   (plural only; "Yetenek Kazanımı Uzmanı" stays an experience title). Owner-side
+#   real-CV regression (21 CVs, no values printed): no field lost, 2 CVs gain skills.
+#   digest  sha256:354a04576d20706cb806cc97760d7064409c9f14455ba4e7a0db49eadd7c85ba
+#   Build/scan/SBOM/push run 35837020389; registry manifest matched via GHCR package
+#   API (tag sha-e7ede91), not a build-log digest.
 #   Runtime imageID verification is required after GitOps reconciliation.
+# Previous pin (2026-09-13): ats@9b51a4f, ats#269 / gitops#3736 —
+#   sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299 (run 34755456164).
 # The older source/build notes below describe previous rollout history.
 #
 # Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
@@ -184,10 +189,10 @@ resources:
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
-  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/34755456164
-  # Rollback image: sha256:c2baf0e6cedeada526f4f9814727bbd002ff4eb6b7f6d7dd9138c2977b7f5cec
+  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/35837020389
+  # Rollback image: sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:e2b3229679175f74d1fee8c7fedb066e69368218e7ec9cec9b289a0864696299
+    digest: sha256:354a04576d20706cb806cc97760d7064409c9f14455ba4e7a0db49eadd7c85ba
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
