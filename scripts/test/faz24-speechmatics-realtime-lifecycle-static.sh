@@ -8,6 +8,7 @@ WORKFLOW="${ROOT}/.github/workflows/faz24-platform-desktop-token-evidence.yml"
 FIXTURE="${ROOT}/scripts/faz24/fixtures/speechmatics-realtime-tr-v1.wav"
 
 python3 -m py_compile "${HELPER}"
+python3 "${ROOT}/scripts/test/test_live_analysis_observer.py"
 python3 "${HELPER}" --help >/dev/null
 python3 - "${FIXTURE}" <<'PY'
 import hashlib

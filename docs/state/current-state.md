@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Mobile live-analysis TEST rollout (2026-09-23)
+
+- Tracked by platform-mobile#8 and GitOps#3440; decisions/actions are required
+  while recording. Teams bot provisioning is a separate acceptance track.
+- Backend PR1183 source `0ae51f5c106e5c895ca34ec1dbda576590cd0502` is deployed by
+  GitOps PR3795, merge `86f59344ee197fbae92debfc4f8bb79e4f386782`.
+  Audio-gateway desired digest and observed pod imageID both equal
+  `sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307`.
+- [Automatic rollout evidence](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35743627268)
+  passes exact Argo revision/Synced/Healthy, 13 service readiness/image checks,
+  public edge and changed-service stability. [Read-only metadata](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35743691303)
+  confirms gateway generation 53, ready replica 1 and unchanged meeting/transcript images.
+- [Legacy preflight](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35743826109)
+  failed WebSocket upgrade with HTTP401. Its smoke-client token contract lacks
+  the recorder audience/capability; that source mismatch is not proof of the
+  exact failed token claims or of a mobile login regression. The existing
+  recorder-token realtime acceptance ran at
+  [35821916486](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35821916486).
+- That run verifies 150/150 frame acknowledgements, 39 partial/22 final events,
+  all 7 fixture keywords, drained/FINISHED and persisted result/source/reopen
+  HTTP200. Overall acceptance is **fail**: verified summary and one action were
+  returned, but decisionCount=0. Temporary test-user deletion, direct-grant and
+  transcript-scope restoration, token removal and secret scan all passed.
+- These are deployment/readiness facts, not live decision/action delivery
+  acceptance. An opt-in gateway SSE check now observes the mobile wire contract
+  before EOF, retaining counters only. Physical mobile acceptance stays open.
+- Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
+  tests plus type/lint and an ARM64 TEST APK; SHA256
+  `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.
+  Installation, new phone live-analysis/PDF acceptance, native push and iOS are
+  not inferred from that package or the backend rollout. No production change.
+
 ## Zeynep Requests - Scoped TEST Acceptance (2026-09-15)
 
 - Web PR1179/1180/1186 combined source

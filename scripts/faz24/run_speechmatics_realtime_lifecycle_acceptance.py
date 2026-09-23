@@ -27,6 +27,8 @@ import wave
 from pathlib import Path
 from typing import Any
 
+from live_analysis_observer import AnalysisObserver
+
 SCHEMA_VERSION = "faz24.speechmaticsRealtimeLifecycleAcceptance.v1"
 DEFAULT_BASE_URL = "https://testai.acik.com"
 KEYWORDS = ("bütçe", "proje", "görev", "karar", "sorumlu", "tarih", "rapor")
@@ -253,7 +255,9 @@ def create_lifecycle(
 
 
 async def stream_audio(
-    *, base_url: str, token: str, session_id: str, audio_path: Path
+    *, base_url: str, token: str, session_id: str, audio_path: Path,
+    analysis_observer: AnalysisObserver | None = None,
+    live_analysis_wait_seconds: int = 0,
 ) -> dict[str, Any]:
     import websockets
 
@@ -361,6 +365,9 @@ async def stream_audio(
         frame_bytes = 3200
         started_at = time.monotonic()
         sending_audio = True
+        if analysis_observer is not None:
+            analysis_observer.audio_started_at = started_at
+            analysis_observer.recording = True
         for sequence, offset in enumerate(range(0, len(pcm), frame_bytes)):
             chunk = pcm[offset : offset + frame_bytes]
             if len(chunk) % 2:
@@ -373,6 +380,16 @@ async def stream_audio(
             metrics["audioFrames"] += 1
             await asyncio.sleep(len(chunk) / 2 / 16000)
         sending_audio = False
+        # Keep the recording open with paced PCM silence. Results after EOF or
+        # HTTP finish must never satisfy the live requirement.
+        if analysis_observer is not None:
+            deadline = time.monotonic() + live_analysis_wait_seconds
+            while not analysis_observer.usable.is_set() and time.monotonic() < deadline:
+                chunk = bytes(frame_bytes)
+                await socket.send(struct.pack(">BQQH", 1, metrics["audioFrames"], int(time.time() * 1000), len(chunk)) + chunk)
+                metrics["audioFrames"] += 1
+                await asyncio.sleep(0.1)
+            analysis_observer.recording = False
         await socket.send('{"type":"eof"}')
         try:
             await asyncio.wait_for(drained.wait(), timeout=35)
@@ -449,7 +466,8 @@ def product_evidence(result: dict[str, Any]) -> dict[str, Any]:
     summary = result.get("summary")
     decisions = result.get("decisions")
     actions = result.get("action_items")
-    nonempty = lambda value: isinstance(value, str) and bool(value.strip())
+    def nonempty(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip())
     decision_count = sum(nonempty(x) for x in decisions) if isinstance(decisions, list) else 0
     action_count = sum(
         isinstance(x, dict) and nonempty(x.get("text")) for x in actions
@@ -618,6 +636,8 @@ async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     session_id: str | None = None
     started_at: str | None = None
     canonical_session_id: str | None = None
+    observer: AnalysisObserver | None = None
+    observer_task: asyncio.Task | None = None
     try:
         meeting_id, session_id, started_at = create_lifecycle(
             base_url=args.base_url,
@@ -627,13 +647,35 @@ async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         )
         report["meetingId"] = meeting_id
         report["sessionId"] = session_id
+        if args.live_analysis_wait_seconds:
+            observer = AnalysisObserver()
+            report["liveAnalysis"] = observer.metrics
+            observer_task = asyncio.create_task(observer.observe(
+                bounded_url(args.base_url, f"/api/v1/audio-gateway/meetings/{meeting_id}/live-analysis/stream"),
+                token, args.live_analysis_wait_seconds + 90,
+            ))
+            try:
+                await asyncio.wait_for(observer.ready.wait(), timeout=25)
+            except asyncio.TimeoutError:
+                observer.metrics.setdefault("errorCode", "live-analysis-connect-timeout")
         report["stream"] = await stream_audio(
             base_url=args.base_url,
             token=token,
             session_id=session_id,
             audio_path=Path(args.audio_file),
+            analysis_observer=observer,
+            live_analysis_wait_seconds=args.live_analysis_wait_seconds,
         )
+    except Exception as error:  # Preserve bounded stage evidence even on stream failure.
+        report["streamErrorClass"] = error.__class__.__name__
+        if isinstance(error, AcceptanceError):
+            report["streamErrorCode"] = str(error)
     finally:
+        if observer is not None:
+            observer.recording = False
+        if observer_task is not None:
+            observer_task.cancel()
+            await asyncio.gather(observer_task, return_exceptions=True)
         if meeting_id and session_id and started_at:
             try:
                 report["sessionFinished"], canonical_session_id = finish_lifecycle(
@@ -650,15 +692,20 @@ async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 report["finishErrorClass"] = error.__class__.__name__
 
     if report.get("sessionFinished") is True and canonical_session_id:
-        report["durable"] = durable_readback(
-            base_url=args.base_url,
-            token=token,
-            meeting_id=meeting_id,
-            canonical_session_id=canonical_session_id,
-            timeout_seconds=args.timeout_seconds,
-            poll_timeout_seconds=args.durable_timeout_seconds,
-            statuses=statuses,
-        )
+        try:
+            report["durable"] = durable_readback(
+                base_url=args.base_url,
+                token=token,
+                meeting_id=meeting_id,
+                canonical_session_id=canonical_session_id,
+                timeout_seconds=args.timeout_seconds,
+                poll_timeout_seconds=args.durable_timeout_seconds,
+                statuses=statuses,
+            )
+        except Exception as error:
+            report["durableErrorClass"] = error.__class__.__name__
+            if isinstance(error, AcceptanceError):
+                report["durableErrorCode"] = str(error)
 
     stream = report.get("stream", {})
     durable = report.get("durable", {})
@@ -680,6 +727,9 @@ async def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             durable.get("usableProductResult") is True,
             durable.get("sameResultReopened") is True,
             durable.get("canonicalSourceReadBackProven") is True,
+            not args.live_analysis_wait_seconds or (
+                report.get("liveAnalysis", {}).get("usableBeforeEof") is True
+            ),
         )
     )
     report["status"] = "pass" if passed else "fail"
@@ -695,6 +745,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout-seconds", type=float, default=20.0)
     parser.add_argument("--durable-timeout-seconds", type=int, default=720)
+    parser.add_argument("--live-analysis-wait-seconds", type=int, choices=(0, 150), default=0)
     return parser.parse_args()
 
 
