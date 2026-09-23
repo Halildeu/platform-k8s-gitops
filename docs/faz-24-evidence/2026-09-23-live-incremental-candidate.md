@@ -12,8 +12,15 @@ max-wait-ms=5000. Sentence completion triggers immediately subject to single-fli
 and cadence; the five-second window only bounds punctuation-free speech. This is
 not a guarantee of five-second phone rendering. Default/prod config is unchanged.
 
-Do not promote this overlay until the exact gateway image built from #1184 replaces
-the existing pin and #349 is on the GPU host with rollout acceptance. The revision
+Gateway source is platform-backend#1184, merged at
+`80c08d0abeff2d635e10395243ffefaa8bff9663` after all PR checks passed.
+Build run `35838016116`, successful gateway job `107106048811`, published
+`sha256:3c7a653479b4b8bbce27190e339b0636a38ab493291c6f617fd2274a2711d81d`;
+GitHub provenance attestation `49469570`. The TEST overlay pins this exact image.
+AI source is platform-ai#349, merged at
+`08671f44b39de262ef7030a8716ae62967becc22` after all checks passed.
+GPU rollout run `35837305448` is still in progress at this evidence update.
+Do not promote this overlay until #349 is on the GPU host with rollout acceptance. The revision
 annotation reloads the ConfigMap. Rollback restores the previous image and source,
 sentence-triggered=false, min-interval-ms=15000, max-wait-ms=15000, and bumps the
 revision annotation. Do not silently switch off model/digest/TLS/grounding checks.

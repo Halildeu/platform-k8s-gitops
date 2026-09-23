@@ -486,7 +486,11 @@ images:
     # remaining SSE viewers registered. Attested build 35740822541.
     # Source is b0b7a9c plus the reviewed live-analysis-only change.
     # Rollback: sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247
-    digest: sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307
+    # backend#1184 / sha-80c08d0: sentence-triggered incremental live analysis,
+    # meeting-local cursor and delivery timing. Attested build 35838016116,
+    # gateway job 107106048811; attestation 49469570. GPU companion: ai#349.
+    # Rollback: sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307
+    digest: sha256:3c7a653479b4b8bbce27190e339b0636a38ab493291c6f617fd2274a2711d81d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
