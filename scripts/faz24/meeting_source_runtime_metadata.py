@@ -74,6 +74,33 @@ def parse_live_diagnostics(metrics_text, logs_text):
             "logScope": "last 20 minutes; last 1000 lines; at most 262144 bytes"}
 
 
+def mtls_health_probe(pod, port, run_fn=subprocess.run):
+    """Use installed credentials in place; export only curl status/timings."""
+    if port not in (8243, 8244):
+        raise ValueError("unsupported-mtls-probe-port")
+    command = ["kubectl", "--context", "k3d-test", "-n", "platform-test",
+               "exec", pod, "-c", "audio-gateway", "--", "curl", "--disable",
+               "--silent", "--output", "/dev/null", "--connect-timeout", "5",
+               "--max-time", "10", "--proto", "=https",
+               "--cacert", "/etc/direct-stt-mtls/direct-stt-ca.crt",
+               "--cert", "/etc/direct-stt-mtls/direct-stt-client.crt",
+               "--key", "/etc/direct-stt-mtls/direct-stt-client.key",
+               "--write-out", "%{http_code} %{time_connect} %{time_appconnect} %{time_total} %{ssl_verify_result}",
+               f"https://live-stt.denetim:{port}/health"]
+    result = run_fn(command, capture_output=True, text=True, timeout=25, check=False)
+    match = re.fullmatch(r"([0-9]{3}) ([0-9.]+) ([0-9.]+) ([0-9.]+) ([0-9]+)", result.stdout.strip())
+    report = {"port": port, "exitCode": result.returncode,
+              "credentialMaterialExported": False, "verifiedTlsRequired": True,
+              "probeScope": "gateway pod to fixed upstream health; not inference acceptance"}
+    if match:
+        report.update(httpStatus=int(match[1]), connectSeconds=float(match[2]),
+                      tlsSeconds=float(match[3]), totalSeconds=float(match[4]),
+                      sslVerifyResult=int(match[5]))
+    else:
+        report["status"] = "no-parseable-probe-metadata"
+    return report
+
+
 def live_diagnostics():
     pods = read("pods", "").get("items", [])
     candidates = [pod for pod in pods if
@@ -91,7 +118,10 @@ def live_diagnostics():
     metrics = capture(["exec", pod, "--", "curl", "--silent", "--fail", "--max-time", "10",
                        "http://localhost:8081/actuator/prometheus"])
     logs = capture(["logs", pod, "--since=20m", "--tail=1000", "--limit-bytes=262144"])
-    return parse_live_diagnostics(metrics, logs)
+    report = parse_live_diagnostics(metrics, logs)
+    report["mtlsHealthProbes"] = [mtls_health_probe(pod, port) for port in (8243, 8244)]
+    report["mountedCredentialUsedInPlace"] = True
+    return report
 
 
 if __name__ == "__main__":

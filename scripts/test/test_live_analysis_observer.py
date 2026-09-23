@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "faz24"))
 from live_analysis_observer import AnalysisObserver, snapshot_counts
-from meeting_source_runtime_metadata import parse_live_diagnostics
+from meeting_source_runtime_metadata import parse_live_diagnostics, mtls_health_probe
 from run_speechmatics_realtime_lifecycle_acceptance import stream_audio
 
 SNAPSHOT = {
@@ -34,6 +34,27 @@ def frame(value=SNAPSHOT):
 
 
 class ParserTests(unittest.TestCase):
+    def test_mtls_probe_keeps_trust_and_does_not_export_response_or_credentials(self):
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            return types.SimpleNamespace(returncode=60, stdout="000 0.01 0.00 0.02 20",
+                                         stderr="private diagnostic must not be exported")
+
+        result = mtls_health_probe("synthetic-pod", 8244, run)
+        self.assertEqual(result["exitCode"], 60)
+        self.assertEqual(result["sslVerifyResult"], 20)
+        self.assertEqual(result["httpStatus"], 0)
+        self.assertNotIn("private", json.dumps(result))
+        self.assertNotIn("--insecure", commands[0])
+        self.assertNotIn("--location", commands[0])
+        self.assertIn("--cacert", commands[0])
+        self.assertIn("/dev/null", commands[0])
+        with self.assertRaises(ValueError):
+            mtls_health_probe("synthetic-pod", 443, run)
+        self.assertEqual(len(commands), 1)
+
     def test_server_diagnostics_export_only_allowlisted_fields(self):
         result = parse_live_diagnostics(
             'audio_gw_live_analyze_publish_error_total{ignored="private"} 2.0\n'

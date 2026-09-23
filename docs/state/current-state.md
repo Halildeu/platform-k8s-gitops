@@ -26,6 +26,16 @@
 - These are deployment/readiness facts, not live decision/action delivery
   acceptance. An opt-in gateway SSE check now observes the mobile wire contract
   before EOF, retaining counters only. Physical mobile acceptance stays open.
+- [Live-before-EOF run 35823107425](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35823107425)
+  fails: 1636/1636 audio frames acknowledged, drained/FINISHED, persisted HTTP200,
+  but SSE HTTP200 has 12 heartbeats and zero analysis events during the 150s hold.
+  No malformed/rejected event was observed. Cleanup and secret scan passed.
+- [Gateway diagnostic 35823384610](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35823384610)
+  matches meeting `c6d4e469-136a-457b-b2ad-f1d3b77d73d2`: sequences 1/4/5 fail
+  with WebClientRequestException, HTTP status 0, 39-43ms elapsed. Pod counters
+  show 6 attempted/6 failed/0 successful live requests (pod lifetime, not meeting
+  counts). Upstream transport failure is established; DNS/TCP/TLS cause remains
+  under investigation. Waiting longer or phone-only changes do not resolve it.
 - Mobile PR45 source `bcca59bac4a0048feba3e889f8de8b36ac1df22a` has 487 local
   tests plus type/lint and an ARM64 TEST APK; SHA256
   `45eb251d0f426cad29892829de0534ef49bf7c7b2ca140bd8211a8b7937349de`.
