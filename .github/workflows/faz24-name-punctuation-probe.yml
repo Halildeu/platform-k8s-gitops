@@ -1,6 +1,12 @@
 name: Faz 24 TEST name punctuation comparison
 on:
   workflow_dispatch:
+    inputs:
+      comparison_round:
+        description: Provider configuration comparison set
+        type: choice
+        default: coarse
+        options: [coarse, fine]
 permissions:
   contents: read
 concurrency:
@@ -17,6 +23,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate synthetic fixture and compare provider settings
+        env:
+          COMPARISON_ROUND: ${{ inputs.comparison_round }}
         run: |
           set -euo pipefail
           python3 scripts/test/test_name_punctuation_probe.py
@@ -27,7 +35,7 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 'https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl' -o "$wheel"
           printf '%s  %s\n' 'f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f' "$wheel" | sha256sum -c -
           export PYTHONPATH="$wheel${PYTHONPATH:+:$PYTHONPATH}"
-          python3 scripts/faz24/probe_name_punctuation.py > name-punctuation.json
+          python3 scripts/faz24/probe_name_punctuation.py --round "$COMPARISON_ROUND" > name-punctuation.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

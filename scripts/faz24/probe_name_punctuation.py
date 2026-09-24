@@ -3,6 +3,7 @@
 The TEST Speechmatics key stays in process memory on the existing acceptance runner.
 Only counts, hashes and timings are emitted; exceptions never echo provider responses.
 """
+import argparse
 import asyncio
 import base64
 import hashlib
@@ -103,7 +104,7 @@ async def measure(key, pcm, sensitivity, delay):
             await asyncio.gather(receiver, return_exceptions=True)
 
 
-async def main():
+async def main(comparison_round='coarse'):
     pcm = fixture_pcm()
     long_pcm = fixture_pcm(LONG_FIXTURE, LONG_FIXTURE_SHA)
     # Read only this already-authorized TEST secret; never shell-expand or print it.
@@ -116,13 +117,16 @@ async def main():
     if not key or '\n' in key or '\r' in key:
         raise ValueError('test-key-invalid')
     rows, long_rows = [], []
+    cases = ((.05, 1.), (.01, 1.), (.001, 1.), (.25, 4.)) if comparison_round == 'fine' else (
+        (.5, 1.), (.25, 1.), (.1, 1.), (.0, 1.), (.5, 2.), (.25, 2.))
     for audio, results in ((pcm, rows), (long_pcm, long_rows)):
-        for sensitivity, delay in ((.5, 1.), (.25, 1.), (.1, 1.), (.0, 1.), (.5, 2.), (.25, 2.)):
+        for sensitivity, delay in cases:
             try:
                 results.append(await measure(key, audio, sensitivity, delay))
             except Exception as error:
                 results.append({'sensitivity': sensitivity, 'maxDelay': delay, 'errorClass': type(error).__name__})
     print(json.dumps({'schema': 'faz24.namePunctuationProbe.v1', 'fixtureSha256': FIXTURE_SHA,
+        'comparisonRound': comparison_round,
         'durationSeconds': len(pcm) / 32000, 'deploymentChanged': False, 'phoneAccepted': False,
         'results': rows, 'longPauseFixtureSha256': LONG_FIXTURE_SHA,
         'longPauseDurationSeconds': len(long_pcm) / 32000, 'longPauseResults': long_rows}, indent=2))
@@ -132,7 +136,9 @@ async def main():
 
 if __name__ == '__main__':
     try:
-        asyncio.run(main())
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--round', choices=('coarse', 'fine'), default='coarse')
+        asyncio.run(main(parser.parse_args().round))
     except Exception as error:
         print(json.dumps({'errorClass': type(error).__name__, 'status': 'failed'}))
         raise SystemExit(1) from None
