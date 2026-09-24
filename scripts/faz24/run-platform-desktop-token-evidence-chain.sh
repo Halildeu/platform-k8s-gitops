@@ -47,6 +47,15 @@ REALTIME_HELPER="${REALTIME_HELPER:-}"
 REALTIME_AUDIO_FILE="${REALTIME_AUDIO_FILE:-}"
 REALTIME_DURABLE_TIMEOUT_SECONDS="${REALTIME_DURABLE_TIMEOUT_SECONDS:-720}"
 REALTIME_LIVE_ANALYSIS_WAIT_SECONDS="${REALTIME_LIVE_ANALYSIS_WAIT_SECONDS:-0}"
+RUN_OWNER_BOUNDARY_COMPARISON="${RUN_OWNER_BOUNDARY_COMPARISON:-0}"
+if [[ "${RUN_OWNER_BOUNDARY_COMPARISON}" != "0" && "${RUN_OWNER_BOUNDARY_COMPARISON}" != "1" ]]; then
+  echo "invalid owner comparison flag" >&2
+  exit 2
+fi
+if [[ "${RUN_OWNER_BOUNDARY_COMPARISON}" == "1" && "${RUN_SPEECHMATICS_REALTIME:-0}" != "1" ]]; then
+  echo "owner comparison requires realtime acceptance" >&2
+  exit 2
+fi
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ATTEMPT_SAFE="${GITHUB_RUN_ATTEMPT:-1}"
@@ -1411,6 +1420,34 @@ run_speechmatics_realtime_acceptance() {
   fi
 }
 
+run_owner_boundary_comparison() {
+  [[ "${RUN_OWNER_BOUNDARY_COMPARISON}" == "1" ]] || return 0
+  if [[ "${STATUS}" != "pass" || "${REALTIME_ACCEPTANCE_EXIT}" != "0" ]]; then
+    return 1
+  fi
+  local item case_name profile
+  for item in normal:mobile normal:desktop paused:desktop paused:mobile; do
+    case_name="${item%%:*}"
+    profile="${item##*:}"
+    # Renew only this workflow's temporary persona, within the existing grant
+    # lifetime and cleanup ceremony; no credentials enter argv or artifacts.
+    if ! mint_platform_desktop_token; then
+      STATUS="fail"
+      FAILURE_REASON="owner-comparison-token-mint-failed"
+      return 1
+    fi
+    if ! "${REALTIME_PYTHON}" "$(dirname "${REALTIME_HELPER}")/compare_owner_boundary.py" \
+      --token-file "${TOKEN_FILE}" --base-url "${BASE_URL}" \
+      --case "${case_name}" --profile "${profile}" \
+      --output-file "${OUT_DIR}/owner-comparison-${case_name}-${profile}.json" \
+      > "${TMP_DIR}/owner-comparison.stdout" 2> "${TMP_DIR}/owner-comparison.stderr"; then
+      STATUS="fail"
+      FAILURE_REASON="owner-comparison-incomplete"
+      return 1
+    fi
+  done
+}
+
 cleanup_live_state() {
   if [[ "${CLEANUP_DONE}" == "true" ]]; then
     return 0
@@ -1731,6 +1768,7 @@ enable_direct_grants_temporarily
 if mint_platform_desktop_token; then
   run_token_contract_and_smoke || true
   run_speechmatics_realtime_acceptance || true
+  run_owner_boundary_comparison || true
 else
   STATUS="fail"
   FAILURE_REASON="platform-desktop-token-mint-failed"
