@@ -516,7 +516,10 @@ def main() -> None:
         # result rejection to the capability-bound transcript session.
         # 2026-09-12 (backend#1163, gitops#3421): sha-965cb1c adds exact-session
         # result selection while preserving ingestion and authorization guards.
-        "sha256:4fe09e4da3d5ce5d128c8e8de53ef7714e3552fcdd09e54c63029bcf0fdbac11",
+        # 2026-09-24 (backend#1186, gitops#3834): sha-a2c9431 adds the meeting-scoped
+        # assignee-candidate search; the durable-finalization surface this verifier
+        # pins is untouched.
+        "sha256:abdd99c4c72418fa3dfa66f8d8bd570d1f994def33382778f8cb70bb679ec5bc",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
