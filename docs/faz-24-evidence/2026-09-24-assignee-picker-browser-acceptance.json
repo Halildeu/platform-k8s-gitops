@@ -1,0 +1,80 @@
+{
+  "schema": "faz24-browser-acceptance/v1",
+  "issue": "Halildeu/platform-k8s-gitops#3834",
+  "journey": "Görev atama — kişi seçici (normal kullanıcı, web)",
+  "environment": "TEST (testai.acik.com)",
+  "measured_at": "2026-09-24T13:11:53.635Z",
+  "persona": {
+    "username": "meeting-normal-persona",
+    "kind": "synthetic normal meeting user",
+    "authz": "MEETING_INTELLIGENCE_PILOT (MEETING manage, TRANSCRIPT view), no user management; admin user grid 403",
+    "converged_by": "scripts/keycloak/setup-meeting-normal-persona.sh"
+  },
+  "deployed": {
+    "frontend": "ghcr.io/halildeu/platform-web-frontend-testai@sha256:f9d0d84ae705d91a4d6e6de18dc3b16161809a8ef7a530d32b5a8e5f71cbfb75 (sha-4acbb32, #3840)",
+    "meeting-service": "ghcr.io/halildeu/platform-backend-meeting-service@sha256:0ca70cceab8667b3e599451c96e5ff20b65671d3c2995a5b926c6c5608928223 (sha-e7b404c, #3842)",
+    "user-service": "ghcr.io/halildeu/platform-backend-user-service@sha256:1adda57e0379b56140b9ee6124b7d0b866f44945c3fa3e1bc0b2d6187a073223 (sha-b0900ed, #3842)"
+  },
+  "steps": [
+    {
+      "name": "fixture",
+      "at": "2026-09-24T13:11:53.635Z",
+      "meeting": "0ff13d85",
+      "task": "1eae58ca"
+    },
+    {
+      "name": "login",
+      "at": "2026-09-24T13:11:56.478Z",
+      "landed": "login"
+    },
+    {
+      "name": "task-row",
+      "at": "2026-09-24T13:11:59.135Z",
+      "label": "Ata"
+    },
+    {
+      "name": "picker",
+      "at": "2026-09-24T13:11:59.733Z",
+      "options": 1
+    },
+    {
+      "name": "assigned",
+      "at": "2026-09-24T13:11:59.993Z",
+      "label": "Toplantı Normal Persona"
+    },
+    {
+      "name": "cleanup",
+      "at": "2026-09-24T13:12:00.033Z",
+      "task": 204,
+      "meeting": 204
+    }
+  ],
+  "calls": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/meetings/<meeting>/actions",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/meetings/<meeting>/assignee-candidates/search",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/meetings/<meeting>/actions/<task>",
+      "status": 200
+    }
+  ],
+  "failed_responses": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/meetings/<meeting>/intelligence/result",
+      "status": 404
+    }
+  ],
+  "failed_responses_note": "intelligence/result 404 = the fixture meeting has no analysis yet (expected); the only console error",
+  "result": "PASS",
+  "runner": "scripts/acceptance/meeting-assignee-picker-browser-smoke.sh (pinned Playwright 1.60.0 image, secrets on 0600 mounts)",
+  "screenshots": "kept on the TEST host evidence dir; not committed"
+}
