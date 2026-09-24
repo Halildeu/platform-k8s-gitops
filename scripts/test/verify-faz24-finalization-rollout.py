@@ -519,7 +519,9 @@ def main() -> None:
         # 2026-09-24 (backend#1186, gitops#3834): sha-a2c9431 adds the meeting-scoped
         # assignee-candidate search; the durable-finalization surface this verifier
         # pins is untouched.
-        "sha256:abdd99c4c72418fa3dfa66f8d8bd570d1f994def33382778f8cb70bb679ec5bc",
+        # 2026-09-24 (backend#1188, gitops#3834): sha-e7b404c adds the assignee's
+        # display name to task responses; the finalization surface is untouched.
+        "sha256:0ca70cceab8667b3e599451c96e5ff20b65671d3c2995a5b926c6c5608928223",
     )
     # The plural authorization expansion is valid only with the exact image
     # that implements it. Keeping both checks in one verifier makes a future
