@@ -58,6 +58,10 @@ on:
         description: "Exact audio-gateway image@sha256 for session-expiry smoke"
         required: false
         default: ""
+      compare_owner_boundary:
+        description: "Also compare pinned synthetic owner/date speech through mobile and desktop source encoders"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -202,6 +206,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate owner comparison fixtures and trace capture
+        if: inputs.compare_owner_boundary
+        run: python3 scripts/test/test_owner_boundary_comparison.py
+
       - name: Run platform-desktop token evidence chain
         id: run_chain
         env:
@@ -222,6 +230,7 @@ jobs:
           REALTIME_AUDIO_FILE: ${{ github.workspace }}/scripts/faz24/fixtures/${{ inputs.require_live_analysis && 'meeting-speaker-tr-v1/two-speaker-tr.wav' || 'speechmatics-realtime-tr-v1.wav' }}
           REALTIME_DURABLE_TIMEOUT_SECONDS: "720"
           REALTIME_LIVE_ANALYSIS_WAIT_SECONDS: ${{ inputs.require_live_analysis && '150' || '0' }}
+          RUN_OWNER_BOUNDARY_COMPARISON: ${{ inputs.compare_owner_boundary && '1' || '0' }}
           # The platform-desktop client owns these five direct claims. This
           # explicit test-only confirmation removes foreign/hardcoded direct
           # emitters only after a 0600 rollback snapshot is written.
