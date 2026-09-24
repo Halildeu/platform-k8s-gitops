@@ -112,6 +112,10 @@ def accepted_evidence() -> dict:
                 "speechGateProfile": "silero-balanced-v1",
             }
         },
+        "readinessSettle": {
+            "settled": True, "initialReady": False, "polls": 9,
+            "waitedMs": 24180, "timeoutSec": 120,
+        },
         "webSocket": {
             "ready": True,
             "eventType": "ready",
@@ -465,6 +469,48 @@ class RunnerContractTests(unittest.TestCase):
 class VerifierContractTests(unittest.TestCase):
     def test_accepts_complete_metadata_only_evidence(self) -> None:
         verifier.verify(accepted_evidence(), COMMIT)
+
+    def test_readiness_settle_bound_is_pinned_in_runner_and_verifier(self) -> None:
+        self.assertEqual(runner.READINESS_SETTLE_TIMEOUT_SEC, verifier.READINESS_SETTLE_TIMEOUT_SEC)
+        script = runner.build_remote_script(COMMIT)
+        self.assertNotIn("__READINESS_SETTLE_TIMEOUT_SEC__", script)
+        self.assertIn(
+            f"[ValidateRange(0, 600)][int]$TimeoutSec = {runner.READINESS_SETTLE_TIMEOUT_SEC}", script
+        )
+        # Settle runs only after an accepted updater, before every final sample.
+        call = script.index("$readinessSettle = Wait-StreamingReadinessSettled -ExpectedCommit $TargetCommit")
+        self.assertLess(script.index("if ($failureClass -eq 'none' -and $deployExitCode -eq 0) {"), call)
+        for final_sample in ("$liveHealth = Get-HealthMetadata", "$streamReadiness = Get-StreamingReadinessMetadata",
+                             "$stream = Test-WebSocketReady"):
+            self.assertLess(call, script.index(final_sample))
+        self.assertIn("readinessSettle = $readinessSettle", script)
+
+    def test_rejects_unsettled_or_unbounded_readiness_settle(self) -> None:
+        cases = (
+            (None, None),
+            ("settled", False),
+            ("initialReady", None),
+            ("initialReady", "false"),
+            ("polls", 0),
+            ("polls", 1001),
+            ("polls", 2.0),
+            ("timeoutSec", 3600),
+            ("timeoutSec", None),
+            ("waitedMs", -1),
+            ("waitedMs", 150_001),
+            ("waitedMs", "24180"),
+            ("skipped", True),
+        )
+        for field, value in cases:
+            data = accepted_evidence()
+            if field is None:
+                del data["readinessSettle"]
+            elif value is None and field != "skipped":
+                del data["readinessSettle"][field]
+            else:
+                data["readinessSettle"][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(verifier.EvidenceError):
+                verifier.verify(data, COMMIT)
 
     def test_rejects_non_ready_stream(self) -> None:
         data = accepted_evidence()

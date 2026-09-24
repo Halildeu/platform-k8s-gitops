@@ -12,6 +12,8 @@ from typing import Any, Sequence
 
 
 SCHEMA_VERSION = "faz24.gpu-host-exact-sha-rollout.v1"
+# Pinned bound of the post-updater streaming readiness settle.
+READINESS_SETTLE_TIMEOUT_SEC = 120
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 FORBIDDEN_KEYS = {
     "audio",
@@ -224,6 +226,21 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
         require(profile.get("device") == device, f"{role} runtime device mismatch")
         require(profile.get("computeType") == compute_type, f"{role} runtime compute type mismatch")
     require(readiness.get("speechGateProfile") == "silero-balanced-v1", "speech gate profile mismatch")
+    settle = object_field(data, "readinessSettle")
+    require("skipped" not in settle, "streaming readiness settle was skipped")
+    require(settle.get("settled") is True, "streaming readiness did not settle")
+    require(type(settle.get("initialReady")) is bool, "initial readiness flag is invalid")
+    polls = settle.get("polls")
+    require(type(polls) is int and 1 <= polls <= 1000, "readiness settle polls are invalid")
+    require(
+        settle.get("timeoutSec") == READINESS_SETTLE_TIMEOUT_SEC,
+        "readiness settle bound changed",
+    )
+    waited = settle.get("waitedMs")
+    require(
+        type(waited) is int and 0 <= waited <= (READINESS_SETTLE_TIMEOUT_SEC + 30) * 1000,
+        "readiness settle wait is outside its bound",
+    )
     require(meeting_health.get("reachable") is True, "meeting AI health is unreachable")
     require(meeting_health.get("status") == "ok", "meeting AI health is not ok")
     require(meeting_health.get("backend") == "ollama", "meeting AI is not on Ollama")
