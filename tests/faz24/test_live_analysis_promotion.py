@@ -32,7 +32,7 @@ class PromotionTest(unittest.TestCase):
                 return {'source':promotion.TARGET}
             return {'phase':'fixture'}
 
-        policy={'hostStartupGuards':[{'platformAiCommit':s,'startupScriptSha256':promotion.STARTUP_SHA,
+        policy={'hostStartupGuards':[{'platformAiCommit':s,'startupScriptSha256':promotion.STARTUP_SHA[s],
                                      'permitRequired':True} for s in (promotion.BASE,promotion.TARGET)],
                 'producerCapabilities':[{'transcriptImageDigest':'sha256:'+'a'*64}]}
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:

@@ -451,17 +451,26 @@ class GateTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(len(committed["producerCapabilities"]), 1)
-        self.assertEqual(len(committed["hostStartupGuards"]), 3)
+        # platform-ai#351 changed start-meeting-ai.ps1, so its exact source
+        # carries a different startup-script digest (CRLF host checkout).
+        expected_startup = {
+            "732da87e627a6767eab3d28f014b016f7bcea509":
+                "3d4aa09d44dabba870e5fa44515d2e5f7a5d0b49e0530c136a3f5600ac6ac1f7",
+            "13aa7b8303d7e0f85bef94a56b1e5d164d1884ed":
+                "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
+            "38ef0f3648c8e092599c0578764a4f2f075dd0a1":
+                "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
+            "e386b996cae22f08294a83d840f0e92d4a82cd53":
+                "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e",
+        }
+        self.assertEqual(len(committed["hostStartupGuards"]), 4)
         self.assertEqual(
-            {guard["platformAiCommit"] for guard in committed["hostStartupGuards"]},
-            {"e386b996cae22f08294a83d840f0e92d4a82cd53",
-             "38ef0f3648c8e092599c0578764a4f2f075dd0a1",
-             "13aa7b8303d7e0f85bef94a56b1e5d164d1884ed"},
+            {guard["platformAiCommit"]: guard["startupScriptSha256"]
+             for guard in committed["hostStartupGuards"]},
+            expected_startup,
         )
         for guard in committed["hostStartupGuards"]:
             self.assertIs(guard["permitRequired"], True)
-            self.assertEqual(guard["startupScriptSha256"],
-                             "d6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e")
         self.assertIs(committed["currentBoundary"]["enableAuthorized"], True)
 
         cases = (

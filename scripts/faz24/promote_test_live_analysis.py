@@ -20,10 +20,15 @@ import recover_test_ready_permit as ceremony
 from run_gpu_host_exact_sha_rollout import main as rollout
 from verify_gpu_host_exact_sha_rollout_evidence import verify
 
-BASE = '38ef0f3648c8e092599c0578764a4f2f075dd0a1'
-TARGET = '13aa7b8303d7e0f85bef94a56b1e5d164d1884ed'
+BASE = '13aa7b8303d7e0f85bef94a56b1e5d164d1884ed'
+TARGET = '732da87e627a6767eab3d28f014b016f7bcea509'
 ROOT_SHA = '44ac2425ded67086cfc20871e7b777b04a9fb98999f46a66220e8cf11f0a7cb7'
-STARTUP_SHA = 'd6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e'
+# Startup-script digest per exact source, as the CRLF Windows checkout hashes it.
+# The target changes start-meeting-ai.ps1 (platform-ai#351), so it differs.
+STARTUP_SHA = {
+    BASE: 'd6974b9b6c5d8c034bec6d81ffe9176d96d7b0c1770344c49164024ebb39d17e',
+    TARGET: '3d4aa09d44dabba870e5fa44515d2e5f7a5d0b49e0530c136a3f5600ac6ac1f7',
+}
 
 
 def header(source):
@@ -193,7 +198,7 @@ def perform(*, apply, output):
             raise ValueError('gitops-commit-invalid')
         policy_bytes, policy = ceremony.load_strict_json(ceremony.POLICY,'policy')
         for source in (BASE,TARGET):
-            if not any(g['platformAiCommit'] == source and g['startupScriptSha256'] == STARTUP_SHA
+            if not any(g['platformAiCommit'] == source and g['startupScriptSha256'] == STARTUP_SHA[source]
                        and g['permitRequired'] is True for g in policy['hostStartupGuards']):
                 raise ValueError('source-not-allowlisted')
         public = ceremony.remote(PREFLIGHT)

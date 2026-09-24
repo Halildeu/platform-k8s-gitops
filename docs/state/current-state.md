@@ -2,6 +2,13 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
+- Desired (2026-09-24, gitops#3807): the promotion workflow now targets
+  `732da87e627a6767eab3d28f014b016f7bcea509` ([AI PR351](https://github.com/Halildeu/platform-ai/pull/351):
+  meeting-ai waits up to 600 s for Ollama at startup, still failing closed) from
+  the accepted `13aa7b83` baseline. PR351 changes `start-meeting-ai.ps1`, so the
+  new host startup guard carries CRLF digest `3d4aa09d…`; `13aa7b83` keeps
+  `d6974b9b…`. Actual source stays `13aa7b83` until the promotion run is
+  recorded here. Reboot acceptance is still unobserved.
 - [Transport-source promotion 35870111086](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35870111086)
   accepted `13aa7b8303d7e0f85bef94a56b1e5d164d1884ed` (AI PR352/353)
   on TEST with a fresh source-bound permit and the unchanged full runtime
