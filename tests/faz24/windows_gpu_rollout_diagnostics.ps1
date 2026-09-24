@@ -14,7 +14,8 @@ $ast = [Management.Automation.Language.Parser]::ParseFile($SourcePath, [ref]$tok
 if ($errors.Count) { throw 'Remote source parse failed.' }
 $names = @('ConvertTo-PowerShellLiteral', 'Invoke-PowerShellChild', 'Read-AcceptanceDiagnostic',
   'Invoke-UpdaterChild', 'Invoke-TaskActionMigration', 'ConvertTo-StreamingReadinessMetadata',
-  'Get-StreamingReadinessMetadata', 'Test-StreamingReadinessMetadata')
+  'Get-StreamingReadinessMetadata', 'Test-StreamingReadinessMetadata',
+  'Wait-StreamingReadinessSettled')
 $helperDefinitions = @()
 foreach ($name in $names) {
   $functions = @($ast.FindAll({ param($node)
@@ -224,6 +225,10 @@ try {
   function Invoke-WebRequest {
     param([string]$Uri)
     if ($Uri -cne 'http://127.0.0.1:8200/ready') { throw 'Unexpected fixture endpoint.' }
+    if ($script:ReadyFailuresRemaining -gt 0) {
+      $script:ReadyFailuresRemaining--
+      throw 'Fixture worker is recovering.'
+    }
     if ($script:ReadyThrow) { throw 'Fixture request failure.' }
     if ($script:ReadyMalformed) { return [pscustomobject]@{StatusCode=200;Content='{malformed'} }
     return [pscustomobject]@{ StatusCode = $script:ReadyHttpStatus;
@@ -232,6 +237,7 @@ try {
   $script:ReadyThrow = $false
   $script:ReadyMalformed = $false
   $script:ReadyHttpStatus = 200
+  $script:ReadyFailuresRemaining = 0
   $script:ReadyResponse = New-ReadyFixture
   $ready = Get-StreamingReadinessMetadata
   if (-not (Test-StreamingReadinessMetadata $ready $TargetCommit)) { throw 'Valid streaming readiness rejected.' }
@@ -277,6 +283,23 @@ try {
   if (Test-StreamingReadinessMetadata (Get-StreamingReadinessMetadata) $TargetCommit) {
     throw 'Unavailable streaming readiness accepted.'
   }
+  # Post-updater settle: a recycled worker is sampled until ready within the
+  # bound, and the evidence keeps that it was not ready at first.
+  $script:ReadyThrow = $false
+  $script:ReadyResponse = New-ReadyFixture
+  $script:ReadyFailuresRemaining = 2
+  $settle = Wait-StreamingReadinessSettled -ExpectedCommit $TargetCommit -TimeoutSec 30 -PollSec 0
+  if (-not $settle.settled -or $settle.initialReady -or $settle.polls -ne 3 -or
+      $settle.timeoutSec -ne 30) { throw 'Readiness settle did not wait for worker recovery.' }
+  $script:ReadyThrow = $true
+  $settle = Wait-StreamingReadinessSettled -ExpectedCommit $TargetCommit -TimeoutSec 0 -PollSec 0
+  if ($settle.settled -or $settle.initialReady -or $settle.polls -ne 1) {
+    throw 'Readiness settle exceeded its bound or accepted an unavailable runtime.'
+  }
+  $script:ReadyThrow = $false
+  $settle = Wait-StreamingReadinessSettled -ExpectedCommit $TargetCommit -PollSec 0
+  if (-not $settle.settled -or -not $settle.initialReady -or $settle.polls -ne 1 -or
+      $settle.timeoutSec -ne 120) { throw 'Ready runtime was not settled at once with the pinned bound.' }
   function Start-Process { [pscustomobject]@{ ExitCode = $null } }
   $rejected = $false
   try {

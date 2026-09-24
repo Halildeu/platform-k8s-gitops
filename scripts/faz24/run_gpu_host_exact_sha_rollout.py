@@ -23,6 +23,8 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
 MAX_SOURCE_BYTES = 131072
 MAX_WIRE_BYTES = 16384
+# Bound for the post-updater streaming readiness settle (verifier pins it).
+READINESS_SETTLE_TIMEOUT_SEC = 120
 # Parse the entire stdin payload before any operation. PowerShell 5.1's
 # interactive `-Command -` parser can discard statements after a compound
 # block at EOF when there is no blank terminator.
@@ -170,6 +172,36 @@ function Test-StreamingReadinessMetadata {
     $Readiness.runtime.final.computeType -ceq 'float16' -and
     $Readiness.speechGateProfile -ceq 'silero-balanced-v1'
   )
+}
+
+function Wait-StreamingReadinessSettled {
+  param(
+    [Parameter(Mandatory = $true)][string]$ExpectedCommit,
+    [ValidateRange(0, 600)][int]$TimeoutSec = __READINESS_SETTLE_TIMEOUT_SEC__,
+    [ValidateRange(0, 30)][int]$PollSec = 3
+  )
+  # The updater's own long-stream smoke can recycle a streaming worker; its
+  # reload takes ~20-30 s. Sample until ready within a fixed bound instead of
+  # sampling that window once, and keep the recovery visible in the evidence.
+  $clock = [Diagnostics.Stopwatch]::StartNew()
+  $polls = 0
+  $initialReady = $null
+  $ready = $false
+  while ($true) {
+    $polls++
+    $ready = [bool](Test-StreamingReadinessMetadata -Readiness (Get-StreamingReadinessMetadata) `
+      -ExpectedCommit $ExpectedCommit)
+    if ($null -eq $initialReady) { $initialReady = $ready }
+    if ($ready -or $clock.Elapsed.TotalSeconds -ge $TimeoutSec) { break }
+    Start-Sleep -Seconds $PollSec
+  }
+  return [ordered]@{
+    settled = $ready
+    initialReady = [bool]$initialReady
+    polls = $polls
+    waitedMs = [int][Math]::Min([double][int]::MaxValue, $clock.Elapsed.TotalMilliseconds)
+    timeoutSec = $TimeoutSec
+  }
 }
 
 function Get-TaskMetadata {
@@ -673,6 +705,12 @@ if ($script:AcceptanceDiagnosticInvalid) {
 } elseif ($null -ne $script:AcceptanceDiagnostic -and $failureClass -eq 'none') {
   $failureClass = 'acceptance-candidate-rejected'
 }
+$readinessSettle = [ordered]@{
+  settled = $false; initialReady = $false; polls = 0; waitedMs = 0; timeoutSec = 0; skipped = $true
+}
+if ($failureClass -eq 'none' -and $deployExitCode -eq 0) {
+  $readinessSettle = Wait-StreamingReadinessSettled -ExpectedCommit $TargetCommit
+}
 $liveHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8200/health'
 $meetingHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8300/health'
 $streamReadiness = Get-StreamingReadinessMetadata
@@ -739,6 +777,7 @@ $evidence = [ordered]@{
   tasks = [ordered]@{ liveStt = $liveTask; meetingAi = $meetingTask }
   health = [ordered]@{ liveStt = $liveHealth; meetingAi = $meetingHealth }
   readiness = [ordered]@{ liveStt = $streamReadiness }
+  readinessSettle = $readinessSettle
   webSocket = $stream
   privacy = [ordered]@{
     rawAudioIncluded = $false
@@ -771,8 +810,10 @@ def build_remote_script(target_commit: str, recover_fenced_runtime: bool = False
     commit = validate_commit(target_commit)
     if type(recover_fenced_runtime) is not bool:
         raise ValueError("recovery flag must be boolean")
-    return REMOTE_SCRIPT.replace("__TARGET_COMMIT__", commit).replace(
-        "__RECOVER_FENCED_RUNTIME__", "$true" if recover_fenced_runtime else "$false"
+    return (
+        REMOTE_SCRIPT.replace("__TARGET_COMMIT__", commit)
+        .replace("__RECOVER_FENCED_RUNTIME__", "$true" if recover_fenced_runtime else "$false")
+        .replace("__READINESS_SETTLE_TIMEOUT_SEC__", str(READINESS_SETTLE_TIMEOUT_SEC))
     )
 
 
