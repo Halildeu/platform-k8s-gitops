@@ -16,7 +16,7 @@ The 2026-09-15 reboot of the TEST GPU host left recording analysis down. The out
 | Part | Mechanism | Status |
 |---|---|---|
 | Ollama | `platform-ai-ollama-test` S4U boot task as `svc-ai-test`. The launcher `test-ollama-boot.ps1` and its runbook are in draft [#3791](https://github.com/Halildeu/platform-k8s-gitops/pull/3791); the host runs launcher sha256 `96764080…`. | Live since 2026-09-23 11:56Z. GPU placement equals the old tray instance: 4284 MiB of `qwen3.8:27b`. |
-| meeting-ai | Bounded Ollama wait, default 600 s, still fails closed | platform-ai#351, then the exact-SHA GPU rollout |
+| meeting-ai | Bounded Ollama wait, default 600 s, still fails closed | Live since 2026-09-24: platform-ai#351 (`732da87e`) promoted by run 36042678718 |
 | Caddy | `scripts/faz24/ensure_caddy_boot_retry.ps1`: boot trigger `PT1M` delay plus a 5-minute re-launch trigger, `IgnoreNew`; owned action unchanged | Apply after merge |
 | Duplicate Caddy task | `Workcube-Caddy-mTLS` disabled, never deleted | Disabled 2026-09-23 |
 
@@ -55,7 +55,7 @@ Re-enable the duplicate only if it is really needed: `Enable-ScheduledTask -Task
 - **Identity is not the limit.** Both SYSTEM and the non-administrator S4U account see CUDA in session 0.
 - **Rollback:** Disable `platform-ai-ollama-test`. Move `C:\Users\denetimpc\AppData\Local\AcikTestOps\3807\backup\Ollama.lnk` back to the Startup folder and start the tray app in the `denetimpc` session.
 
-## Reboot acceptance (not yet observed)
+## Reboot acceptance
 
 A reboot interrupts STT and analysis for every TEST user, so it runs only in a window agreed with the Faz 24 owner, after the meeting-ai wait is deployed.
 
@@ -66,4 +66,10 @@ A reboot interrupts STT and analysis for every TEST user, so it runs only in a w
    - meeting-ai `/ready` matches the recorded state.
 3. **Functional check:** Produce a NEW persisted analysis through the canonical synthetic recording chain and reopen it in the browser. Readiness alone is not acceptance.
 
-Until this is observed, reboot resilience stays unverified.
+**Observed 2026-09-24** ([evidence](../faz-24-evidence/2026-09-24-gpu-host-reboot-acceptance.json)).
+Steps 1 and 2 passed: all five ports came back without manual action within 215 s of boot, and `11434` was owned by `svc-ai-test`.
+The functional chain produced a new durable analysis.
+Browser reopen stays partial: summary and decisions are privacy-gated for personas that do not own the synthetic meeting.
+A browser step inside the chain, run before its temporary user is deleted, is the follow-up.
+
+Tool: `scripts/acceptance/meeting-analysis-reopen-browser-smoke.sh` reopens a meeting with a named persona and checks the rendered counts.

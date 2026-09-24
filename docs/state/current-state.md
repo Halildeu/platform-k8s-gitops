@@ -2,13 +2,26 @@
 
 ## TEST GPU runtime recovery (2026-09-23, current)
 
-- Desired (2026-09-24, gitops#3807): the promotion workflow now targets
-  `732da87e627a6767eab3d28f014b016f7bcea509` ([AI PR351](https://github.com/Halildeu/platform-ai/pull/351):
-  meeting-ai waits up to 600 s for Ollama at startup, still failing closed) from
-  the accepted `13aa7b83` baseline. PR351 changes `start-meeting-ai.ps1`, so the
-  new host startup guard carries CRLF digest `3d4aa09d…`; `13aa7b83` keeps
-  `d6974b9b…`. Actual source stays `13aa7b83` until the promotion run is
-  recorded here. Reboot acceptance is still unobserved.
+- [Reboot acceptance 2026-09-24](../faz-24-evidence/2026-09-24-gpu-host-reboot-acceptance.json)
+  (gitops#3807). [Promotion 36042678718](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/36042678718)
+  accepted AI `732da87e627a6767eab3d28f014b016f7bcea509`
+  ([AI PR351](https://github.com/Halildeu/platform-ai/pull/351), bounded Ollama wait)
+  from `13aa7b83`. It used a fresh source-bound permit and the full runtime verifier;
+  readiness settled at the first sample.
+  - Controlled reboot (`shutdown /r`, 18:44:42Z; boot 18:45:38Z). No manual action.
+  - Ports came up at +150 s (11434, owner `svc-ai-test`), +178 s (8243/8244),
+    +196 s (8200) and +215 s (8300). meeting-ai and live-STT readiness matched pre-reboot.
+  - The meeting-ai task started 35 s before the Ollama process. It served only
+    after Ollama answered, with no "refusing mock fallback" line: this is the PR351 path.
+  - [Synthetic chain 36044781750](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/36044781750)
+    then produced a NEW durable analysis: 4 decisions, 3 actions, API reopen gave the same result.
+  - Browser reopen is partial. The result request answered 200 and the 3 durable actions
+    render as tasks. Summary and decisions are privacy-gated for non-owner personas
+    (transcripts 403); the chain user is deleted.
+  - Earlier [promotion 36039286684](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/36039286684)
+    fenced TEST 18:10-18:26Z. Its single-sample verifier hit an intermittent live-worker
+    reload in both candidate and baseline. [Recovery 36041098713](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/36041098713)
+    restored it; the verifier settle is gitops#3847 and the root cause is tracked in gitops#3846.
 - [Transport-source promotion 35870111086](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/35870111086)
   accepted `13aa7b8303d7e0f85bef94a56b1e5d164d1884ed` (AI PR352/353)
   on TEST with a fresh source-bound permit and the unchanged full runtime

@@ -1,0 +1,228 @@
+{
+  "schemaVersion": "faz24.gpu-host-reboot-acceptance.v1",
+  "issue": "Halildeu/platform-k8s-gitops#3807",
+  "environment": "test",
+  "runbook": "docs/runbooks/RB-faz24-gpu-host-reboot-resilience.md#reboot-acceptance-not-yet-observed",
+  "source": {
+    "platformAiCommit": "732da87e627a6767eab3d28f014b016f7bcea509",
+    "promotionRun": 36042678718,
+    "promotionStatus": "runtime-accepted-live-latency-required",
+    "promotionGitopsCommit": "1fe7db216ca2693c997820493af69b17539cf26d",
+    "readinessSettle": {
+      "settled": true,
+      "initialReady": true,
+      "polls": 1,
+      "waitedMs": 299,
+      "timeoutSec": 120
+    }
+  },
+  "before": {
+    "observedUtc": "2026-09-24T18:43:51Z",
+    "bootUtc": "2026-09-15T02:47:26.5000000Z",
+    "head": "732da87e627a6767eab3d28f014b016f7bcea509",
+    "listeners": {
+      "8200": {
+        "listening": true,
+        "process": "python.exe",
+        "owner": "NT AUTHORITY\\SYSTEM"
+      },
+      "8243": {
+        "listening": true,
+        "process": "caddy.exe",
+        "owner": "NT AUTHORITY\\SYSTEM"
+      },
+      "8244": {
+        "listening": true,
+        "process": "caddy.exe",
+        "owner": "NT AUTHORITY\\SYSTEM"
+      },
+      "8300": {
+        "listening": true,
+        "process": "python.exe",
+        "owner": "NT AUTHORITY\\SYSTEM"
+      },
+      "11434": {
+        "listening": true,
+        "process": "ollama.exe",
+        "owner": "SRB-AIDENETIMPC\\svc-ai-test"
+      }
+    },
+    "meetingReady": {
+      "consumerReady": true,
+      "deliveryReady": true,
+      "consumerEnabled": true,
+      "error": null,
+      "deliveryStatus": "ok",
+      "status": "ok",
+      "workerRunning": true
+    },
+    "liveReady": {
+      "status": "ready",
+      "error": null,
+      "runtimeCommit": "732da87e627a6767eab3d28f014b016f7bcea509",
+      "workersHealthy": true
+    },
+    "establishedStreams": 0
+  },
+  "reboot": {
+    "issuedUtc": "2026-09-24T18:44:42Z",
+    "command": "shutdown.exe /r /t 30 /d p:4:1",
+    "bootUtc": "2026-09-24T18:45:38.5000000Z",
+    "manualActions": 0
+  },
+  "after": {
+    "observedUtc": "2026-09-24T18:56:24Z",
+    "head": "732da87e627a6767eab3d28f014b016f7bcea509",
+    "listeners": {
+      "8200": {
+        "listening": true,
+        "process": "python.exe",
+        "owner": "NT AUTHORITY\\SYSTEM",
+        "startedUtc": "2026-09-24T18:48:54.1535670Z",
+        "secondsAfterBoot": 195.7
+      },
+      "8243": {
+        "listening": true,
+        "process": "caddy.exe",
+        "owner": "NT AUTHORITY\\SYSTEM",
+        "startedUtc": "2026-09-24T18:48:36.6781340Z",
+        "secondsAfterBoot": 178.2
+      },
+      "8244": {
+        "listening": true,
+        "process": "caddy.exe",
+        "owner": "NT AUTHORITY\\SYSTEM",
+        "startedUtc": "2026-09-24T18:48:36.6781340Z",
+        "secondsAfterBoot": 178.2
+      },
+      "8300": {
+        "listening": true,
+        "process": "python.exe",
+        "owner": "NT AUTHORITY\\SYSTEM",
+        "startedUtc": "2026-09-24T18:49:13.7051660Z",
+        "secondsAfterBoot": 215.2
+      },
+      "11434": {
+        "listening": true,
+        "process": "ollama.exe",
+        "owner": "SRB-AIDENETIMPC\\svc-ai-test",
+        "startedUtc": "2026-09-24T18:48:08.1954950Z",
+        "secondsAfterBoot": 149.7
+      }
+    },
+    "tasks": {
+      "CaddyI7AppMtls": {
+        "state": "Running",
+        "lastRunUtc": "2026-09-24T18:55:01.0000000Z"
+      },
+      "Workcube-Caddy-mTLS": {
+        "state": "Disabled",
+        "lastRunUtc": "2026-09-15T02:47:52.0000000Z"
+      },
+      "platform-ai-live-stt": {
+        "state": "Running",
+        "lastRunUtc": "2026-09-24T18:46:03.0000000Z"
+      },
+      "platform-ai-meeting-ai": {
+        "state": "Running",
+        "lastRunUtc": "2026-09-24T18:47:33.0000000Z"
+      },
+      "platform-ai-ollama-test": {
+        "state": "Running",
+        "lastRunUtc": "2026-09-24T18:47:33.0000000Z"
+      }
+    },
+    "meetingReady": {
+      "consumerReady": true,
+      "deliveryReady": true,
+      "consumerEnabled": true,
+      "error": null,
+      "deliveryStatus": "ok",
+      "status": "ok",
+      "workerRunning": true
+    },
+    "liveReady": {
+      "status": "ready",
+      "error": null,
+      "runtimeCommit": "732da87e627a6767eab3d28f014b016f7bcea509",
+      "workersHealthy": true
+    },
+    "interactiveSessions": 0
+  },
+  "acceptance": {
+    "allRequiredListenersUp": true,
+    "maxSecondsAfterBoot": 215.2,
+    "boundSeconds": 600,
+    "ollamaOwnedBySvcAiTest": true,
+    "meetingAiTaskStartedBeforeOllamaProcess": true,
+    "meetingAiServedAfterOllama": true,
+    "refusingMockFallbackLoggedAfterBoot": false,
+    "meetingReadyMatchesBefore": true,
+    "liveReadyAtSource": true
+  },
+  "functional": {
+    "chainRun": 36044781750,
+    "workflow": "faz24-platform-desktop-token-evidence.yml",
+    "inputs": {
+      "run_speechmatics_realtime": true,
+      "require_live_analysis": true
+    },
+    "status": "pass",
+    "meetingIdPrefix": "a3826053",
+    "startedAt": "2026-09-24T18:57:13Z",
+    "completedAt": "2026-09-24T19:06:16Z",
+    "durable": {
+      "decisionCount": 4,
+      "actionCount": 3,
+      "summaryVerified": true,
+      "durableApiReadBackProven": true,
+      "sameResultReopened": true,
+      "usableProductResult": true,
+      "intelligenceResultSessionMatch": true,
+      "canonicalSourceReadBackProven": true
+    },
+    "liveAnalysis": {
+      "accepted": 2,
+      "rejected": 0,
+      "usableBeforeEof": true
+    },
+    "http": {
+      "canonicalSource": 200,
+      "createMeeting": 201,
+      "finishSession": 200,
+      "intelligenceReopen": 200,
+      "intelligenceResult": 200,
+      "recordConsent": 201,
+      "recordingLifecycleFinish": 200,
+      "recordingLifecycleStart": 200,
+      "sessionStatus": 200,
+      "startSession": 201,
+      "transcriptRead": 200
+    }
+  },
+  "browserReopen": {
+    "tool": "scripts/acceptance/meeting-analysis-reopen-browser-smoke.sh",
+    "status": "partial",
+    "intelligenceResultHttp": 200,
+    "durableActionsRenderedAsTasks": 3,
+    "summaryAndDecisionsRendered": false,
+    "reason": "GET /api/v1/admin/transcripts answered 403 for both non-owner personas (d35-admin-persona, meeting-normal-persona); the chain meeting belongs to its deleted temporary user, so the UI fail-closes content by design",
+    "followUp": "chain-level authorized browser reopen before the temporary user is deleted"
+  },
+  "incident": {
+    "promotionRun": 36039286684,
+    "status": "failed",
+    "cause": "single-sample verifier hit an intermittent live worker reload (5 s draft timeout) for candidate and baseline",
+    "fencedWindowUtc": "2026-09-24T18:10/18:26",
+    "recoveryRun": 36041098713,
+    "verifierFix": "Halildeu/platform-k8s-gitops#3847",
+    "rootCauseIssue": "Halildeu/platform-k8s-gitops#3846"
+  },
+  "privacy": {
+    "rawAudioIncluded": false,
+    "transcriptTextIncluded": false,
+    "analysisTextIncluded": false,
+    "secretMaterialIncluded": false
+  },
+  "boundary": "TEST GPU host only; no production host, model, or historical analysis changed. Not physical-microphone, phone or production acceptance."
+}
