@@ -21,11 +21,33 @@ class PromotionTests(unittest.TestCase):
             promotion.header('f' * 40)
         self.assertIn("$meeting.status -cne 'ok'", promotion.PREFLIGHT)
 
-    def run_fixture(self, *, apply, candidate_fails=False):
+    def test_committed_policy_allowlists_both_exact_sources(self):
+        # The workflow must not discover an allowlist mismatch on the host.
+        policy = json.loads((Path(__file__).resolve().parents[2]
+                             / 'config/faz24-transcript-ready-pre-enable-policy.v1.json').read_text())
+        guards = {g['platformAiCommit']: g for g in policy['hostStartupGuards']}
+        self.assertEqual(set(promotion.STARTUP_SHA), {promotion.BASE, promotion.TARGET})
+        for source in (promotion.BASE, promotion.TARGET):
+            self.assertIn(source, guards)
+            self.assertEqual(guards[source]['startupScriptSha256'], promotion.STARTUP_SHA[source])
+            self.assertIs(guards[source]['permitRequired'], True)
+
+    def test_startup_digest_of_other_source_is_not_an_allowlist_match(self):
+        swapped = {promotion.BASE: promotion.STARTUP_SHA[promotion.TARGET],
+                   promotion.TARGET: promotion.STARTUP_SHA[promotion.BASE]}
+        result, host, activate, verify = self.run_fixture(apply=True, startup=swapped)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['failure']['reason'], 'source-not-allowlisted')
+        host.assert_not_called()
+        activate.assert_not_called()
+        verify.assert_not_called()
+
+    def run_fixture(self, *, apply, candidate_fails=False, startup=None):
         root = b'{"fixture":"public-root"}'
+        startup = startup or promotion.STARTUP_SHA
         policy = {
             'hostStartupGuards': [
-                {'platformAiCommit': source, 'startupScriptSha256': promotion.STARTUP_SHA,
+                {'platformAiCommit': source, 'startupScriptSha256': startup[source],
                  'permitRequired': True} for source in (promotion.BASE, promotion.TARGET)],
             'producerCapabilities': [{'transcriptImageDigest': 'sha256:' + 'a' * 64}],
         }
