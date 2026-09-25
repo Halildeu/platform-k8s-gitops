@@ -15,6 +15,7 @@
 # adında dedicated ATS smoke client kurmalı. Aksi halde A2c bu smoke'u breaks eder.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EDGE="${ATS_EDGE:-https://testai.acik.com}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-/srv/platform/secrets/backup-auth/vault-init-test.json}"
 API="$EDGE/api/ats/v1"
@@ -65,7 +66,12 @@ CLAIMS=$(printf '%s' "$RT" | cut -d. -f2 | python3 -c 'import base64,json,sys;p=
 ok "recruiter tenant + least-privilege rol exact-set"
 printf 'header = "Authorization: Bearer %s"\n' "$RT" > "$T/recruiter.curl"
 OP_CLAIMS=$(printf '%s' "$OT" | cut -d. -f2 | python3 -c 'import base64,json,sys;p=sys.stdin.read().strip();p+="="*(-len(p)%4);d=json.loads(base64.urlsafe_b64decode(p));print((d.get("tenant") or "")+"|"+",".join(sorted(d.get("resource_access",{}).get("ats-api",{}).get("roles",[]))))')
-EXPECTED_OPERATOR="$OTHER_TENANT|ats.application.read,ats.application.status.write,ats.citation.write,ats.consent.write,ats.dsar.write,ats.erasure.execute,ats.export.read,ats.export.write,ats.recording.write,ats.review.read,ats.review.write,ats.transcript.read,ats.transcription.write"
+# Operator exact-set = the canonical provisioning set (provision-test-keycloak.sh PERMS, #2443).
+# Read from that one source: a copied list here drifted when the screening scopes were added.
+OPERATOR_PERMS="$(sed -n 's/^PERMS="\(.*\)"$/\1/p' "$SCRIPT_DIR/provision-test-keycloak.sh")"
+[ "$(printf '%s\n' "$OPERATOR_PERMS" | grep -c .)" = 1 ] || die "canonical operator PERMS not found exactly once"
+# shellcheck disable=SC2086 # word splitting of the space-separated PERMS list is intended
+EXPECTED_OPERATOR="$OTHER_TENANT|$(printf '%s\n' $OPERATOR_PERMS | LC_ALL=C sort | paste -sd, -)"
 [ "$OP_CLAIMS" = "$EXPECTED_OPERATOR" ] || die "operator tenant/rol exact-set"
 printf 'header = "Authorization: Bearer %s"\n' "$OT" > "$T/operator.curl"
 
