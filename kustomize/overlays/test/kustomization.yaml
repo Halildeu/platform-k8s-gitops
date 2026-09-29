@@ -7249,24 +7249,25 @@ images:
     newName: ghcr.io/halildeu/platform-agent-artifacts
     # newTag is the operator-readable release identity; digest is the D30 pull
     # authority and remains immutable even if a registry tag were moved.
-    newTag: v0.3.31
-    # D30 immutable pin — Release EXE trusted run 32663285170 (tag v0.3.31,
+    newTag: v0.3.32
+    # D30 immutable pin — Release EXE trusted run 36560081593 (tag v0.3.32,
     # release_class=rollout-candidate, signing_tier=trusted-internal-ca; ships
-    # the self-update pending-activation retry, platform-agent#295/#296 /
-    # gitops#3483). Release asset manifest records EndpointAgent.zip SHA256
-    # e5ab543882fa5789e03962ef8776aa7be059d161dd5d2b0234117cf3709c9ddc,
+    # managed wallpaper delivery for the display policy, platform-agent#297 /
+    # platform-backend#1203). Digest confirmed against the GHCR package API, not a
+    # build log. Release asset manifest records EndpointAgent.zip SHA256
+    # ab11e0b389d4abab98efeaefd92fae90a822009be69aee0752846bd1977c7f7f,
     # agent binary SHA256
-    # 6785bf6ab4a28a1e0e3ec016723310c090c6f01781f20452456cdfb0835f6fbf, and
+    # f234780094b7c6288304f33d35d62ca4a6e8aafb5c7a686b090ed96092611a31, and
     # install.ps1 SHA256
-    # 66fc627386c7244a653bf5e22704df451e9c46d7624d347649ebfe863a82f3fe,
+    # 67344e2bdedeecf640f458a7028ff3e3123438cb50b73587cae43190bda1b916,
     # release-manifest.json SHA256
-    # 4876032b53bca48b92699861e3aed2c2ee890d36d21adeb5e4ea80330961d81c, and
+    # 90435b2e122afc59da816ec485dcd0178b6c9104472b9afc016685a85e548dc9, and
     # remote-bridge attestation evidence SHA256
-    # 955c98a3ee3783c3219dae466702256fadfcc27f8bf462ed1f46729f8b2adad2.
-    # Rollback anchor: v0.3.30, source 298229d9de3aad5ddbbfef78c6da4012d7d28ac1,
-    # artifact digest sha256:158d8376b9714b413c309268c57d2d1b717a333e2b3063054e14cbf4631e0a74,
-    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.30.
-    digest: sha256:9fdcb90c98835c22d882e1632b8fd5ce0129fc0d121801a928ea01666bb7d492
+    # 28d40bcd40cc54ab8f4ffbba6bbf4f8033bffeac06d563549ad3e64069e2c641.
+    # Rollback anchor: v0.3.31, source b1789dbbe8833fb8cdf16f9e2480f4e5bbf96af8,
+    # artifact digest sha256:9fdcb90c98835c22d882e1632b8fd5ce0129fc0d121801a928ea01666bb7d492,
+    # https://github.com/Halildeu/platform-agent/releases/tag/v0.3.31.
+    digest: sha256:c0e21b0ce05b3e243a4fea08bf5d7f519c6332c31e20f8eed15b1dd3e9847eb4
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
