@@ -8012,6 +8012,28 @@ patches:
       - op: add
         path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1tpm-vault-credential-rev
         value: "2828-approle-secret-20260906-1"
+  # platform-backend#508 Endpoint Display Policy (screensaver + wallpaper).
+  # The service gates the whole surface on endpoint-admin.display-policy.enabled
+  # (default false) and returns 503 "surface is disabled" otherwise. The flag was
+  # switched on by hand on the live Deployment in June and never written here, so
+  # a later redeploy silently turned the feature off again: on 2026-09-29 the
+  # Görüntü Politikası tab answered 503 three times. GitOps now owns it.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: add
+        path: /data/ENDPOINT_ADMIN_DISPLAY_POLICY_ENABLED
+        value: "true"
+  # envFrom values are process-start; bump this marker whenever a display-policy
+  # key above changes so the pod template revision rolls the new value in.
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1display-policy-config-rev
+        value: "508-enable-20260929"
   - target:
       kind: ConfigMap
       name: endpoint-admin-service-config
