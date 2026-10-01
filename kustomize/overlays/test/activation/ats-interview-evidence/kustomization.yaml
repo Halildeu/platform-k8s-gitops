@@ -1,16 +1,26 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
-# Current desired pin (2026-09-27): ats@a34aa1e, ats#277 + ats#280 / gitops#3862.
-#   CV reader pdfbox-3.0.5-rules-v15: the label dictionary keeps declaration order,
-#   so heading-to-field mapping no longer varies per JVM (ats#271). Resume proposals
-#   carry an optional, closed-set provenance.source (ADDRESS_LAST_LINE; V25, ats#213 G);
-#   the parser hookup lands after ats#274. Owner-side real-CV regression (25 CVs,
-#   6 JVM runs, no values printed): main 4/25 CVs unstable, v15 0/25.
-#   digest  sha256:905c8fc1d4cbb7dde38fc8c851f9bfbc5021a63165bf6aa3575ae2220d4209cb
-#   Build/scan/SBOM/push run 36332938125; registry manifest matched via GHCR package
-#   API (tag sha-a34aa1e), not a build-log digest.
+# Current desired pin (2026-10-01): ats@4a3ecae, ats#275 + #276 + #274 + #282.
+#   CV reader pdfbox-3.0.5-rules-v18 — three parser slices on top of v15.
+#   v16 (ats#272 A): a single-value field is proposed only when the value fits its
+#   type, so a job title is never offered as a phone number. v17 (ats#272 B): section
+#   confidence drops to 0.80 when the layout decision was uncertain (split page or a
+#   flexible heading match), instead of a flat 0.92. v18 (ats#213 F): the last address
+#   line proposes the city when it is one of the 81 provinces, at 0.50 confidence, and
+#   the address itself still reaches no field.
+#   Owner-side real-CV regression (25 CVs, no values printed): malformed e-mail 2 -> 0,
+#   malformed phone 1 -> 0, no real phone proposal lost; v17 changed no value, moving
+#   67 of 86 section proposals from 0.92 to the 0.80 "review" band.
+#   V26 (ats#250) backfills the legacy experience/education TEXT of entry-less
+#   applications into a single description-only entry. Owner pre-count on TEST:
+#   9 experience, 9 education. The migration itself asserts due == moved and nothing
+#   left, and raises (rolling the whole migration back) otherwise.
+#   digest  sha256:54a54bc661154f3ed3c287b59c84372abef9ba49432821231f1ecea9d57c652e
+#   Build/scan/SBOM/push run 36836756401; digest read from the GHCR registry
+#   manifest API (tag sha-4a3ecae), not a build-log digest. The same method reproduces
+#   the outgoing pin exactly for tag sha-a34aa1e.
 #   Runtime imageID verification is required after GitOps reconciliation.
-# Previous pin (2026-09-23): ats@4c7913a, ats#270 / gitops#3821 —
-#   sha256:a2c8afc515d077bbf21ca4d0657ee81080feeb132c4ca38aa8258d4fdc26a0cb (run 35858458527).
+# Previous pin (2026-09-27): ats@a34aa1e, ats#277 + ats#280 / gitops#3862 —
+#   sha256:905c8fc1d4cbb7dde38fc8c851f9bfbc5021a63165bf6aa3575ae2220d4209cb (run 36332938125).
 # The older source/build notes below describe previous rollout history.
 #
 # Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
@@ -191,10 +201,10 @@ resources:
   # fallback pod'u test node kapasitesini tüketmez.
 
 images:
-  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/36332938125
-  # Rollback image: sha256:a2c8afc515d077bbf21ca4d0657ee81080feeb132c4ca38aa8258d4fdc26a0cb
+  # Build/scan/push: https://github.com/Halildeu/ats/actions/runs/36836756401
+  # Rollback image: sha256:905c8fc1d4cbb7dde38fc8c851f9bfbc5021a63165bf6aa3575ae2220d4209cb
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:905c8fc1d4cbb7dde38fc8c851f9bfbc5021a63165bf6aa3575ae2220d4209cb
+    digest: sha256:54a54bc661154f3ed3c287b59c84372abef9ba49432821231f1ecea9d57c652e
   # ats-interview-evidence-ui pini ats#238 ile KALDIRILDI (yukarıdaki resources
   # gerekçesi). İmaj ats tarafında derlenmeye devam eder (lokal denetim koşumu
   # için) ama paylaşılan ortama pin'lenmez. Son yayınlanan pin, gerekirse
