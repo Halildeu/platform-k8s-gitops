@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: etik-speak-public-ui
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate
+    nginx.ingress.kubernetes.io/auth-realm: "Etik Speak sentetik test"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [etik.acik.com, speakup.acik.com]
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: etik.acik.com
+      http: &publicUi
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: etik-speak-public, port: {number: 80}}
+    - host: speakup.acik.com
+      http: *publicUi
