@@ -1,0 +1,71 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: platform-prod
+resources:
+  - ../../../../base/apps/etik-speak
+  - secretstore.yaml
+  - externalsecret.yaml
+  - ingress-public-api.yaml
+  - ingress-public-ui.yaml
+  - ingress-staff-api.yaml
+  - ingress-manager-ui.yaml
+  - netpol.yaml
+  - resource-quota.yaml
+  - priority-class.yaml
+  - public-api-upstream-headers.yaml
+images:
+  # Exact branch artifacts: backend source 8302e3a1 / run 29710031015 and
+  # public-web source 4eaf02bf / run 29710051185, and dedicated manager-web
+  # source 308a2777 / run 29716679615. Their immutable identities
+  # are content-bound by signed provenance in the Faz 35 image-set ledger.
+  # Root activation is included only by the post-provisioning commit that pins
+  # the reviewed Vault role and OpenFGA store/model IDs.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
+    newName: ghcr.io/halildeu/platform-backend-ethics-service
+    digest: PENDING_FAZ35_PROD_ETHICS_SERVICE_DIGEST
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
+    newName: ghcr.io/halildeu/platform-web-etik-speak-public
+    digest: PENDING_FAZ35_PROD_ETIK_SPEAK_PUBLIC_DIGEST
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-manager
+    newName: ghcr.io/halildeu/platform-web-etik-speak-manager
+    digest: PENDING_FAZ35_PROD_ETIK_SPEAK_MANAGER_DIGEST
+patches:
+  - target: {kind: Deployment, name: ethics-service}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+      # Faz 35 test-only transport gate bypass. ingress-nginx v1.9+
+      # `proxy-set-headers` ConfigMap yalnızca ilk (alfabetik) header'ı
+      # render ediyor — `X-Etik-Speak-Transport: https` atlanıyor + backend
+      # `SECURE_TRANSPORT_REQUIRED` reddediyor. Backend'in built-in
+      # `ETHICS_SECURE_TRANSPORT_REQUIRED` env toggle'ı yalnız TEST'te devre
+      # dışı bırakılıyor. ES-3 prod pilot öncesi kalıcı fix gerek: (a)
+      # ingress-nginx `configuration-snippet` + cluster `allow-snippet-
+      # annotations` + `annotations-risk-level: Critical` ya da (b) backend
+      # `PublicCredentialBoundaryFilter.hasAuthorization` empty-string bypass
+      # + `X-Forwarded-Proto: https` fallback kabul.
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: ETHICS_SECURE_TRANSPORT_REQUIRED
+            value: "false"
+  - target: {kind: Deployment, name: etik-speak-public}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+  - target: {kind: Deployment, name: etik-speak-manager}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
