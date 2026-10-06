@@ -486,7 +486,11 @@ images:
     # remaining SSE viewers registered. Attested build 35740822541.
     # Source is b0b7a9c plus the reviewed live-analysis-only change.
     # Rollback: sha256:58f4a5b7499a011628041da504bb589612e328f889aa21d6afc3a6a8137d5247
-    digest: sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307
+    # 2026-10-06 candidate (#3884, mobile#7): backend#1201 / sha-637d7ebc.
+    # Provider receipt ACK + bounded same-provider recording-resume-v1.
+    # Canonical build 37463379188; runtime/phone acceptance still pending.
+    # Rollback: sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307
+    digest: sha256:f2541989a1a8be7fedcef538afb94d5a2ee256b4778b725dd99c2852034791bd
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service

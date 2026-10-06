@@ -567,7 +567,7 @@ def main() -> None:
         # backend#1183 / sha-0ae51f5: timed live-analysis flush and SSE viewer
         # lifetime; finalization, consent, STT and persistence are unchanged.
         # Attested build 35740822541; the runtime acceptance remains separate.
-        "sha256:4e1f4431bd7ef7f78cd1cc934b8472ce6dd9ac84675dad2a9564dfe309ac4307",
+        "sha256:f2541989a1a8be7fedcef538afb94d5a2ee256b4778b725dd99c2852034791bd",
     )
     pod_annotation(
         meeting_deploy,
