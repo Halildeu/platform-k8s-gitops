@@ -37,7 +37,7 @@
         "d29_zanzibar": {
           "status": "AMBER",
           "checked_at": "2026-05-19T12:10:00Z",
-          "details": "frontend is a static SPA (jwt_validates:false, services.yaml) — no own JWT decoder, no OpenFGA/Zanzibar authz plane. Zanzibar tier not-applicable; AMBER is the honest non-GREEN verdict (ADR-0022).",
+          "details": "frontend is a static SPA (jwt_validates:false, services.yaml) \u2014 no own JWT decoder, no OpenFGA/Zanzibar authz plane. Zanzibar tier not-applicable; AMBER is the honest non-GREEN verdict (ADR-0022).",
           "allow_deny_synthetic": "SKIP"
         }
       },
@@ -51,8 +51,8 @@
       "argocd_revision": null,
       "smoke_evidence": null,
       "verified_at": null,
-      "candidate_pr": null,
-      "candidate_pr_status": null
+      "candidate_pr": 3782,
+      "candidate_pr_status": "open"
     }
   },
   "metadata": {
@@ -63,7 +63,7 @@
   },
   "audit": {
     "created_at": "2026-05-19T12:10:00Z",
-    "last_updated_at": "2026-05-19T12:10:00Z",
+    "last_updated_at": "2026-09-14T14:47:02Z",
     "ci_run_url": "https://github.com/Halildeu/platform-web/actions/runs/26095796755"
   }
 }
