@@ -1,0 +1,24 @@
+{
+  "synthetic": true,
+  "voice": "Microsoft Tolga tr-TR",
+  "expectedYear": 2026,
+  "cases": [
+    {
+      "name": "normal",
+      "sha256": "d15b87564f7efdb263586181b623f837a726d02797d2de81e236930a1226ef63",
+      "channels": 1,
+      "sampleRate": 16000,
+      "sampleWidth": 2,
+      "seconds": 22.155
+    },
+    {
+      "name": "paused",
+      "sha256": "8044bd441a81b088708c4728cb63d4a1b04a90fe926f8c30f572c06957c49739",
+      "channels": 1,
+      "sampleRate": 16000,
+      "sampleWidth": 2,
+      "seconds": 25.99
+    }
+  ],
+  "deviceAcceptance": false
+}
