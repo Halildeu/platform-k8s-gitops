@@ -416,5 +416,145 @@ class TestMetricsExposition(unittest.TestCase):
         self.assertTrue(out.endswith("\n"))
 
 
+NOTIFY_ENV = {
+    "JETSMS_USERNAME": "u", "JETSMS_PASSWORD": "p&<x", "JETSMS_ORIGINATOR": "ORIG",
+    "GRAPH_TENANT_ID": "t", "GRAPH_CLIENT_ID": "c", "GRAPH_CLIENT_SECRET": "s",
+    "GRAPH_SENDER_MAILBOX": "ai@acik.com", "ALERT_EMAIL_TO": "ai@acik.com",
+    "ALERT_SMS_TO": "+905550000000,905551111111",
+    "ALERT_SMS_SEVERITIES": "critical", "ALERT_EMAIL_SEVERITIES": "critical,warning",
+    "ALERT_SMS_MAX_PER_HOUR": "2",
+}
+
+
+def _alert(name, severity, status="firing", **labels):
+    return {"status": status, "labels": {"alertname": name, "severity": severity, "cluster": "prod", **labels},
+            "annotations": {"summary": f"{name} özet"}, "startsAt": "2026-10-22T06:00:00Z"}
+
+
+class TestOperatorPaging(unittest.TestCase):
+    """#3888 — SMS (JetSMS) + email (Graph) paging, independent of the GH issue path."""
+
+    def setUp(self):
+        bridge._SMS_SENT_AT.clear()
+        bridge._METRICS["notify_sent_total"] = {}
+        bridge._METRICS["notify_fail_total"] = {}
+        bridge._METRICS["notify_sms_ratelimited_total"] = 0
+
+    def test_channels_unconfigured_without_env(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(bridge.notify_channels_configured(), {"sms": False, "email": False})
+
+    def test_sms_needs_recipient_even_with_credentials(self):
+        env = dict(NOTIFY_ENV, ALERT_SMS_TO="")
+        with patch.dict(os.environ, env, clear=True):
+            self.assertFalse(bridge.notify_channels_configured()["sms"])
+            self.assertTrue(bridge.notify_channels_configured()["email"])
+
+    def test_sms_text_is_single_segment_ascii(self):
+        alerts = [_alert(f"VeryLongAlertNameNumber{i}Çğışöü", "critical") for i in range(12)]
+        text = bridge.build_sms_text("firing", alerts, "critical")
+        self.assertLessEqual(len(text), 160)
+        text.encode("ascii")  # raises if any non-ASCII survived
+        self.assertTrue(text.startswith("[KRITIK] prod 12 alarm:"))
+
+    def test_sms_text_resolved_and_dedup_names(self):
+        alerts = [_alert("OpenFGADown", "critical", "resolved"), _alert("OpenFGADown", "critical", "resolved")]
+        self.assertEqual(bridge.build_sms_text("resolved", alerts, "critical"),
+                         "[COZULDU] prod 2 alarm: OpenFGADown")
+
+    def test_critical_group_sends_sms_to_each_recipient_and_one_email(self):
+        payload = {"status": "firing", "alerts": [_alert("OpenFGADown", "critical"), _alert("TargetDown", "warning")]}
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
+             patch.object(bridge, "send_sms", return_value=True) as sms, \
+             patch.object(bridge, "send_email", return_value=True) as mail:
+            result = bridge.notify_group(payload)
+        self.assertEqual(result, {"sms": 2, "email": 1})
+        self.assertEqual([c.args[0] for c in sms.call_args_list], ["+905550000000", "905551111111"])
+        self.assertEqual(mail.call_args.args[0], ["ai@acik.com"])
+        self.assertIn("[KRİTİK] prod", mail.call_args.args[1])
+
+    def test_warning_group_is_email_only(self):
+        payload = {"status": "firing", "alerts": [_alert("TargetDown", "warning")]}
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
+             patch.object(bridge, "send_sms", return_value=True) as sms, \
+             patch.object(bridge, "send_email", return_value=True):
+            result = bridge.notify_group(payload)
+        sms.assert_not_called()
+        self.assertEqual(result, {"sms": 0, "email": 1})
+
+    def test_info_and_synthetic_groups_page_nobody(self):
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
+             patch.object(bridge, "send_sms") as sms, patch.object(bridge, "send_email") as mail:
+            bridge.notify_group({"status": "firing", "alerts": [_alert("Watchdog", "none")]})
+            bridge.notify_group({"status": "firing", "alerts": [_alert("X", "critical", is_synthetic="true")]})
+        sms.assert_not_called()
+        mail.assert_not_called()
+
+    def test_sms_hourly_cap_keeps_email(self):
+        payload = {"status": "firing", "alerts": [_alert("OpenFGADown", "critical")]}
+        with patch.dict(os.environ, dict(NOTIFY_ENV, ALERT_SMS_TO="905550000000"), clear=True), \
+             patch.object(bridge, "send_sms", return_value=True) as sms, \
+             patch.object(bridge, "send_email", return_value=True) as mail:
+            for _ in range(3):
+                bridge.notify_group(payload)
+        self.assertEqual(sms.call_count, 2)  # cap = 2/hour
+        self.assertEqual(mail.call_count, 3)
+        self.assertEqual(bridge._METRICS["notify_sms_ratelimited_total"], 1)
+
+    def test_failures_are_counted_per_channel(self):
+        payload = {"status": "firing", "alerts": [_alert("OpenFGADown", "critical")]}
+        with patch.dict(os.environ, dict(NOTIFY_ENV, ALERT_SMS_TO="905550000000"), clear=True), \
+             patch.object(bridge, "send_sms", return_value=False), \
+             patch.object(bridge, "send_email", return_value=False):
+            self.assertEqual(bridge.notify_group(payload), {"sms": 0, "email": 0})
+            out = bridge.render_metrics().decode()
+        self.assertIn('alertmanager_bridge_notify_fail_total{channel="sms"} 1', out)
+        self.assertIn('alertmanager_bridge_notify_fail_total{channel="email"} 1', out)
+        self.assertIn('alertmanager_bridge_notify_channel_configured{channel="sms"} 1', out)
+
+    def test_send_sms_builds_escaped_soap_and_accepts_00(self):
+        captured = {}
+
+        def fake_http(req, timeout=15.0):
+            captured["req"] = req
+            return 200, "<SendSMSSingleResult><ErrorCode>00 OK</ErrorCode><ID>42</ID></SendSMSSingleResult>"
+
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), patch.object(bridge, "_http", side_effect=fake_http):
+            self.assertTrue(bridge.send_sms("+905550000000", "a<b"))
+        body = captured["req"].data.decode()
+        self.assertIn("<receipents>905550000000</receipents>", body)  # leading + stripped
+        self.assertIn("<password>p&amp;&lt;x</password>", body)
+        self.assertIn("<messages>a&lt;b</messages>", body)
+        self.assertIn("<channel>VF</channel>", body)
+        self.assertEqual(captured["req"].get_header("Soapaction"), '"http://tempuri.org/SendSMSSingle"')
+
+    def test_send_sms_rejects_non_00_error_code(self):
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
+             patch.object(bridge, "_http", return_value=(200, "<ErrorCode>04 Kredi yok</ErrorCode>")):
+            self.assertFalse(bridge.send_sms("905550000000", "x"))
+
+    def test_send_email_token_then_sendmail_202(self):
+        calls = []
+
+        def fake_http(req, timeout=15.0):
+            calls.append(req.full_url)
+            if "oauth2" in req.full_url:
+                return 200, json.dumps({"access_token": "tok", "expires_in": 3600})
+            return 202, ""
+
+        bridge._GRAPH_TOKEN.update({"value": "", "expires_at": 0.0})
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), patch.object(bridge, "_http", side_effect=fake_http):
+            self.assertTrue(bridge.send_email(["ai@acik.com"], "s", "b"))
+            self.assertTrue(bridge.send_email(["ai@acik.com"], "s", "b"))  # token cached
+        self.assertEqual(sum("oauth2" in u for u in calls), 1)
+        self.assertTrue(calls[1].endswith("/users/ai%40acik.com/sendMail"))
+
+    def test_send_email_token_failure_returns_false(self):
+        bridge._GRAPH_TOKEN.update({"value": "", "expires_at": 0.0})
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
+             patch.object(bridge, "_http", return_value=(401, "denied")):
+            self.assertFalse(bridge.send_email(["ai@acik.com"], "s", "b"))
+
+
 if __name__ == "__main__":
     unittest.main()

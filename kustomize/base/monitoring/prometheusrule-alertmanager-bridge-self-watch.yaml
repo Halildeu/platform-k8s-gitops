@@ -112,3 +112,46 @@ spec:
                 kubectl --context k3d-prod -n monitoring exec deploy/alertmanager-bridge -- wget -qO- http://localhost:9093/healthz
                 kubectl --context k3d-prod -n monitoring get svc alertmanager-bridge
                 kubectl --context k3d-prod -n monitoring get servicemonitor alertmanager-bridge -o yaml
+
+        # 4. #3888 operator paging channels (SMS via JetSMS, email via Graph).
+        # The 2026-10-15 reboot outage paged nobody for 6 days; these rules make a
+        # silent paging path visible. Unconfigured = credentials/recipients secret
+        # missing at bridge startup (ESO drift, Vault leaf absent).
+        - alert: AlertmanagerBridgePagingChannelUnconfigured
+          expr: |
+            alertmanager_bridge_notify_channel_configured == 0
+          for: 15m
+          labels:
+            severity: warning
+            team: ops
+            alert_class: observability-gap
+          annotations:
+            summary: "Operator paging channel {{ $labels.channel }} not configured on alertmanager-bridge"
+            description: |
+              alertmanager-bridge started without complete {{ $labels.channel }} config
+              (secret alertmanager-bridge-notify / alertmanager-bridge-recipients missing
+              or empty). Critical alerts will not reach the operator on this channel.
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring get externalsecret alertmanager-bridge-notify alertmanager-bridge-recipients
+                kubectl --context k3d-prod -n monitoring logs deploy/alertmanager-bridge | grep notify_channels
+
+        - alert: AlertmanagerBridgePagingSendFailing
+          expr: |
+            increase(alertmanager_bridge_notify_fail_total[30m]) > 0
+            and
+            increase(alertmanager_bridge_notify_sent_total[30m]) == 0
+          for: 0m
+          labels:
+            severity: critical
+            team: ops
+            alert_class: observability-gap
+          annotations:
+            summary: "Operator paging via {{ $labels.channel }} failing (no successful send in 30m)"
+            description: |
+              alertmanager-bridge attempted {{ $labels.channel }} notifications in the last
+              30m and every attempt failed (provider rejected / auth / network). The other
+              channel may still deliver this alert.
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring logs deploy/alertmanager-bridge --since=1h | grep -E "sms send|email send"
