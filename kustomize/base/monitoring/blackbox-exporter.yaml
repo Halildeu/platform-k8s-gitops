@@ -80,6 +80,18 @@ spec:
       labels:
         app.kubernetes.io/name: blackbox-exporter
     spec:
+      # #3888 — public DNS resolves both edges to 212.115.26.190 (external L4
+      # proxy). From inside the cluster that address does not hairpin back
+      # (TCP timeout), so every probe returned status 0 for ≥9 days and the
+      # synthetic layer was blind. Pin the edge hostnames to the host edge's
+      # internal address: the probe still walks TLS (SNI + cert validation) →
+      # host nginx → ingress → gateway, i.e. the same chain this file exists to
+      # measure; only the unreachable external hop is skipped.
+      hostAliases:
+        - ip: "10.9.10.15"
+          hostnames:
+            - ai.acik.com
+            - testai.acik.com
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -183,7 +195,10 @@ spec:
     staticConfig:
       static:
         - https://testai.acik.com/testai-healthz
-        - https://testai.acik.com/auth/actuator/health
+        # #3888 — /auth/actuator/health is behind the gateway JWT filter and now
+        # always answers 401 without a token; gateway liveness is proven by the
+        # deny probes (401/403 expected, 5xx fails). Health = edge /healthz.
+        - https://testai.acik.com/healthz
       labels:
         component: testai-health-probe
         edge: testai
@@ -232,7 +247,8 @@ spec:
   targets:
     staticConfig:
       static:
-        - https://ai.acik.com/auth/actuator/health
+        # #3888 — see testai health probe: gateway actuator is JWT-gated (401).
+        - https://ai.acik.com/healthz
       labels:
         component: prod-health-probe
         edge: ai-prod
