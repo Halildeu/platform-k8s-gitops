@@ -1,0 +1,88 @@
+# #3888 — Platform crisis alerts: the ONLY alerts that send an SMS.
+#
+# Owner decision 2026-10-23: "SMS kriz anında gelmeli, küçük sorunlar olmasın."
+# alertmanager-bridge sends SMS only for alerts labelled page="sms"; every
+# other alert (any severity) is email (critical only) or dashboard-only.
+# A crisis here means users cannot use the platform:
+#   1. a user-facing site is unreachable through the real edge chain
+#      (TLS → host nginx → ingress → gateway),
+#   2. a core prod service has zero available replicas,
+#   3. many prod pods are not ready at once (e.g. the 2026-10-15 reboot,
+#      where containerd kept stale reservations and nothing recovered).
+# `for:` windows keep single blips (rolling updates, one slow restart) quiet.
+# Expressions were checked live against prod Prometheus on 2026-10-23 and
+# return no series while the platform is healthy.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-crisis
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+    team: ops
+spec:
+  groups:
+    - name: platform-crisis
+      interval: 1m
+      rules:
+        - alert: PlatformProdSiteDown
+          expr: |
+            min by (job) (probe_success{job=~"blackbox-prod-(health|deny)"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+            page: sms
+            team: ops
+          annotations:
+            summary: "ai.acik.com erisilemiyor (prod kullanicilar etkileniyor)"
+            description: |
+              {{ $labels.job }} has failed for 5m through the real edge chain
+              (TLS → host nginx → ingress → gateway). Prod users cannot work.
+
+        - alert: PlatformTestSiteDown
+          expr: |
+            min by (job) (probe_success{job=~"blackbox-testai-(health|deny)"}) == 0
+          for: 30m
+          labels:
+            severity: critical
+            page: sms
+            team: ops
+          annotations:
+            summary: "testai.acik.com 30 dakikadir erisilemiyor"
+            description: |
+              {{ $labels.job }} has failed for 30m. testai is the customer test
+              environment; on 2026-10-15 it stayed down for 6 days unnoticed.
+
+        - alert: PlatformProdCoreServiceDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="platform-prod",deployment=~"api-gateway|auth-service|permission-service|user-service|frontend"} < 1
+          for: 5m
+          labels:
+            severity: critical
+            page: sms
+            team: ops
+          annotations:
+            summary: "Prod {{ $labels.deployment }} tamamen durdu (0 calisan)"
+            description: |
+              platform-prod/{{ $labels.deployment }} has had no available
+              replica for 5m. Login, authorization or the UI is broken.
+
+        - alert: PlatformProdMassPodFailure
+          expr: |
+            count by (namespace) (
+              (kube_pod_status_ready{namespace="platform-prod",condition="true"} == 0)
+              unless on (namespace, pod) (kube_pod_status_phase{phase="Succeeded"} == 1)
+            ) >= 3
+          for: 15m
+          labels:
+            severity: critical
+            page: sms
+            team: ops
+          annotations:
+            summary: "Prod'da {{ $value }} pod 15 dakikadir hazir degil"
+            description: |
+              At least 3 platform-prod pods have been not-ready for 15m — a
+              cluster-level failure (host reboot, containerd, network), not a
+              single service. The k3d-stuck-pod-heal timer should have
+              recovered stale reservations; check journalctl -u k3d-stuck-pod-heal.

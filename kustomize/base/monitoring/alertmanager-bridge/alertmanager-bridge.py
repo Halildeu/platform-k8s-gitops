@@ -575,7 +575,8 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
 # a notify outage must still page.
 #
 # One SMS and one email per Alertmanager webhook group (not per alert) keeps
-# volume proportional to incidents. SMS is capped per hour (billing guard);
+# volume proportional to incidents. SMS only for page="sms" crisis alerts
+# (platform-crisis rules) and capped per hour; email only for critical;
 # email is never capped. Missing config → channel skipped and exported as
 # alertmanager_bridge_notify_channel_configured=0 (rule-backed sentinel).
 # ---------------------------------------------------------------------------
@@ -769,10 +770,15 @@ def notify_group(payload: dict[str, Any]) -> dict[str, int]:
     severity = _group_severity(alerts)
     configured = notify_channels_configured()
     with _NOTIFY_LOCK:
-        if configured["sms"] and severity in _env_list("ALERT_SMS_SEVERITIES", "critical"):
+        # Owner decision 2026-10-23: SMS only in a real crisis. Severity alone is
+        # not enough (many "critical" alerts are housekeeping: token absent,
+        # telemetry gaps); only alerts explicitly labelled page="sms" by the
+        # platform-crisis PrometheusRule wake a human up.
+        crisis = [a for a in alerts if a.get("labels", {}).get("page") == "sms"]
+        if configured["sms"] and crisis:
             now = time.time()
             if _sms_allowed(now):
-                text = build_sms_text(status, alerts, severity)
+                text = build_sms_text(status, crisis, "critical")
                 for phone in _env_list("ALERT_SMS_TO", ""):
                     if send_sms(phone, text):
                         _notify_inc("notify_sent_total", "sms")
@@ -783,7 +789,7 @@ def notify_group(payload: dict[str, Any]) -> dict[str, int]:
             else:
                 metric_inc("notify_sms_ratelimited_total")
                 log.warning("sms hourly cap reached; email only for this group")
-        if configured["email"] and severity in _env_list("ALERT_EMAIL_SEVERITIES", "critical,warning"):
+        if configured["email"] and severity in _env_list("ALERT_EMAIL_SEVERITIES", "critical"):
             subject, text = build_email(status, alerts, severity)
             if send_email(_env_list("ALERT_EMAIL_TO", ""), subject, text):
                 _notify_inc("notify_sent_total", "email")
