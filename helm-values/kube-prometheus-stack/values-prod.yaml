@@ -372,6 +372,13 @@ grafana:
 
   replicas: 1
 
+  # #3888: serve_from_sub_path=true makes Grafana answer /metrics with a 301 to
+  # root_url (https://ai.acik.com/grafana/metrics), which the in-cluster scrape
+  # cannot reach (no hairpin) -> TargetDown since July. Scrape the sub-path
+  # directly (measured 2026-10-23: /grafana/metrics 200, /metrics 301).
+  serviceMonitor:
+    path: /grafana/metrics
+
   resources:
     requests:
       cpu: 50m
