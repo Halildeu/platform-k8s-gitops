@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Faz 24 #3432 — meeting-ai mTLS CLIENT leaf rotation (sibling of the server-cert unit).
+# Key never leaves the GPU host: a CSR is produced there from the DPAPI-wrapped key,
+# signed against pki_meeting_ai_client/sign/meeting-ai here, and the certificate file
+# referenced by MAI_MEETING_SERVICE_TLS_CLIENT_CERT_PATH is replaced in place.
+# meeting-ai reloads TLS material every MAI_MEETING_SERVICE_TLS_RELOAD_INTERVAL_SEC,
+# so no restart is required.
+set -euo pipefail
+umask 077
+
+readonly TOKEN_FILE="${VAULT_TOKEN_FILE:-/etc/platform/meeting-ai-gateway/vault-token-client}"
+readonly VAULT_DOCKER_CONTAINER="${VAULT_DOCKER_CONTAINER:-platform-vault-test}"
+readonly METRIC_FILE="${METRIC_FILE:-/var/lib/node_exporter/meeting_ai_client_cert.prom}"
+readonly GPU_SSH_ID="/home/aiadmin/.ssh/id_ed25519"
+readonly GPU_KNOWN_HOSTS="/home/aiadmin/.ssh/known_hosts"
+readonly GPU_DEST="denetimpc@10.99.0.2"
+# shellcheck disable=SC2034  # documents the CN requested in the sign call below
+readonly CN="meeting-ai.client.faz24.internal"
+rotation_success=0
+certificate_not_after=0
+tmp_dir=""
+
+die() { printf 'meeting-ai client cert rotation: %s\n' "$*" >&2; exit 1; }
+
+write_metrics() {
+  local now metric_tmp last_success
+  now="$(date +%s)"
+  if [[ ${rotation_success} -eq 1 ]]; then
+    last_success="${now}"
+  elif [[ -r "${METRIC_FILE}" ]]; then
+    last_success="$(awk '/^meeting_ai_client_cert_rotation_last_success_timestamp_seconds / {print $2}' "${METRIC_FILE}" | tail -1)"
+    [[ "${last_success}" =~ ^[0-9]+$ ]] || last_success=0
+  else
+    last_success=0
+  fi
+  metric_tmp="$(mktemp "${METRIC_FILE}.XXXXXX")" || return 1
+  cat >"${metric_tmp}" <<EOF
+# HELP meeting_ai_client_cert_rotation_last_attempt_timestamp_seconds Last client-leaf rotation attempt.
+# TYPE meeting_ai_client_cert_rotation_last_attempt_timestamp_seconds gauge
+meeting_ai_client_cert_rotation_last_attempt_timestamp_seconds ${now}
+# HELP meeting_ai_client_cert_rotation_last_success_timestamp_seconds Last successful client-leaf activation.
+# TYPE meeting_ai_client_cert_rotation_last_success_timestamp_seconds gauge
+meeting_ai_client_cert_rotation_last_success_timestamp_seconds ${last_success}
+# HELP meeting_ai_client_cert_rotation_last_run_success Whether the latest rotation attempt succeeded.
+# TYPE meeting_ai_client_cert_rotation_last_run_success gauge
+meeting_ai_client_cert_rotation_last_run_success ${rotation_success}
+# HELP meeting_ai_client_cert_not_after_timestamp_seconds Active client certificate expiry.
+# TYPE meeting_ai_client_cert_not_after_timestamp_seconds gauge
+meeting_ai_client_cert_not_after_timestamp_seconds ${certificate_not_after}
+EOF
+  chmod 0644 "${metric_tmp}"
+  mv -f -- "${metric_tmp}" "${METRIC_FILE}"
+}
+
+finish() {
+  local rc=$?
+  set +e
+  [[ -z "${tmp_dir}" ]] || rm -rf -- "${tmp_dir}"
+  write_metrics || printf 'meeting-ai client cert rotation: metric write failed\n' >&2
+  unset VAULT_TOKEN
+  exit "${rc}"
+}
+trap finish EXIT
+trap 'exit 130' INT TERM
+
+command -v python3 >/dev/null 2>&1 || die "python3 is required"
+command -v docker >/dev/null 2>&1 || die "docker CLI is required"
+[[ -r "${TOKEN_FILE}" ]] || die "scoped Vault token file is unreadable"
+[[ "$(docker inspect -f '{{.State.Running}}' "${VAULT_DOCKER_CONTAINER}" 2>/dev/null)" == true ]] || die "Vault container is not running"
+# gitops#3888: renew the periodic scoped token FIRST, independent of the GPU
+# host. Renewal used to happen only inside the sign step, after the CSR came
+# back from the GPU host, so a >72h GPU/WireGuard outage let the token expire
+# and rotation stayed broken for 18 days (2026-10-04 .. 2026-10-22) while the
+# 24h client leaf expired. Renewing up front keeps the token alive through
+# any GPU outage; the timer runs every 8h, well inside the 72h period.
+printf '%s\n' "$(<"${TOKEN_FILE}")" | docker exec -i -e VAULT_ADDR=http://127.0.0.1:8200 "${VAULT_DOCKER_CONTAINER}" \
+  sh -c 'read -r VAULT_TOKEN; export VAULT_TOKEN; vault token renew >/dev/null' \
+  || die "scoped Vault token renew failed (expired? re-issue: policy meeting-ai-client-cert-rotation, -orphan -period=72h)"
+tmp_dir="$(mktemp -d)"
+
+gpu_ssh() {
+  ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
+      -o IdentityFile="${GPU_SSH_ID}" -o UserKnownHostsFile="${GPU_KNOWN_HOSTS}" \
+      "${GPU_DEST}" "$@"
+}
+
+ps_b64() { python3 -c "import base64,sys; print(base64.b64encode(sys.argv[1].encode('utf-16-le')).decode())" "$1"; }
+
+# --- 1. CSR on the GPU host (key stays inside DPAPI) ---
+CSR_PS='$ErrorActionPreference="Stop"
+. C:\platform-ai\deploy\gpu-host\meeting-ai-runtime-env.ps1
+$envPath="C:\ProgramData\Acik\platform-ai\meeting-ai.env"
+$blob=$null
+foreach ($l in [IO.File]::ReadAllLines($envPath)) {
+  $i=$l.IndexOf("=")
+  if ($i -gt 0 -and $l.Substring(0,$i) -eq "MAI_MEETING_SERVICE_TLS_CLIENT_KEY_DPAPI") { $blob=$l.Substring($i+1); break }
+}
+if (-not $blob) { throw "client key blob not found" }
+$pem=Unprotect-MeetingAiSecret -ProtectedBase64 $blob -KeyName "MAI_MEETING_SERVICE_TLS_CLIENT_KEY_DPAPI"
+$py="C:\Users\denetimpc\AppData\Local\Programs\Python\Python311\python.exe"
+$code=@"
+import sys
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519, ed448
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+key = load_pem_private_key(sys.stdin.buffer.read(), None)
+algo = None if isinstance(key, (ed25519.Ed25519PrivateKey, ed448.Ed448PrivateKey)) else hashes.SHA256()
+csr = (x509.CertificateSigningRequestBuilder()
+  .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, \"meeting-ai.client.faz24.internal\")]))
+  .add_extension(x509.SubjectAlternativeName([x509.DNSName(\"meeting-ai.client.faz24.internal\")]), critical=False)
+  .sign(key, algo))
+sys.stdout.buffer.write(csr.public_bytes(serialization.Encoding.PEM))
+"@
+$pem | & $py -c $code'
+CSR_B64="$(ps_b64 "${CSR_PS}")"
+gpu_ssh "powershell -NoProfile -EncodedCommand ${CSR_B64}" 2>/dev/null > "${tmp_dir}/client.csr"
+grep -q "BEGIN CERTIFICATE REQUEST" "${tmp_dir}/client.csr" || die "CSR generation failed on GPU host"
+
+# --- 2. sign in Vault ---
+VAULT_TOKEN="$(<"${TOKEN_FILE}")"
+docker cp "${tmp_dir}/client.csr" "${VAULT_DOCKER_CONTAINER}:/tmp/mai-rot.csr" >/dev/null
+RESP="$(printf '%s\n' "${VAULT_TOKEN}" | docker exec -i -e VAULT_ADDR=http://127.0.0.1:8200 "${VAULT_DOCKER_CONTAINER}" sh -c 'read -r VAULT_TOKEN; export VAULT_TOKEN; vault token renew >/dev/null 2>&1 || true; vault write -format=json pki_meeting_ai_client/sign/meeting-ai csr=@/tmp/mai-rot.csr common_name=meeting-ai.client.faz24.internal ttl=24h; rm -f /tmp/mai-rot.csr')"
+printf '%s' "${RESP}" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)["data"]
+open(sys.argv[1],"w").write(d["certificate"].strip()+"\n")
+print(int(d["expiration"]))
+' "${tmp_dir}/client.crt" > "${tmp_dir}/expiry" || die "Vault sign failed"
+certificate_not_after="$(<"${tmp_dir}/expiry")"
+
+# --- 3. install on the GPU host at the path the runtime reads ---
+WRITE_PS='$ErrorActionPreference="Stop"
+$cert=[Console]::In.ReadToEnd()
+if ($cert -notmatch "BEGIN CERTIFICATE") { throw "no certificate on stdin" }
+$envPath="C:\ProgramData\Acik\platform-ai\meeting-ai.env"
+$target=$null
+foreach ($l in [IO.File]::ReadAllLines($envPath)) {
+  $i=$l.IndexOf("=")
+  if ($i -gt 0 -and $l.Substring(0,$i) -eq "MAI_MEETING_SERVICE_TLS_CLIENT_CERT_PATH") { $target=$l.Substring($i+1); break }
+}
+if (-not $target) { throw "client cert path not found in runtime config" }
+[IO.File]::WriteAllText($target, $cert, (New-Object Text.UTF8Encoding($false)))
+$stamp=(Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+$versioned=Join-Path (Split-Path $target -Parent) ("meeting-service-client-{0}-auto.pem" -f $stamp)
+[IO.File]::WriteAllText($versioned, $cert, (New-Object Text.UTF8Encoding($false)))
+$c=New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($target)
+"installed notAfter={0}" -f $c.NotAfter.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")'
+WRITE_B64="$(ps_b64 "${WRITE_PS}")"
+INSTALL_OUT="$(gpu_ssh "powershell -NoProfile -EncodedCommand ${WRITE_B64}" < "${tmp_dir}/client.crt" 2>/dev/null | tr -d '\r')"
+printf '%s\n' "${INSTALL_OUT}" | grep -q "installed notAfter=" || die "certificate install failed on GPU host"
+printf 'meeting-ai client cert rotation: %s\n' "${INSTALL_OUT}"
+rotation_success=1
