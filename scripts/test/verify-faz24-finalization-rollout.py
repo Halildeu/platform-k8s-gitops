@@ -496,8 +496,13 @@ def main() -> None:
         # 2026-09-03 (gitops#3537): sha-a41b5ce — meeting-service client also mints
         # notification-orchestrator / notify:intents:system (platform-backend#1128,
         # Görevler dilim-4b); the Faz 24 mint surface stays untouched.
+        # 2026-10-23 (gitops#3888): sha-fabfde8 — micrometer-registry-prometheus
+        # (platform-backend#1209, /actuator/prometheus was 401) plus the additive
+        # teams-capture-worker client (blank secret = disabled) and its
+        # meeting:teams-schedule:authorize mint permission (a6eb9443); every
+        # existing Faz 24 meeting-ai/transcript mint permission is unchanged.
         "ghcr.io/halildeu/platform-backend-auth-service@"
-        "sha256:ffd2bff1d2fe62872cde8e14f7b9f7e3ef66d6debf2b5982f9f81dce7b30c7d8",
+        "sha256:61ac7378e67e3f53da629b9fb5222aebf0b8d96e0721359f964166b9ff60fea8",
     )
     container_image(
         meeting_deploy,
