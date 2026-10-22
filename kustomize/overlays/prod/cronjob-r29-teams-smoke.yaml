@@ -224,9 +224,17 @@ spec:
   # cadence delay risk).
   schedule: "0 9 * * 1"
   timeZone: Europe/Istanbul
+  # #3888 — DORMANT (owner decision 2026-10-22: alerts page via SMS + email to
+  # ai@acik.com, Teams is not used). Every weekly run failed (no Teams webhook),
+  # keeping KubeJobFailed permanently red. Suspended, not deleted: the Teams
+  # path stays asset-preserved (ADR-0029); reactivation = drop `suspend` after
+  # the Teams receiver is re-seeded (RB-d43-teams-reactivation-chain.md).
+  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 6
-  failedJobsHistoryLimit: 12
+  # 0 so the controller drops the stale failed runs instead of keeping
+  # KubeJobFailed firing for a suspended job.
+  failedJobsHistoryLimit: 0
   jobTemplate:
     spec:
       activeDeadlineSeconds: 60
