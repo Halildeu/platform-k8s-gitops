@@ -61,11 +61,19 @@ spec:
         # `label_replace` copies the original metric name into a fresh
         # `metric` label first, then we group by `metric` instead — every
         # output now has a distinct labelset and the rule stores cleanly.
+        #
+        # #3888: the selector must exclude this group's own outputs. The
+        # previous `{__name__=~".+"}` also matched the stored
+        # `cardinality:series:by_metric{metric="…"}` series; label_replace
+        # rewrote all of them to metric="cardinality:series:by_metric" and
+        # the evaluation failed every minute with "vector cannot contain
+        # metrics with the same labelset" (PrometheusRuleFailures, measured
+        # live 2026-10-22: it was the only metric carrying a `metric` label).
         - record: cardinality:series:by_metric
           expr: |
             count by (metric) (
               label_replace(
-                {__name__=~".+"},
+                {__name__=~".+", __name__!~"cardinality:.+"},
                 "metric", "$1", "__name__", "(.+)"
               )
             )
