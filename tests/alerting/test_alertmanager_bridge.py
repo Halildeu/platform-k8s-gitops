@@ -421,7 +421,7 @@ NOTIFY_ENV = {
     "GRAPH_TENANT_ID": "t", "GRAPH_CLIENT_ID": "c", "GRAPH_CLIENT_SECRET": "s",
     "GRAPH_SENDER_MAILBOX": "ai@acik.com", "ALERT_EMAIL_TO": "ai@acik.com",
     "ALERT_SMS_TO": "+905550000000,905551111111",
-    "ALERT_SMS_SEVERITIES": "critical", "ALERT_EMAIL_SEVERITIES": "critical,warning",
+    "ALERT_EMAIL_SEVERITIES": "critical",
     "ALERT_SMS_MAX_PER_HOUR": "2",
 }
 
@@ -462,8 +462,9 @@ class TestOperatorPaging(unittest.TestCase):
         self.assertEqual(bridge.build_sms_text("resolved", alerts, "critical"),
                          "[COZULDU] prod 2 alarm: OpenFGADown")
 
-    def test_critical_group_sends_sms_to_each_recipient_and_one_email(self):
-        payload = {"status": "firing", "alerts": [_alert("OpenFGADown", "critical"), _alert("TargetDown", "warning")]}
+    def test_crisis_group_sends_sms_to_each_recipient_and_one_email(self):
+        payload = {"status": "firing", "alerts": [_alert("PlatformProdSiteDown", "critical", page="sms"),
+                                                  _alert("TargetDown", "warning")]}
         with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
              patch.object(bridge, "send_sms", return_value=True) as sms, \
              patch.object(bridge, "send_email", return_value=True) as mail:
@@ -472,15 +473,35 @@ class TestOperatorPaging(unittest.TestCase):
         self.assertEqual([c.args[0] for c in sms.call_args_list], ["+905550000000", "905551111111"])
         self.assertEqual(mail.call_args.args[0], ["ai@acik.com"])
         self.assertIn("[KRİTİK] prod", mail.call_args.args[1])
+        # the SMS names only the crisis alert, not the housekeeping one
+        self.assertEqual(sms.call_args.args[1], "[KRITIK] prod 1 alarm: PlatformProdSiteDown")
 
-    def test_warning_group_is_email_only(self):
-        payload = {"status": "firing", "alerts": [_alert("TargetDown", "warning")]}
+    def test_critical_without_crisis_label_is_email_only(self):
+        # owner 2026-10-23: housekeeping criticals (token absent, telemetry gap) never SMS
+        payload = {"status": "firing", "alerts": [_alert("AlertmanagerBridgeGHSecretAbsent", "critical")]}
         with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
              patch.object(bridge, "send_sms", return_value=True) as sms, \
              patch.object(bridge, "send_email", return_value=True):
             result = bridge.notify_group(payload)
         sms.assert_not_called()
         self.assertEqual(result, {"sms": 0, "email": 1})
+
+    def test_warning_group_notifies_nobody(self):
+        payload = {"status": "firing", "alerts": [_alert("TargetDown", "warning")]}
+        with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
+             patch.object(bridge, "send_sms", return_value=True) as sms, \
+             patch.object(bridge, "send_email", return_value=True) as mail:
+            result = bridge.notify_group(payload)
+        sms.assert_not_called()
+        mail.assert_not_called()
+        self.assertEqual(result, {"sms": 0, "email": 0})
+
+    def test_default_email_policy_is_critical_only(self):
+        env = {k: v for k, v in NOTIFY_ENV.items() if k != "ALERT_EMAIL_SEVERITIES"}
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(bridge, "send_email", return_value=True) as mail:
+            bridge.notify_group({"status": "firing", "alerts": [_alert("TargetDown", "warning")]})
+        mail.assert_not_called()
 
     def test_info_and_synthetic_groups_page_nobody(self):
         with patch.dict(os.environ, NOTIFY_ENV, clear=True), \
@@ -491,7 +512,7 @@ class TestOperatorPaging(unittest.TestCase):
         mail.assert_not_called()
 
     def test_sms_hourly_cap_keeps_email(self):
-        payload = {"status": "firing", "alerts": [_alert("OpenFGADown", "critical")]}
+        payload = {"status": "firing", "alerts": [_alert("PlatformProdSiteDown", "critical", page="sms")]}
         with patch.dict(os.environ, dict(NOTIFY_ENV, ALERT_SMS_TO="905550000000"), clear=True), \
              patch.object(bridge, "send_sms", return_value=True) as sms, \
              patch.object(bridge, "send_email", return_value=True) as mail:
@@ -502,7 +523,7 @@ class TestOperatorPaging(unittest.TestCase):
         self.assertEqual(bridge._METRICS["notify_sms_ratelimited_total"], 1)
 
     def test_failures_are_counted_per_channel(self):
-        payload = {"status": "firing", "alerts": [_alert("OpenFGADown", "critical")]}
+        payload = {"status": "firing", "alerts": [_alert("PlatformProdSiteDown", "critical", page="sms")]}
         with patch.dict(os.environ, dict(NOTIFY_ENV, ALERT_SMS_TO="905550000000"), clear=True), \
              patch.object(bridge, "send_sms", return_value=False), \
              patch.object(bridge, "send_email", return_value=False):
