@@ -35,15 +35,21 @@ Usage:
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import os
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 
 LOG_LEVEL = os.environ.get("BRIDGE_LOG_LEVEL", "INFO")
 PORT = int(os.environ.get("BRIDGE_PORT", "9093"))
@@ -83,6 +89,11 @@ _METRICS = {
     # PrometheusRule AlertmanagerBridgeGHSecretAbsent — silent ESO sync errors
     # become visible without bridge depending on itself for paging.
     "github_token_configured": 1 if os.environ.get("GITHUB_TOKEN", "") else 0,
+    # #3888 — direct operator paging (SMS via JetSMS + email via Graph), independent
+    # of notification-orchestrator so a notify outage still pages a human.
+    "notify_sent_total": {},      # channel → count
+    "notify_fail_total": {},      # channel → count
+    "notify_sms_ratelimited_total": 0,
 }
 
 
@@ -157,6 +168,21 @@ def render_metrics() -> bytes:
     lines.append("# HELP alertmanager_bridge_github_token_configured GH token env presence at startup (1=set non-empty, 0=missing — silent auth-drift sentinel)")
     lines.append("# TYPE alertmanager_bridge_github_token_configured gauge")
     lines.append(f"alertmanager_bridge_github_token_configured {_METRICS['github_token_configured']}")
+    # #3888 operator paging channels
+    lines.append("# HELP alertmanager_bridge_notify_channel_configured Paging channel has complete config at startup (1) or not (0)")
+    lines.append("# TYPE alertmanager_bridge_notify_channel_configured gauge")
+    for channel, ok in notify_channels_configured().items():
+        lines.append(f'alertmanager_bridge_notify_channel_configured{{channel="{channel}"}} {1 if ok else 0}')
+    lines.append("# HELP alertmanager_bridge_notify_sent_total Operator notifications accepted by the provider")
+    lines.append("# TYPE alertmanager_bridge_notify_sent_total counter")
+    lines.append("# HELP alertmanager_bridge_notify_fail_total Operator notifications rejected or not delivered to the provider")
+    lines.append("# TYPE alertmanager_bridge_notify_fail_total counter")
+    for channel in ("sms", "email"):
+        lines.append(f'alertmanager_bridge_notify_sent_total{{channel="{channel}"}} {_METRICS["notify_sent_total"].get(channel, 0)}')
+        lines.append(f'alertmanager_bridge_notify_fail_total{{channel="{channel}"}} {_METRICS["notify_fail_total"].get(channel, 0)}')
+    lines.append("# HELP alertmanager_bridge_notify_sms_ratelimited_total SMS skipped by the hourly cap (email still sent)")
+    lines.append("# TYPE alertmanager_bridge_notify_sms_ratelimited_total counter")
+    lines.append(f"alertmanager_bridge_notify_sms_ratelimited_total {_METRICS['notify_sms_ratelimited_total']}")
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -538,6 +564,236 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
     return delivered
 
 
+# ---------------------------------------------------------------------------
+# #3888 — Operator paging: SMS (JetSMS SOAP) + email (Microsoft Graph sendMail)
+#
+# The GitHub-issue path above is an audit trail, not a pager: on 2026-10-15 a
+# host reboot took k3d-test down for 6 days and 27 alerts fired with nobody
+# notified (GH token absent, SMTP fallback password expired). This section
+# pages a human directly. It deliberately does NOT go through
+# notification-orchestrator (same D43 bypass principle as direct-fallback):
+# a notify outage must still page.
+#
+# One SMS and one email per Alertmanager webhook group (not per alert) keeps
+# volume proportional to incidents. SMS is capped per hour (billing guard);
+# email is never capped. Missing config → channel skipped and exported as
+# alertmanager_bridge_notify_channel_configured=0 (rule-backed sentinel).
+# ---------------------------------------------------------------------------
+
+SEVERITY_RANK = {"critical": 3, "warning": 2, "info": 1}
+_TR_ASCII = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+_SMS_SENT_AT: collections.deque = collections.deque()
+_NOTIFY_LOCK = threading.Lock()
+_GRAPH_TOKEN: dict[str, Any] = {"value": "", "expires_at": 0.0}
+
+
+def _env_list(name: str, default: str) -> list[str]:
+    return [x.strip() for x in os.environ.get(name, default).split(",") if x.strip()]
+
+
+def notify_channels_configured() -> dict[str, bool]:
+    sms = all(os.environ.get(k, "") for k in ("JETSMS_USERNAME", "JETSMS_PASSWORD", "JETSMS_ORIGINATOR")) \
+        and bool(_env_list("ALERT_SMS_TO", ""))
+    email = all(os.environ.get(k, "") for k in ("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET")) \
+        and bool(_env_list("ALERT_EMAIL_TO", "")) and bool(os.environ.get("GRAPH_SENDER_MAILBOX", ""))
+    return {"sms": sms, "email": email}
+
+
+def _notify_inc(bucket: str, channel: str) -> None:
+    _METRICS[bucket][channel] = _METRICS[bucket].get(channel, 0) + 1
+
+
+def _group_severity(alerts: list[dict[str, Any]]) -> str:
+    best = "info"
+    for a in alerts:
+        sev = a.get("labels", {}).get("severity", "warning").lower()
+        if SEVERITY_RANK.get(sev, 0) > SEVERITY_RANK.get(best, 0):
+            best = sev
+    return best
+
+
+def build_sms_text(status: str, alerts: list[dict[str, Any]], severity: str) -> str:
+    """Single-segment ASCII SMS (≤160): status, cluster, alert names, count."""
+    names: list[str] = []
+    for a in alerts:
+        n = a.get("labels", {}).get("alertname", "?")
+        if n not in names:
+            names.append(n)
+    clusters = sorted({a.get("labels", {}).get("cluster", "") for a in alerts} - {""})
+    head = "COZULDU" if status == "resolved" else {"critical": "KRITIK", "warning": "UYARI"}.get(severity, "BILGI")
+    text = f"[{head}] {'/'.join(clusters) or 'platform'} {len(alerts)} alarm: {', '.join(names)}"
+    text = text.translate(_TR_ASCII)
+    text = text.encode("ascii", "replace").decode("ascii")
+    return text if len(text) <= 160 else text[:157] + "..."
+
+
+def build_email(status: str, alerts: list[dict[str, Any]], severity: str) -> tuple[str, str]:
+    names = sorted({a.get("labels", {}).get("alertname", "?") for a in alerts})
+    clusters = sorted({a.get("labels", {}).get("cluster", "") for a in alerts} - {""})
+    head = "ÇÖZÜLDÜ" if status == "resolved" else {"critical": "KRİTİK", "warning": "UYARI"}.get(severity, "BİLGİ")
+    subject = f"[{head}] {'/'.join(clusters) or 'platform'}: {', '.join(names)}"[:200]
+    lines = [f"Durum: {status}  |  Önem: {severity}  |  Alarm sayısı: {len(alerts)}", ""]
+    for a in alerts:
+        lab = a.get("labels", {})
+        ann = a.get("annotations", {})
+        lines.append(f"• {lab.get('alertname', '?')} ({lab.get('severity', '?')})")
+        for k in ("cluster", "namespace", "pod", "deployment", "job", "instance", "name"):
+            if lab.get(k):
+                lines.append(f"    {k}: {lab[k]}")
+        for k in ("summary", "description"):
+            if ann.get(k):
+                lines.append(f"    {k}: {ann[k]}")
+        lines.append(f"    başladı: {a.get('startsAt', '?')}")
+        if a.get("status") == "resolved":
+            lines.append(f"    bitti: {a.get('endsAt', '?')}")
+        if a.get("generatorURL"):
+            lines.append(f"    kaynak: {a['generatorURL']}")
+        lines.append("")
+    lines.append("— alertmanager-bridge (#3888)")
+    return subject, "\n".join(lines)
+
+
+def _http(req: urllib.request.Request, timeout: float = 15.0) -> tuple[int, str]:
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (fixed https endpoints)
+            return resp.status, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+
+
+def send_sms(phone: str, text: str) -> bool:
+    """JetSMS SOAP SendSMSSingle (same contract as notification-orchestrator JetSmsProvider)."""
+    to = phone[1:] if phone.startswith("+") else phone
+    envelope = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'xmlns:xsd="http://www.w3.org/2001/XMLSchema" '
+        'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>'
+        '<SendSMSSingle xmlns="http://tempuri.org/">'
+        f"<user>{xml_escape(os.environ['JETSMS_USERNAME'])}</user>"
+        f"<password>{xml_escape(os.environ['JETSMS_PASSWORD'])}</password>"
+        f"<originator>{xml_escape(os.environ['JETSMS_ORIGINATOR'])}</originator>"
+        "<reference></reference><startdate></startdate><expiredate></expiredate>"
+        f"<messages>{xml_escape(text)}</messages><receipents>{xml_escape(to)}</receipents>"
+        "<exclusionstarttime></exclusionstarttime><exclusionexpiretime></exclusionexpiretime>"
+        f"<channel>{xml_escape(os.environ.get('JETSMS_CHANNEL', 'VF'))}</channel>"
+        "<blacklistfilter></blacklistfilter><optinfilter></optinfilter><x></x>"
+        "<onlengthproblem>SendAllPackage</onlengthproblem>"
+        "</SendSMSSingle></soap:Body></soap:Envelope>"
+    )
+    req = urllib.request.Request(
+        os.environ.get("JETSMS_SOAP_URL", "https://api.jetsms.com.tr/ws/soapSMS.asmx"),
+        data=envelope.encode("utf-8"),
+        headers={"Content-Type": "text/xml; charset=utf-8", "SOAPAction": '"http://tempuri.org/SendSMSSingle"'},
+        method="POST",
+    )
+    try:
+        code, body = _http(req)
+    except (urllib.error.URLError, OSError) as e:
+        log.error(f"sms send transport error: {type(e).__name__}")
+        return False
+    error_code = ""
+    start = body.find("ErrorCode>")
+    if start != -1:
+        error_code = body[start + len("ErrorCode>"):].split("<", 1)[0].strip()
+    if code == 200 and error_code.startswith("00"):
+        return True
+    log.error(f"sms send rejected: http={code} errorCode={error_code or 'none'}")
+    return False
+
+
+def _graph_token() -> str:
+    if _GRAPH_TOKEN["value"] and time.time() < _GRAPH_TOKEN["expires_at"] - 60:
+        return _GRAPH_TOKEN["value"]
+    data = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": os.environ["GRAPH_CLIENT_ID"],
+        "client_secret": os.environ["GRAPH_CLIENT_SECRET"],
+        "scope": "https://graph.microsoft.com/.default",
+    }).encode()
+    req = urllib.request.Request(
+        f"https://login.microsoftonline.com/{os.environ['GRAPH_TENANT_ID']}/oauth2/v2.0/token",
+        data=data, method="POST",
+    )
+    code, body = _http(req)
+    if code != 200:
+        raise RuntimeError(f"graph token http={code}")
+    tok = json.loads(body)
+    _GRAPH_TOKEN["value"] = tok["access_token"]
+    _GRAPH_TOKEN["expires_at"] = time.time() + int(tok.get("expires_in", 3000))
+    return _GRAPH_TOKEN["value"]
+
+
+def send_email(recipients: list[str], subject: str, text: str) -> bool:
+    sender = os.environ["GRAPH_SENDER_MAILBOX"]
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": text},
+            "toRecipients": [{"emailAddress": {"address": r}} for r in recipients],
+        },
+        "saveToSentItems": True,
+    }
+    try:
+        token = _graph_token()
+        req = urllib.request.Request(
+            f"https://graph.microsoft.com/v1.0/users/{urllib.parse.quote(sender)}/sendMail",
+            data=json.dumps(message).encode("utf-8"),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        code, body = _http(req)
+    except (urllib.error.URLError, OSError, RuntimeError, KeyError, ValueError) as e:
+        log.error(f"email send error: {type(e).__name__}: {str(e)[:120]}")
+        return False
+    if code == 202:
+        return True
+    log.error(f"email send rejected: http={code} body={body[:200]}")
+    return False
+
+
+def _sms_allowed(now: float) -> bool:
+    cap = int(os.environ.get("ALERT_SMS_MAX_PER_HOUR", "12"))
+    while _SMS_SENT_AT and now - _SMS_SENT_AT[0] > 3600:
+        _SMS_SENT_AT.popleft()
+    return len(_SMS_SENT_AT) < cap
+
+
+def notify_group(payload: dict[str, Any]) -> dict[str, int]:
+    """Page operators for one Alertmanager webhook group. Returns per-channel sent counts."""
+    alerts = [a for a in payload.get("alerts", []) if a.get("labels", {}).get("is_synthetic") != "true"]
+    result = {"sms": 0, "email": 0}
+    if not alerts:
+        return result
+    status = payload.get("status", "firing")
+    severity = _group_severity(alerts)
+    configured = notify_channels_configured()
+    with _NOTIFY_LOCK:
+        if configured["sms"] and severity in _env_list("ALERT_SMS_SEVERITIES", "critical"):
+            now = time.time()
+            if _sms_allowed(now):
+                text = build_sms_text(status, alerts, severity)
+                for phone in _env_list("ALERT_SMS_TO", ""):
+                    if send_sms(phone, text):
+                        _notify_inc("notify_sent_total", "sms")
+                        result["sms"] += 1
+                    else:
+                        _notify_inc("notify_fail_total", "sms")
+                _SMS_SENT_AT.append(now)
+            else:
+                metric_inc("notify_sms_ratelimited_total")
+                log.warning("sms hourly cap reached; email only for this group")
+        if configured["email"] and severity in _env_list("ALERT_EMAIL_SEVERITIES", "critical,warning"):
+            subject, text = build_email(status, alerts, severity)
+            if send_email(_env_list("ALERT_EMAIL_TO", ""), subject, text):
+                _notify_inc("notify_sent_total", "email")
+                result["email"] += 1
+            else:
+                _notify_inc("notify_fail_total", "email")
+    log.info(f"notify group status={status} severity={severity} alerts={len(alerts)} sent={result}")
+    return result
+
+
 class AlertHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         """Suppress default access log; use our logger."""
@@ -587,6 +843,10 @@ class AlertHandler(BaseHTTPRequestHandler):
         metric_inc("webhook_received_total")
         log.info(f"received {len(alerts)} alert(s) from group {group_labels}")
 
+        # #3888 — page operators off the request thread so slow SMS/Graph calls
+        # never delay the Alertmanager webhook acknowledgement.
+        threading.Thread(target=notify_group, args=(payload,), daemon=True).start()
+
         delivered = 0
         for alert in alerts:
             if process_alert(alert, group_labels):
@@ -600,7 +860,7 @@ class AlertHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    log.info(f"alertmanager-bridge starting on :{PORT} (repo={GH_REPO})")
+    log.info(f"alertmanager-bridge starting on :{PORT} (repo={GH_REPO}) notify_channels={notify_channels_configured()}")
     server = HTTPServer(("0.0.0.0", PORT), AlertHandler)
     try:
         server.serve_forever()

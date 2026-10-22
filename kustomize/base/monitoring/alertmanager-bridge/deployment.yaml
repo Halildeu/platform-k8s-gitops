@@ -35,6 +35,16 @@ spec:
           envFrom:
             - configMapRef:
                 name: alertmanager-bridge
+            # #3888 operator paging — JetSMS + Graph credentials (ESO, prod overlay).
+            # optional: missing secret → channel skipped, exported as
+            # alertmanager_bridge_notify_channel_configured=0 (rule-backed).
+            - secretRef:
+                name: alertmanager-bridge-notify
+                optional: true
+            # #3888 recipient phone numbers (PII — Vault only, never in git).
+            - secretRef:
+                name: alertmanager-bridge-recipients
+                optional: true
           env:
             - name: GITHUB_TOKEN
               valueFrom:

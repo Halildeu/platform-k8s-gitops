@@ -12,3 +12,12 @@ data:
   BRIDGE_PORT: "9093"
   BRIDGE_LOG_LEVEL: "INFO"
   BRIDGE_UNDELIVERED_LOG: "/var/log/bridge/undelivered.jsonl"
+  # #3888 operator paging (owner decision 2026-10-22: SMS + mail to ai@acik.com).
+  # SMS: critical only, hourly cap (billing guard). Email: critical + warning.
+  ALERT_SMS_SEVERITIES: "critical"
+  ALERT_SMS_MAX_PER_HOUR: "12"
+  ALERT_EMAIL_SEVERITIES: "critical,warning"
+  ALERT_EMAIL_TO: "ai@acik.com"
+  # Graph app access policy allows sending only as ai@acik.com.
+  GRAPH_SENDER_MAILBOX: "ai@acik.com"
+  JETSMS_CHANNEL: "VF"
