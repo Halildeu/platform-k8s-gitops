@@ -1,0 +1,13 @@
+# #3888 — recycle pods kubelet stopped retrying (stale containerd name
+# reservations after a host reboot). Installed by
+# scripts/ops/install-k3d-stuck-pod-heal.sh; logs: journalctl -u k3d-stuck-pod-heal
+[Unit]
+Description=k3d stuck-pod self-heal (test + prod)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aiadmin
+ExecStart=/usr/bin/python3 /usr/local/lib/platform-ops/k3d_stuck_pod_heal.py --apply
+TimeoutStartSec=300

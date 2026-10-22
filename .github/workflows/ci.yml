@@ -150,6 +150,11 @@ jobs:
             tests.automation.test_backend_promotion_contract \
             tests.governance.test_deploy_backend_testai_stability_gate \
             -v
+      - name: k3d stuck-pod self-heal selection contract (#3888)
+        run: |
+          python3 -m unittest tests.operations.test_k3d_stuck_pod_heal -v
+          python3 -m py_compile scripts/ops/k3d_stuck_pod_heal.py
+          bash -n scripts/ops/install-k3d-stuck-pod-heal.sh
       - name: Cross-AI governance regression tests (unprivileged PR checkout)
         run: |
           node tests/ci/test-cross-ai-automation.mjs
