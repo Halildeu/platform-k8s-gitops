@@ -209,7 +209,11 @@ if [[ "$CHECK" == "1" ]]; then
     echo "# TYPE vault_policy_drift_last_check_timestamp_seconds gauge"
     echo "vault_policy_drift_last_check_timestamp_seconds $(date -u +%s)"
   } >> "$METRICS"
-  NODE_CONTAINER="${DRIFT_METRIC_NODE:-k3d-test-server-0}"
+  # #3888: the VaultPolicyDriftCheckStale rule lives in base/monitoring, i.e. the
+  # PROD Prometheus, which only scrapes the k3d-prod node-exporter. Writing to
+  # k3d-test-server-0 made the metric invisible and the alert permanently
+  # "absent" even when every check passed.
+  NODE_CONTAINER="${DRIFT_METRIC_NODE:-k3d-prod-server-0}"
   if command -v docker >/dev/null 2>&1 && docker inspect "$NODE_CONTAINER" >/dev/null 2>&1; then
     if docker exec -i "$NODE_CONTAINER" sh -c 'mkdir -p /var/lib/node_exporter && cat > /var/lib/node_exporter/vault_policy_drift.prom.tmp && mv /var/lib/node_exporter/vault_policy_drift.prom.tmp /var/lib/node_exporter/vault_policy_drift.prom && chmod 0644 /var/lib/node_exporter/vault_policy_drift.prom' < "$METRICS"; then
       echo "  METRIC vault_policy_drift.prom written to $NODE_CONTAINER textfile dir"
