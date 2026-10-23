@@ -12,8 +12,13 @@
 #   - External metric `notify_queue_pending_intents`: scale on OutboxPoller
 #     backlog. CPU/Memory may not reflect intake backpressure if pod is
 #     disk/network bound.
-#   - Adapter not installed → External metric source unavailable, HPA falls
-#     back to CPU/Memory primary (graceful degradation).
+#   - #3888 (2026-10-23): the "graceful degradation" assumption was wrong. No
+#     external.metrics.k8s.io API exists on k3d-test or k3d-prod (no Prometheus
+#     Adapter/KEDA), and an HPA with an unavailable metric scales UP on the
+#     remaining metrics but never DOWN: prod sat at max=3 replicas with
+#     ScalingActive=False/FailedGetExternalMetric (KubeHpaMaxedOut, CPU at 1%).
+#     The External metric is removed until an adapter is actually installed;
+#     re-add it in the same change that installs the adapter.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -39,16 +44,8 @@ spec:
     # 2026-05-10 (PR #472 iter-20 absorb): Memory metric KALDIRILDI
     # — Java Spring Boot heap idle %40+, scale-down blocker. Custom
     # backlog metric + CPU yeterli sinyal.
-    # PR-D.4 — Prometheus Adapter external metric (custom metric API server).
-    # Adapter installed → HPA scales when backlog avg per-pod exceeds 200.
-    # Adapter absent → metric source unavailable; HPA falls back to CPU/Memory.
-    - type: External
-      external:
-        metric:
-          name: notify_queue_pending_intents
-        target:
-          type: AverageValue
-          averageValue: "200"
+    # PR-D.4 External metric notify_queue_pending_intents (avg 200/pod) is
+    # parked until a Prometheus Adapter serves external.metrics.k8s.io (#3888).
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300

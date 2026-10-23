@@ -1,0 +1,10 @@
+# #3888 — re-sync as soon as a host timer rewrites a .prom file.
+[Unit]
+Description=Watch host node_exporter textfile directory
+
+[Path]
+PathChanged=/var/lib/node_exporter
+Unit=host-textfile-k3d-sync.service
+
+[Install]
+WantedBy=paths.target

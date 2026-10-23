@@ -1,0 +1,9 @@
+# #3888 — mirror host textfile metrics into the k3d prod node (node-exporter).
+[Unit]
+Description=Mirror host node_exporter textfile metrics into k3d node
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/platform-ops/host-textfile-k3d-sync.sh
+TimeoutStartSec=60
