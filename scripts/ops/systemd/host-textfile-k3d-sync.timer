@@ -1,0 +1,10 @@
+# #3888 — fallback: re-sync every 5 min and after boot (k3d node recreated).
+[Unit]
+Description=Periodic host textfile -> k3d sync
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

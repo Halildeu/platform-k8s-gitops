@@ -562,6 +562,20 @@ nodeExporter:
   enabled: true
 
 prometheus-node-exporter:
+  # #3888: textfile collector, same lane as values-test.yaml. The collector was
+  # loaded without a directory (node_textfile_scrape_error=1), so every
+  # host-timer metric (meeting-ai client/server cert rotation, trust-root
+  # probe) was never scraped: the client-cert rotation was broken for 18 days
+  # while only the generic "telemetry absent" alerts fired. hostPath is the
+  # k3d node's own filesystem; host timers' .prom files are mirrored into it
+  # by scripts/ops/host-textfile-k3d-sync (systemd path + timer).
+  extraArgs:
+    - --collector.textfile.directory=/host/textfile
+  extraHostVolumeMounts:
+    - name: textfile
+      hostPath: /var/lib/node_exporter
+      mountPath: /host/textfile
+      readOnly: true
   resources:
     requests:
       cpu: 10m
