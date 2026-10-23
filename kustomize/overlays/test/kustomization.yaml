@@ -888,7 +888,7 @@ images:
     # dilim-4b) — meeting-service client may mint notification-orchestrator /
     # notify:intents:system (per-audience pinned). Registry digest from the
     # k3d-test pull (smoke pod imageID), not a build log.
-    digest: sha256:ffd2bff1d2fe62872cde8e14f7b9f7e3ef66d6debf2b5982f9f81dce7b30c7d8
+    digest: sha256:61ac7378e67e3f53da629b9fb5222aebf0b8d96e0721359f964166b9ff60fea8
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -1348,7 +1348,7 @@ images:
     # 22/22 variant tests PASS (5 authz + 17 other).
     # 2026-06-23 #736 Slice-2c: trust /authz/me userId over the claim-derived id
     # (sha-45293e5). Prior: sha256:8c5ae280 (#821 drift-correction).
-    digest: sha256:deb8998d61638f5f0b769d7de9a511d710cb4bccd1f984665f1d9ae3caa1df88
+    digest: sha256:9b0a2194d1975d5245a662a514ef7508da1bda6d5cb8c07b29193e247175297a
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
@@ -1857,13 +1857,13 @@ images:
     # invoice-uniform line aggregation (99.6% of invoices are uniform), with
     # single-order lineage. Main build run 33275952389; digest read back from
     # GHCR by tag sha-ce54be4 (never from build logs).
-    newTag: sha-ce54be4
+    newTag: sha-fabfde8
     # 2026-08-30 paging floor fix: platform-backend PR #1125, merge 9a49f85.
     # Dynamic-report page<=0 reached MSSQL as a negative OFFSET (error 10742,
     # measured live on fin-gerceklesen-maliyet) -> raw 500. Controller clamps
     # page; SqlBuilder floors the offset at all three sites. Digest read back
     # from GHCR by tag sha-9a49f85 (never from build logs).
-    digest: sha256:7f32f50243401187af4a59f2e54a6c6565a1e415afe2ea7a13eabf1992f78290
+    digest: sha256:593bd3ed48a96b560c5f600c003848e8f6e29d2ffe7745d84a97fbc7c3d570b7
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
