@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: etik-speak-budget}
+spec:
+  scopeSelector:
+    matchExpressions:
+      - scopeName: PriorityClass
+        operator: In
+        values: [etik-speak-test]
+  hard:
+    requests.cpu: "500m"
+    # All three Deployments may surge by one pod at the same time. These
+    # ceilings cover the six-pod rollout peak plus two repair/rollback pods.
+    # An exact six-pod fit would make rollback/recovery impossible.
+    requests.memory: 896Mi
+    limits.cpu: "2500m"
+    limits.memory: 2Gi
+    pods: "8"

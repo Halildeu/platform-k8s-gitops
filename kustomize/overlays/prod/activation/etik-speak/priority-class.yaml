@@ -1,0 +1,8 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: etik-speak-test
+value: 100
+preemptionPolicy: Never
+globalDefault: false
+description: "Faz 35 Etik Speak test workloads; quota-scoped and non-preempting."
